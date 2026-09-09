@@ -1,6 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Redguard;
 using Xunit;
@@ -35,17 +33,17 @@ public sealed class Redguard3dcFileTests
 
         const int frameCount = 2;
         const int frameBlockOffset = 64;
-        var tableOffset = frameBlockOffset + (Redguard3dcFile.PreambleDwords * 4);
+        var tableOffset = frameBlockOffset + Redguard3DcFile.PreambleDwords * 4;
         var recordDwords = wide ? 4 : 3;
-        var planeListOffset = tableOffset + (frameCount * recordDwords * 4);
-        var planeListEnd = planeListOffset + 8 + (PointCount * 8);
+        var planeListOffset = tableOffset + frameCount * recordDwords * 4;
+        var planeListEnd = planeListOffset + 8 + PointCount * 8;
 
-        var laterPoints = PointCount * (wide ? Redguard3dcFile.WidePointLength : Redguard3dcFile.NarrowPointLength);
+        var laterPoints = PointCount * (wide ? Redguard3DcFile.WidePointLength : Redguard3DcFile.NarrowPointLength);
         var normalLength = PlaneCount * (wide ? 12 : 4);
         var planeDataLength = PlaneCount * (wide ? 24 : 12);
 
         var f0Points = planeListEnd;
-        var f0Normals = f0Points + (PointCount * Redguard3dcFile.WidePointLength);
+        var f0Normals = f0Points + PointCount * Redguard3DcFile.WidePointLength;
         var f0PlaneData = f0Normals + normalLength;
         var f1Points = f0PlaneData + planeDataLength;
         var f1Normals = f1Points + laterPoints;
@@ -56,44 +54,44 @@ public sealed class Redguard3dcFileTests
         Encoding.ASCII.GetBytes("v2.6").CopyTo(b, 0);
         Write(b, 4, PointCount);
         Write(b, 8, PlaneCount);
-        Write(b, 12, 256);                       // radius — deliberately NOT the acceptance gate
+        Write(b, 12, 256); // radius — deliberately NOT the acceptance gate
         Write(b, 16, frameCount);
         Write(b, 20, frameBlockOffset);
-        Write(b, 24, f1PlaneData);               // the header carries FRAME 1's offsets, not the mesh's
+        Write(b, 24, f1PlaneData); // the header carries FRAME 1's offsets, not the mesh's
         Write(b, 48, f1Points);
         Write(b, 52, f1Normals);
         Write(b, 60, planeListOffset);
 
-        Write(b, frameBlockOffset, tableOffset);          // preamble[0]: where the table starts
-        Write(b, frameBlockOffset + 8, trailingRegion);   // preamble[2]: the one unaccounted region
+        Write(b, frameBlockOffset, tableOffset); // preamble[0]: where the table starts
+        Write(b, frameBlockOffset + 8, trailingRegion); // preamble[2]: the one unaccounted region
 
         Write(b, tableOffset, f0Points);
         Write(b, tableOffset + 4, f0Normals);
         Write(b, tableOffset + 8, f0PlaneData);
-        Write(b, tableOffset + (recordDwords * 4), f1Points);
-        Write(b, tableOffset + (recordDwords * 4) + 4, f1Normals);
-        Write(b, tableOffset + (recordDwords * 4) + 8, f1PlaneData);
+        Write(b, tableOffset + recordDwords * 4, f1Points);
+        Write(b, tableOffset + recordDwords * 4 + 4, f1Normals);
+        Write(b, tableOffset + recordDwords * 4 + 8, f1PlaneData);
 
-        b[planeListOffset] = PointCount;                  // one plane over all three points
+        b[planeListOffset] = PointCount; // one plane over all three points
         for (var q = 0; q < PointCount; q++)
         {
-            Write(b, planeListOffset + 8 + (q * 8), q * Redguard3dcFile.WidePointLength);
+            Write(b, planeListOffset + 8 + q * 8, q * Redguard3DcFile.WidePointLength);
         }
 
         for (var i = 0; i < PointCount * 3; i++)
         {
-            Write(b, f0Points + (i * 4), keyframe[i]);
+            Write(b, f0Points + i * 4, keyframe[i]);
         }
 
         for (var i = 0; i < PointCount * 3; i++)
         {
             if (wide)
             {
-                Write(b, f1Points + (i * 4), keyframe[i] + deltas[i]);
+                Write(b, f1Points + i * 4, keyframe[i] + deltas[i]);
             }
             else
             {
-                BinaryPrimitives.WriteInt16LittleEndian(b.AsSpan(f1Points + (i * 2)), deltas[i]);
+                BinaryPrimitives.WriteInt16LittleEndian(b.AsSpan(f1Points + i * 2), deltas[i]);
             }
         }
 
@@ -108,7 +106,7 @@ public sealed class Redguard3dcFileTests
     [Fact]
     public void Parse_ReadsBothFramesFromTheFrameTable()
     {
-        var file = Redguard3dcFile.Parse(Mesh(wide: false), "T.3DC");
+        var file = Redguard3DcFile.Parse(Mesh(false), "T.3DC");
 
         Assert.Equal(2, file.FrameCount);
         Assert.Equal(3, file.FrameRecordDwords);
@@ -123,7 +121,7 @@ public sealed class Redguard3dcFileTests
         // ⚠ THE animation trap. Measured on all 91 retail files with ten or more frames:
         // accumulating frame-to-frame makes the mesh drift, every time. Frame 1 here is the
         // keyframe plus its own deltas and nothing else.
-        var file = Redguard3dcFile.Parse(Mesh(wide: false), "T.3DC");
+        var file = Redguard3DcFile.Parse(Mesh(false), "T.3DC");
 
         Assert.Equal(new XnGineMeshPointTriple(0 + 1, 0 + 2, 0 + 3), Triple(file, 1, 0));
         Assert.Equal(new XnGineMeshPointTriple(256 + 4, 0 + 5, 0 + 6), Triple(file, 1, 1));
@@ -133,7 +131,7 @@ public sealed class Redguard3dcFileTests
     [Fact]
     public void Parse_ReadsAWideFilesLaterFramesAsFullPoints()
     {
-        var file = Redguard3dcFile.Parse(Mesh(wide: true), "W.3DC");
+        var file = Redguard3DcFile.Parse(Mesh(true), "W.3DC");
 
         Assert.True(file.WideFrames);
         Assert.Equal(4, file.FrameRecordDwords);
@@ -145,7 +143,7 @@ public sealed class Redguard3dcFileTests
     {
         // The reference reads that dword as its vertex base ("endFaceData + u3"), which is why it
         // works only when the region happens to sit before the frames. Here it is simply declared.
-        var file = Redguard3dcFile.Parse(Mesh(wide: false, trailingRegion: 40), "R.3DC");
+        var file = Redguard3DcFile.Parse(Mesh(false, 40), "R.3DC");
 
         Assert.Equal(40, file.UnaccountedLength);
     }
@@ -154,30 +152,30 @@ public sealed class Redguard3dcFileTests
     public void Parse_RejectsAFileWhoseBlocksDoNotAccountForIt()
     {
         // An undeclared trailing region is the failure mode a looser reader would swallow.
-        var bytes = Mesh(wide: false, trailingRegion: 40);
+        var bytes = Mesh(false, 40);
         Write(bytes, 64 + 8, 0);
 
-        var error = Assert.Throws<InvalidDataException>(() => Redguard3dcFile.Parse(bytes, "BAD.3DC"));
+        var error = Assert.Throws<InvalidDataException>(() => Redguard3DcFile.Parse(bytes, "BAD.3DC"));
         Assert.Contains("one region of 0", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void Parse_RejectsAFrameTableThatDoesNotDivide()
     {
-        var bytes = Mesh(wide: false);
+        var bytes = Mesh(false);
         Write(bytes, 60, BinaryPrimitives.ReadInt32LittleEndian(bytes.AsSpan(60)) + 4);
 
-        Assert.Throws<InvalidDataException>(() => Redguard3dcFile.Parse(bytes, "BAD.3DC"));
+        Assert.Throws<InvalidDataException>(() => Redguard3DcFile.Parse(bytes, "BAD.3DC"));
     }
 
     [Fact]
     public void KeyframeMesh_CarriesTheKeyframePointsAndNormalsComputedFromThem()
     {
-        var file = Redguard3dcFile.Parse(Mesh(wide: false), "T.3DC");
+        var file = Redguard3DcFile.Parse(Mesh(false), "T.3DC");
         var mesh = file.KeyframeMesh;
 
         Assert.Equal(PointCount, mesh.Points.Count);
-        Assert.Equal(PlaneCount, mesh.Planes.Count);
+        Assert.Single(mesh.Planes);
         Assert.Equal(256, mesh.Points[1].X);
 
         // The three points lie in the z = 0 plane wound counter-clockwise, so Newell's method gives
@@ -190,11 +188,11 @@ public sealed class Redguard3dcFileTests
     [Fact]
     public void Is3dcFile_AcceptsOnlyWhatTiles()
     {
-        Assert.True(Redguard3dcFile.Is3dcFile(Mesh(wide: false)));
-        Assert.False(Redguard3dcFile.Is3dcFile("v2.6 but nothing else"u8.ToArray()));
+        Assert.True(Redguard3DcFile.Is3dcFile(Mesh(false)));
+        Assert.False(Redguard3DcFile.Is3dcFile("v2.6 but nothing else"u8.ToArray()));
     }
 
-    private static XnGineMeshPointTriple Triple(Redguard3dcFile file, int frame, int point)
+    private static XnGineMeshPointTriple Triple(Redguard3DcFile file, int frame, int point)
     {
         var p = file.Frames[frame].Points[point];
         return new XnGineMeshPointTriple(p.X, p.Y, p.Z);

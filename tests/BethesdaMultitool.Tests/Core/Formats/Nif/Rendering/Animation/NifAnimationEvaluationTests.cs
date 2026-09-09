@@ -92,14 +92,16 @@ public class NifAnimationEvaluationTests
         var endTranslation = new Vector3(8f, -4f, 2f);
         var animation = new NifMeshAnimation(
             [new NifAnimBone("Bone", -1, Vector3.Zero, Quaternion.Identity, 1f)],
-            [new NifNodeTrack(
-                "Bone", 1f, 0f,
-                constantChannel == 0 ? NifKeyInterpolation.Constant : NifKeyInterpolation.Linear,
-                [new NifQuatKey(0f, Quaternion.Identity), new NifQuatKey(1f, endRotation)],
-                constantChannel == 1 ? NifKeyInterpolation.Constant : NifKeyInterpolation.Linear,
-                [new NifVec3Key(0f, Vector3.Zero), new NifVec3Key(1f, endTranslation)],
-                constantChannel == 2 ? NifKeyInterpolation.Constant : NifKeyInterpolation.Linear,
-                [new NifFloatKey(0f, 1f), new NifFloatKey(1f, 3f)])],
+            [
+                new NifNodeTrack(
+                    "Bone", 1f, 0f,
+                    constantChannel == 0 ? NifKeyInterpolation.Constant : NifKeyInterpolation.Linear,
+                    [new NifQuatKey(0f, Quaternion.Identity), new NifQuatKey(1f, endRotation)],
+                    constantChannel == 1 ? NifKeyInterpolation.Constant : NifKeyInterpolation.Linear,
+                    [new NifVec3Key(0f, Vector3.Zero), new NifVec3Key(1f, endTranslation)],
+                    constantChannel == 2 ? NifKeyInterpolation.Constant : NifKeyInterpolation.Linear,
+                    [new NifFloatKey(0f, 1f), new NifFloatKey(1f, 3f)])
+            ],
             [], 0f, 1f, false);
         Span<Matrix4x4> worlds = stackalloc Matrix4x4[1];
 

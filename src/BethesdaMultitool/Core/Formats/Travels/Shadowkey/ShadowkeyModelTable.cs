@@ -40,6 +40,8 @@ internal sealed class ShadowkeyModelTable
     }
 
     /// <summary>The row at <paramref name="index" />, or <see langword="null" /> when out of range.</summary>
-    public ShadowkeyModelDef? Find(int index) =>
-        index >= 0 && index < Models.Count ? Models[index] : null;
+    public ShadowkeyModelDef? Find(int index)
+    {
+        return index >= 0 && index < Models.Count ? Models[index] : null;
+    }
 }

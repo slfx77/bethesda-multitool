@@ -137,8 +137,8 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.True(loaded.EngineZWriteOff);
         Assert.True(loaded.DepthTestOff);
         Assert.Equal(HavokCollisionProvenance.AbsentOrUnsupported, mesh.CollisionProvenance);
-        Assert.Equal(default(StarfieldMaterialColorRenderState), loaded.StarfieldMaterialColor);
-        Assert.Equal(default(StarfieldMaterialAlphaRenderState), loaded.StarfieldMaterialAlpha);
+        Assert.Equal(default, loaded.StarfieldMaterialColor);
+        Assert.Equal(default, loaded.StarfieldMaterialAlpha);
         // v96: classic PC Oblivion tangent-extra recovery changes cached decoded vertex bases.
         // v97: strict ordinary TES4 source eligibility controls live normal-format specular.
         // v98: the independent TES4 actor-hair layer texture path joins the persistent payload.
@@ -213,19 +213,25 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         NifVec3Key[] keys;
         if (hasTangents)
         {
-            keys = [new(0f, Vector3.Zero, zeroHandles ? Vector3.Zero : new Vector3(77f),
+            keys =
+            [
+                new NifVec3Key(0f, Vector3.Zero, zeroHandles ? Vector3.Zero : new Vector3(77f),
                     zeroHandles ? Vector3.Zero : new Vector3(20f), true),
-                new(1f, new Vector3(10f), Vector3.Zero,
-                    zeroHandles ? Vector3.Zero : new Vector3(88f), true)];
+                new NifVec3Key(1f, new Vector3(10f), Vector3.Zero,
+                    zeroHandles ? Vector3.Zero : new Vector3(88f), true)
+            ];
         }
         else
         {
-            keys = [new(0f, Vector3.Zero), new(1f, new Vector3(10f))];
+            keys = [new NifVec3Key(0f, Vector3.Zero), new NifVec3Key(1f, new Vector3(10f))];
         }
+
         var animation = new NifMeshAnimation(
             [new NifAnimBone("Rock", -1, Vector3.Zero, Quaternion.Identity, 1f)],
-            [new NifNodeTrack("Rock", 1f, 0f, NifKeyInterpolation.Linear, [],
-                NifKeyInterpolation.Quadratic, keys, NifKeyInterpolation.Linear, [])],
+            [
+                new NifNodeTrack("Rock", 1f, 0f, NifKeyInterpolation.Linear, [],
+                    NifKeyInterpolation.Quadratic, keys, NifKeyInterpolation.Linear, [])
+            ],
             [], 0f, 1f, false);
         cache.Store(metadata, null, CreatePayload() with { Animation = animation });
 
@@ -245,19 +251,21 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         var metadata = CreateMetadata(64, 1000);
         var animation = new NifMeshAnimation(
             [new NifAnimBone("Rock_5", -1, Vector3.Zero, Quaternion.Identity, 1f, 277)],
-            [new NifNodeTrack(
-                "Rock_5",
-                1f,
-                0f,
-                NifKeyInterpolation.Linear,
-                [],
-                NifKeyInterpolation.Linear,
-                [
-                    new NifVec3Key(0f, Vector3.Zero),
-                    new NifVec3Key(49.06667f, new Vector3(0f, 0f, 153.99197f))
-                ],
-                NifKeyInterpolation.Linear,
-                [])],
+            [
+                new NifNodeTrack(
+                    "Rock_5",
+                    1f,
+                    0f,
+                    NifKeyInterpolation.Linear,
+                    [],
+                    NifKeyInterpolation.Linear,
+                    [
+                        new NifVec3Key(0f, Vector3.Zero),
+                        new NifVec3Key(49.06667f, new Vector3(0f, 0f, 153.99197f))
+                    ],
+                    NifKeyInterpolation.Linear,
+                    [])
+            ],
             [new NifAnimTextKey(47.4f, "Idle: Start")],
             47.4f,
             49.06667f,
@@ -370,7 +378,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         Assert.True(loaded.AlphaBlend);
         Assert.False(loaded.AlphaTest);
         Assert.Equal(0.5f, loaded.MaterialAlpha);
-        Assert.Equal(default(StarfieldMaterialAlphaRenderState), loaded.StarfieldMaterialAlpha);
+        Assert.Equal(default, loaded.StarfieldMaterialAlpha);
     }
 
     [Fact]

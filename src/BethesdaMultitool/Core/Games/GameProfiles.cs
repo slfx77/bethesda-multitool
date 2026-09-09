@@ -415,13 +415,15 @@ public static class GameProfiles
                     @"PSP_GAME\SYSDIR\EBOOT.BIN|PSP_GAME\SYSDIR\BOOT.BIN",
                     @"PSP_GAME\USRDIR\GR.ARC"
                 ],
-                ClassicLooseRoot = @"PSP_GAME\USRDIR"
+                ClassicLooseRoot = @"PSP_GAME\USRDIR",
+                // Mount the pack itself so its entries browse alongside the loose tree, instead
+                // of GR.ARC sitting there as one opaque leaf. Globs resolve against the install
+                // root, not against ClassicLooseRoot, so the path is spelled in full.
+                ClassicArchiveGlobs = [@"PSP_GAME\USRDIR\GR.ARC"]
             },
 
-            // ---- Console spin-off. Like the J2ME titles, the install is ONE FILE — here a PS2 disc
-            // image — so ClassicGameLocator.DetectFromArchive matches these markers against the
-            // mounted ISO9660 entry names as well as against a directory the disc was extracted
-            // into. Measured 2026-09-06 on the shipped disc (352 files). ----
+            // ---- Console spin-off. The install is a PS2 or Xbox disc image. The locator matches
+            // these markers against mounted ISO9660/XDVDFS entry names or an extracted directory. ----
 
             [BethesdaGame.FalloutBrotherhoodOfSteel] = new()
             {
@@ -430,13 +432,12 @@ public static class GameProfiles
                 RecordHeaderSize = 0,
                 GroupHeaderSize = 0,
                 HasRecordVersionTrailer = false,
-                // SYSTEM.CNF is the PS2 boot descriptor every disc for that console carries, so it
-                // is paired with DATA\ALL.DDF — the master record table, which is this game's and
-                // no other's. Requiring only the former would claim any PS2 disc handed to us.
-                InstallMarkers = ["SYSTEM.CNF", @"DATA\ALL.DDF"],
+                // Either console's boot marker must accompany this game's master record table.
+                // A boot marker alone would claim unrelated PS2 or Xbox titles.
+                InstallMarkers = ["SYSTEM.CNF|default.xbe", @"DATA\ALL.DDF|resx\all.ddf"],
                 // The disc root IS the data root (as for Arena): leaving this empty makes an
-                // extracted disc directory address files by the same DATA\… paths the mounted ISO
-                // reports, so the record source cannot need two spellings of every path.
+                // extracted disc directory address files by the same DATA\… or resx\… paths the
+                // mounted disc reports.
                 ClassicLooseRoot = ""
             }
         };

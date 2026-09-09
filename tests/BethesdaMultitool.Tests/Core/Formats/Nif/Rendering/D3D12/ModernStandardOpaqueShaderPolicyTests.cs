@@ -6,6 +6,55 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.D3D12;
 
 public sealed class ModernStandardOpaqueShaderPolicyTests
 {
+    public enum DeniedFact
+    {
+        Heatmap,
+        ScatteredGrass,
+        AlphaBlend,
+        Decal,
+        Emissive,
+        Lighting30,
+        Lighting30Glow,
+        EffectFalloff,
+        NonNeutralEffectTint,
+        SoftParticle,
+        Billboard,
+        LeafBillboard,
+        TallGrass,
+        Particle,
+        RuntimeSpeedTreeLod,
+        ClassicBasicShader,
+        ClassicEnvironmentMap,
+        ClassicParallax,
+        GradientMap,
+        UnsupportedTextureFeatureMask,
+        NoBump,
+        NoSpecularMap,
+        NoDeclaredModernEnvironmentMap,
+        NonPositiveModernEnvironmentMapScale,
+        ClampTextureU,
+        ClampTextureV,
+        NonGreaterAlphaFunction
+    }
+
+    public enum DeniedStarfieldFact
+    {
+        WrongGame,
+        WrongGameFo76Tuple,
+        MissingMaterialIdentity,
+        MalformedMaterialIdentity,
+        DerivedNormalWithoutBump,
+        BumpWithoutDerivedNormal,
+        UnsupportedTextureFeatureMask,
+        SpecularMap,
+        NonZeroSpecularExponent,
+        DeclaredModernEnvironmentMap,
+        NonZeroModernEnvironmentMapScale,
+        ClampTextureU,
+        ClampTextureV,
+        NonGreaterAlphaFunction
+    }
+
     [Theory]
     [InlineData(BethesdaGame.Starfield, null, false, true)]
     [InlineData(BethesdaGame.Starfield, "1", false, true)]
@@ -246,174 +295,137 @@ public sealed class ModernStandardOpaqueShaderPolicyTests
             ModernStandardOpaqueShaderPolicy.Resolve(facts));
     }
 
-    private static ModernStandardOpaqueShaderFacts EligibleFacts() => new(
-        Game: BethesdaGame.Fallout76,
-        HeatmapEnabled: false,
-        IsScatteredGrass: false,
-        AlphaBlend: false,
-        IsDecal: false,
-        IsEmissive: false,
-        IsLighting30: false,
-        HasLighting30GlowMap: false,
-        HasEffectFalloff: false,
-        IsEffectTintNeutral: true,
-        HasSoftParticle: false,
-        IsBillboard: false,
-        IsLeafBillboard: false,
-        IsTallGrass: false,
-        IsParticle: false,
-        HasRuntimeSpeedTreeLod: false,
-        HasClassicBasicShader: false,
-        HasClassicEnvironmentMap: false,
-        HasClassicParallax: false,
-        HasGradientMap: false,
-        StarfieldMaterialPath: null,
-        HasDerivedStarfieldNormal: false,
-        TextureFeatureMask: 1u,
-        HasBump: true,
-        HasSpecularMap: true,
-        SpecularExponent: 16f,
-        ModernEnvironmentMapDeclared: true,
-        ModernEnvironmentMapScale: 1f,
-        WrapTextureU: true,
-        WrapTextureV: true,
-        AlphaTestEnabled: true,
-        AlphaTestFunction: 4,
-        DoubleSided: false);
-
-    private static ModernStandardOpaqueShaderFacts StarfieldFacts() => EligibleFacts() with
+    private static ModernStandardOpaqueShaderFacts EligibleFacts()
     {
-        Game = BethesdaGame.Starfield,
-        StarfieldMaterialPath = @"materials\architecture\wall.mat",
-        HasDerivedStarfieldNormal = true,
-        TextureFeatureMask = 0u,
-        HasBump = true,
-        HasSpecularMap = false,
-        SpecularExponent = 0f,
-        ModernEnvironmentMapDeclared = false,
-        ModernEnvironmentMapScale = 0f
-    };
+        return new ModernStandardOpaqueShaderFacts(
+            BethesdaGame.Fallout76,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            null,
+            false,
+            1u,
+            true,
+            true,
+            16f,
+            true,
+            1f,
+            true,
+            true,
+            true,
+            4,
+            false);
+    }
+
+    private static ModernStandardOpaqueShaderFacts StarfieldFacts()
+    {
+        return EligibleFacts() with
+        {
+            Game = BethesdaGame.Starfield,
+            StarfieldMaterialPath = @"materials\architecture\wall.mat",
+            HasDerivedStarfieldNormal = true,
+            TextureFeatureMask = 0u,
+            HasBump = true,
+            HasSpecularMap = false,
+            SpecularExponent = 0f,
+            ModernEnvironmentMapDeclared = false,
+            ModernEnvironmentMapScale = 0f
+        };
+    }
 
     private static ModernStandardOpaqueShaderFacts DenyOneFact(
         ModernStandardOpaqueShaderFacts facts,
-        DeniedFact deniedFact) => deniedFact switch
+        DeniedFact deniedFact)
     {
-        DeniedFact.Heatmap => facts with { HeatmapEnabled = true },
-        DeniedFact.ScatteredGrass => facts with { IsScatteredGrass = true },
-        DeniedFact.AlphaBlend => facts with { AlphaBlend = true },
-        DeniedFact.Decal => facts with { IsDecal = true },
-        DeniedFact.Emissive => facts with { IsEmissive = true },
-        DeniedFact.Lighting30 => facts with { IsLighting30 = true },
-        DeniedFact.Lighting30Glow => facts with { HasLighting30GlowMap = true },
-        DeniedFact.EffectFalloff => facts with { HasEffectFalloff = true },
-        DeniedFact.NonNeutralEffectTint => facts with { IsEffectTintNeutral = false },
-        DeniedFact.SoftParticle => facts with { HasSoftParticle = true },
-        DeniedFact.Billboard => facts with { IsBillboard = true },
-        DeniedFact.LeafBillboard => facts with { IsLeafBillboard = true },
-        DeniedFact.TallGrass => facts with { IsTallGrass = true },
-        DeniedFact.Particle => facts with { IsParticle = true },
-        DeniedFact.RuntimeSpeedTreeLod => facts with { HasRuntimeSpeedTreeLod = true },
-        DeniedFact.ClassicBasicShader => facts with { HasClassicBasicShader = true },
-        DeniedFact.ClassicEnvironmentMap => facts with { HasClassicEnvironmentMap = true },
-        DeniedFact.ClassicParallax => facts with { HasClassicParallax = true },
-        DeniedFact.GradientMap => facts with { HasGradientMap = true },
-        // Bit 16 is the regular-lighting BGSM emission route. The modern-standard specialization
-        // does not implement that additive overlay and must fall back to the generic shader.
-        DeniedFact.UnsupportedTextureFeatureMask => facts with { TextureFeatureMask = 1u | (1u << 16) },
-        DeniedFact.NoBump => facts with { HasBump = false },
-        DeniedFact.NoSpecularMap => facts with { HasSpecularMap = false },
-        DeniedFact.NoDeclaredModernEnvironmentMap => facts with { ModernEnvironmentMapDeclared = false },
-        DeniedFact.NonPositiveModernEnvironmentMapScale => facts with { ModernEnvironmentMapScale = 0f },
-        DeniedFact.ClampTextureU => facts with { WrapTextureU = false },
-        DeniedFact.ClampTextureV => facts with { WrapTextureV = false },
-        DeniedFact.NonGreaterAlphaFunction => facts with { AlphaTestFunction = 3 },
-        _ => throw new ArgumentOutOfRangeException(nameof(deniedFact), deniedFact, null)
-    };
+        return deniedFact switch
+        {
+            DeniedFact.Heatmap => facts with { HeatmapEnabled = true },
+            DeniedFact.ScatteredGrass => facts with { IsScatteredGrass = true },
+            DeniedFact.AlphaBlend => facts with { AlphaBlend = true },
+            DeniedFact.Decal => facts with { IsDecal = true },
+            DeniedFact.Emissive => facts with { IsEmissive = true },
+            DeniedFact.Lighting30 => facts with { IsLighting30 = true },
+            DeniedFact.Lighting30Glow => facts with { HasLighting30GlowMap = true },
+            DeniedFact.EffectFalloff => facts with { HasEffectFalloff = true },
+            DeniedFact.NonNeutralEffectTint => facts with { IsEffectTintNeutral = false },
+            DeniedFact.SoftParticle => facts with { HasSoftParticle = true },
+            DeniedFact.Billboard => facts with { IsBillboard = true },
+            DeniedFact.LeafBillboard => facts with { IsLeafBillboard = true },
+            DeniedFact.TallGrass => facts with { IsTallGrass = true },
+            DeniedFact.Particle => facts with { IsParticle = true },
+            DeniedFact.RuntimeSpeedTreeLod => facts with { HasRuntimeSpeedTreeLod = true },
+            DeniedFact.ClassicBasicShader => facts with { HasClassicBasicShader = true },
+            DeniedFact.ClassicEnvironmentMap => facts with { HasClassicEnvironmentMap = true },
+            DeniedFact.ClassicParallax => facts with { HasClassicParallax = true },
+            DeniedFact.GradientMap => facts with { HasGradientMap = true },
+            // Bit 16 is the regular-lighting BGSM emission route. The modern-standard specialization
+            // does not implement that additive overlay and must fall back to the generic shader.
+            DeniedFact.UnsupportedTextureFeatureMask => facts with { TextureFeatureMask = 1u | (1u << 16) },
+            DeniedFact.NoBump => facts with { HasBump = false },
+            DeniedFact.NoSpecularMap => facts with { HasSpecularMap = false },
+            DeniedFact.NoDeclaredModernEnvironmentMap => facts with { ModernEnvironmentMapDeclared = false },
+            DeniedFact.NonPositiveModernEnvironmentMapScale => facts with { ModernEnvironmentMapScale = 0f },
+            DeniedFact.ClampTextureU => facts with { WrapTextureU = false },
+            DeniedFact.ClampTextureV => facts with { WrapTextureV = false },
+            DeniedFact.NonGreaterAlphaFunction => facts with { AlphaTestFunction = 3 },
+            _ => throw new ArgumentOutOfRangeException(nameof(deniedFact), deniedFact, null)
+        };
+    }
 
     private static ModernStandardOpaqueShaderFacts DenyOneStarfieldFact(
         ModernStandardOpaqueShaderFacts facts,
-        DeniedStarfieldFact deniedFact) => deniedFact switch
+        DeniedStarfieldFact deniedFact)
     {
-        DeniedStarfieldFact.WrongGame => facts with { Game = BethesdaGame.Fallout76 },
-        // Also keep every FO76-specific requirement eligible: the non-null .mat identity must
-        // select the Starfield branch instead of falling through to the otherwise-eligible tuple.
-        DeniedStarfieldFact.WrongGameFo76Tuple => EligibleFacts() with
+        return deniedFact switch
         {
-            StarfieldMaterialPath = facts.StarfieldMaterialPath
-        },
-        DeniedStarfieldFact.MissingMaterialIdentity => facts with { StarfieldMaterialPath = null },
-        DeniedStarfieldFact.MalformedMaterialIdentity => facts with
-        {
-            StarfieldMaterialPath = @"materials\architecture\wall.bgsm"
-        },
-        DeniedStarfieldFact.DerivedNormalWithoutBump => facts with { HasBump = false },
-        DeniedStarfieldFact.BumpWithoutDerivedNormal => facts with
-        {
-            HasDerivedStarfieldNormal = false
-        },
-        DeniedStarfieldFact.UnsupportedTextureFeatureMask => facts with { TextureFeatureMask = 1u },
-        DeniedStarfieldFact.SpecularMap => facts with { HasSpecularMap = true },
-        DeniedStarfieldFact.NonZeroSpecularExponent => facts with { SpecularExponent = 16f },
-        DeniedStarfieldFact.DeclaredModernEnvironmentMap => facts with
-        {
-            ModernEnvironmentMapDeclared = true
-        },
-        DeniedStarfieldFact.NonZeroModernEnvironmentMapScale => facts with
-        {
-            ModernEnvironmentMapScale = 1f
-        },
-        DeniedStarfieldFact.ClampTextureU => facts with { WrapTextureU = false },
-        DeniedStarfieldFact.ClampTextureV => facts with { WrapTextureV = false },
-        DeniedStarfieldFact.NonGreaterAlphaFunction => facts with { AlphaTestFunction = 3 },
-        _ => throw new ArgumentOutOfRangeException(nameof(deniedFact), deniedFact, null)
-    };
-
-    public enum DeniedFact
-    {
-        Heatmap,
-        ScatteredGrass,
-        AlphaBlend,
-        Decal,
-        Emissive,
-        Lighting30,
-        Lighting30Glow,
-        EffectFalloff,
-        NonNeutralEffectTint,
-        SoftParticle,
-        Billboard,
-        LeafBillboard,
-        TallGrass,
-        Particle,
-        RuntimeSpeedTreeLod,
-        ClassicBasicShader,
-        ClassicEnvironmentMap,
-        ClassicParallax,
-        GradientMap,
-        UnsupportedTextureFeatureMask,
-        NoBump,
-        NoSpecularMap,
-        NoDeclaredModernEnvironmentMap,
-        NonPositiveModernEnvironmentMapScale,
-        ClampTextureU,
-        ClampTextureV,
-        NonGreaterAlphaFunction
-    }
-
-    public enum DeniedStarfieldFact
-    {
-        WrongGame,
-        WrongGameFo76Tuple,
-        MissingMaterialIdentity,
-        MalformedMaterialIdentity,
-        DerivedNormalWithoutBump,
-        BumpWithoutDerivedNormal,
-        UnsupportedTextureFeatureMask,
-        SpecularMap,
-        NonZeroSpecularExponent,
-        DeclaredModernEnvironmentMap,
-        NonZeroModernEnvironmentMapScale,
-        ClampTextureU,
-        ClampTextureV,
-        NonGreaterAlphaFunction
+            DeniedStarfieldFact.WrongGame => facts with { Game = BethesdaGame.Fallout76 },
+            // Also keep every FO76-specific requirement eligible: the non-null .mat identity must
+            // select the Starfield branch instead of falling through to the otherwise-eligible tuple.
+            DeniedStarfieldFact.WrongGameFo76Tuple => EligibleFacts() with
+            {
+                StarfieldMaterialPath = facts.StarfieldMaterialPath
+            },
+            DeniedStarfieldFact.MissingMaterialIdentity => facts with { StarfieldMaterialPath = null },
+            DeniedStarfieldFact.MalformedMaterialIdentity => facts with
+            {
+                StarfieldMaterialPath = @"materials\architecture\wall.bgsm"
+            },
+            DeniedStarfieldFact.DerivedNormalWithoutBump => facts with { HasBump = false },
+            DeniedStarfieldFact.BumpWithoutDerivedNormal => facts with
+            {
+                HasDerivedStarfieldNormal = false
+            },
+            DeniedStarfieldFact.UnsupportedTextureFeatureMask => facts with { TextureFeatureMask = 1u },
+            DeniedStarfieldFact.SpecularMap => facts with { HasSpecularMap = true },
+            DeniedStarfieldFact.NonZeroSpecularExponent => facts with { SpecularExponent = 16f },
+            DeniedStarfieldFact.DeclaredModernEnvironmentMap => facts with
+            {
+                ModernEnvironmentMapDeclared = true
+            },
+            DeniedStarfieldFact.NonZeroModernEnvironmentMapScale => facts with
+            {
+                ModernEnvironmentMapScale = 1f
+            },
+            DeniedStarfieldFact.ClampTextureU => facts with { WrapTextureU = false },
+            DeniedStarfieldFact.ClampTextureV => facts with { WrapTextureV = false },
+            DeniedStarfieldFact.NonGreaterAlphaFunction => facts with { AlphaTestFunction = 3 },
+            _ => throw new ArgumentOutOfRangeException(nameof(deniedFact), deniedFact, null)
+        };
     }
 }

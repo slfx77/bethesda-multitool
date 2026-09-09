@@ -1,5 +1,4 @@
 using BethesdaMultitool.CLI.Rendering.Sprite;
-
 using BethesdaMultitool.Core.Formats.Dds;
 
 namespace BethesdaMultitool.Core.AssetBrowse;

@@ -145,8 +145,10 @@ internal static class NpcStartupActorSelector
 
         internal static FormIdParseResult Invalid { get; } = new(FormIdParseStatus.Invalid, null);
 
-        internal static FormIdParseResult Parsed(params uint[] candidates) =>
-            new(FormIdParseStatus.Parsed, candidates.ToHashSet());
+        internal static FormIdParseResult Parsed(params uint[] candidates)
+        {
+            return new FormIdParseResult(FormIdParseStatus.Parsed, candidates.ToHashSet());
+        }
     }
 }
 
@@ -169,5 +171,8 @@ internal sealed record NpcStartupActorSelection(
 
     internal static NpcStartupActorSelection Failed(
         NpcStartupActorSelectionStatus status,
-        string diagnostic) => new(status, null, 0, diagnostic);
+        string diagnostic)
+    {
+        return new NpcStartupActorSelection(status, null, 0, diagnostic);
+    }
 }

@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
@@ -125,10 +126,10 @@ public static class AtmosphereState
         var additive = new Vector3(bias);
         return value with
         {
-            SkyTopColor = (value.SkyTopColor * scale) + additive,
-            SkyLowerColor = (value.SkyLowerColor * scale) + additive,
-            AuthoredHorizonColor = (value.AuthoredHorizonColor * scale) + additive,
-            SkyHorizonColor = (value.SkyHorizonColor * scale) + additive
+            SkyTopColor = value.SkyTopColor * scale + additive,
+            SkyLowerColor = value.SkyLowerColor * scale + additive,
+            AuthoredHorizonColor = value.AuthoredHorizonColor * scale + additive,
+            SkyHorizonColor = value.SkyHorizonColor * scale + additive
         };
     }
 
@@ -510,6 +511,11 @@ public static class AtmosphereState
             fogFar = w.FogDistances[1];
         }
 
+        // Retain source admission before generic range/power repair. No new route may turn
+        // an authored zero/invalid range into supported fog merely because a fallback repaired it.
+        var hasUnmodifiedFnvAdtFogSource = FnvActiveAdtFog.HasUnmodifiedWeatherSource(
+            game, weather?.FogDistances);
+
         if (fogFar <= fogNear)
         {
             fogFar = fogNear + 1f; // keep the near→far ramp non-degenerate
@@ -536,7 +542,10 @@ public static class AtmosphereState
         return new Resolved(sunDir, sunBillboardDir, sunColor, sunIntensity, ambient, skyTop, skyHorizon,
             fogColor, fogFarColor, fogNear, fogFar, fogPower, fogMaxOpacity,
             sunDisc, stars, sunGlare, moonGlare, sunGlareIntensity, starVisibility, directionalAmbient,
-            skyLower, authoredHorizon);
+            skyLower, authoredHorizon)
+        {
+            HasUnmodifiedFnvAdtFogSource = hasUnmodifiedFnvAdtFogSource
+        };
     }
 
     /// <summary>
@@ -618,7 +627,12 @@ public static class AtmosphereState
             Lerp1(outgoing.StarVisibility, current.StarVisibility, t),
             ambientCube,
             Vector3.Lerp(outgoing.SkyLowerColor, current.SkyLowerColor, t),
-            Vector3.Lerp(outgoing.AuthoredHorizonColor, current.AuthoredHorizonColor, t));
+            Vector3.Lerp(outgoing.AuthoredHorizonColor, current.AuthoredHorizonColor, t))
+        {
+            // Conservatively require both supplied weather sources, even at a transition endpoint.
+            HasUnmodifiedFnvAdtFogSource = float.IsFinite(currentWeatherWeight) &&
+                                           outgoing.HasUnmodifiedFnvAdtFogSource && current.HasUnmodifiedFnvAdtFogSource
+        };
     }
 
     /// <summary>Samples every authored DALC face with the same game-time schedule as weather colors.</summary>
@@ -1395,7 +1409,7 @@ public static class AtmosphereState
 
     private static float Lerp1(float a, float b, float t)
     {
-        return a + ((b - a) * t);
+        return a + (b - a) * t;
     }
 
     private static float WrapHour(float hour)
@@ -1464,6 +1478,9 @@ public static class AtmosphereState
         Vector3 SkyLowerColor, // authored NAM0 SkyLower, retained for Atmosphere.nif vertex weights
         Vector3 AuthoredHorizonColor) // authored NAM0 Horizon, before fallback-dome low-sun shaping
     {
+        /// <summary>Exact six-float FNV weather with finite unrepaired day/night fog; false for interiors and defaults.</summary>
+        public bool HasUnmodifiedFnvAdtFogSource { get; init; }
+
         // WTHR celestial rows are RGBX. Their fourth byte is retained losslessly in the Vector4 values
         // above, but it is padding rather than authored opacity. Visibility comes from Sun::Update and
         // DATA.SunGlare; rendering must never let an RGBX padding byte gate a billboard.

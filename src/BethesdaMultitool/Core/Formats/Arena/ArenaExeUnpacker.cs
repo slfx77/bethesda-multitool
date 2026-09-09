@@ -94,7 +94,7 @@ internal static class ArenaExeUnpacker
 
         // A real-mode far address: the size is the segment scaled by the paragraph size, plus the
         // offset within it.
-        return (segment * 16) + offset;
+        return segment * 16 + offset;
     }
 
     /// <summary>Unpacks the executable, returning its decompressed image.</summary>

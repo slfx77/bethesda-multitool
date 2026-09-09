@@ -69,7 +69,7 @@ public sealed class RuntimeObjectScannerBoundaryTests
         var scanner = new RuntimeObjectScanner(context);
 
         Assert.Throws<ArgumentOutOfRangeException>(() =>
-            scanner.ScanAligned((_, _) => false, (_, _, _) => { }, minStructSize: 257));
+            scanner.ScanAligned((_, _) => false, (_, _, _) => { }, 257));
     }
 
     private static MinidumpInfo TwoRegionInfo()
@@ -103,7 +103,7 @@ public sealed class RuntimeObjectScannerBoundaryTests
             candidateTest ?? ((buf, off) =>
                 off + StructSize <= buf.Length && buf[off] == 0xAB && buf[off + StructSize - 1] == 0xCD),
             (_, _, absoluteFileOffset) => hits.Add(absoluteFileOffset),
-            minStructSize: StructSize);
+            StructSize);
 
         return [.. hits];
     }

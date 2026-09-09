@@ -32,7 +32,7 @@ public class MapMarkerIconProviderTests
         {
             var png = MapMarkerIconProvider.GetIconPng(entry.IconKey);
             Assert.True(png is not null, $"{game} '{entry.DisplayName}' icon key '{entry.IconKey}' is not embedded");
-            Assert.True(png!.Length > PngMagic.Length && png.AsSpan(0, 4).SequenceEqual(PngMagic),
+            Assert.True(png.Length > PngMagic.Length && png.AsSpan(0, 4).SequenceEqual(PngMagic),
                 $"'{entry.IconKey}' is not a PNG");
         }
     }
@@ -57,7 +57,7 @@ public class MapMarkerIconProviderTests
         var png = MapMarkerIconProvider.GetIconPng(iconKey);
         Assert.NotNull(png);
 
-        using var image = Image.Load<Rgba32>(png!);
+        using var image = Image.Load<Rgba32>(png);
         var hasVisibleColor = false;
         for (var y = 0; y < image.Height && !hasVisibleColor; y++)
         {

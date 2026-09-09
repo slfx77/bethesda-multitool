@@ -13,8 +13,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 internal readonly record struct ExternalEmittanceSource
 {
     private readonly Vector3 _constantColor;
-    private readonly WeatherRecord? _weather;
     private readonly bool _isResolved;
+    private readonly WeatherRecord? _weather;
 
     private ExternalEmittanceSource(Vector3 constantColor, WeatherRecord? weather, bool isResolved)
     {
@@ -25,11 +25,20 @@ internal readonly record struct ExternalEmittanceSource
 
     internal bool IsWeatherDriven => _weather is not null;
 
-    internal static ExternalEmittanceSource Constant(Vector3 color) => new(color, null, true);
+    internal static ExternalEmittanceSource Constant(Vector3 color)
+    {
+        return new ExternalEmittanceSource(color, null, true);
+    }
 
-    internal static ExternalEmittanceSource FromWeather(WeatherRecord weather) => new(Vector3.One, weather, true);
+    internal static ExternalEmittanceSource FromWeather(WeatherRecord weather)
+    {
+        return new ExternalEmittanceSource(Vector3.One, weather, true);
+    }
 
-    internal static ExternalEmittanceSource Unresolved() => new(Vector3.One, null, false);
+    internal static ExternalEmittanceSource Unresolved()
+    {
+        return new ExternalEmittanceSource(Vector3.One, null, false);
+    }
 
     internal Vector3 Resolve(
         float gameHour,
@@ -75,11 +84,14 @@ internal readonly record struct ExternalEmittanceSource
         return float.IsFinite(color.X) && float.IsFinite(color.Y) && float.IsFinite(color.Z);
     }
 
-    private static bool SupportsWeatherEffectLighting(BethesdaGame game) => game is
-        BethesdaGame.Skyrim or
-        BethesdaGame.Fallout4 or
-        BethesdaGame.Fallout76 or
-        BethesdaGame.Starfield;
+    private static bool SupportsWeatherEffectLighting(BethesdaGame game)
+    {
+        return game is
+            BethesdaGame.Skyrim or
+            BethesdaGame.Fallout4 or
+            BethesdaGame.Fallout76 or
+            BethesdaGame.Starfield;
+    }
 }
 
 /// <summary>Resolves REFR XEMI targets and applies the recovered effect-shader color blend.</summary>

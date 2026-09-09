@@ -7,10 +7,10 @@ namespace BethesdaMultitool.Tests.Core.Ui;
 public sealed class NpcActorListPolicyTests
 {
     private static readonly NpcListItem NamedNpc =
-        new(0x10, "ReynaldJemane", "Reynald Jemane", isFemale: false, raceFormId: 1);
+        new(0x10, "ReynaldJemane", "Reynald Jemane", false, 1);
 
     private static readonly NpcListItem UnnamedNpc =
-        new(0x11, "GuardKvatch", fullName: null, isFemale: false, raceFormId: 1);
+        new(0x11, "GuardKvatch", null, false, 1);
 
     private static readonly NpcListItem Daedroth =
         new(0x20, "CreatureDaedroth", "Daedroth", @"meshes\creatures\daedroth\daedroth.nif", "Daedra");
@@ -21,8 +21,8 @@ public sealed class NpcActorListPolicyTests
         var filtered = NpcActorListPolicy.Filter(
             [Daedroth, UnnamedNpc, NamedNpc],
             NpcActorKind.Npc,
-            namedOnly: false,
-            searchText: null);
+            false,
+            null);
 
         Assert.Equal([UnnamedNpc, NamedNpc], filtered);
         Assert.All(filtered, actor => Assert.False(actor.IsCreature));
@@ -34,8 +34,8 @@ public sealed class NpcActorListPolicyTests
         var filtered = NpcActorListPolicy.Filter(
             [NamedNpc, Daedroth],
             NpcActorKind.Creature,
-            namedOnly: true,
-            searchText: "daed");
+            true,
+            "daed");
 
         Assert.Equal(Daedroth, Assert.Single(filtered));
     }

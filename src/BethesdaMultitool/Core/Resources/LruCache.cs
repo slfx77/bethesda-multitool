@@ -203,7 +203,10 @@ internal sealed class LruCache<TKey, TValue> : ITrackableResource, IDisposable
     ///     caller is about to evict while iterating, and enumerating the live dictionary during
     ///     removal is undefined. Single-threaded contract, like every other member.
     /// </summary>
-    public TKey[] SnapshotKeys() => [.. _entries.Keys];
+    public TKey[] SnapshotKeys()
+    {
+        return [.. _entries.Keys];
+    }
 
     /// <summary>
     ///     Evicts one specific entry THROUGH <c>onEvicted</c> (the dispose cascade) — unlike

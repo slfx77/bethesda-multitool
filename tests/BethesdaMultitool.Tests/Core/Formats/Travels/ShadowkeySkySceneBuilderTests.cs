@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 using BethesdaMultitool.Core.Imaging;
@@ -27,12 +24,12 @@ public sealed class ShadowkeySkySceneBuilderTests
     /// <summary>Vertices of the synthetic shell: apex, a four-point horizon ring, and a nadir.</summary>
     private static readonly (short X, short Y, short Z)[] ShellVertices =
     [
-        (0, 100, 0),        // 0: zenith, radius 0
-        (200, -50, 0),      // 1..4: horizon ring, radius 200 at y = -50
+        (0, 100, 0), // 0: zenith, radius 0
+        (200, -50, 0), // 1..4: horizon ring, radius 200 at y = -50
         (0, -50, 200),
         (-200, -50, 0),
         (0, -50, -200),
-        (0, -150, 0)        // 5: nadir cap, radius 0
+        (0, -150, 0) // 5: nadir cap, radius 0
     ];
 
     /// <summary>
@@ -51,8 +48,8 @@ public sealed class ShadowkeySkySceneBuilderTests
 
     private static ShadowkeySkybox Shell(int gapLength = ShadowkeySkybox.OutdoorGapLength)
     {
-        var meshLength = ShadowkeySkybox.HeaderLength + (ShellVertices.Length * 6) +
-                         (ShellCorners.Length * 4) + (ShellFaces.Length * 12);
+        var meshLength = ShadowkeySkybox.HeaderLength + ShellVertices.Length * 6 +
+                         ShellCorners.Length * 4 + ShellFaces.Length * 12;
         var payload = new byte[
             meshLength + gapLength + ShadowkeySkybox.TextureLength + ShadowkeySkybox.FooterLength];
 
@@ -66,32 +63,32 @@ public sealed class ShadowkeySkySceneBuilderTests
 
         for (var i = 0; i < ShellVertices.Length; i++)
         {
-            var offset = ShadowkeySkybox.HeaderLength + (i * 6);
+            var offset = ShadowkeySkybox.HeaderLength + i * 6;
             BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(offset), ShellVertices[i].X);
             BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(offset + 2), ShellVertices[i].Y);
             BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(offset + 4), ShellVertices[i].Z);
         }
 
-        var cornerOffset = ShadowkeySkybox.HeaderLength + (ShellVertices.Length * 6);
+        var cornerOffset = ShadowkeySkybox.HeaderLength + ShellVertices.Length * 6;
         for (var i = 0; i < ShellCorners.Length; i++)
         {
             BinaryPrimitives.WriteUInt16LittleEndian(
-                payload.AsSpan(cornerOffset + (i * 4)), ShellCorners[i].U);
+                payload.AsSpan(cornerOffset + i * 4), ShellCorners[i].U);
             BinaryPrimitives.WriteUInt16LittleEndian(
-                payload.AsSpan(cornerOffset + (i * 4) + 2), ShellCorners[i].V);
+                payload.AsSpan(cornerOffset + i * 4 + 2), ShellCorners[i].V);
         }
 
-        var faceOffset = cornerOffset + (ShellCorners.Length * 4);
+        var faceOffset = cornerOffset + ShellCorners.Length * 4;
         for (var i = 0; i < ShellFaces.Length; i++)
         {
-            var offset = faceOffset + (i * 12);
+            var offset = faceOffset + i * 12;
             BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset), ShellFaces[i].V0);
             BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset + 2), ShellFaces[i].V1);
             BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(offset + 4), ShellFaces[i].V2);
             for (var word = 0; word < 3; word++)
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(
-                    payload.AsSpan(offset + 6 + (word * 2)), (ushort)word);
+                    payload.AsSpan(offset + 6 + word * 2), (ushort)word);
             }
         }
 
@@ -108,19 +105,23 @@ public sealed class ShadowkeySkySceneBuilderTests
         for (var i = 0; i < Palette.EntryCount; i++)
         {
             rgb[i * 3] = (byte)i;
-            rgb[(i * 3) + 1] = (byte)i;
-            rgb[(i * 3) + 2] = (byte)i;
+            rgb[i * 3 + 1] = (byte)i;
+            rgb[i * 3 + 2] = (byte)i;
         }
 
         return Palette.FromRgb8(rgb);
     }
 
-    private static BethesdaViewerScene EmptyScene() =>
-        new("testzone", BethesdaViewerScenePurpose.ClassicMesh);
+    private static BethesdaViewerScene EmptyScene()
+    {
+        return new BethesdaViewerScene("testzone", BethesdaViewerScenePurpose.ClassicMesh);
+    }
 
     /// <summary>Vertex <paramref name="index" /> of a submesh, as a point.</summary>
-    private static (float X, float Y, float Z) Vertex(float[] positions, int index) =>
-        (positions[index * 3], positions[(index * 3) + 1], positions[(index * 3) + 2]);
+    private static (float X, float Y, float Z) Vertex(float[] positions, int index)
+    {
+        return (positions[index * 3], positions[index * 3 + 1], positions[index * 3 + 2]);
+    }
 
     // ---------------------------------------------------------------- the two settled readings
 
@@ -170,9 +171,9 @@ public sealed class ShadowkeySkySceneBuilderTests
 
         // Corner 2 of face 0 is vertex 2, source (0, -50, 200): purely +z horizontally.
         var point = Vertex(submesh.Positions, 2);
-        Assert.Equal(50f, point.X, 3);                       // centred: 100/2 + 0
-        Assert.Equal(50f + (200 * scale), point.Y, 3);       // source z became scene y
-        Assert.Equal(0f, point.Z, 3);                        // on the horizon plane
+        Assert.Equal(50f, point.X, 3); // centred: 100/2 + 0
+        Assert.Equal(50f + 200 * scale, point.Y, 3); // source z became scene y
+        Assert.Equal(0f, point.Z, 3); // on the horizon plane
     }
 
     // ---------------------------------------------------------------- sizing
@@ -194,7 +195,7 @@ public sealed class ShadowkeySkySceneBuilderTests
     {
         var scale = ShadowkeySkySceneBuilder.EnclosureScale(Shell(), 100, 100);
 
-        var halfDiagonal = MathF.Sqrt((100f * 100f) + (100f * 100f)) * 0.5f;
+        var halfDiagonal = MathF.Sqrt(100f * 100f + 100f * 100f) * 0.5f;
         Assert.Equal(halfDiagonal * ShadowkeySkySceneBuilder.EnclosureMargin / 200f, scale, 5);
         Assert.True(200f * scale > halfDiagonal, "The horizon must fall outside the zone diagonal.");
     }
@@ -255,12 +256,12 @@ public sealed class ShadowkeySkySceneBuilderTests
     [Fact]
     public void Add_RejectsNullInputs()
     {
-        Assert.Throws<ArgumentNullException>(
-            () => ShadowkeySkySceneBuilder.Add(null!, Shell(), GreyPalette(), "azra", 8, 8));
-        Assert.Throws<ArgumentNullException>(
-            () => ShadowkeySkySceneBuilder.Add(EmptyScene(), null!, GreyPalette(), "azra", 8, 8));
-        Assert.Throws<ArgumentNullException>(
-            () => ShadowkeySkySceneBuilder.Add(EmptyScene(), Shell(), null!, "azra", 8, 8));
+        Assert.Throws<ArgumentNullException>(() =>
+            ShadowkeySkySceneBuilder.Add(null!, Shell(), GreyPalette(), "azra", 8, 8));
+        Assert.Throws<ArgumentNullException>(() =>
+            ShadowkeySkySceneBuilder.Add(EmptyScene(), null!, GreyPalette(), "azra", 8, 8));
+        Assert.Throws<ArgumentNullException>(() =>
+            ShadowkeySkySceneBuilder.Add(EmptyScene(), Shell(), null!, "azra", 8, 8));
     }
 
     /// <summary>A degenerate shell scales by one rather than dividing by zero.</summary>
@@ -278,7 +279,7 @@ public sealed class ShadowkeySkySceneBuilderTests
         const int vertices = 3;
         const int corners = 3;
         const int faces = 1;
-        var meshLength = ShadowkeySkybox.HeaderLength + (vertices * 6) + (corners * 4) + (faces * 12);
+        var meshLength = ShadowkeySkybox.HeaderLength + vertices * 6 + corners * 4 + faces * 12;
         var payload = new byte[
             meshLength + ShadowkeySkybox.OutdoorGapLength + ShadowkeySkybox.TextureLength +
             ShadowkeySkybox.FooterLength];
@@ -294,7 +295,7 @@ public sealed class ShadowkeySkySceneBuilderTests
         for (var i = 0; i < vertices; i++)
         {
             BinaryPrimitives.WriteInt16LittleEndian(
-                payload.AsSpan(ShadowkeySkybox.HeaderLength + (i * 6) + 2), (short)(i * 10));
+                payload.AsSpan(ShadowkeySkybox.HeaderLength + i * 6 + 2), (short)(i * 10));
         }
 
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(payload.Length - 8), 1);

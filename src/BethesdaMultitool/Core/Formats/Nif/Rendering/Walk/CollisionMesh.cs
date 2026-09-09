@@ -119,7 +119,7 @@ internal readonly record struct CollisionCacheEntry(
 
             foreach (var index in authoredTriangles)
             {
-                if ((uint)index >= (uint)authoredPositions!.Length)
+                if ((uint)index >= (uint)authoredPositions.Length)
                 {
                     throw new ArgumentException(
                         "Authored collision triangle index is outside the position array.");
@@ -128,7 +128,7 @@ internal readonly record struct CollisionCacheEntry(
 
             return new CollisionCacheEntry(
                 new CollisionBuildResult(
-                    new CollisionMesh(authoredPositions!, authoredTriangles),
+                    new CollisionMesh(authoredPositions, authoredTriangles),
                     CollisionMeshSource.AuthoredHavok),
                 CollisionBuildResult.None);
         }

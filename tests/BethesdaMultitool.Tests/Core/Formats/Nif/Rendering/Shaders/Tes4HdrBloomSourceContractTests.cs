@@ -68,7 +68,7 @@ public sealed class Tes4HdrBloomSourceContractTests
             "b[5] = 0f",
             "ReverseBlurGroup,\n                        _brightPassBlurTexture!");
         Assert.Contains("_tes4BrightPassPso", tes4Arm, StringComparison.Ordinal);
-        Assert.Equal(2, tes4Arm.Split("_tes4BlurPso", StringSplitOptions.None).Length - 1);
+        Assert.Equal(2, tes4Arm.Split("_tes4BlurPso").Length - 1);
         Assert.Contains(
             "finalBloom = tes4HdrBloom ? _brightPassBlurTexture! : _bloomTexture!;",
             pass,

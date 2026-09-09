@@ -39,14 +39,17 @@ public class TestCategoryConsistencyTests
         // Accept either the shared TestCategories constant or the guard's own Category member —
         // both compile to the same string, and requiring one spelling would be churn, not safety.
         var traitPattern = new Regex(
-            @"\[\s*Trait\(\s*""Category""\s*,\s*(?:TestCategories\.\w+|" + Regex.Escape(guard) + @"\.Category)\s*\)\s*\]",
+            @"\[\s*Trait\(\s*""Category""\s*,\s*(?:TestCategories\.\w+|" + Regex.Escape(guard) +
+            @"\.Category)\s*\)\s*\]",
             RegexOptions.Compiled);
 
         var missing = new List<string>();
         foreach (var file in Directory.EnumerateFiles(testRoot, "*.cs", SearchOption.AllDirectories))
         {
-            if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
-                || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
+            if (file.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}",
+                    StringComparison.Ordinal)
+                || file.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}",
+                    StringComparison.Ordinal)
                 || Path.GetFileName(file) == $"{nameof(TestCategoryConsistencyTests)}.cs")
             {
                 continue;

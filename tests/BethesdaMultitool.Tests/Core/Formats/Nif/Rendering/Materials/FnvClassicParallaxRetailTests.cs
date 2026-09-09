@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 public sealed class FnvClassicParallaxRetailTests
 {
     private const string MeshesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+        @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa";
 
     private const string SilverRushPath = @"meshes\architecture\strip\nv_silverrush01.nif";
     private const string SulfurCavePath = @"meshes\dungeons\caves\rooms\nvsulfurcaveroomdoor01.nif";
@@ -201,6 +201,6 @@ public sealed class FnvClassicParallaxRetailTests
     {
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC-final meshes BSA not available");
-        return bsaPath!;
+        return bsaPath;
     }
 }

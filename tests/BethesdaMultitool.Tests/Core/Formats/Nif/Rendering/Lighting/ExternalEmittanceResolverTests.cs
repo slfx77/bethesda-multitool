@@ -59,7 +59,7 @@ public sealed class ExternalEmittanceResolverTests
             new Dictionary<uint, WeatherRecord> { [weatherFormId] = weather });
 
         Assert.True(index[0x100].IsWeatherDriven);
-        Assert.Equal(new Vector3(206f / 255f, 252f / 255f, 1f), Resolve(index[0x100], 12f));
+        Assert.Equal(new Vector3(206f / 255f, 252f / 255f, 1f), Resolve(index[0x100]));
         Assert.Equal(new Vector3(41f / 255f, 63f / 255f, 75f / 255f), Resolve(index[0x100], 23f));
     }
 

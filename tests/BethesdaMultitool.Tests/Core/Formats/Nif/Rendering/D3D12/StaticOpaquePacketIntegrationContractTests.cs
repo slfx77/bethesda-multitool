@@ -266,11 +266,17 @@ public sealed class StaticOpaquePacketIntegrationContractTests
         return SourceContract.Extract(source, "private void DrawOpaqueBatches(", "private void DrawBlended(");
     }
 
-    private static string RendererSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "ReferenceRenderer12.cs");
+    private static string RendererSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferenceRenderer12.cs");
+    }
 
-    private static string PacketSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "OpaqueSubmissionPacket12.cs");
+    private static string PacketSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "OpaqueSubmissionPacket12.cs");
+    }
 }

@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 
@@ -29,8 +25,9 @@ public class DaggerfallMapsFileTests
     {
         // Longitude 78504 / latitude 15016 are the retail values of region 0's first location.
         var region = Parse(0,
-            DaggerfallMapsFixture.Make("The Hawkston Cemetery", 78504, 15016, locationType: 12, discovered: false, dungeonType: 18, key: 0xDEADBEEF),
-            DaggerfallMapsFixture.Make("Daggerfall", 26504, 36664, locationType: 0, locationId: 50026, discovered: true, dungeonType: 2));
+            DaggerfallMapsFixture.Make("The Hawkston Cemetery", 78504, 15016, 12, discovered: false, dungeonType: 18,
+                key: 0xDEADBEEF),
+            DaggerfallMapsFixture.Make("Daggerfall", 26504, 36664, 0, 50026, true, 2));
 
         Assert.Equal("Alik'r Desert", region.Name);
         Assert.Equal(2, region.Locations.Count);
@@ -61,7 +58,8 @@ public class DaggerfallMapsFileTests
     public void ParseRegion_ReadsExteriorGeometryBuildingsAndTheHeaderLocationId()
     {
         var region = Parse(17,
-            DaggerfallMapsFixture.Make("Wayrest", 90000, 30000, locationId: 4242, width: 8, height: 7, portByte: 0x10, doors: 3,
+            DaggerfallMapsFixture.Make("Wayrest", 90000, 30000, locationId: 4242, width: 8, height: 7, portByte: 0x10,
+                doors: 3,
                 buildings:
                 [
                     new DaggerfallMapsFixture.Building(0x0F, 9, 510),
@@ -103,8 +101,9 @@ public class DaggerfallMapsFileTests
         };
 
         var region = Parse(16,
-            DaggerfallMapsFixture.Make("Plain Farm", 1000, 1000, locationType: 3, locationId: 10),
-            DaggerfallMapsFixture.Make("Castle Wroth", 2000, 2000, locationType: 7, locationId: 20, dungeonType: 2, dungeon: blocks, dungeonDoors: 4));
+            DaggerfallMapsFixture.Make("Plain Farm", 1000, 1000, 3, 10),
+            DaggerfallMapsFixture.Make("Castle Wroth", 2000, 2000, 7, 20, dungeonType: 2, dungeon: blocks,
+                dungeonDoors: 4));
 
         Assert.Null(region.Locations[0].Dungeon);
 
@@ -140,7 +139,8 @@ public class DaggerfallMapsFileTests
         var table = DaggerfallMapsFixture.Table(locations);
 
         var error = Assert.Throws<InvalidDataException>(() => DaggerfallMapsFile.ParseRegion(
-            0, DaggerfallMapsFixture.Names(locations), table.AsSpan(0, 17), DaggerfallMapsFixture.Exteriors(locations), new byte[4]));
+            0, DaggerfallMapsFixture.Names(locations), table.AsSpan(0, 17), DaggerfallMapsFixture.Exteriors(locations),
+            new byte[4]));
 
         Assert.Contains("MAPTABLE", error.Message, StringComparison.Ordinal);
     }
@@ -196,9 +196,10 @@ public class DaggerfallMapsFileTests
             [0] = [DaggerfallMapsFixture.Make("Alpha", 1280, 1280, locationId: 1)],
             [17] =
             [
-                DaggerfallMapsFixture.Make("Daggerfall", 26504, 36664, locationId: 50026, width: 8, height: 8, dungeonType: 2,
+                DaggerfallMapsFixture.Make("Daggerfall", 26504, 36664, locationId: 50026, width: 8, height: 8,
+                    dungeonType: 2,
                     dungeon: [new DaggerfallMapsFixture.DungeonBlock(0, 0, 5, 0, true)]),
-                DaggerfallMapsFixture.Make("Betony Farm", 26600, 36000, locationType: 3, locationId: 7)
+                DaggerfallMapsFixture.Make("Betony Farm", 26600, 36000, 3, 7)
             ]
         };
 
@@ -221,15 +222,15 @@ public class DaggerfallMapsFileTests
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            Directory.Delete(directory, true);
         }
     }
 
     [Fact]
     public void FromEntries_RequiresEveryEntry()
     {
-        var error = Assert.Throws<InvalidDataException>(() => DaggerfallMapsFile.FromEntries(
-            name => name == "MAPDITEM.005" ? null : []));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            DaggerfallMapsFile.FromEntries(name => name == "MAPDITEM.005" ? null : []));
 
         Assert.Contains("MAPDITEM.005", error.Message, StringComparison.Ordinal);
     }

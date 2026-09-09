@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Tests.Helpers;
@@ -106,7 +107,7 @@ public sealed class NifMaterialDiffusePolicyTests
         var end = source.IndexOf(';', start);
         var version = int.Parse(
             source[(start + marker.Length)..end].Trim(),
-            System.Globalization.CultureInfo.InvariantCulture);
+            CultureInfo.InvariantCulture);
 
         Assert.True(version >= 72,
             $"DecoderVersion is {version}; the v72 material-diffuse bump must not be reverted");

@@ -2,6 +2,7 @@ using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.FileFormat;
+using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Land;
 using BethesdaMultitool.Core.Formats.Esm.Localization;
@@ -57,7 +58,7 @@ internal static class SemanticFileLoader
         {
             // A classic source is an install, not a record stream — no scan result, no memory map
             // of a single plugin. The classic analyzer owns the whole path.
-            return await Formats.Classic.ClassicGameAnalyzer.LoadAsync(filePath, cancellationToken);
+            return await ClassicGameAnalyzer.LoadAsync(filePath, cancellationToken);
         }
 
         var analysisResult = await AnalyzeOnlyAsync(filePath, options, cancellationToken);

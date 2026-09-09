@@ -267,7 +267,8 @@ public static class PkZipParser
         }
 
         if (endPosInTail >= Zip64LocatorLength &&
-            BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(endPosInTail - Zip64LocatorLength)) == Zip64LocatorSignature)
+            BinaryPrimitives.ReadUInt32LittleEndian(tail.AsSpan(endPosInTail - Zip64LocatorLength)) ==
+            Zip64LocatorSignature)
         {
             reason = "a ZIP64 end-of-central-directory locator precedes the end record; ZIP64 is not supported.";
             return null;
@@ -339,12 +340,15 @@ public static class PkZipParser
 
             if (localOffset >= directoryOffset)
             {
-                reason = $"central header {i} points its local header at {localOffset}, inside or past the central directory.";
+                reason =
+                    $"central header {i} points its local header at {localOffset}, inside or past the central directory.";
                 return null;
             }
 
             var nameBytes = directory.AsSpan(position + CentralHeaderLength, nameLength);
-            var name = (flags & FlagUtf8) != 0 ? Encoding.UTF8.GetString(nameBytes) : Encoding.Latin1.GetString(nameBytes);
+            var name = (flags & FlagUtf8) != 0
+                ? Encoding.UTF8.GetString(nameBytes)
+                : Encoding.Latin1.GetString(nameBytes);
 
             entries.Add(new PkZipEntry(name, method, flags, crc, compressedSize, uncompressedSize, localOffset));
             position += CentralHeaderLength + variableLength;
@@ -352,7 +356,8 @@ public static class PkZipParser
 
         if (position != directory.Length)
         {
-            reason = $"walking {entriesTotal} central headers consumed {position} of the {directory.Length}-byte directory.";
+            reason =
+                $"walking {entriesTotal} central headers consumed {position} of the {directory.Length}-byte directory.";
             return null;
         }
 

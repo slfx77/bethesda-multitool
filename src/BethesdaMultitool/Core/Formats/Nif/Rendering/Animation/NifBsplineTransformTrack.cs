@@ -36,4 +36,3 @@ internal sealed record NifBsplineTransformData(
 internal sealed record NifNameTargetedBsplineTransformTrack(
     string NodeName,
     NifBsplineTransformData Transform);
-

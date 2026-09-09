@@ -30,7 +30,7 @@ public sealed class OblivionArenaSpectatorAnimationRetailTests
             @"Data\Oblivion - Meshes.bsa");
         Assert.SkipWhen(archivePath is null, RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
 
-        using var extractor = new BsaExtractor(archivePath!);
+        using var extractor = new BsaExtractor(archivePath);
         var file = extractor.Archive.AllFiles.Single(record =>
             string.Equals(record.FullPath, SpectatorPath, StringComparison.OrdinalIgnoreCase));
         var data = extractor.ExtractFile(file);
@@ -46,7 +46,7 @@ public sealed class OblivionArenaSpectatorAnimationRetailTests
         var animation = NifControllerSequenceTrackCollector.Collect(
             data,
             nif,
-            preserveFileRootTransformAndTrack: true);
+            true);
 
         Assert.NotNull(animation);
         Assert.Equal(0f, animation.ClipStart);

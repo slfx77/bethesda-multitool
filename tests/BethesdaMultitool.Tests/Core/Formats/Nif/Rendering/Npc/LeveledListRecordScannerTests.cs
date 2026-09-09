@@ -10,8 +10,8 @@ public sealed class LeveledListRecordScannerTests
     [Fact]
     public void Process_PreservesLvldLvlfAndFullLvloEntries()
     {
-        var levelOne = BuildLvlo(level: 1, formId: 0x00000C0C, count: 1, trailingValue: 0x08ED);
-        var levelTwenty = BuildLvlo(level: 20, formId: 0x00035E76, count: 3, trailingValue: 0x1234);
+        var levelOne = BuildLvlo(1, 0x00000C0C, 1, 0x08ED);
+        var levelTwenty = BuildLvlo(20, 0x00035E76, 3, 0x1234);
         var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(
             0x0003ABC0,
             "LVLI",
@@ -25,7 +25,7 @@ public sealed class LeveledListRecordScannerTests
         var leveledList = LeveledListRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(leveledList);
-        Assert.Equal("LL0NPCWeaponLongswordLvl100", leveledList!.EditorId);
+        Assert.Equal("LL0NPCWeaponLongswordLvl100", leveledList.EditorId);
         Assert.Equal(17, leveledList.ChanceNone);
         Assert.Equal(0x02, leveledList.Flags);
         Assert.False(leveledList.CalculateFromAllLevelsAtOrBelowPlayer);

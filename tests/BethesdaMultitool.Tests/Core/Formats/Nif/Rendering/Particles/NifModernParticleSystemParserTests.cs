@@ -66,7 +66,7 @@ public sealed class NifModernParticleSystemParserTests
         var path = SampleFileFixture.FindSamplePath(SkyrimFixture);
         Assert.SkipWhen(path is null, "installed Skyrim particle fixture not available");
 
-        var (data, nif) = Load(path!);
+        var (data, nif) = Load(path);
         var systems = ParseSystems(data, nif);
 
         Assert.Equal(2, systems.Length);
@@ -91,7 +91,7 @@ public sealed class NifModernParticleSystemParserTests
         var path = SampleFileFixture.FindSamplePath(Fallout4Fixture);
         Assert.SkipWhen(path is null, "installed Fallout 4 particle fixture not available");
 
-        var (data, nif) = Load(path!);
+        var (data, nif) = Load(path);
         var definition = Assert.Single(ParseSystems(data, nif));
 
         Assert.Equal(ParticleSystemSourceLayout.BsGeometry, definition.SourceLayout);

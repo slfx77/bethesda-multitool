@@ -181,7 +181,7 @@ internal static class DmpCellAuthorityBuildCommand
         try
         {
             var analysis = await EsmFileAnalyzer.AnalyzeAsync(esmPath, cancellationToken: ct);
-            if (analysis?.EsmRecords is not { } esmRecords)
+            if (analysis.EsmRecords is not { } esmRecords)
             {
                 AnsiConsole.MarkupLine("  [yellow]no ESM records, skipping[/]");
                 return;

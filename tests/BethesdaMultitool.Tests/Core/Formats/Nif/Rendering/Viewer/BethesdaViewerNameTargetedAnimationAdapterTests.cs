@@ -16,9 +16,9 @@ public sealed class BethesdaViewerNameTargetedAnimationAdapterTests
             new NifVec3Key(2f, Vector3.Zero),
             new NifVec3Key(6f, new Vector3(4f, 0f, 0f)));
         var source = Clip(
-            frequency: 2f,
-            startTime: 2f,
-            stopTime: 6f,
+            2f,
+            2f,
+            6f,
             tracks: [sourceTrack],
             textKeys: [new NifAnimTextKey(4f, "Footstep")],
             unsupportedCount: 3);
@@ -26,7 +26,7 @@ public sealed class BethesdaViewerNameTargetedAnimationAdapterTests
         var clip = BethesdaViewerNameTargetedAnimationAdapter.TryCreateClip(
             scene,
             source,
-            suppressAccumulatedRootMotion: true,
+            true,
             out var report);
 
         Assert.NotNull(clip);
@@ -201,9 +201,9 @@ public sealed class BethesdaViewerNameTargetedAnimationAdapterTests
             null,
             null);
         var source = Clip(
-            frequency: 2f,
-            startTime: 2f,
-            stopTime: 6f,
+            2f,
+            2f,
+            6f,
             tracks: [],
             bsplineTracks:
             [

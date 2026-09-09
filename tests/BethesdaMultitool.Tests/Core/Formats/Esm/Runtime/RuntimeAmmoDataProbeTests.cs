@@ -30,7 +30,7 @@ public sealed class RuntimeAmmoDataProbeTests
         var probe = RuntimeAmmoDataProbe.Probe(context, entries);
 
         Assert.NotNull(probe);
-        Assert.Equal(ammoDataOffset, probe!.Winner.Layout);
+        Assert.Equal(ammoDataOffset, probe.Winner.Layout);
         Assert.True(probe.Margin >= entries.Count,
             "the correct offset should win decisively over the zero-padding offsets");
 
@@ -39,7 +39,7 @@ public sealed class RuntimeAmmoDataProbeTests
         var first = reader.ReadRuntimeAmmo(entries[0]);
 
         Assert.NotNull(first);
-        Assert.Equal(1500f, first!.Speed);
+        Assert.Equal(1500f, first.Speed);
         Assert.Equal((byte)2, first.Flags);
         Assert.False(float.IsSubnormal(first.Speed));
     }

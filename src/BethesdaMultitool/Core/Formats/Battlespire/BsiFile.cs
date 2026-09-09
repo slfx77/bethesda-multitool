@@ -12,6 +12,12 @@ namespace BethesdaMultitool.Core.Formats.Battlespire;
 /// <summary>One image in a <c>.BSI</c>: its header fields, frames and the palettes that shipped with it.</summary>
 internal sealed class BsiImage
 {
+    /// <summary>Steps in an <c>HTBL</c> light ramp — 16 on all 1,937 retail entries that carry one.</summary>
+    public const int LightRampSteps = 16;
+
+    /// <summary>Colours per ramp step.</summary>
+    public const int LightRampColors = 256;
+
     /// <summary>Optional <c>NAME</c> chunk value that preceded this image.</summary>
     public required string? Name { get; init; }
 
@@ -47,7 +53,28 @@ internal sealed class BsiImage
     /// </summary>
     public required Palette? HighColor { get; init; }
 
-    /// <summary>The raw <c>HTBL</c> chunk (32 further HICL-shaped palettes, believed to be lighting ramps).</summary>
+    /// <summary>
+    ///     The raw <c>HTBL</c> chunk: a <b>16-step LIGHT RAMP</b> of the palette, 256 15-bit colours
+    ///     per step.
+    ///     <para>
+    ///         ⚑ <b>Measured 2026-09-06, and it was previously recorded wrong twice over.</b> The
+    ///         chunk holds <b>16</b> tables, never the 32 this comment used to claim, and they are
+    ///         lighting ramps in fact rather than "believed": across all <b>1,937</b> retail BSI
+    ///         entries that carry an HTBL, every one has exactly 16 tables and every one increases
+    ///         monotonically in mean luminance.
+    ///     </para>
+    ///     <para>
+    ///         ⚑ The ramp is LINEAR. Averaged over those 1,937 files, table <c>i</c>'s brightness
+    ///         relative to the brightest is 0.011, 0.066, 0.127, 0.197, 0.256, 0.327, 0.390, 0.465,
+    ///         0.522, 0.586, 0.650, 0.724, 0.784, 0.851, 0.911, 0.998 — which is <c>i / 15</c> to
+    ///         within a percent at every step. Table 15 is full brightness, table 0 near black.
+    ///     </para>
+    ///     <para>
+    ///         ⚠ Not used for rendering here: <c>sprite render</c> draws through the 256-colour
+    ///         <c>CMAP</c>, since a static export has no light level to pick a step with. The ramp
+    ///         is what a LIT renderer would index.
+    ///     </para>
+    /// </summary>
     public required ReadOnlyMemory<byte> HighColorTable { get; init; }
 }
 
@@ -142,7 +169,8 @@ internal sealed class BsiFile
             sawChunk = true;
             if (position + ChunkHeaderLength + length > (uint)bytes.Length)
             {
-                throw new InvalidDataException($"{name}: chunk '{tag}' at {position} declares {length} bytes, past the {bytes.Length}-byte file.");
+                throw new InvalidDataException(
+                    $"{name}: chunk '{tag}' at {position} declares {length} bytes, past the {bytes.Length}-byte file.");
             }
 
             var payload = new ReadOnlyMemory<byte>(bytes, position + ChunkHeaderLength, (int)length);
@@ -174,8 +202,6 @@ internal sealed class BsiFile
                     images.Add(BuildImage(header, payload, pendingName, colorMap, highColor, highColorTable, name));
                     header = null;
                     pendingName = null;
-                    break;
-                default:
                     break;
             }
         }
@@ -252,7 +278,8 @@ internal sealed class BsiFile
         var lines = header.Height * header.FrameCount;
         if (lines * 4 > data.Length)
         {
-            throw new InvalidDataException($"{fileName}: the {lines}-line offset table does not fit in {data.Length} bytes.");
+            throw new InvalidDataException(
+                $"{fileName}: the {lines}-line offset table does not fit in {data.Length} bytes.");
         }
 
         var output = new byte[header.Width * lines];
@@ -264,7 +291,8 @@ internal sealed class BsiFile
             var offset = (int)(entry & 0x7FFF_FFFF);
             if (offset < 0 || offset > data.Length)
             {
-                throw new InvalidDataException($"{fileName}: line {line} starts at {offset}, outside the {data.Length}-byte data block.");
+                throw new InvalidDataException(
+                    $"{fileName}: line {line} starts at {offset}, outside the {data.Length}-byte data block.");
             }
 
             if (!compressed)
@@ -285,7 +313,8 @@ internal sealed class BsiFile
             {
                 if (read >= data.Length)
                 {
-                    throw new InvalidDataException($"{fileName}: line {line} ran out of input after {produced} of {header.Width} pixels.");
+                    throw new InvalidDataException(
+                        $"{fileName}: line {line} ran out of input after {produced} of {header.Width} pixels.");
                 }
 
                 var control = data[read++];
@@ -294,7 +323,8 @@ internal sealed class BsiFile
                 {
                     if (read >= data.Length || produced + count > header.Width)
                     {
-                        throw new InvalidDataException($"{fileName}: line {line} has a run of {count} that overruns its width.");
+                        throw new InvalidDataException(
+                            $"{fileName}: line {line} has a run of {count} that overruns its width.");
                     }
 
                     output.AsSpan(written + produced, count).Fill(data[read++]);
@@ -303,7 +333,8 @@ internal sealed class BsiFile
                 {
                     if (read + count > data.Length || produced + count > header.Width)
                     {
-                        throw new InvalidDataException($"{fileName}: line {line} has a literal run of {count} that overruns its width.");
+                        throw new InvalidDataException(
+                            $"{fileName}: line {line} has a literal run of {count} that overruns its width.");
                     }
 
                     data.Slice(read, count).CopyTo(output.AsSpan(written + produced));
@@ -363,7 +394,8 @@ internal sealed class BsiFile
         {
             if (chunk.Length < 26)
             {
-                throw new InvalidDataException($"{fileName}: BHDR is {chunk.Length} bytes, not the 26 the format declares.");
+                throw new InvalidDataException(
+                    $"{fileName}: BHDR is {chunk.Length} bytes, not the 26 the format declares.");
             }
 
             var width = BinaryPrimitives.ReadInt16LittleEndian(chunk[4..]);

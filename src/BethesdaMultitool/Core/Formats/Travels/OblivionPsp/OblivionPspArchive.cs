@@ -41,9 +41,6 @@ namespace BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
 /// </summary>
 internal sealed class OblivionPspArchive
 {
-    /// <summary>The format-revision tag the later packs carry. Six of seven retail packs have it.</summary>
-    public static readonly byte[] Magic = "A2.0"u8.ToArray();
-
     /// <summary>Bytes per record table entry.</summary>
     public const int RecordLength = 16;
 
@@ -58,6 +55,9 @@ internal sealed class OblivionPspArchive
 
     /// <summary>Upper bound on a plausible record count, so a junk header cannot make us allocate.</summary>
     private const int MaxEntries = 1 << 16;
+
+    /// <summary>The format-revision tag the later packs carry. Six of seven retail packs have it.</summary>
+    public static readonly byte[] Magic = "A2.0"u8.ToArray();
 
     private OblivionPspArchive(
         string filePath, bool isTagged, IReadOnlyList<OblivionPspArchiveEntry> entries,
@@ -188,7 +188,7 @@ internal sealed class OblivionPspArchive
             return $"the name table ({nameTableOffset} + {nameTableSize}) does not end at the {length}-byte EOF.";
         }
 
-        var tableEnd = headerLength + ((long)RecordLength * count);
+        var tableEnd = headerLength + (long)RecordLength * count;
         if (tableEnd > nameTableOffset)
         {
             return $"the {count}-record table ends at {tableEnd}, past the name table at {nameTableOffset}.";
@@ -198,7 +198,8 @@ internal sealed class OblivionPspArchive
         var expectedDataStart = isTagged ? Align(tableEnd) : tableEnd;
         if (dataStart != expectedDataStart)
         {
-            return $"dataStart is {dataStart}; the {count}-record table ends at {tableEnd}, so it should be {expectedDataStart}.";
+            return
+                $"dataStart is {dataStart}; the {count}-record table ends at {tableEnd}, so it should be {expectedDataStart}.";
         }
 
         var table = new byte[RecordLength * count];
@@ -229,13 +230,15 @@ internal sealed class OblivionPspArchive
 
             if (dataOffset != expectedOffset)
             {
-                return $"record {i} starts at {dataOffset}; the previous payload and its alignment end at {expectedOffset}.";
+                return
+                    $"record {i} starts at {dataOffset}; the previous payload and its alignment end at {expectedOffset}.";
             }
 
             var absolute = payloadBase + dataOffset;
             if (absolute + dataSize > nameTableOffset)
             {
-                return $"record {i}'s payload ({dataSize} bytes at {absolute}) runs into the name table at {nameTableOffset}.";
+                return
+                    $"record {i}'s payload ({dataSize} bytes at {absolute}) runs into the name table at {nameTableOffset}.";
             }
 
             if (nameOffset >= nameTableSize)
@@ -257,7 +260,8 @@ internal sealed class OblivionPspArchive
         // Nothing lies between the last payload and the name table but alignment padding.
         if (payloadBase + expectedOffset != nameTableOffset)
         {
-            return $"the payload run ends at {payloadBase + expectedOffset}, not on the name table at {nameTableOffset}.";
+            return
+                $"the payload run ends at {payloadBase + expectedOffset}, not on the name table at {nameTableOffset}.";
         }
 
         archive = new OblivionPspArchive(path, isTagged, entries, dataStart, nameTableOffset, nameTableSize);

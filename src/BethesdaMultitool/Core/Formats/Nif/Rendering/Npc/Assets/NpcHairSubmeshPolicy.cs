@@ -1,5 +1,5 @@
-using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 

@@ -10,9 +10,31 @@ namespace BethesdaMultitool.Core.Compression;
 
 /// <summary>
 ///     The block-framed LZSS used by Fallout 1 DAT (DAT1) archive entries. The stream is a
-///     sequence of blocks, each led by a signed 16-bit big-endian length: 0 terminates the
-///     stream, a negative value means |n| verbatim bytes follow, and a positive value means n
-///     bytes of LZSS-coded data. Each coded block gets a fresh 4096-byte dictionary filled with
+///     sequence of blocks, each led by a 16-bit big-endian length: 0 terminates the stream, a
+///     value with the HIGH BIT SET means <c>n &amp; 0x7FFF</c> verbatim bytes follow, and any other
+///     positive value means n bytes of LZSS-coded data.
+///     <para>
+///         ⚠⚠ <b>A raw block's length is the low 15 bits, NOT the negated word</b> (corrected
+///         2026-09-06). Reading it as <c>-n</c> — which is how the ported reference and the usual
+///         prose describe it — gives <c>32768 - length</c>, so an 11-byte tail reads as a
+///         32,757-byte block. Measured over the 726 <c>MASTER.DAT</c> entries that actually contain
+///         a raw block: the low-15-bit reading produces the declared unpacked size on
+///         <b>726 of 726</b>, the negated reading on only <b>520</b> — it is wrong on 206.
+///     </para>
+///     <para>
+///         ⚑ Found because <c>TEXT/SPANISH/DIALOG/SET.MSG</c> was the ONE file of 2,097 that failed
+///         to extract. Its stream produces 16,384 of a declared 16,395 bytes and then hits a header
+///         of <c>0x800B</c> with exactly 11 bytes left — and 16,384 + 11 is exactly 16,395, with
+///         those 11 bytes reading as the Spanish text <c>ecesita.}</c>. One file's arithmetic named
+///         the bug; the 726-entry population proved it.
+///     </para>
+///     <para>
+///         ⚠ Most entries never exercise this path — 14,271 of the 14,997 compressed entries in
+///         MASTER.DAT contain no raw block at all, which is why a wrong reading survived. A control
+///         drawn from all entries shows both readings at 400/400; only the affected population
+///         discriminates.
+///     </para>
+///     Each coded block gets a fresh 4096-byte dictionary filled with
 ///     0x20 and a write cursor at 4078; flag bytes are consumed LSB-first, a set bit is one
 ///     literal, a clear bit a two-byte reference (<c>byte1</c> = offset low 8, <c>byte2</c> high
 ///     nibble = offset high 4, low nibble + 3 = copy length; both cursors wrap at 4096). The
@@ -62,7 +84,8 @@ internal static class FalloutLzss
 
             if (blockLength < 0)
             {
-                inPos = CopyRawBlock(input, inPos, -blockLength, output, ref outPos);
+                // ⚠ The low 15 bits ARE the length; negating the word is wrong — see the remarks.
+                inPos = CopyRawBlock(input, inPos, blockLength & 0x7FFF, output, ref outPos);
             }
             else
             {

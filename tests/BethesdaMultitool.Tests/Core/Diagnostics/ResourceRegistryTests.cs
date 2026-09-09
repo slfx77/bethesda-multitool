@@ -38,11 +38,11 @@ public sealed class ResourceRegistryTests
             registry.Register(resource);
         }
 
-        var stop = false;
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         var mutator = Task.Run(
             () =>
             {
-                while (!Volatile.Read(ref stop))
+                while (!stop.IsCancellationRequested)
                 {
                     foreach (var resource in resources)
                     {
@@ -52,24 +52,30 @@ public sealed class ResourceRegistryTests
                     using var transient = registry.Register(new FakeResource("transient"));
                 }
             },
-            TestContext.Current.CancellationToken);
+            CancellationToken.None);
 
-        for (var i = 0; i < 200; i++)
+        try
         {
-            var snapshot = registry.GetSnapshot();
-            Assert.InRange(snapshot.Count, 8, 9);
-            foreach (var row in snapshot.Where(static r => r.DisplayName != "transient"))
+            for (var i = 0; i < 200; i++)
             {
-                // Mutate writes bytes before hits and GetStats reads hits before bytes, so any
-                // coherent (non-torn) snapshot must observe bytes >= 128 * hits.
-                Assert.True(
-                    row.Stats.EstimatedBytes >= row.Stats.Hits * 128,
-                    $"torn snapshot: {row.Stats.EstimatedBytes} bytes < 128 * {row.Stats.Hits} hits");
+                var snapshot = registry.GetSnapshot();
+                Assert.InRange(snapshot.Count, 8, 9);
+                foreach (var row in snapshot.Where(static r => r.DisplayName != "transient"))
+                {
+                    // Mutate writes bytes before hits and GetStats reads hits before bytes, so any
+                    // coherent (non-torn) snapshot must observe bytes >= 128 * hits.
+                    Assert.True(
+                        row.Stats.EstimatedBytes >= row.Stats.Hits * 128,
+                        $"torn snapshot: {row.Stats.EstimatedBytes} bytes < 128 * {row.Stats.Hits} hits");
+                }
             }
         }
-
-        Volatile.Write(ref stop, true);
-        await mutator;
+        finally
+        {
+            // A failed assertion must stop the background mutation loop too.
+            await stop.CancelAsync();
+            await mutator;
+        }
     }
 
     [Fact]
@@ -272,7 +278,10 @@ public sealed class ResourceRegistryTests
 
         public ResourceCategory Category => ResourceCategory.GpuResident;
 
-        public ResourceStats GetStats() => new() { EstimatedBytes = bytes, Segment = segment };
+        public ResourceStats GetStats()
+        {
+            return new ResourceStats { EstimatedBytes = bytes, Segment = segment };
+        }
     }
 
     private sealed class FakeResource(string name, ResourceCategory category = ResourceCategory.CpuCache)

@@ -194,8 +194,8 @@ public sealed class OblivionClassicSkin2000SourceContractTests
     {
         var composer = RenderingSource("Npc", "Composition", "NpcHeadTextureComposer.cs");
         var planner = RenderingSource("Npc", "Composition", "NpcCompositionPlanner.cs");
-        var cpuHead = SourceContract.ReadSource(
-            ["src", "BethesdaMultitool", "CLI", "Rendering", "Npc", "NpcHeadBuilder.cs"]);
+        var cpuHead =
+            SourceContract.ReadSource("src", "BethesdaMultitool", "CLI", "Rendering", "Npc", "NpcHeadBuilder.cs");
         var nativeHead = RenderingSource("Npc", "Assembly", "NpcExportHeadAssembler.cs");
 
         SourceContract.AssertOrder(
@@ -223,8 +223,14 @@ public sealed class OblivionClassicSkin2000SourceContractTests
             StringComparison.Ordinal);
     }
 
-    private static string RenderingSource(params string[] path) => SourceContract.ReadSource(
-        ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", .. path]);
+    private static string RenderingSource(params string[] path)
+    {
+        return SourceContract.ReadSource(
+            ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", .. path]);
+    }
 
-    private static string D3D12Source(params string[] path) => RenderingSource(path);
+    private static string D3D12Source(params string[] path)
+    {
+        return RenderingSource(path);
+    }
 }

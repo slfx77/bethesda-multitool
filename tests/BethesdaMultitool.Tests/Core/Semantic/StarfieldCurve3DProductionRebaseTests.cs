@@ -94,8 +94,9 @@ public sealed class StarfieldCurve3DProductionRebaseTests
             record.Definition?.ZCurve.SerializedControlListMarker);
     }
 
-    private static StarfieldFloatCurve Curve(uint marker) =>
-        new()
+    private static StarfieldFloatCurve Curve(uint marker)
+    {
+        return new StarfieldFloatCurve
         {
             MaxInput = 1f,
             MinInput = -2f,
@@ -115,4 +116,5 @@ public sealed class StarfieldCurve3DProductionRebaseTests
             RawSerializedMetadata = [0x10, 0x20, 0x30],
             RawControlListBody = [0x40, 0x50]
         };
+    }
 }

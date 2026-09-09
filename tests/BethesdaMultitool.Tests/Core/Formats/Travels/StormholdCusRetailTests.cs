@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Travels.Stormhold;
 using BethesdaMultitool.Tests.Helpers;
@@ -29,7 +26,7 @@ public sealed class StormholdCusRetailTests
         var jar = RealAssetPaths.Travels.StormholdJar();
         Assert.SkipWhen(jar is null, RealAssetPaths.SkipMessage("the Stormhold JAR"));
 
-        using var reader = ArchiveReader.Open(jar!);
+        using var reader = ArchiveReader.Open(jar);
         var loaded = new List<(byte[] Bytes, StormholdCusImage Image)>();
         foreach (var entry in reader.ListFiles()
                      .Where(e => e.FullPath.EndsWith(".cus", StringComparison.OrdinalIgnoreCase))
@@ -55,8 +52,8 @@ public sealed class StormholdCusRetailTests
         foreach (var (bytes, image) in loaded)
         {
             var expected = StormholdCusImage.HeaderLength
-                + (StormholdCusImage.PaletteEntryLength * image.Palette444.Length)
-                + (image.Width * image.Height);
+                           + StormholdCusImage.PaletteEntryLength * image.Palette444.Length
+                           + image.Width * image.Height;
             Assert.Equal(bytes.Length, expected);
             Assert.Equal(image.Width * image.Height, image.Bitmap.Indices.Length);
             Assert.Equal(image.Width, image.Bitmap.Width);
@@ -149,10 +146,10 @@ public sealed class StormholdCusRetailTests
         var jar = RealAssetPaths.Travels.StormholdJar();
         Assert.SkipWhen(jar is null, RealAssetPaths.SkipMessage("the Stormhold JAR"));
 
-        using var reader = ArchiveReader.Open(jar!);
+        using var reader = ArchiveReader.Open(jar);
         var bytes = reader.ReadFile("bagsmall.cus");
         Assert.NotNull(bytes);
-        Assert.Equal(156, bytes!.Length);
+        Assert.Equal(156, bytes.Length);
 
         var image = StormholdCusImage.Parse(bytes, "bagsmall.cus");
 
@@ -178,7 +175,7 @@ public sealed class StormholdCusRetailTests
         var jar = RealAssetPaths.Travels.StormholdJar();
         Assert.SkipWhen(jar is null, RealAssetPaths.SkipMessage("the Stormhold JAR"));
 
-        using var reader = ArchiveReader.Open(jar!);
+        using var reader = ArchiveReader.Open(jar);
         var accepted = 0;
         var falsePositives = new List<string>();
         foreach (var entry in reader.ListFiles())

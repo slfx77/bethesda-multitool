@@ -66,7 +66,7 @@ public static class OrphanedFormIdCommands
         AnsiConsole.WriteLine();
 
         // ── Phase 1: Load ESM and build FormID universe ──────────────────────
-        var esm = EsmFileLoader.Load(filePath, true);
+        var esm = EsmFileLoader.Load(filePath);
         if (esm == null)
         {
             return 1;
@@ -90,16 +90,6 @@ public static class OrphanedFormIdCommands
 
         AnsiConsole.MarkupLine("[grey]Building EDID map...[/]");
         var edidMap = EsmHelpers.BuildFormIdToEdidMap(data, bigEndian);
-
-        // Build record type map for context
-        var recordTypeMap = new Dictionary<uint, string>();
-        foreach (var rec in allEsmRecords)
-        {
-            if (rec.Signature != "GRUP" && rec.Signature != "TES4")
-            {
-                recordTypeMap.TryAdd(rec.FormId, rec.Signature);
-            }
-        }
 
         // ── Phase 2: Extract scripts from ESM ────────────────────────────────
         AnsiConsole.MarkupLine("[grey]Extracting scripts from ESM...[/]");

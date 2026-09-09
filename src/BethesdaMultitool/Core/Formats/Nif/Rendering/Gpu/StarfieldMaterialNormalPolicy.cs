@@ -11,8 +11,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 /// </summary>
 internal static class StarfieldMaterialNormalPolicy
 {
-    internal readonly record struct Resolution(string? TexturePath, bool HasBump, bool IsDerived);
-
     /// <summary>
     ///     Returns the authored normal unchanged, or derives a role-qualified Starfield material
     ///     request when a usable tangent basis exists. The pixel shader repeats the per-fragment
@@ -60,4 +58,6 @@ internal static class StarfieldMaterialNormalPolicy
 
         return false;
     }
+
+    internal readonly record struct Resolution(string? TexturePath, bool HasBump, bool IsDerived);
 }

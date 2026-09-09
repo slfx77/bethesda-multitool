@@ -117,21 +117,11 @@ internal static class ExportWorldmapCommand
                         if (xclc != null && xclc.Data.Length >= 8)
                         {
                             var gridX = bigEndian
-                                ? (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan())
-                                : (int)BinaryUtils.ReadUInt32LE(xclc.Data.AsSpan());
+                                ? BinaryUtils.ReadInt32BE(xclc.Data.AsSpan())
+                                : BinaryUtils.ReadInt32LE(xclc.Data.AsSpan());
                             var gridY = bigEndian
-                                ? (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan(), 4)
-                                : (int)BinaryUtils.ReadUInt32LE(xclc.Data.AsSpan(), 4);
-
-                            if (gridX > 0x7FFFFFFF)
-                            {
-                                gridX = (int)(gridX - 0x100000000);
-                            }
-
-                            if (gridY > 0x7FFFFFFF)
-                            {
-                                gridY = (int)(gridY - 0x100000000);
-                            }
+                                ? BinaryUtils.ReadInt32BE(xclc.Data.AsSpan(), 4)
+                                : BinaryUtils.ReadInt32LE(xclc.Data.AsSpan(), 4);
 
                             cellMap[(gridX, gridY)] = new CellInfo
                             {
@@ -312,7 +302,6 @@ internal static class ExportWorldmapCommand
             $"Output dimensions: [cyan]{imageWidth}x{imageHeight}[/] pixels ({cellsWide}x{cellsHigh} cells)");
 
         // Step 4: Stitch heightmaps together and render
-        float savedGlobalMin = 0, savedGlobalMax = 0;
         AnsiConsole.Status()
             .Spinner(Spinner.Known.Dots)
             .Start("Stitching heightmaps...", ctx =>
@@ -337,9 +326,6 @@ internal static class ExportWorldmapCommand
                 {
                     range = 1f;
                 }
-
-                savedGlobalMin = globalMin;
-                savedGlobalMax = globalMax;
 
                 if (rawOutput)
                 {

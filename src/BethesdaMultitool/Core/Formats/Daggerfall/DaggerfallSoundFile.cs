@@ -52,7 +52,8 @@ internal sealed class DaggerfallSoundFile
         var archive = XnGineBsaParser.Parse(path);
         if (!archive.IsNumbered)
         {
-            throw new InvalidDataException($"'{Path.GetFileName(path)}' is a name-record BSA; DAGGER.SND is number-record.");
+            throw new InvalidDataException(
+                $"'{Path.GetFileName(path)}' is a name-record BSA; DAGGER.SND is number-record.");
         }
 
         return new DaggerfallSoundFile(File.ReadAllBytes(path), archive.Entries);
@@ -84,7 +85,8 @@ internal sealed class DaggerfallSoundFile
         var entry = _entries[index];
         if (entry.Offset < 0 || entry.Size < 0 || entry.Offset + entry.Size > _bytes.Length)
         {
-            throw new InvalidDataException($"DAGGER.SND record {index} ({entry.Offset}+{entry.Size}) lies outside the {_bytes.Length}-byte archive.");
+            throw new InvalidDataException(
+                $"DAGGER.SND record {index} ({entry.Offset}+{entry.Size}) lies outside the {_bytes.Length}-byte archive.");
         }
 
         return new ReadOnlyMemory<byte>(_bytes, (int)entry.Offset, entry.Size);

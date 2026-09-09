@@ -40,7 +40,7 @@ public sealed class RuntimeObjectCensusTests
         var census = Analyze();
 
         Assert.NotNull(census);
-        Assert.Equal(1, census!.ObjectCount);
+        Assert.Equal(1, census.ObjectCount);
         Assert.Equal(1, census.LiveClassCount);
         Assert.Equal(1, census.VtableCount);
 
@@ -89,7 +89,7 @@ public sealed class RuntimeObjectCensusTests
     [Fact]
     public void Census_IsAbsent_WhenTheDumpHasNoGameModule()
     {
-        var result = Run(withGameModule: false);
+        var result = Run(false);
 
         Assert.Null(result.OwnershipAnalysis.ObjectCensus);
         Assert.NotEmpty(result.OwnershipAnalysis.AllHits);
@@ -97,7 +97,7 @@ public sealed class RuntimeObjectCensusTests
 
     private static RuntimeObjectCensus? Analyze()
     {
-        return Run(withGameModule: true).OwnershipAnalysis.ObjectCensus;
+        return Run(true).OwnershipAnalysis.ObjectCensus;
     }
 
     private static RuntimeStringReportData Run(bool withGameModule)
@@ -109,7 +109,7 @@ public sealed class RuntimeObjectCensusTests
         accessor.WriteArray(0, data, 0, data.Length);
 
         var analyzer = new RuntimeBufferAnalyzer(
-            accessor, data.Length, CreateMinidumpInfo(withGameModule), CreateCoverage(), null, null);
+            accessor, data.Length, CreateMinidumpInfo(withGameModule), CreateCoverage(), null);
 
         return analyzer.ExtractStringDataOnly();
     }

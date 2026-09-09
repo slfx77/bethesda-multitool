@@ -13,9 +13,9 @@ namespace BethesdaMultitool.Core.Formats.Daggerfall;
 /// </summary>
 internal sealed class DaggerfallMeshTextureSource
 {
-    private readonly string _dataRoot;
     private readonly Dictionary<int, DaggerfallTextureFile?> _archives = new();
     private readonly Dictionary<(int Archive, int Record), XnGineTexturePng?> _cache = new();
+    private readonly string _dataRoot;
     private Palette? _palette;
     private bool _paletteResolved;
 
@@ -55,7 +55,8 @@ internal sealed class DaggerfallMeshTextureSource
 
         var frame = textureRecord.Frames[0];
         var decoded = frame.ToDecodedTexture(palette);
-        return new XnGineTexturePng(PngWriter.EncodeRgba(decoded.Pixels, decoded.Width, decoded.Height), decoded.Width, decoded.Height);
+        return new XnGineTexturePng(PngWriter.EncodeRgba(decoded.Pixels, decoded.Width, decoded.Height), decoded.Width,
+            decoded.Height);
     }
 
     private Palette? ResolvePalette()

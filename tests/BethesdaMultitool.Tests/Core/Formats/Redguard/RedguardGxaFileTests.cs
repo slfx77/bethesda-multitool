@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Redguard;
 using BethesdaMultitool.Core.Imaging;
@@ -69,7 +65,7 @@ public sealed class RedguardGxaFileTests
             .. Chunk("BMHD", Header(declaredCount)),
             .. Chunk("BPAL", SixBitPalette()),
             .. Chunk("BBMP", bitmap),
-            .. "END "u8.ToArray(),
+            .. "END "u8.ToArray()
         ];
     }
 
@@ -119,7 +115,8 @@ public sealed class RedguardGxaFileTests
         var declared = BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(4));
 
         Assert.Equal((uint)RedguardGxaFile.ImageHeaderLength, declared);
-        Assert.NotEqual((uint)RedguardGxaFile.ImageHeaderLength, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4)));
+        Assert.NotEqual((uint)RedguardGxaFile.ImageHeaderLength,
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(4)));
     }
 
     [Fact]
@@ -127,7 +124,7 @@ public sealed class RedguardGxaFileTests
     {
         // The six retail files that fail the raw walk flag it at the frame header's +10 byte.
         // Decoding those bytes as pixels would silently produce garbage for every later frame.
-        var file = RedguardGxaFile.Parse(Build(2, Frame(2, 2, 1), Frame(2, 2, 9, form: 1)), "GUI.GXA");
+        var file = RedguardGxaFile.Parse(Build(2, Frame(2, 2, 1), Frame(2, 2, 9, 1)), "GUI.GXA");
 
         Assert.Single(file.Frames);
         Assert.Equal(1, file.CompressedFrames);

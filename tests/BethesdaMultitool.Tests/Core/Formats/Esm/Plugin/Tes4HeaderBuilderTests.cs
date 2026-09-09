@@ -38,7 +38,7 @@ public class Tes4HeaderBuilderTests
         var fileHeader = EsmParser.ParseFileHeader(bytes);
 
         Assert.NotNull(fileHeader);
-        Assert.False(fileHeader!.IsBigEndian);
+        Assert.False(fileHeader.IsBigEndian);
         Assert.Equal(Tes4HeaderBuilder.HedrVersion, fileHeader.Version);
         Assert.Equal(0x800u, fileHeader.NextObjectId);
         Assert.Equal("DMP-ESP test", fileHeader.Author);
@@ -63,7 +63,7 @@ public class Tes4HeaderBuilderTests
         var header = EsmParser.ParseFileHeader(bytes); // must not throw
 
         Assert.NotNull(header);
-        Assert.Equal(Tes4HeaderBuilder.HedrVersion, header!.Version);
+        Assert.Equal(Tes4HeaderBuilder.HedrVersion, header.Version);
         Assert.Contains("SeventySix.esm", header.Masters);
     }
 
@@ -78,7 +78,7 @@ public class Tes4HeaderBuilderTests
 
         var header = EsmParser.ParseFileHeader(bytes);
         Assert.NotNull(header);
-        Assert.Null(header!.Author);
+        Assert.Null(header.Author);
         Assert.Null(header.Description);
         Assert.Contains("FalloutNV.esm", header.Masters);
     }

@@ -52,7 +52,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
             var nifData = service.ReadNifData(NifPath);
             Assert.NotNull(nifData);
 
-            var build = service.BuildGlbWithDiagnostics(nifData!, NifPath);
+            var build = service.BuildGlbWithDiagnostics(nifData, NifPath);
 
             Assert.NotNull(build.GlbBytes);
             Assert.Equal(2, build.ExternalGeometry.ReferencedCount);
@@ -74,7 +74,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
             Assert.True(siblingResolution.Resolved);
             Assert.Equal(Path.GetFullPath(siblingArchive), siblingResolution.SourcePath);
 
-            using var stream = new MemoryStream(build.GlbBytes!, writable: false);
+            using var stream = new MemoryStream(build.GlbBytes!, false);
             var model = ModelRoot.ReadGLB(stream);
             var exportedVertexCount = model.LogicalMeshes
                 .SelectMany(static mesh => mesh.Primitives)
@@ -83,7 +83,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -104,7 +104,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
             var nifData = service.ReadNifData(NifPath);
             Assert.NotNull(nifData);
 
-            var build = service.BuildGlbWithDiagnostics(nifData!, NifPath);
+            var build = service.BuildGlbWithDiagnostics(nifData, NifPath);
 
             // One valid part still produces a reloadable GLB. Completeness therefore must be pinned
             // independently instead of treating "at least one primitive" as end-to-end success.
@@ -119,7 +119,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
                 "0 failed to decode. Preview and exports omit those parts.",
                 build.ExternalGeometry.IncompleteWarningMessage);
 
-            using var stream = new MemoryStream(build.GlbBytes!, writable: false);
+            using var stream = new MemoryStream(build.GlbBytes!, false);
             var model = ModelRoot.ReadGLB(stream);
             var exportedVertexCount = model.LogicalMeshes
                 .SelectMany(static mesh => mesh.Primitives)
@@ -128,7 +128,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -162,7 +162,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
                 Assert.NotNull(nifData);
 
                 var build = service.BuildViewerSceneWithDiagnostics(
-                    nifData!,
+                    nifData,
                     "crossarchive.nif",
                     NifPath,
                     new AlwaysCompatibleRigInspector());
@@ -171,9 +171,9 @@ public sealed class NifBrowserSiblingMeshArchiveTests
                 catalog = scene.ModelFamilyAnimations;
                 var resolved = Assert.IsType<NifModelFamilyAnimationCatalog>(catalog);
                 var selected = Assert.Single(resolved.Animations);
-                payload = service.ReadModelFamilyAnimationData(selected);
+                payload = service.ReadModelFamilyAnimationData(selected, TestContext.Current.CancellationToken);
                 Assert.Throws<InvalidDataException>(() =>
-                    service.ReadModelFamilyAnimationData(selected with { Source = primaryArchive }));
+                    service.ReadModelFamilyAnimationData(selected with { Source = primaryArchive }, TestContext.Current.CancellationToken));
             }
 
             // Service disposal closes every registry-backed VFS lease. The scene retains only this
@@ -188,7 +188,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -205,7 +205,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
         }
 
         using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, true);
         writer.Write("BTDX"u8.ToArray());
         writer.Write(1u);
         writer.Write("GNRL"u8.ToArray());
@@ -249,9 +249,9 @@ public sealed class NifBrowserSiblingMeshArchiveTests
 
     private static byte[] BuildStarfieldNif(string primaryMeshPath, string siblingMeshPath)
     {
-        var primaryGeometry = BuildBsGeometryBlock(nameIndex: 0, primaryMeshPath, shaderBlockIndex: 2);
-        var siblingGeometry = BuildBsGeometryBlock(nameIndex: 1, siblingMeshPath, shaderBlockIndex: 2);
-        var shaderBlock = BuildNiObjectNet(nameIndex: 2);
+        var primaryGeometry = BuildBsGeometryBlock(0, primaryMeshPath, 2);
+        var siblingGeometry = BuildBsGeometryBlock(1, siblingMeshPath, 2);
+        var shaderBlock = BuildNiObjectNet(2);
         string[] blockTypes = ["BSGeometry", "BSLightingShaderProperty"];
         string[] strings = ["Primary", "Sibling", @"materials\test\crossarchive.mat"];
 
@@ -324,7 +324,7 @@ public sealed class NifBrowserSiblingMeshArchiveTests
         var bytes = new List<byte>();
         bytes.AddRange(BitConverter.GetBytes(0u)); // mesh version
         bytes.AddRange(BitConverter.GetBytes(3u));
-        foreach (ushort index in new ushort[] { 0, 1, 2 })
+        foreach (var index in new ushort[] { 0, 1, 2 })
         {
             bytes.AddRange(BitConverter.GetBytes(index));
         }
@@ -387,14 +387,14 @@ public sealed class NifBrowserSiblingMeshArchiveTests
 
     private static void AddPackedPosition(List<byte> bytes, short x, short y, short z)
     {
-        var xy = (uint)(ushort)x | ((uint)(ushort)y << 16);
+        var xy = (ushort)x | ((uint)(ushort)y << 16);
         bytes.AddRange(BitConverter.GetBytes(xy));
         bytes.AddRange(BitConverter.GetBytes((ushort)z));
     }
 
     private static void AddHalfPair(List<byte> bytes, float u, float v)
     {
-        var packed = (uint)BitConverter.HalfToUInt16Bits((Half)u) |
+        var packed = BitConverter.HalfToUInt16Bits((Half)u) |
                      ((uint)BitConverter.HalfToUInt16Bits((Half)v) << 16);
         bytes.AddRange(BitConverter.GetBytes(packed));
     }
@@ -410,10 +410,14 @@ public sealed class NifBrowserSiblingMeshArchiveTests
 
     private sealed class AlwaysCompatibleRigInspector : INifModelFamilyRigInspector
     {
-        public NifModelFamilyModelRig? InspectModel(byte[] data) =>
-            new(["Bip01"]);
+        public NifModelFamilyModelRig? InspectModel(byte[] data)
+        {
+            return new NifModelFamilyModelRig(["Bip01"]);
+        }
 
-        public NifModelFamilySkeletonRig? InspectSkeleton(byte[] data) =>
-            new(["Bip01"]);
+        public NifModelFamilySkeletonRig? InspectSkeleton(byte[] data)
+        {
+            return new NifModelFamilySkeletonRig(["Bip01"]);
+        }
     }
 }

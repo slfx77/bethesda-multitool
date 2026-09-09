@@ -283,7 +283,7 @@ internal readonly record struct StarfieldMaterialColorPolicy(
 
     private static uint PackColor(float red, float green, float blue, float alpha)
     {
-        return (uint)ToUnorm8(red) |
+        return ToUnorm8(red) |
                ((uint)ToUnorm8(green) << 8) |
                ((uint)ToUnorm8(blue) << 16) |
                ((uint)ToUnorm8(alpha) << 24);

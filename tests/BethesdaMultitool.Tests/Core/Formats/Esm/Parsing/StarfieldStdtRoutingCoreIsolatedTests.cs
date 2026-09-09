@@ -210,7 +210,7 @@ public sealed class StarfieldStdtRoutingCoreIsolatedTests
     [Fact]
     public void Resolver_FollowsNonzeroBinaryStarFormIdOnce()
     {
-        var primary = Record(0x100, 7, binaryStarFormId: 0x200, sunPresetFormId: 0x300);
+        var primary = Record(0x100, 7, 0x200, 0x300);
         var binary = Record(0x200, 8, sunPresetFormId: 0x301);
         var index = StarfieldStarDataIndex.Build([primary, binary]);
 
@@ -228,7 +228,7 @@ public sealed class StarfieldStdtRoutingCoreIsolatedTests
     {
         var missing = StarfieldStarDataResolver.ResolveSystem(
             7,
-            StarfieldStarDataIndex.Build([Record(0x100, 7, binaryStarFormId: 0x200)]));
+            StarfieldStarDataIndex.Build([Record(0x100, 7, 0x200)]));
 
         Assert.Equal(StarfieldStarDataResolutionStatus.BinaryStarNotFound, missing.Status);
         Assert.Equal(0x200u, missing.FailureFormId);
@@ -238,7 +238,7 @@ public sealed class StarfieldStdtRoutingCoreIsolatedTests
             7,
             StarfieldStarDataIndex.Build(
             [
-                Record(0x100, 7, binaryStarFormId: 0x200),
+                Record(0x100, 7, 0x200),
                 Record(0x200, 8),
                 Record(0x200, 9)
             ]));
@@ -370,8 +370,10 @@ public sealed class StarfieldStdtRoutingCoreIsolatedTests
         Assert.Equal(isBigEndian, record.IsBigEndian);
     }
 
-    private static byte[] NullTerminated(string value) =>
-        [.. Encoding.ASCII.GetBytes(value), 0];
+    private static byte[] NullTerminated(string value)
+    {
+        return [.. Encoding.ASCII.GetBytes(value), 0];
+    }
 
     private static byte[] U32(uint value)
     {

@@ -5,9 +5,12 @@ namespace BethesdaMultitool.Tests.App;
 
 public sealed class NifNativeViewerSceneSourceContractTests
 {
-    private static string BrowserServiceSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
-        "NifBrowserService.cs");
+    private static string BrowserServiceSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "NifBrowserService.cs");
+    }
 
     [Fact]
     public void RawPreviewBuildsNativeSceneBeforeCompatibilityGlb()

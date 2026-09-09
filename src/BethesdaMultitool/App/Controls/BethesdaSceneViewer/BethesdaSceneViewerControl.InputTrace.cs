@@ -16,28 +16,33 @@ public sealed partial class BethesdaSceneViewerControl
         Environment.GetEnvironmentVariable("FALLOUT_VIEWER_NATIVE_INPUT_TRACE") == "1"
             ? new NativeViewerInputTrace()
             : null;
-    private long _traceSceneEpoch;
-    private long _traceFrameSerial;
-    private long _traceCaptureSerial;
-    private long _traceGestureSerial;
+
     private Vector2 _traceAcceptedDelta;
+    private long _traceCaptureSerial;
+    private long _traceFrameSerial;
+    private long _traceGestureSerial;
+    private long _traceSceneEpoch;
 
-    private object? TraceCameraState() => _inputTrace is null ? null : new
-    {
-        azimuthDegrees = _camera.AzimuthDegrees,
-        elevationDegrees = _camera.ElevationDegrees,
-        target = TraceVector(_camera.Target),
-        distance = _camera.Distance,
-        fieldOfViewRadians = _camera.FieldOfViewRadians
-    };
+    private object? TraceCameraState() => _inputTrace is null
+        ? null
+        : new
+        {
+            azimuthDegrees = _camera.AzimuthDegrees,
+            elevationDegrees = _camera.ElevationDegrees,
+            target = TraceVector(_camera.Target),
+            distance = _camera.Distance,
+            fieldOfViewRadians = _camera.FieldOfViewRadians
+        };
 
-    private object? TraceSceneState() => _inputTrace is null ? null : new
-    {
-        sceneEpoch = _traceSceneEpoch,
-        sourceLabel = _scene?.SourceLabel,
-        purpose = _scene?.Purpose.ToString(),
-        game = _scene?.Game.ToString()
-    };
+    private object? TraceSceneState() => _inputTrace is null
+        ? null
+        : new
+        {
+            sceneEpoch = _traceSceneEpoch,
+            sourceLabel = _scene?.SourceLabel,
+            purpose = _scene?.Purpose.ToString(),
+            game = _scene?.Game.ToString()
+        };
 
     private static float[] TraceVector(Vector3 value) => [value.X, value.Y, value.Z];
 
@@ -180,9 +185,10 @@ public sealed partial class BethesdaSceneViewerControl
         {
             NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals
         };
-        private readonly Lock _gate = new();
+
         private readonly BethesdaViewerInputTraceBudget _budget = new();
         private readonly string _controlId = Guid.NewGuid().ToString("N");
+        private readonly Lock _gate = new();
         private bool _failed;
 
         internal void Write(string eventName, object data)
@@ -207,7 +213,7 @@ public sealed partial class BethesdaSceneViewerControl
                     }, JsonOptions));
                 }
                 catch (Exception ex) when (ex is JsonException or NotSupportedException or IOException or
-                                           ObjectDisposedException)
+                                               ObjectDisposedException)
                 {
                     // A failed diagnostic sink must not fault the renderer. Missing/truncated
                     // completion records invalidate negative claims about delivery or resets.

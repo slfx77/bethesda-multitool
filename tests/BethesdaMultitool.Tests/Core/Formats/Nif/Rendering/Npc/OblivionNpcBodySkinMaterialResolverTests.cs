@@ -140,7 +140,7 @@ public sealed class OblivionNpcBodySkinMaterialResolverTests
     {
         var mesh = Mesh();
         var source = Texture();
-        using var resolver = Resolver(source, failure, raceNormalAvailable: true);
+        using var resolver = Resolver(source, failure, true);
         OblivionNpcBodySkinMaterialResolver.ApplyTextureOverride(mesh, Appearance(), resolver, Atlas);
         AssertFallback(mesh);
         Assert.Null(resolver.GetTexture(Skin));
@@ -195,6 +195,7 @@ public sealed class OblivionNpcBodySkinMaterialResolverTests
         {
             resolver.EvictTexture(generated);
         }
+
         Assert.Null(resolver.GetTexture(key));
     }
 
@@ -225,21 +226,30 @@ public sealed class OblivionNpcBodySkinMaterialResolverTests
         Assert.Null(mesh.NormalMapTexturePath);
     }
 
-    private static NpcAppearance Appearance(BethesdaGame game = BethesdaGame.Oblivion) => new()
+    private static NpcAppearance Appearance(BethesdaGame game = BethesdaGame.Oblivion)
     {
-        Game = game, NpcFormId = 0x85969, HandTexturePath = Race
-    };
+        return new NpcAppearance
+        {
+            Game = game, NpcFormId = 0x85969, HandTexturePath = Race
+        };
+    }
 
-    private static RenderableSubmesh Mesh(string? material = "skin", bool provenSource = true) => new()
+    private static RenderableSubmesh Mesh(string? material = "skin", bool provenSource = true)
     {
-        ShapeName = "Hand", LegacyMaterialName = material, HasAuthoredOblivionBodySkinInputs = provenSource,
-        AuthoredOblivionBodySkinDiffusePath = Original,
-        Positions = [1, 2, 3], Triangles = [], Normals = [0, 0, 1], UVs = [0.5f, 0.5f],
-        Tangents = [1, 0, 0], Bitangents = [0, 1, 0], DiffuseTexturePath = Original,
-        MaterialGlossiness = 25f, SpecularColor = (1, 1, 1)
-    };
+        return new RenderableSubmesh
+        {
+            ShapeName = "Hand", LegacyMaterialName = material, HasAuthoredOblivionBodySkinInputs = provenSource,
+            AuthoredOblivionBodySkinDiffusePath = Original,
+            Positions = [1, 2, 3], Triangles = [], Normals = [0, 0, 1], UVs = [0.5f, 0.5f],
+            Tangents = [1, 0, 0], Bitangents = [0, 1, 0], DiffuseTexturePath = Original,
+            MaterialGlossiness = 25f, SpecularColor = (1, 1, 1)
+        };
+    }
 
-    private static DecodedTexture Texture() => DecodedTexture.FromBaseLevel([128, 192, 254, 37], 1, 1);
+    private static DecodedTexture Texture()
+    {
+        return DecodedTexture.FromBaseLevel([128, 192, 254, 37], 1, 1);
+    }
 
     private static NifTextureResolver Resolver(
         DecodedTexture source, string? failure = null, bool raceNormalAvailable = false)
@@ -247,7 +257,7 @@ public sealed class OblivionNpcBodySkinMaterialResolverTests
         return new NifTextureResolver(path => path.Replace('\\', '/') switch
         {
             "textures/" + Atlas when failure != "diffuse-missing" => source,
-            Normal when failure == "normal-malformed" => DecodedTexture.FromBaseLevel([1, 2, 3, 4], 2, 1, generateMipChain: false),
+            Normal when failure == "normal-malformed" => DecodedTexture.FromBaseLevel([1, 2, 3, 4], 2, 1, false),
             Normal when failure != "normal-missing" => Texture(),
             RaceNormal when raceNormalAvailable => Texture(),
             "textures/imperial/hand_g.dds" when failure == "original-glow" => Texture(),

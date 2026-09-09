@@ -154,13 +154,15 @@ internal static class TerrainCellDrawCulling
         return true;
     }
 
-    private static bool IsUsable(Frustum frustum) =>
-        IsUsable(frustum.Left) &&
-        IsUsable(frustum.Right) &&
-        IsUsable(frustum.Bottom) &&
-        IsUsable(frustum.Top) &&
-        IsUsable(frustum.Near) &&
-        IsUsable(frustum.Far);
+    private static bool IsUsable(Frustum frustum)
+    {
+        return IsUsable(frustum.Left) &&
+               IsUsable(frustum.Right) &&
+               IsUsable(frustum.Bottom) &&
+               IsUsable(frustum.Top) &&
+               IsUsable(frustum.Near) &&
+               IsUsable(frustum.Far);
+    }
 
     private static bool IsUsable(Plane plane)
     {
@@ -172,16 +174,20 @@ internal static class TerrainCellDrawCulling
                normal.LengthSquared() > 1e-12f;
     }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 
-    private static bool IsFinite(Matrix4x4 matrix) =>
-        float.IsFinite(matrix.M11) && float.IsFinite(matrix.M12) &&
-        float.IsFinite(matrix.M13) && float.IsFinite(matrix.M14) &&
-        float.IsFinite(matrix.M21) && float.IsFinite(matrix.M22) &&
-        float.IsFinite(matrix.M23) && float.IsFinite(matrix.M24) &&
-        float.IsFinite(matrix.M31) && float.IsFinite(matrix.M32) &&
-        float.IsFinite(matrix.M33) && float.IsFinite(matrix.M34) &&
-        float.IsFinite(matrix.M41) && float.IsFinite(matrix.M42) &&
-        float.IsFinite(matrix.M43) && float.IsFinite(matrix.M44);
+    private static bool IsFinite(Matrix4x4 matrix)
+    {
+        return float.IsFinite(matrix.M11) && float.IsFinite(matrix.M12) &&
+               float.IsFinite(matrix.M13) && float.IsFinite(matrix.M14) &&
+               float.IsFinite(matrix.M21) && float.IsFinite(matrix.M22) &&
+               float.IsFinite(matrix.M23) && float.IsFinite(matrix.M24) &&
+               float.IsFinite(matrix.M31) && float.IsFinite(matrix.M32) &&
+               float.IsFinite(matrix.M33) && float.IsFinite(matrix.M34) &&
+               float.IsFinite(matrix.M41) && float.IsFinite(matrix.M42) &&
+               float.IsFinite(matrix.M43) && float.IsFinite(matrix.M44);
+    }
 }

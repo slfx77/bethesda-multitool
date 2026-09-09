@@ -122,7 +122,7 @@ public class RecordCollectionCellMergeTests
         var overrideCell = Cell(0x10, null, Ref(0x900, 0xC));
 
         var merged = new RecordCollection { Cells = [baseCell] }
-            .MergeWith(new RecordCollection { Cells = [overrideCell] }, carryBaseTerrainIntoCells: false);
+            .MergeWith(new RecordCollection { Cells = [overrideCell] }, false);
 
         var cell = Assert.Single(merged.Cells);
         Assert.Null(cell.Heightmap);
@@ -139,7 +139,7 @@ public class RecordCollectionCellMergeTests
         var overrideCell = Cell(0x10, Land(2000f));
 
         var merged = new RecordCollection { Cells = [baseCell] }
-            .MergeWith(new RecordCollection { Cells = [overrideCell] }, carryBaseTerrainIntoCells: false);
+            .MergeWith(new RecordCollection { Cells = [overrideCell] }, false);
 
         Assert.Equal(2000f, Assert.Single(merged.Cells).Heightmap!.HeightOffset);
     }

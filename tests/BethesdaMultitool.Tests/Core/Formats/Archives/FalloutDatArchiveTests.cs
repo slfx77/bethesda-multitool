@@ -1,10 +1,7 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Archives;
 using BethesdaMultitool.Core.Formats.Fallout;
 using Xunit;
 
@@ -19,14 +16,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Archives;
 public sealed class FalloutDatArchiveTests : IDisposable
 {
     private readonly List<string> _tempFiles = [];
-
-    private string WriteTemp(byte[] bytes)
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"fallout-dat-{Guid.NewGuid():N}.dat");
-        File.WriteAllBytes(path, bytes);
-        _tempFiles.Add(path);
-        return path;
-    }
 
     public void Dispose()
     {
@@ -43,7 +32,18 @@ public sealed class FalloutDatArchiveTests : IDisposable
         }
     }
 
-    private static byte[] Pascal(string s) => [(byte)s.Length, .. Encoding.ASCII.GetBytes(s)];
+    private string WriteTemp(byte[] bytes)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"fallout-dat-{Guid.NewGuid():N}.dat");
+        File.WriteAllBytes(path, bytes);
+        _tempFiles.Add(path);
+        return path;
+    }
+
+    private static byte[] Pascal(string s)
+    {
+        return [(byte)s.Length, .. Encoding.ASCII.GetBytes(s)];
+    }
 
     private static byte[] Be(uint v)
     {
@@ -52,11 +52,20 @@ public sealed class FalloutDatArchiveTests : IDisposable
         return b;
     }
 
-    /// <summary>A DAT1 LZSS stream that is one verbatim block plus the terminator — valid without a compressor.</summary>
+    /// <summary>
+    ///     A DAT1 LZSS stream that is one verbatim block plus the terminator — valid without a
+    ///     compressor.
+    ///     <para>
+    ///         ⚠⚠ A raw block's header is <c>0x8000 | length</c>, NOT the negated length. This
+    ///         helper wrote <c>(short)-length</c> until 2026-09-06, matching the decoder's own bug;
+    ///         both came from the ported reference's prose, so the fixture could not catch it.
+    ///         Retail settles it: the negated reading fails 206 of MASTER.DAT's entries.
+    ///     </para>
+    /// </summary>
     private static byte[] LzssVerbatim(byte[] payload)
     {
         var header = new byte[2];
-        BinaryPrimitives.WriteInt16BigEndian(header, (short)-payload.Length);
+        BinaryPrimitives.WriteUInt16BigEndian(header, (ushort)(0x8000 | payload.Length));
         return [.. header, .. payload, 0, 0];
     }
 
@@ -67,12 +76,15 @@ public sealed class FalloutDatArchiveTests : IDisposable
 
         // Directory size first, so offsets can be absolute.
         var directoryLength = Dat1Archive.HeaderLength + directories.Sum(d => 1 + d.Length)
-                              + directories.Count * Dat1Archive.DirectoryHeaderLength
-                              + files.Sum(f => 1 + f.Name.Length + Dat1Archive.EntryFieldsLength);
+                                                       + directories.Count * Dat1Archive.DirectoryHeaderLength
+                                                       + files.Sum(f =>
+                                                           1 + f.Name.Length + Dat1Archive.EntryFieldsLength);
 
         var bytes = new List<byte>();
         bytes.AddRange(Be((uint)directories.Count));
-        bytes.AddRange(Be(94)); bytes.AddRange(Be(0)); bytes.AddRange(Be(0));
+        bytes.AddRange(Be(94));
+        bytes.AddRange(Be(0));
+        bytes.AddRange(Be(0));
         foreach (var directory in directories)
         {
             bytes.AddRange(Pascal(directory));
@@ -83,7 +95,9 @@ public sealed class FalloutDatArchiveTests : IDisposable
         {
             var members = files.Select((f, i) => (f, i)).Where(t => t.f.Directory == directory).ToList();
             bytes.AddRange(Be((uint)members.Count));
-            bytes.AddRange(Be(0)); bytes.AddRange(Be(0)); bytes.AddRange(Be(0));
+            bytes.AddRange(Be(0));
+            bytes.AddRange(Be(0));
+            bytes.AddRange(Be(0));
             foreach (var (file, index) in members)
             {
                 bytes.AddRange(Pascal(file.Name));
@@ -107,7 +121,7 @@ public sealed class FalloutDatArchiveTests : IDisposable
     private static byte[] Zlib(byte[] data)
     {
         using var ms = new MemoryStream();
-        using (var z = new ZLibStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+        using (var z = new ZLibStream(ms, CompressionLevel.Optimal, true))
         {
             z.Write(data);
         }
@@ -147,7 +161,7 @@ public sealed class FalloutDatArchiveTests : IDisposable
         Assert.Equal([".", @"ART\INTRFACE"], directory.Directories);
         Assert.Equal(["MASTER.LST", "ART/INTRFACE/MENU.FRM"], directory.Entries.Select(e => e.FullPath));
 
-        using var backend = new BethesdaMultitool.Core.Formats.Archives.Dat1Backend(directory);
+        using var backend = new Dat1Backend(directory);
         var entries = backend.ListFiles();
         Assert.Equal("DAT1 (Fallout)", backend.FormatName);
         Assert.Equal("hello"u8.ToArray(), backend.Extract(entries[0]));
@@ -194,12 +208,13 @@ public sealed class FalloutDatArchiveTests : IDisposable
         var directory = Dat2Archive.Parse(path);
         Assert.Equal(["text/english/game/pro_item.msg", "color.pal"], directory.Entries.Select(e => e.FullPath));
 
-        using var backend = new BethesdaMultitool.Core.Formats.Archives.Dat2Backend(directory);
+        using var backend = new Dat2Backend(directory);
         var entries = backend.ListFiles();
         Assert.Equal("DAT2 (Fallout 2)", backend.FormatName);
         Assert.Equal(text, backend.Extract(entries[0]));
         Assert.Equal([9, 8, 7], backend.Extract(entries[1]));
-        Assert.Equal(("text/english/game", "pro_item.msg", ".msg"), (entries[0].FolderPath, entries[0].Name, entries[0].Extension));
+        Assert.Equal(("text/english/game", "pro_item.msg", ".msg"),
+            (entries[0].FolderPath, entries[0].Name, entries[0].Extension));
     }
 
     [Fact]

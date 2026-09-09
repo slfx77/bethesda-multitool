@@ -164,12 +164,12 @@ public sealed class SchemaConditionStringAuthorityTests
 
         var placeholder = FindRow(rows, "Parameter #1 (CTDA placeholder)");
         Assert.NotNull(placeholder);
-        Assert.Equal("0x00123456", placeholder!.Value);
+        Assert.Equal("0x00123456", placeholder.Value);
         Assert.Null(placeholder.LinkedFormId);
 
         var cis = FindRow(rows, "Parameter #1 (CIS1 authoritative string)");
         Assert.NotNull(cis);
-        Assert.Equal("QuestVariable", cis!.Value);
+        Assert.Equal("QuestVariable", cis.Value);
         Assert.Null(cis.LinkedFormId);
     }
 
@@ -188,10 +188,10 @@ public sealed class SchemaConditionStringAuthorityTests
     {
         var schema = EsmSchemas.IndexForGame(BethesdaGame.Fallout4);
         Assert.NotNull(schema);
-        Assert.True(schema!.TryGetValue("INFO", out var info));
+        Assert.True(schema.TryGetValue("INFO", out var info));
 
         return SchemaRecordDecoder.Decode(
-            info!, subrecords, bigEndian, resolveName, BethesdaGame.Fallout4);
+            info, subrecords, bigEndian, resolveName, BethesdaGame.Fallout4);
     }
 
     private static byte[] BuildCtda(

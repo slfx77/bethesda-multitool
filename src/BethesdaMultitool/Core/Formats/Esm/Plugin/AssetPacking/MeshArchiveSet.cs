@@ -31,6 +31,11 @@ internal sealed class MeshArchiveSet : IDisposable
     private readonly DataFolderIndex _emptyBaseline;
     private readonly DataFolderIndex _index;
 
+    // Persisted DMP rename map (MeshRenameMapService sidecar): normalized request → resolved donor
+    // path. Consulted ahead of the live fuzzy fallback so a resolution pass the user ran once (the
+    // same pass DMP→ESM conversion applies) wins over per-load heuristics.
+    private readonly IReadOnlyDictionary<string, string>? _pathRenames;
+
     // Per-path resolution memo. DataFolderResolver.Resolve is read-only over the immutable index
     // (lock-free), so concurrent decode tasks can resolve in parallel; the memo just avoids
     // recomputing the (occasionally fuzzy) lookup for paths requested more than once.
@@ -38,11 +43,6 @@ internal sealed class MeshArchiveSet : IDisposable
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly DataFolderResolver _resolver;
-
-    // Persisted DMP rename map (MeshRenameMapService sidecar): normalized request → resolved donor
-    // path. Consulted ahead of the live fuzzy fallback so a resolution pass the user ran once (the
-    // same pass DMP→ESM conversion applies) wins over per-load heuristics.
-    private readonly IReadOnlyDictionary<string, string>? _pathRenames;
 
     private MeshArchiveSet(
         IReadOnlyList<string> archivePaths, bool enableFuzzy, bool includeLooseFiles,
@@ -90,7 +90,7 @@ internal sealed class MeshArchiveSet : IDisposable
     /// <summary>Exact-only resolution (no fuzzy, no loose files) — the historical default.</summary>
     public static MeshArchiveSet Open(string primaryMeshesBsaPath, string[]? extraMeshesBsaPaths)
     {
-        return Open(primaryMeshesBsaPath, extraMeshesBsaPaths, false, false);
+        return Open(primaryMeshesBsaPath, extraMeshesBsaPaths, false);
     }
 
     /// <summary>

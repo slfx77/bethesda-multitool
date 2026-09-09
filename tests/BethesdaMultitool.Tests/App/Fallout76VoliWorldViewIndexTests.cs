@@ -1,6 +1,6 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using Xunit;
 
@@ -59,8 +59,9 @@ public sealed class Fallout76VoliWorldViewIndexTests
         Assert.Same(volumetric, world.Fallout76VolumetricLightingByFormId[volumetric.FormId]);
     }
 
-    private static Fallout76VolumetricLightingRecord Volumetric(uint formId, string editorId) =>
-        new()
+    private static Fallout76VolumetricLightingRecord Volumetric(uint formId, string editorId)
+    {
+        return new Fallout76VolumetricLightingRecord
         {
             FormId = formId,
             EditorId = editorId,
@@ -69,4 +70,5 @@ public sealed class Fallout76VoliWorldViewIndexTests
                 SamplingRepartitionRangeFactor = 50f
             }
         };
+    }
 }

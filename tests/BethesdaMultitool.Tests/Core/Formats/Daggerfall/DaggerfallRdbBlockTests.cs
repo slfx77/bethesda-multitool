@@ -1,7 +1,4 @@
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 
@@ -18,11 +15,11 @@ public class DaggerfallRdbBlockTests
             {
                 [0] =
                 [
-                    new DaggerfallBlockFixture.RdbObject(1, 640, -128, 512, ModelIndex: 0, YRotation: -512, ActionNextObject: 2),
+                    new DaggerfallBlockFixture.RdbObject(1, 640, -128, 512, 0, -512, 2),
                     new DaggerfallBlockFixture.RdbObject(2, 700, -200, 600, Radius: 900),
-                    new DaggerfallBlockFixture.RdbObject(3, 800, 0, 700, TextureBits: (ushort)((208 << 7) | 4))
+                    new DaggerfallBlockFixture.RdbObject(3, 800, 0, 700, TextureBits: (208 << 7) | 4)
                 ],
-                [3] = [new DaggerfallBlockFixture.RdbObject(1, 1, 2, 3, ModelIndex: 1)]
+                [3] = [new DaggerfallBlockFixture.RdbObject(1, 1, 2, 3, 1)]
             });
     }
 
@@ -36,7 +33,9 @@ public class DaggerfallRdbBlockTests
         Assert.Equal(0xDEAD0001u, block.Unknown1);
         Assert.Equal(0xDEAD0002u, block.Unknown2);
         Assert.Equal(750, block.ModelReferences.Count);
-        Assert.Equal(("72100", 72100u, "DOR"), (block.ModelReferences[0].ModelId, block.ModelReferences[0].ModelIdNumber, block.ModelReferences[0].Description));
+        Assert.Equal(("72100", 72100u, "DOR"),
+            (block.ModelReferences[0].ModelId, block.ModelReferences[0].ModelIdNumber,
+                block.ModelReferences[0].Description));
         Assert.Null(block.ModelReferences[2].ModelIdNumber);
         Assert.Equal("junk", block.ModelReferences[2].ModelId);
         Assert.Equal(749u, block.ModelData[749]);
@@ -72,7 +71,8 @@ public class DaggerfallRdbBlockTests
         Assert.Equal(4u, door.Model.TriggerFlagStartingLock);
         Assert.Equal(9, door.Model.SoundIndex);
         Assert.NotNull(door.Model.Action);
-        Assert.Equal((2, 30, 64, 1), (door.Model.Action.Axis, door.Model.Action.Duration, door.Model.Action.Magnitude, door.Model.Action.Flags));
+        Assert.Equal((2, 30, 64, 1),
+            (door.Model.Action.Axis, door.Model.Action.Duration, door.Model.Action.Magnitude, door.Model.Action.Flags));
         Assert.Equal(cell[2].Position, door.Model.Action.NextObjectOffset);
         Assert.Equal(2, door.Model.Action.NextObjectIndex);
 

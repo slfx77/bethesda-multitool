@@ -21,6 +21,7 @@ internal sealed class TravelsRecordContext
 
     private readonly List<GenericEsmRecord> _output;
 
+    /// <summary>Creates the record context for one game's synthetic domains.</summary>
     /// <param name="signaturePrefix">One letter naming the game: <c>S</c> Stormhold, <c>D</c> Dawnstar.</param>
     /// <param name="firstDomain">The game's first reserved domain; table rows land here.</param>
     /// <param name="output">The list records are appended to.</param>

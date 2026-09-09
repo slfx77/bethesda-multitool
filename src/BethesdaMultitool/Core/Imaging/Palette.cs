@@ -189,10 +189,10 @@ internal sealed class Palette
         for (var i = 0; i < EntryCount; i++)
         {
             var source = map[i] * 4;
-            rgba[(i * 4) + 0] = _rgba[source + 0];
-            rgba[(i * 4) + 1] = _rgba[source + 1];
-            rgba[(i * 4) + 2] = _rgba[source + 2];
-            rgba[(i * 4) + 3] = _rgba[(i * 4) + 3];
+            rgba[i * 4 + 0] = _rgba[source + 0];
+            rgba[i * 4 + 1] = _rgba[source + 1];
+            rgba[i * 4 + 2] = _rgba[source + 2];
+            rgba[i * 4 + 3] = _rgba[i * 4 + 3];
         }
 
         return new Palette(rgba);

@@ -247,7 +247,7 @@ public sealed class AuthoredSkyGlbPreviewProjectionTests
     {
         // SharpGLTF may retain float COLOR_0 or pack it to normalized bytes. One UNORM8 step
         // accepts either representation without weakening the semantic row/coverage assertions.
-        const float tolerance = (1f / 255f) + 1e-6f;
+        const float tolerance = 1f / 255f + 1e-6f;
         Assert.InRange(MathF.Abs(expected.X - actual.X), 0f, tolerance);
         Assert.InRange(MathF.Abs(expected.Y - actual.Y), 0f, tolerance);
         Assert.InRange(MathF.Abs(expected.Z - actual.Z), 0f, tolerance);
@@ -255,7 +255,7 @@ public sealed class AuthoredSkyGlbPreviewProjectionTests
 
     private static ModelRoot Read(byte[] glb)
     {
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         return ModelRoot.ReadGLB(stream);
     }
 }

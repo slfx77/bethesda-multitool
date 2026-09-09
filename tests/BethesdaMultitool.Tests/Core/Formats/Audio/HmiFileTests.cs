@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Audio;
 using Xunit;
@@ -16,7 +13,8 @@ public class HmiFileTests
     {
         var header = new byte[HmiFile.TrackTableOffset + (trackBodySizes.Length + 1) * 4];
         Encoding.ASCII.GetBytes(tag).CopyTo(header, 0);
-        BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(HmiFile.TrackCountOffset), (ushort)trackBodySizes.Length);
+        BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(HmiFile.TrackCountOffset),
+            (ushort)trackBodySizes.Length);
 
         var tracks = new List<byte>();
         var offset = header.Length;
@@ -80,7 +78,8 @@ public class HmiFileTests
 
         // An offset that does not land on the track marker.
         var shifted = (byte[])bytes.Clone();
-        BinaryPrimitives.WriteUInt32LittleEndian(shifted.AsSpan(HmiFile.TrackTableOffset), (uint)(HmiFile.TrackTableOffset + 20));
+        BinaryPrimitives.WriteUInt32LittleEndian(shifted.AsSpan(HmiFile.TrackTableOffset),
+            HmiFile.TrackTableOffset + 20);
         Assert.Throws<InvalidDataException>(() => HmiFile.Parse(shifted, "X.HMI"));
 
         // A count larger than the table.

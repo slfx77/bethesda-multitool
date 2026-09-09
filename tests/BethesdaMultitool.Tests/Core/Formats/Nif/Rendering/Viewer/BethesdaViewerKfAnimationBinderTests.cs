@@ -18,7 +18,7 @@ public sealed class BethesdaViewerKfAnimationBinderTests
             Matrix4x4.Identity,
             BethesdaViewerNodeRole.Skeleton,
             "Bip01 Head");
-        var supported = Clip("Idle", Track("Bip01 Head"), unsupportedCount: 2);
+        var supported = Clip("Idle", Track("Bip01 Head"), 2);
         var missing = Clip("Aim", Track("Missing Bone"));
 
         var result = BethesdaViewerKfAnimationBinder.Bind(

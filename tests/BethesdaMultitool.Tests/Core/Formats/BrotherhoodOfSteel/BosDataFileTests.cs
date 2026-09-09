@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.BrotherhoodOfSteel;
 using Xunit;
 
@@ -13,10 +10,11 @@ namespace BethesdaMultitool.Tests.Core.Formats.BrotherhoodOfSteel;
 /// </summary>
 public sealed class BosDataFileTests
 {
-    private static byte[] DataFile(int[] sizes, uint? countOverride = null, int firstOffsetBias = 0, uint thirdField = 0)
+    private static byte[] DataFile(int[] sizes, uint? countOverride = null, int firstOffsetBias = 0,
+        uint thirdField = 0)
     {
         var count = sizes.Length;
-        var directoryEnd = BosDataFile.HeaderLength + (count * BosDataFile.RecordLength);
+        var directoryEnd = BosDataFile.HeaderLength + count * BosDataFile.RecordLength;
         var b = new byte[directoryEnd + sizes.Sum()];
 
         BinaryPrimitives.WriteUInt32LittleEndian(b, countOverride ?? (uint)count);
@@ -27,7 +25,7 @@ public sealed class BosDataFileTests
         var cursor = directoryEnd + firstOffsetBias;
         for (var i = 0; i < count; i++)
         {
-            var at = BosDataFile.HeaderLength + (i * BosDataFile.RecordLength);
+            var at = BosDataFile.HeaderLength + i * BosDataFile.RecordLength;
             var hash = 0xA000_0000u + (uint)i;
             BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(at), hash);
             BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(at + 4), (uint)cursor);
@@ -55,7 +53,7 @@ public sealed class BosDataFileTests
 
         Assert.Equal(3, file.Records.Count);
         Assert.Equal([16, 32, 8], file.Records.Select(r => r.Size));
-        Assert.Equal(BosDataFile.HeaderLength + (3 * BosDataFile.RecordLength), file.Records[0].Offset);
+        Assert.Equal(BosDataFile.HeaderLength + 3 * BosDataFile.RecordLength, file.Records[0].Offset);
     }
 
     [Fact]
@@ -63,8 +61,8 @@ public sealed class BosDataFileTests
     {
         // ⚑ 772 + 12 * count == the first offset, on 55/55 retail files. That equality is what
         // fixes the 772-byte header and the 12-byte record together.
-        var error = Assert.Throws<InvalidDataException>(
-            () => BosDataFile.Parse(DataFile([16], firstOffsetBias: 4), "BAD.DDF"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            BosDataFile.Parse(DataFile([16], firstOffsetBias: 4), "BAD.DDF"));
         Assert.Contains("rather than", error.Message, StringComparison.Ordinal);
     }
 
@@ -87,7 +85,7 @@ public sealed class BosDataFileTests
     [Fact]
     public void Parse_RejectsACountThatDoesNotFit()
     {
-        Assert.Throws<InvalidDataException>(() => BosDataFile.Parse(DataFile([16], countOverride: 99_999), "BAD.DDF"));
+        Assert.Throws<InvalidDataException>(() => BosDataFile.Parse(DataFile([16], 99_999), "BAD.DDF"));
     }
 
     [Fact]
@@ -120,7 +118,7 @@ public sealed class BosDataFileTests
     public void Parse_ExposesTheClassCodeAndTheDeclaredLength()
     {
         var b = DataFile([32, 32]);
-        var payload = BosDataFile.HeaderLength + (2 * BosDataFile.RecordLength);
+        var payload = BosDataFile.HeaderLength + 2 * BosDataFile.RecordLength;
         BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(payload + 16), 32);
 
         var file = BosDataFile.Parse(b, "T.DDF");

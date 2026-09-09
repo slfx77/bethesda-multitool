@@ -28,8 +28,8 @@ internal static class CaptureWorkingSetTrimDiagnostic
         GC.Collect(
             GC.MaxGeneration,
             GCCollectionMode.Forced,
-            blocking: true,
-            compacting: false);
+            true,
+            false);
 #pragma warning restore S1215
         gcTimer.Stop();
 
@@ -208,7 +208,7 @@ internal static class CaptureWorkingSetTrimDiagnostic
         }
 
         return new CaptureMemorySnapshot(
-            GC.GetTotalMemory(forceFullCollection: false),
+            GC.GetTotalMemory(false),
             gc.TotalCommittedBytes,
             gc.FragmentedBytes,
             privateBytes,

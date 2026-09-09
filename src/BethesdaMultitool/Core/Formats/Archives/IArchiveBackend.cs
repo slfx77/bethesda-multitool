@@ -26,6 +26,15 @@ internal interface IArchiveBackend : IDisposable
     /// <summary>Total entry count across the container.</summary>
     int TotalFiles { get; }
 
+    /// <summary>
+    ///     Bytes the container occupies on disk, when that is not simply the length of the file it
+    ///     was opened from. Null (the default) means "ask the file", which is the truth for every
+    ///     single-file family. A MULTI-FILE family must override: the Arena floppy installer is
+    ///     eight <c>ARENA.Hn</c> plus eight <c>ARENA.n</c> plus <c>ARENA.TDS</c>, so without this
+    ///     <c>archive info</c> reported the 8,160-byte anchor as the size of an 11 MB release.
+    /// </summary>
+    long? ContainerSizeBytes => null;
+
     /// <summary>All entries, folder trees flattened. Called once per index build; may allocate.</summary>
     IReadOnlyList<ArchiveEntry> ListFiles();
 

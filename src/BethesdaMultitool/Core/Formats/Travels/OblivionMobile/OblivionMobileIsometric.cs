@@ -46,7 +46,7 @@ internal static class OblivionMobileIsometric
     /// </summary>
     public static (int X, int Y) CellOrigin(int i, int j)
     {
-        return (((i - j) * HalfTileWidth) - HalfTileWidth, (i + j) * HalfTileHeight);
+        return ((i - j) * HalfTileWidth - HalfTileWidth, (i + j) * HalfTileHeight);
     }
 
     /// <summary>

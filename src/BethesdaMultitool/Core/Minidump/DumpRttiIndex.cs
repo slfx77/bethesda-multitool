@@ -149,7 +149,7 @@ public sealed class DumpRttiIndex
     private static Dictionary<uint, string> FindTypeDescriptors(ModuleImage image)
     {
         var result = new Dictionary<uint, string>();
-        ReadOnlySpan<byte> tag = ".?A"u8;
+        var tag = ".?A"u8;
 
         foreach (var run in image.Runs)
         {
@@ -328,7 +328,7 @@ public sealed class DumpRttiIndex
 
         for (uint i = 0; i < baseCount; i++)
         {
-            if (!image.TryReadUInt32(arrayVa + (i * 4), out var descriptorVa) ||
+            if (!image.TryReadUInt32(arrayVa + i * 4, out var descriptorVa) ||
                 !image.TryReadUInt32(descriptorVa, out var pTypeDescriptor) ||
                 !typeDescriptors.TryGetValue(pTypeDescriptor, out var mangled))
             {

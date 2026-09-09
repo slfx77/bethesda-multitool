@@ -1,6 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 
@@ -65,8 +63,8 @@ public class DaggerfallSoundFileTests
 
             var wav = sounds.ToWav(0);
             Assert.Equal(44 + 4, wav.Length);
-            Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(wav, 0, 4));
-            Assert.Equal("WAVE", System.Text.Encoding.ASCII.GetString(wav, 8, 4));
+            Assert.Equal("RIFF", Encoding.ASCII.GetString(wav, 0, 4));
+            Assert.Equal("WAVE", Encoding.ASCII.GetString(wav, 8, 4));
             Assert.Equal(1, BitConverter.ToInt16(wav, 20));
             Assert.Equal(1, BitConverter.ToInt16(wav, 22));
             Assert.Equal(DaggerfallSoundFile.SampleRate, BitConverter.ToInt32(wav, 24));
@@ -75,7 +73,7 @@ public class DaggerfallSoundFileTests
         }
         finally
         {
-            Directory.Delete(Path.GetDirectoryName(path)!, recursive: true);
+            Directory.Delete(Path.GetDirectoryName(path)!, true);
         }
     }
 
@@ -90,7 +88,7 @@ public class DaggerfallSoundFileTests
         }
         finally
         {
-            Directory.Delete(Path.GetDirectoryName(path)!, recursive: true);
+            Directory.Delete(Path.GetDirectoryName(path)!, true);
         }
     }
 }

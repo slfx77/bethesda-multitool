@@ -13,6 +13,19 @@ namespace BethesdaMultitool.Core.RuntimeBuffer;
 /// </summary>
 internal sealed class OwnershipTextMatcher
 {
+    /// <summary>
+    ///     Shortest unclassified string allowed to claim an owner by exact text match.
+    ///     <para>
+    ///         The text matchers below are exact dictionary lookups against inventories we already
+    ///         recovered, so an <c>Other</c> string that matches one is just as much evidence as a
+    ///         classified one — see <see cref="CanTryTextMatch" />. Very short text is the one place
+    ///         that reasoning weakens: "Yes" or "Doc" can equal a real EditorID or dialogue line by
+    ///         coincidence rather than identity, so a cross-category promotion needs a few
+    ///         characters behind it. Classified hits are unaffected.
+    ///     </para>
+    /// </summary>
+    private const int MinUnclassifiedTextMatchLength = 6;
+
     private readonly BufferAnalysisContext _ctx;
 
     /// <summary>
@@ -40,19 +53,6 @@ internal sealed class OwnershipTextMatcher
     ///     Set of all PDB class names (for cFormEditorID fallback validation).
     /// </summary>
     private readonly HashSet<string> _pdbClassNames;
-
-    /// <summary>
-    ///     Shortest unclassified string allowed to claim an owner by exact text match.
-    ///     <para>
-    ///         The text matchers below are exact dictionary lookups against inventories we already
-    ///         recovered, so an <c>Other</c> string that matches one is just as much evidence as a
-    ///         classified one — see <see cref="CanTryTextMatch" />. Very short text is the one place
-    ///         that reasoning weakens: "Yes" or "Doc" can equal a real EditorID or dialogue line by
-    ///         coincidence rather than identity, so a cross-category promotion needs a few
-    ///         characters behind it. Classified hits are unaffected.
-    ///     </para>
-    /// </summary>
-    private const int MinUnclassifiedTextMatchLength = 6;
 
     public OwnershipTextMatcher(BufferAnalysisContext ctx)
     {

@@ -52,7 +52,7 @@ public sealed class NifPackedDataExtractorTests
         var nifPath = SampleFileFixture.FindSamplePath(relativePath);
         Assert.SkipWhen(nifPath is null, $"Sample NIF not available: {relativePath}");
 
-        var data = File.ReadAllBytes(nifPath!);
+        var data = File.ReadAllBytes(nifPath);
         var info = Assert.IsType<NifInfo>(NifParser.Parse(data));
         Assert.True(info.IsBigEndian);
 

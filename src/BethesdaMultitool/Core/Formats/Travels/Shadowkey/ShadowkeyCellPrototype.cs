@@ -22,8 +22,19 @@ namespace BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 ///         records carry it as the ceiling; the +4 word equals the ceiling whenever the four
 ///         ceiling corners agree (55,676 records); and no surface slot in 534,632 slot bytes is
 ///         outside <c>{0xFF} u [0, .sur count)</c>. The slots are NOT <c>.ztx</c> texture indices:
-///         eight zones use a slot value at or above their texture count (snowline 26 vs 19), and
-///         which slot is floor, ceiling or which wall is unresolved.
+///         ELEVEN zones use a slot value at or above their texture count (snowline 26 vs 19;
+///         re-measured 2026-09-07 — this said "eight", which undercounted azra, broken1, crypt2,
+///         delfhide, dstar_w, fearfrst, GhstPass, GlacierCrawl, lakvan, LothCav and snowline).
+///     </para>
+///     <para>
+///         ⚑ The eight slots are FOUR EDGE DIRECTIONS x TWO BANDS, not six faces (measured
+///         2026-09-07 over all 21 zones): <c>s0/s4</c> = -x, <c>s1/s5</c> = +x, <c>s2/s6</c> = -y,
+///         <c>s3/s7</c> = +y, with 0-3 the ceiling-side band and 4-7 the floor-side band. Scored
+///         0.9425 and 0.9419 against 0.0152 for a rotated assignment on cells with exactly one
+///         non-flush edge, and reproduced independently.
+///         ⛔ Whether the floor and ceiling themselves have a slot is still OPEN: the oracle above
+///         is drawn only from step-bearing cells, where "wall risers only" and "the band's common
+///         value is the horizontal face, overridden per edge" are indistinguishable.
 ///     </para>
 ///     <para>
 ///         Solidity is encoded as "floor meets ceiling": every one of the 83,775 retail grid cells
@@ -50,10 +61,11 @@ internal sealed class ShadowkeyCellPrototype
     /// <summary>Surface-slot value meaning "no surface".</summary>
     public const byte NoSurface = 0xFF;
 
-    private readonly short[] _floorCorners;
     private readonly short[] _ceilingCorners;
-    private readonly byte[] _surfaceSlots;
     private readonly byte[] _edge;
+
+    private readonly short[] _floorCorners;
+    private readonly byte[] _surfaceSlots;
 
     internal ShadowkeyCellPrototype(
         sbyte shade,

@@ -23,23 +23,23 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 
     // NIF Viewer state
     private NifBrowserService? _nifBrowserService;
-    private BethesdaViewerScene? _nifViewerScene;
-    private CancellationTokenSource? _nifViewerLoadCts;
-    private Task? _nifViewerLoadTask;
-    private int _nifViewerLoadGeneration;
     private CancellationTokenSource? _nifViewerAnimationLoadCts;
-    private Task? _nifViewerAnimationLoadTask;
     private int _nifViewerAnimationLoadGeneration;
     private bool _nifViewerAnimationLoadInProgress;
+    private Task? _nifViewerAnimationLoadTask;
+    private bool _nifViewerDisposed;
+    private CancellationTokenSource? _nifViewerLoadCts;
+    private int _nifViewerLoadGeneration;
+    private Task? _nifViewerLoadTask;
+    private TaskCompletionSource<BethesdaSceneViewerRenderState>? _nifViewerNativeOutcome;
+    private int _nifViewerNativeOutcomeGeneration;
+    private BethesdaViewerScene? _nifViewerNativeOutcomeScene;
+    private bool _nifViewerNativeReady;
+    private BethesdaViewerScene? _nifViewerScene;
     private CancellationTokenSource? _nifViewerSourceLoadCts;
     private int _nifViewerSourceLoadingGeneration;
-    private bool _nifViewerNativeReady;
-    private TaskCompletionSource<BethesdaSceneViewerRenderState>? _nifViewerNativeOutcome;
-    private BethesdaViewerScene? _nifViewerNativeOutcomeScene;
-    private int _nifViewerNativeOutcomeGeneration;
-    private bool _nifViewerWebViewInitialized;
     private Task? _nifViewerWebViewInitializationTask;
-    private bool _nifViewerDisposed;
+    private bool _nifViewerWebViewInitialized;
 
     public NifConverterTab()
     {
@@ -950,9 +950,9 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         NifViewerAnimationLoadStatusText.Text = status ?? (catalog switch
         {
             {
-                Status: NifModelFamilyAnimationResolutionStatus.Resolved,
-                Animations: { Count: > 0 }
-            } =>
+                    Status: NifModelFamilyAnimationResolutionStatus.Resolved,
+                    Animations: { Count: > 0 }
+                } =>
                 "Select a KF, then load it into the native playback controls.",
             { Status: NifModelFamilyAnimationResolutionStatus.Resolved } =>
                 "No KF candidates were found in this model family.",
@@ -1054,7 +1054,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             // A newer source, model, or KF selection owns the visible state.
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and
-                                   not StackOverflowException)
+                                       not StackOverflowException)
         {
             if (IsCurrentNifViewerAnimationLoad(
                     service,
@@ -1374,6 +1374,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
                 _nifViewerLoadGeneration++;
                 _nifViewerAnimationLoadGeneration++;
             }
+
             _nifViewerSourceLoadingGeneration = 0;
             _nifViewerSourceLoadCts?.Cancel();
             _nifViewerSourceLoadCts = null;

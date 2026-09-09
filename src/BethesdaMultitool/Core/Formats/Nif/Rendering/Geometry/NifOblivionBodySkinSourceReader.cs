@@ -11,8 +11,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 internal sealed class NifOblivionBodySkinSourceReader
 {
     private readonly byte[] _data;
-    private readonly NifInfo _nif;
     private readonly bool _hasStrictStaticScene;
+    private readonly NifInfo _nif;
 
     private NifOblivionBodySkinSourceReader(byte[] data, NifInfo nif, bool hasStrictStaticScene)
     {
@@ -21,8 +21,10 @@ internal sealed class NifOblivionBodySkinSourceReader
         _hasStrictStaticScene = hasStrictStaticScene;
     }
 
-    internal static bool IsEligible(byte[] data, NifInfo nif, int shapeIndex) =>
-        Create(data, nif)?.ReadAmbientColor(shapeIndex) is not null;
+    internal static bool IsEligible(byte[] data, NifInfo nif, int shapeIndex)
+    {
+        return Create(data, nif)?.ReadAmbientColor(shapeIndex) is not null;
+    }
 
     /// <summary>Local read-only extraction context; scene inheritance is validated once.</summary>
     // Format/ownership oracle: TestOutput/current-goal/06-oblivion-facgen/
@@ -90,7 +92,8 @@ internal sealed class NifOblivionBodySkinSourceReader
         var firstProperty = shape.ReadInt32();
         var secondProperty = shape.ReadInt32();
         var materialIndex = IsBlockType(nif, firstProperty, "NiMaterialProperty")
-            ? firstProperty : secondProperty;
+            ? firstProperty
+            : secondProperty;
         var textureIndex = materialIndex == firstProperty ? secondProperty : firstProperty;
         if (!ReadMaterial(data, nif, materialIndex, hasStrictStaticScene, out var ambient) ||
             !ReadTexturing(data, nif, textureIndex) ||
@@ -428,7 +431,7 @@ internal sealed class NifOblivionBodySkinSourceReader
             return null;
         }
 
-        return new BinaryReader(new MemoryStream(data, block.DataOffset, block.Size, writable: false),
+        return new BinaryReader(new MemoryStream(data, block.DataOffset, block.Size, false),
             Encoding.ASCII);
     }
 }

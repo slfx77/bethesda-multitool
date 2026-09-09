@@ -7,6 +7,47 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.D3D12;
 
 public sealed class StaticOpaquePacketPolicyTests
 {
+    public enum DeniedFact
+    {
+        Disabled,
+        UnknownGame,
+        NonOrdinaryLane,
+        NonModernShader,
+        Grass,
+        TallGrass,
+        SpeedTree,
+        Leaf,
+        PhysicsLiteSway,
+        RigidNodeAnimation,
+        Skin,
+        LiveParticles,
+        UvScroll,
+        Diagnostics,
+        Heatmap,
+        TexturesPending,
+        EnvironmentPending,
+        MirrorReplayUnsupported,
+        RefilterInputsMissing,
+        ExternalEmittance
+    }
+
+    public enum KeyDifference
+    {
+        PublicationIdentity,
+        PublicationGeneration,
+        EvictionGeneration,
+        RenderOrigin,
+        RefilterMode,
+        Frustum,
+        CylinderX,
+        CylinderY,
+        CylinderRadius,
+        SmallPropCutoff,
+        DistanceLodMode,
+        ShadowCapture,
+        CascadePrefixMode
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
@@ -59,7 +100,7 @@ public sealed class StaticOpaquePacketPolicyTests
         var facts = EligibleFacts() with
         {
             ExactRefilterActive = refilterActive,
-            ExactRefilterInputsCaptured = inputsCaptured,
+            ExactRefilterInputsCaptured = inputsCaptured
         };
 
         Assert.Equal((StaticOpaquePacketFallbackReason)expected, StaticOpaquePacketPolicy.Resolve(facts));
@@ -105,8 +146,8 @@ public sealed class StaticOpaquePacketPolicyTests
     {
         var positiveZero = CreateKey(cylinderX: +0f);
         var negativeZero = CreateKey(cylinderX: -0f);
-        var firstNaN = BitConverter.Int32BitsToSingle(unchecked((int)0x7FC0_0001));
-        var secondNaN = BitConverter.Int32BitsToSingle(unchecked((int)0x7FC0_0002));
+        var firstNaN = BitConverter.Int32BitsToSingle(unchecked(0x7FC0_0001));
+        var secondNaN = BitConverter.Int32BitsToSingle(unchecked(0x7FC0_0002));
 
         Assert.False(StaticOpaquePacketPolicy.CanReuse(positiveZero, negativeZero));
         Assert.False(StaticOpaquePacketPolicy.CanReuse(
@@ -138,53 +179,59 @@ public sealed class StaticOpaquePacketPolicyTests
         Assert.True(StaticOpaquePacketPolicy.CanReuse(first, second));
     }
 
-    private static StaticOpaquePacketFacts EligibleFacts() => new(
-        Requested: true,
-        Game: StaticOpaquePacketGame.Fallout76,
-        IsOrdinaryLane: true,
-        UsesModernStandardShader: true,
-        IsGrass: false,
-        IsTallGrass: false,
-        HasSpeedTree: false,
-        IsLeaf: false,
-        HasPhysicsLiteSway: false,
-        HasRigidNodeAnimation: false,
-        HasSkin: false,
-        HasLiveParticles: false,
-        HasUvScroll: false,
-        HasExternalEmittance: false,
-        DiagnosticsEnabled: false,
-        HeatmapEnabled: false,
-        TexturesTerminal: true,
-        EnvironmentMapTerminal: true,
-        MirrorReplaySupported: true,
-        ExactRefilterActive: true,
-        ExactRefilterInputsCaptured: true);
-
-    private static StaticOpaquePacketFacts DenyOneFact(DeniedFact fact) => fact switch
+    private static StaticOpaquePacketFacts EligibleFacts()
     {
-        DeniedFact.Disabled => EligibleFacts() with { Requested = false },
-        DeniedFact.UnknownGame => EligibleFacts() with { Game = StaticOpaquePacketGame.Unknown },
-        DeniedFact.NonOrdinaryLane => EligibleFacts() with { IsOrdinaryLane = false },
-        DeniedFact.NonModernShader => EligibleFacts() with { UsesModernStandardShader = false },
-        DeniedFact.Grass => EligibleFacts() with { IsGrass = true },
-        DeniedFact.TallGrass => EligibleFacts() with { IsTallGrass = true },
-        DeniedFact.SpeedTree => EligibleFacts() with { HasSpeedTree = true },
-        DeniedFact.Leaf => EligibleFacts() with { IsLeaf = true },
-        DeniedFact.PhysicsLiteSway => EligibleFacts() with { HasPhysicsLiteSway = true },
-        DeniedFact.RigidNodeAnimation => EligibleFacts() with { HasRigidNodeAnimation = true },
-        DeniedFact.Skin => EligibleFacts() with { HasSkin = true },
-        DeniedFact.LiveParticles => EligibleFacts() with { HasLiveParticles = true },
-        DeniedFact.UvScroll => EligibleFacts() with { HasUvScroll = true },
-        DeniedFact.ExternalEmittance => EligibleFacts() with { HasExternalEmittance = true },
-        DeniedFact.Diagnostics => EligibleFacts() with { DiagnosticsEnabled = true },
-        DeniedFact.Heatmap => EligibleFacts() with { HeatmapEnabled = true },
-        DeniedFact.TexturesPending => EligibleFacts() with { TexturesTerminal = false },
-        DeniedFact.EnvironmentPending => EligibleFacts() with { EnvironmentMapTerminal = false },
-        DeniedFact.MirrorReplayUnsupported => EligibleFacts() with { MirrorReplaySupported = false },
-        DeniedFact.RefilterInputsMissing => EligibleFacts() with { ExactRefilterInputsCaptured = false },
-        _ => throw new ArgumentOutOfRangeException(nameof(fact), fact, null),
-    };
+        return new StaticOpaquePacketFacts(
+            true,
+            StaticOpaquePacketGame.Fallout76,
+            true,
+            true,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            true,
+            true,
+            true,
+            true,
+            true);
+    }
+
+    private static StaticOpaquePacketFacts DenyOneFact(DeniedFact fact)
+    {
+        return fact switch
+        {
+            DeniedFact.Disabled => EligibleFacts() with { Requested = false },
+            DeniedFact.UnknownGame => EligibleFacts() with { Game = StaticOpaquePacketGame.Unknown },
+            DeniedFact.NonOrdinaryLane => EligibleFacts() with { IsOrdinaryLane = false },
+            DeniedFact.NonModernShader => EligibleFacts() with { UsesModernStandardShader = false },
+            DeniedFact.Grass => EligibleFacts() with { IsGrass = true },
+            DeniedFact.TallGrass => EligibleFacts() with { IsTallGrass = true },
+            DeniedFact.SpeedTree => EligibleFacts() with { HasSpeedTree = true },
+            DeniedFact.Leaf => EligibleFacts() with { IsLeaf = true },
+            DeniedFact.PhysicsLiteSway => EligibleFacts() with { HasPhysicsLiteSway = true },
+            DeniedFact.RigidNodeAnimation => EligibleFacts() with { HasRigidNodeAnimation = true },
+            DeniedFact.Skin => EligibleFacts() with { HasSkin = true },
+            DeniedFact.LiveParticles => EligibleFacts() with { HasLiveParticles = true },
+            DeniedFact.UvScroll => EligibleFacts() with { HasUvScroll = true },
+            DeniedFact.ExternalEmittance => EligibleFacts() with { HasExternalEmittance = true },
+            DeniedFact.Diagnostics => EligibleFacts() with { DiagnosticsEnabled = true },
+            DeniedFact.Heatmap => EligibleFacts() with { HeatmapEnabled = true },
+            DeniedFact.TexturesPending => EligibleFacts() with { TexturesTerminal = false },
+            DeniedFact.EnvironmentPending => EligibleFacts() with { EnvironmentMapTerminal = false },
+            DeniedFact.MirrorReplayUnsupported => EligibleFacts() with { MirrorReplaySupported = false },
+            DeniedFact.RefilterInputsMissing => EligibleFacts() with { ExactRefilterInputsCaptured = false },
+            _ => throw new ArgumentOutOfRangeException(nameof(fact), fact, null)
+        };
+    }
 
     private static StaticOpaquePacketReuseKey CreateKey(
         ulong publicationIdentity = 101,
@@ -218,70 +265,35 @@ public sealed class StaticOpaquePacketPolicyTests
             useCascadePrefixes);
     }
 
-    private static StaticOpaquePacketReuseKey ChangeKey(KeyDifference difference) => difference switch
+    private static StaticOpaquePacketReuseKey ChangeKey(KeyDifference difference)
     {
-        KeyDifference.PublicationIdentity => CreateKey(publicationIdentity: 102),
-        KeyDifference.PublicationGeneration => CreateKey(publicationGeneration: 4),
-        KeyDifference.EvictionGeneration => CreateKey(evictionGeneration: 8),
-        KeyDifference.RenderOrigin => CreateKey(renderOrigin: new Vector3(1f, 2f, 4f)),
-        KeyDifference.RefilterMode => CreateKey(exactRefilterActive: false),
-        KeyDifference.Frustum => CreateKey(frustum: CreateFrustum(1f)),
-        KeyDifference.CylinderX => CreateKey(cylinderX: 11f),
-        KeyDifference.CylinderY => CreateKey(cylinderY: 21f),
-        KeyDifference.CylinderRadius => CreateKey(cylinderRadius: 31f),
-        KeyDifference.SmallPropCutoff => CreateKey(smallPropCutoff: 41f),
-        KeyDifference.DistanceLodMode => CreateKey(distanceLodEnabled: false),
-        KeyDifference.ShadowCapture => CreateKey(shadowCaptureArmed: false),
-        KeyDifference.CascadePrefixMode => CreateKey(useCascadePrefixes: false),
-        _ => throw new ArgumentOutOfRangeException(nameof(difference), difference, null),
-    };
-
-    private static Frustum CreateFrustum(float offset) => new(
-        new Plane(1f + offset, 2f, 3f, 4f),
-        new Plane(5f, 6f, 7f, 8f),
-        new Plane(9f, 10f, 11f, 12f),
-        new Plane(13f, 14f, 15f, 16f),
-        new Plane(17f, 18f, 19f, 20f),
-        new Plane(21f, 22f, 23f, 24f));
-
-    public enum DeniedFact
-    {
-        Disabled,
-        UnknownGame,
-        NonOrdinaryLane,
-        NonModernShader,
-        Grass,
-        TallGrass,
-        SpeedTree,
-        Leaf,
-        PhysicsLiteSway,
-        RigidNodeAnimation,
-        Skin,
-        LiveParticles,
-        UvScroll,
-        Diagnostics,
-        Heatmap,
-        TexturesPending,
-        EnvironmentPending,
-        MirrorReplayUnsupported,
-        RefilterInputsMissing,
-        ExternalEmittance,
+        return difference switch
+        {
+            KeyDifference.PublicationIdentity => CreateKey(102),
+            KeyDifference.PublicationGeneration => CreateKey(publicationGeneration: 4),
+            KeyDifference.EvictionGeneration => CreateKey(evictionGeneration: 8),
+            KeyDifference.RenderOrigin => CreateKey(renderOrigin: new Vector3(1f, 2f, 4f)),
+            KeyDifference.RefilterMode => CreateKey(exactRefilterActive: false),
+            KeyDifference.Frustum => CreateKey(frustum: CreateFrustum(1f)),
+            KeyDifference.CylinderX => CreateKey(cylinderX: 11f),
+            KeyDifference.CylinderY => CreateKey(cylinderY: 21f),
+            KeyDifference.CylinderRadius => CreateKey(cylinderRadius: 31f),
+            KeyDifference.SmallPropCutoff => CreateKey(smallPropCutoff: 41f),
+            KeyDifference.DistanceLodMode => CreateKey(distanceLodEnabled: false),
+            KeyDifference.ShadowCapture => CreateKey(shadowCaptureArmed: false),
+            KeyDifference.CascadePrefixMode => CreateKey(useCascadePrefixes: false),
+            _ => throw new ArgumentOutOfRangeException(nameof(difference), difference, null)
+        };
     }
 
-    public enum KeyDifference
+    private static Frustum CreateFrustum(float offset)
     {
-        PublicationIdentity,
-        PublicationGeneration,
-        EvictionGeneration,
-        RenderOrigin,
-        RefilterMode,
-        Frustum,
-        CylinderX,
-        CylinderY,
-        CylinderRadius,
-        SmallPropCutoff,
-        DistanceLodMode,
-        ShadowCapture,
-        CascadePrefixMode,
+        return new Frustum(
+            new Plane(1f + offset, 2f, 3f, 4f),
+            new Plane(5f, 6f, 7f, 8f),
+            new Plane(9f, 10f, 11f, 12f),
+            new Plane(13f, 14f, 15f, 16f),
+            new Plane(17f, 18f, 19f, 20f),
+            new Plane(21f, 22f, 23f, 24f));
     }
 }

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 
@@ -146,7 +143,7 @@ public class DaggerfallCifRciFileTests
         {
             for (var p = 0; p < frameLength; p++)
             {
-                file[(r * frameLength) + p] = (byte)(((r * 7) + p) % 256);
+                file[r * frameLength + p] = (byte)((r * 7 + p) % 256);
             }
         }
 
@@ -159,7 +156,7 @@ public class DaggerfallCifRciFileTests
             Assert.Equal(width, frame.Width);
             Assert.Equal(height, frame.Height);
             Assert.Equal((byte)(r * 7), frame.Indices[0]);
-            Assert.Equal((byte)(((r * 7) + frameLength - 1) % 256), frame.Indices[frameLength - 1]);
+            Assert.Equal((byte)((r * 7 + frameLength - 1) % 256), frame.Indices[frameLength - 1]);
             Assert.Equal(0, frame.XOffset);
             Assert.Equal(0, frame.YOffset);
         }
@@ -170,7 +167,7 @@ public class DaggerfallCifRciFileTests
     {
         // Retail TFAC00I0.RCI is 503 * 4096 + 7 bytes; the 7-byte tail is junk. One 64x64 frame
         // plus 7 extra bytes must yield exactly one record.
-        var file = new byte[(64 * 64) + 7];
+        var file = new byte[64 * 64 + 7];
         file[0] = 0xAB;
 
         var parsed = DaggerfallCifRciFile.Parse(file, "TFAC00I0.RCI");
@@ -183,15 +180,13 @@ public class DaggerfallCifRciFileTests
     public void Parse_RciNotInTheDimensionTable_Throws()
     {
         // RCI files are headerless; without a table entry there is no geometry to decode with.
-        Assert.Throws<NotSupportedException>(
-            () => DaggerfallCifRciFile.Parse(new byte[4096], "KAMIRA.RCI"));
+        Assert.Throws<NotSupportedException>(() => DaggerfallCifRciFile.Parse(new byte[4096], "KAMIRA.RCI"));
     }
 
     [Fact]
     public void Parse_RciSmallerThanOneRecord_Throws()
     {
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallCifRciFile.Parse(new byte[100], "BUTTONS.RCI"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallCifRciFile.Parse(new byte[100], "BUTTONS.RCI"));
     }
 
     [Fact]
@@ -247,10 +242,9 @@ public class DaggerfallCifRciFileTests
     {
         // Total size 0 would restart the walk at the same record forever.
         var file = new List<byte>();
-        AddWeaponAnimation(file, 2, 1, [[128, 200, 0, 33]], totalSizeOverride: 0);
+        AddWeaponAnimation(file, 2, 1, [[128, 200, 0, 33]], 0);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallCifRciFile.Parse([.. file], "WEAPON00.CIF"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallCifRciFile.Parse([.. file], "WEAPON00.CIF"));
     }
 
     [Fact]
@@ -272,8 +266,7 @@ public class DaggerfallCifRciFileTests
 
         WriteI16(file, AnimationHeaderLength);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallCifRciFile.Parse([.. file], "WEAPON00.CIF"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallCifRciFile.Parse([.. file], "WEAPON00.CIF"));
     }
 
     [Fact]
@@ -283,8 +276,7 @@ public class DaggerfallCifRciFileTests
         var file = new List<byte>();
         AddImgRecord(file, 0, 0, 2, 1, 2, [130, 5]);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallCifRciFile.Parse([.. file], "FIRE00C6.CIF"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallCifRciFile.Parse([.. file], "FIRE00C6.CIF"));
     }
 
     [Fact]
@@ -294,15 +286,13 @@ public class DaggerfallCifRciFileTests
         var file = new List<byte>();
         AddImgRecord(file, 0, 0, 2, 2, 2, [0, 9]);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallCifRciFile.Parse([.. file], "FIRE00C6.CIF"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallCifRciFile.Parse([.. file], "FIRE00C6.CIF"));
     }
 
     [Fact]
     public void Parse_TruncatedImgHeader_Throws()
     {
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallCifRciFile.Parse(new byte[8], "KIDS00I0.CIF"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallCifRciFile.Parse(new byte[8], "KIDS00I0.CIF"));
     }
 
     [Fact]
@@ -310,10 +300,9 @@ public class DaggerfallCifRciFileTests
     {
         // Header promises 2x2 = 4 pixels but only 2 data bytes exist.
         var file = new List<byte>();
-        AddImgRecord(file, 0, 0, 2, 2, 0, [1, 2], declaredDataLength: 4);
+        AddImgRecord(file, 0, 0, 2, 2, 0, [1, 2], 4);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallCifRciFile.Parse([.. file], "KIDS00I0.CIF"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallCifRciFile.Parse([.. file], "KIDS00I0.CIF"));
     }
 
     [Fact]
@@ -322,10 +311,9 @@ public class DaggerfallCifRciFileTests
         // 2x2 = 4 pixels but PixelDataLength says 2: the walk would read the next record's
         // header bytes as pixels.
         var file = new List<byte>();
-        AddImgRecord(file, 0, 0, 2, 2, 0, [1, 2], declaredDataLength: 2);
+        AddImgRecord(file, 0, 0, 2, 2, 0, [1, 2], 2);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallCifRciFile.Parse([.. file], "KIDS00I0.CIF"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallCifRciFile.Parse([.. file], "KIDS00I0.CIF"));
     }
 
     [Fact]
@@ -335,8 +323,7 @@ public class DaggerfallCifRciFileTests
         var file = new List<byte>();
         AddImgRecord(file, 0, 0, 2, 1, 0x0108, [1, 2]);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallCifRciFile.Parse([.. file], "KIDS00I0.CIF"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallCifRciFile.Parse([.. file], "KIDS00I0.CIF"));
     }
 
     [Theory]
@@ -344,8 +331,7 @@ public class DaggerfallCifRciFileTests
     [InlineData("WEAPON00.CIF")]
     public void Parse_EmptyFile_Throws(string name)
     {
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallCifRciFile.Parse(ReadOnlySpan<byte>.Empty, name));
+        Assert.Throws<InvalidDataException>(() => DaggerfallCifRciFile.Parse(ReadOnlySpan<byte>.Empty, name));
     }
 
     [Fact]

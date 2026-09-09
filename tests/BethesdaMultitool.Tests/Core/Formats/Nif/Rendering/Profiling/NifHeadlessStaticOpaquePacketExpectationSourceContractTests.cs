@@ -35,6 +35,7 @@ public sealed class NifHeadlessStaticOpaquePacketExpectationSourceContractTests
         {
             Assert.Contains(requiredPositiveFact, source, StringComparison.Ordinal);
         }
+
         SourceContract.AssertOrder(
             source,
             "WaitForFence(gpu.FrameFence, fenceValue);",

@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Battlespire;
@@ -160,8 +157,10 @@ public class Bs6SceneAssemblerTests
 
         // One shared mesh instanced twice — the transform carries the difference.
         Assert.All(assembly.Instances, i => Assert.Same(mesh, i.Mesh));
-        Assert.Equal(new Vector3(100, 0, 0), assembly.Instances[0].Transform.Translation, new Vector3Comparer(Tolerance));
-        Assert.Equal(new Vector3(0, 0, 200), assembly.Instances[1].Transform.Translation, new Vector3Comparer(Tolerance));
+        Assert.Equal(new Vector3(100, 0, 0), assembly.Instances[0].Transform.Translation,
+            new Vector3Comparer(Tolerance));
+        Assert.Equal(new Vector3(0, 0, 200), assembly.Instances[1].Transform.Translation,
+            new Vector3Comparer(Tolerance));
     }
 
     [Fact]

@@ -10,9 +10,11 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Shaders;
 /// </summary>
 public sealed class SkyrimRetailImageSpaceSourceContractTests
 {
-    private static string Read(string relativePath) =>
-        File.ReadAllText(Path.Combine(SourceContract.RepoRoot,
+    private static string Read(string relativePath)
+    {
+        return File.ReadAllText(Path.Combine(SourceContract.RepoRoot,
             relativePath.Replace('/', Path.DirectorySeparatorChar)));
+    }
 
     [Fact]
     public void Pair13Route_DispatchesBeforeMode5AndUsesRecoveredConstantsAndPivot()
@@ -103,8 +105,8 @@ public sealed class SkyrimRetailImageSpaceSourceContractTests
         var tonemap = Read(
             "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Gpu/Shaders/Post/tonemap.frag.hlsl");
 
-        Assert.Contains("ClassicHdrPassPlan.CreateSkyrim(width, height, historyWasPrimed, bloomActive)", pass,
-            StringComparison.Ordinal);
+        SourceContract.AssertContainsIgnoringWhitespace(
+            "ClassicHdrPassPlan.CreateSkyrim(width, height, historyWasPrimed, bloomActive)", pass);
         Assert.Contains("0 => _downsamplePso", pass, StringComparison.Ordinal);
         Assert.Contains("1 => _skyrimLuminancePso", pass, StringComparison.Ordinal);
         Assert.Contains("_ => _skyrimDownsamplePso", pass, StringComparison.Ordinal);

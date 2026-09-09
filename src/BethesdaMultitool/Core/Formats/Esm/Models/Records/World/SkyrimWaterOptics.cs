@@ -26,8 +26,10 @@ public sealed record SkyrimWaterOptics(
     {
         if (isBigEndian || data.Length != 228) return null;
 
-        static float Read(ReadOnlySpan<byte> bytes, int offset) =>
-            BinaryPrimitives.ReadSingleLittleEndian(bytes.Slice(offset, sizeof(float)));
+        static float Read(ReadOnlySpan<byte> bytes, int offset)
+        {
+            return BinaryPrimitives.ReadSingleLittleEndian(bytes.Slice(offset, sizeof(float)));
+        }
 
         var result = new SkyrimWaterOptics(
             Read(data, 32), Read(data, 36), Read(data, 132),

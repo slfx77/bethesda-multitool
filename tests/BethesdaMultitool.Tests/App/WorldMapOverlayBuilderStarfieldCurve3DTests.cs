@@ -52,10 +52,12 @@ public sealed class WorldMapOverlayBuilderStarfieldCurve3DTests
         Assert.Same(curve, world.Curves3DByFormId[curve.FormId]);
     }
 
-    private static StarfieldCurve3DRecord Curve(uint formId, string editorId) =>
-        new()
+    private static StarfieldCurve3DRecord Curve(uint formId, string editorId)
+    {
+        return new StarfieldCurve3DRecord
         {
             FormId = formId,
             EditorId = editorId
         };
+    }
 }

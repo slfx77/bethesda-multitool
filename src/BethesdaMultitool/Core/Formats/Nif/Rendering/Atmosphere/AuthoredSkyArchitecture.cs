@@ -47,7 +47,7 @@ internal static class AuthoredSkyArchitecture
         bool? explicitOverride,
         AtmosphereState.ResolvedAmbientCube? directionalAmbient)
     {
-        return (explicitOverride ?? (game is BethesdaGame.Skyrim or BethesdaGame.Fallout76))
+        return explicitOverride ?? game is BethesdaGame.Skyrim or BethesdaGame.Fallout76
             ? directionalAmbient
             : null;
     }

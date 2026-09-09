@@ -19,7 +19,7 @@ public sealed class NifAlphaConversionTests
 
         Assert.SkipWhen(xboxNifPath is null, "Xbox vault22grass NIF not available");
 
-        var xboxData = File.ReadAllBytes(xboxNifPath!);
+        var xboxData = File.ReadAllBytes(xboxNifPath);
         var converted = NifConverter.Convert(xboxData);
 
         Assert.True(converted.Success, converted.ErrorMessage);

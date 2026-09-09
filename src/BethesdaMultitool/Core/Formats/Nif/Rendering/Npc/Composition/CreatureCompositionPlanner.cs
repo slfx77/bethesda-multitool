@@ -229,7 +229,7 @@ internal static class CreatureCompositionPlanner
             var explicitAnimation = TryLoadCreatureAnimation(
                 overridePath,
                 meshArchives,
-                probeQuietly: false);
+                false);
             if (explicitAnimation != null)
             {
                 return explicitAnimation;
@@ -242,7 +242,7 @@ internal static class CreatureCompositionPlanner
             var recordAnimation = TryLoadCreatureAnimation(
                 kfPath,
                 meshArchives,
-                probeQuietly: false);
+                false);
             if (recordAnimation != null)
             {
                 return recordAnimation;
@@ -257,7 +257,7 @@ internal static class CreatureCompositionPlanner
             var defaultAnimation = TryLoadCreatureAnimation(
                 ResolveSiblingAnimationPath(skeletonNifPath, candidate),
                 meshArchives,
-                probeQuietly: true);
+                true);
             if (defaultAnimation != null)
             {
                 return defaultAnimation;
@@ -293,7 +293,7 @@ internal static class CreatureCompositionPlanner
                 var lastResort = TryLoadCreatureAnimation(
                     ResolveSiblingAnimationPath(skeletonNifPath, candidate),
                     meshArchives,
-                    probeQuietly: true);
+                    true);
                 if (lastResort != null)
                 {
                     return lastResort;
@@ -318,7 +318,7 @@ internal static class CreatureCompositionPlanner
         var raw = NpcMeshHelpers.LoadNifRawFromBsa(
             animationPath,
             meshArchives,
-            skipConversion: true);
+            true);
         if (raw == null)
         {
             return null;

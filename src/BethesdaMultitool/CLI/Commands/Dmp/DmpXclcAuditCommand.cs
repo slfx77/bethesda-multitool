@@ -8,8 +8,12 @@ namespace BethesdaMultitool.CLI.Commands.Dmp;
 
 /// <summary>
 ///     Measures how often the DMP-mode XCLC grid attachment rule
-///     (<c>CellRecordHandler.ParseCellFromScanResult</c>: <c>ScanResult.CellGrids
-///     .FirstOrDefault(g =&gt; Math.Abs(g.Offset - record.Offset) &lt; 200)</c>) is contested —
+///     (<c>CellRecordHandler.ParseCellFromScanResult</c>:
+///     <c>
+///         ScanResult.CellGrids
+///         .FirstOrDefault(g =&gt; Math.Abs(g.Offset - record.Offset) &lt; 200)
+///     </c>
+///     ) is contested —
 ///     i.e. how often a CELL record can steal the previous/next cell's grid coordinates because
 ///     the ±200-byte window matches more than one XCLC, or an XCLC sits nearer a different cell
 ///     than the one that claims it. Diagnostic only: mirrors the production rule, changes nothing.
@@ -121,90 +125,6 @@ public static class DmpXclcAuditCommand
         }
     }
 
-    // =========================================================================
-    // Pure pairing/counting seam (unit-tested; list-in/list-out, no dump needed)
-    // =========================================================================
-
-    /// <summary>A detected CELL main record: FormID + file offset, in detection-list order.</summary>
-    internal readonly record struct AuditCell(uint FormId, long Offset);
-
-    /// <summary>A detected XCLC subrecord: grid value + file offset, in CellGrids-list order.</summary>
-    internal readonly record struct AuditGrid(int GridX, int GridY, long Offset);
-
-    /// <summary>Per-CELL audit row.</summary>
-    internal sealed record CellAuditRow
-    {
-        public required uint CellFormId { get; init; }
-        public required long CellOffset { get; init; }
-
-        /// <summary>XCLC candidates within the ±200B window (count).</summary>
-        public required int CandidateCount { get; init; }
-
-        /// <summary>Distinct (GridX, GridY) values among the candidates.</summary>
-        public required int DistinctCandidateGrids { get; init; }
-
-        /// <summary>Index into the grids list of the claimed XCLC (production rule), or -1.</summary>
-        public required int ClaimedGridIndex { get; init; }
-
-        /// <summary>Index of the candidate nearest this cell by |offset| (tie → lower list index), or -1.</summary>
-        public required int NearestGridIndex { get; init; }
-
-        /// <summary>The claimed XCLC is strictly nearer (by |offset|) to a DIFFERENT cell.</summary>
-        public required bool ClaimedGridNearerToOtherCell { get; init; }
-
-        /// <summary>≥2 candidates and their grid values are not all identical — the window choice changes the coords.</summary>
-        public bool HasDifferingCandidates => CandidateCount >= 2 && DistinctCandidateGrids >= 2;
-
-        /// <summary>Any contest at all: multiple candidates, or the claimed grid belongs nearer another cell.</summary>
-        public bool IsContested => CandidateCount >= 2 || ClaimedGridNearerToOtherCell;
-    }
-
-    /// <summary>Per-XCLC audit row (emitted only for contested grids).</summary>
-    internal sealed record GridAuditRow
-    {
-        public required int GridIndex { get; init; }
-        public required long GridOffset { get; init; }
-        public required int GridX { get; init; }
-        public required int GridY { get; init; }
-
-        /// <summary>CELL records within the ±200B window of this XCLC.</summary>
-        public required int CellsInWindow { get; init; }
-
-        /// <summary>How many cells the production rule resolves to this XCLC.</summary>
-        public required int ClaimedByCount { get; init; }
-
-        /// <summary>FormID of the globally nearest cell by |offset| (tie → first in cell-list order), or null.</summary>
-        public required uint? NearestCellFormId { get; init; }
-
-        /// <summary>A cell other than the nearest one claims this XCLC.</summary>
-        public required bool ClaimedByNonNearestCell { get; init; }
-    }
-
-    internal sealed record XclcAuditResult
-    {
-        public required IReadOnlyList<CellAuditRow> Cells { get; init; }
-        public required IReadOnlyList<GridAuditRow> ContestedGrids { get; init; }
-
-        public int TotalCells { get; init; }
-        public int TotalGrids { get; init; }
-        public int CellsWithClaim { get; init; }
-
-        /// <summary>(i) Contested XCLCs: ≥2 cells in-window, or claimed by a cell that is not its nearest.</summary>
-        public int ContestedXclcCount { get; init; }
-
-        /// <summary>(ii) Unordered CELL pairs whose production-claimed XCLC is the same entry.</summary>
-        public int CellPairsSameXclc { get; init; }
-
-        /// <summary>Cells whose claimed XCLC is strictly nearer a different cell (grid theft).</summary>
-        public int TheftCells { get; init; }
-
-        /// <summary>(iii) Impact: contested cells whose candidate grid VALUES differ — the choice changes the coords.</summary>
-        public int DifferingGridContestedCells { get; init; }
-
-        /// <summary>Theft cells with only the stolen candidate in-window (alternative outcome: no grid at all).</summary>
-        public int TheftSoleCandidateCells { get; init; }
-    }
-
     /// <summary>
     ///     Mirrors the production claim rule faithfully (first CellGrids LIST entry with
     ///     |gridOffset − cellOffset| &lt; 200, per <c>CellRecordHandler.ParseCellFromScanResult</c>)
@@ -220,7 +140,7 @@ public static class DmpXclcAuditCommand
 
         var cellOffsetsSorted = cells.Select(c => c.Offset).OrderBy(o => o).ToArray();
 
-        var claimedBy = new List<int>[grids.Count];
+        var claimedBy = new List<int>?[grids.Count];
         var cellRows = new List<CellAuditRow>(cells.Count);
 
         for (var ci = 0; ci < cells.Count; ci++)
@@ -230,7 +150,9 @@ public static class DmpXclcAuditCommand
             // All grid candidates within the window, as grid-list indices.
             var candidates = new List<int>();
             var lo = LowerBound(gridOffsetsSorted, cell.Offset - (ClaimWindowBytes - 1));
-            for (var s = lo; s < gridOffsetsSorted.Length && gridOffsetsSorted[s] <= cell.Offset + (ClaimWindowBytes - 1); s++)
+            for (var s = lo;
+                 s < gridOffsetsSorted.Length && gridOffsetsSorted[s] <= cell.Offset + (ClaimWindowBytes - 1);
+                 s++)
             {
                 candidates.Add(gridOrder[s]);
             }
@@ -238,7 +160,7 @@ public static class DmpXclcAuditCommand
             // Production claim = lowest LIST index among candidates (FirstOrDefault over the list).
             var claimedIdx = -1;
             var nearestIdx = -1;
-            long nearestDist = long.MaxValue;
+            var nearestDist = long.MaxValue;
             foreach (var gi in candidates)
             {
                 if (claimedIdx < 0 || gi < claimedIdx)
@@ -291,7 +213,7 @@ public static class DmpXclcAuditCommand
             var grid = grids[gi];
             var cellsInWindow = 0;
             var nearestCi = -1;
-            long nearestDist = long.MaxValue;
+            var nearestDist = long.MaxValue;
             for (var ci = 0; ci < cells.Count; ci++)
             {
                 var dist = Math.Abs(grid.Offset - cells[ci].Offset);
@@ -348,44 +270,6 @@ public static class DmpXclcAuditCommand
             DifferingGridContestedCells = cellRows.Count(r => r.HasDifferingCandidates),
             TheftSoleCandidateCells = cellRows.Count(r => r.ClaimedGridNearerToOtherCell && r.CandidateCount == 1)
         };
-    }
-
-    // =========================================================================
-    // Proximity ref-claim audit (mirrors CellRecordHandler.ResolveCellRefs' DMP fallback)
-    // =========================================================================
-
-    /// <summary>Per-CELL proximity claim row.</summary>
-    internal sealed record ProximityCellRow
-    {
-        public required uint FormId { get; init; }
-        public required long Offset { get; init; }
-
-        /// <summary>Refs the production window claims: cellOffset &lt; refOffset &lt; end.</summary>
-        public required int ClaimedRefs { get; init; }
-
-        /// <summary>Where the window ended: next CELL offset or the 500 KB reach.</summary>
-        public required long WindowEnd { get; init; }
-
-        /// <summary>True when no later CELL record caps this cell's window (last cell in offset order).</summary>
-        public required bool IsLastCell { get; init; }
-
-        /// <summary>Distance from the cell record to its farthest claimed ref (0 when none).</summary>
-        public required long TailExtentBytes { get; init; }
-
-        /// <summary>Claimed refs lying more than 100 KB past the cell record.</summary>
-        public required int RefsBeyondTailThreshold { get; init; }
-    }
-
-    internal sealed record ProximityAuditResult
-    {
-        public required IReadOnlyList<ProximityCellRow> Cells { get; init; }
-        public int TotalRefrs { get; init; }
-
-        /// <summary>Median claimed-ref count over all cells (0 when no cells).</summary>
-        public double MedianClaimedRefs { get; init; }
-
-        /// <summary>The max-file-offset CELL's row, or null when there are no cells.</summary>
-        public ProximityCellRow? LastCell { get; init; }
     }
 
     /// <summary>
@@ -577,7 +461,8 @@ public static class DmpXclcAuditCommand
 
         var cellsPath = Path.Combine(csvDir, $"{stem}_proximity_cells.csv");
         var sb = new StringBuilder();
-        sb.AppendLine("cell_form_id,cell_offset,claimed_refs,window_end,is_last_cell,tail_extent_bytes,refs_beyond_100kb");
+        sb.AppendLine(
+            "cell_form_id,cell_offset,claimed_refs,window_end,is_last_cell,tail_extent_bytes,refs_beyond_100kb");
         foreach (var row in proximity.Cells.OrderBy(r => r.Offset))
         {
             sb.AppendLine(string.Join(',',
@@ -637,7 +522,7 @@ public static class DmpXclcAuditCommand
                 row.DistinctCandidateGrids.ToString(CultureInfo.InvariantCulture),
                 row.ClaimedGridIndex.ToString(CultureInfo.InvariantCulture),
                 row.NearestGridIndex.ToString(CultureInfo.InvariantCulture),
-                (row.ClaimedGridIndex >= 0 && row.ClaimedGridIndex != row.NearestGridIndex) ? "1" : "0",
+                row.ClaimedGridIndex >= 0 && row.ClaimedGridIndex != row.NearestGridIndex ? "1" : "0",
                 row.ClaimedGridNearerToOtherCell ? "1" : "0",
                 row.IsContested ? "1" : "0",
                 row.HasDifferingCandidates ? "1" : "0"));
@@ -710,5 +595,127 @@ public static class DmpXclcAuditCommand
             .GetFiles(input, "*.dmp", recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly)
             .OrderBy(Path.GetFileName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+    }
+
+    // =========================================================================
+    // Pure pairing/counting seam (unit-tested; list-in/list-out, no dump needed)
+    // =========================================================================
+
+    /// <summary>A detected CELL main record: FormID + file offset, in detection-list order.</summary>
+    internal readonly record struct AuditCell(uint FormId, long Offset);
+
+    /// <summary>A detected XCLC subrecord: grid value + file offset, in CellGrids-list order.</summary>
+    internal readonly record struct AuditGrid(int GridX, int GridY, long Offset);
+
+    /// <summary>Per-CELL audit row.</summary>
+    internal sealed record CellAuditRow
+    {
+        public required uint CellFormId { get; init; }
+        public required long CellOffset { get; init; }
+
+        /// <summary>XCLC candidates within the ±200B window (count).</summary>
+        public required int CandidateCount { get; init; }
+
+        /// <summary>Distinct (GridX, GridY) values among the candidates.</summary>
+        public required int DistinctCandidateGrids { get; init; }
+
+        /// <summary>Index into the grids list of the claimed XCLC (production rule), or -1.</summary>
+        public required int ClaimedGridIndex { get; init; }
+
+        /// <summary>Index of the candidate nearest this cell by |offset| (tie → lower list index), or -1.</summary>
+        public required int NearestGridIndex { get; init; }
+
+        /// <summary>The claimed XCLC is strictly nearer (by |offset|) to a DIFFERENT cell.</summary>
+        public required bool ClaimedGridNearerToOtherCell { get; init; }
+
+        /// <summary>≥2 candidates and their grid values are not all identical — the window choice changes the coords.</summary>
+        public bool HasDifferingCandidates => CandidateCount >= 2 && DistinctCandidateGrids >= 2;
+
+        /// <summary>Any contest at all: multiple candidates, or the claimed grid belongs nearer another cell.</summary>
+        public bool IsContested => CandidateCount >= 2 || ClaimedGridNearerToOtherCell;
+    }
+
+    /// <summary>Per-XCLC audit row (emitted only for contested grids).</summary>
+    internal sealed record GridAuditRow
+    {
+        public required int GridIndex { get; init; }
+        public required long GridOffset { get; init; }
+        public required int GridX { get; init; }
+        public required int GridY { get; init; }
+
+        /// <summary>CELL records within the ±200B window of this XCLC.</summary>
+        public required int CellsInWindow { get; init; }
+
+        /// <summary>How many cells the production rule resolves to this XCLC.</summary>
+        public required int ClaimedByCount { get; init; }
+
+        /// <summary>FormID of the globally nearest cell by |offset| (tie → first in cell-list order), or null.</summary>
+        public required uint? NearestCellFormId { get; init; }
+
+        /// <summary>A cell other than the nearest one claims this XCLC.</summary>
+        public required bool ClaimedByNonNearestCell { get; init; }
+    }
+
+    internal sealed record XclcAuditResult
+    {
+        public required IReadOnlyList<CellAuditRow> Cells { get; init; }
+        public required IReadOnlyList<GridAuditRow> ContestedGrids { get; init; }
+
+        public int TotalCells { get; init; }
+        public int TotalGrids { get; init; }
+        public int CellsWithClaim { get; init; }
+
+        /// <summary>(i) Contested XCLCs: ≥2 cells in-window, or claimed by a cell that is not its nearest.</summary>
+        public int ContestedXclcCount { get; init; }
+
+        /// <summary>(ii) Unordered CELL pairs whose production-claimed XCLC is the same entry.</summary>
+        public int CellPairsSameXclc { get; init; }
+
+        /// <summary>Cells whose claimed XCLC is strictly nearer a different cell (grid theft).</summary>
+        public int TheftCells { get; init; }
+
+        /// <summary>(iii) Impact: contested cells whose candidate grid VALUES differ — the choice changes the coords.</summary>
+        public int DifferingGridContestedCells { get; init; }
+
+        /// <summary>Theft cells with only the stolen candidate in-window (alternative outcome: no grid at all).</summary>
+        public int TheftSoleCandidateCells { get; init; }
+    }
+
+    // =========================================================================
+    // Proximity ref-claim audit (mirrors CellRecordHandler.ResolveCellRefs' DMP fallback)
+    // =========================================================================
+
+    /// <summary>Per-CELL proximity claim row.</summary>
+    internal sealed record ProximityCellRow
+    {
+        public required uint FormId { get; init; }
+        public required long Offset { get; init; }
+
+        /// <summary>Refs the production window claims: cellOffset &lt; refOffset &lt; end.</summary>
+        public required int ClaimedRefs { get; init; }
+
+        /// <summary>Where the window ended: next CELL offset or the 500 KB reach.</summary>
+        public required long WindowEnd { get; init; }
+
+        /// <summary>True when no later CELL record caps this cell's window (last cell in offset order).</summary>
+        public required bool IsLastCell { get; init; }
+
+        /// <summary>Distance from the cell record to its farthest claimed ref (0 when none).</summary>
+        public required long TailExtentBytes { get; init; }
+
+        /// <summary>Claimed refs lying more than 100 KB past the cell record.</summary>
+        public required int RefsBeyondTailThreshold { get; init; }
+    }
+
+    internal sealed record ProximityAuditResult
+    {
+        public required IReadOnlyList<ProximityCellRow> Cells { get; init; }
+        public int TotalRefrs { get; init; }
+
+        /// <summary>Median claimed-ref count over all cells (0 when no cells).</summary>
+        public double MedianClaimedRefs { get; init; }
+
+        /// <summary>The max-file-offset CELL's row, or null when there are no cells.</summary>
+        public ProximityCellRow? LastCell { get; init; }
     }
 }

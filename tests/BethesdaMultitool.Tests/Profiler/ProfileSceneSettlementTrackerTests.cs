@@ -25,7 +25,7 @@ public sealed class ProfileSceneSettlementTrackerTests
     [Fact]
     public void Observe_DirtyCensus_ResetsConsecutiveAndNamesPendingWork()
     {
-        var tracker = new ProfileSceneSettlementTracker(requiredConsecutive: 2);
+        var tracker = new ProfileSceneSettlementTracker(2);
         var clean = Census();
         var dirty = Census(queuedDecodes: 3);
 
@@ -44,7 +44,7 @@ public sealed class ProfileSceneSettlementTrackerTests
     [InlineData(true)]
     public void Observe_RepeatedActiveTextureResolve_NeverAdmits(bool terrainResolve)
     {
-        var tracker = new ProfileSceneSettlementTracker(requiredConsecutive: 2);
+        var tracker = new ProfileSceneSettlementTracker(2);
         var active = Census(activeReferenceTextureResolves: terrainResolve ? 0 : 1,
             activeTerrainTextureResolves: terrainResolve ? 1 : 0);
 
@@ -62,9 +62,9 @@ public sealed class ProfileSceneSettlementTrackerTests
     [Fact]
     public void Observe_CleanDemandSetChange_ResetsConsecutiveAndNamesMovement()
     {
-        var tracker = new ProfileSceneSettlementTracker(requiredConsecutive: 2);
-        var before = Census(referenceInstances: 100);
-        var after = Census(referenceInstances: 101);
+        var tracker = new ProfileSceneSettlementTracker(2);
+        var before = Census(100);
+        var after = Census(101);
 
         Assert.False(tracker.Observe(before));
         Assert.False(tracker.Observe(before));
@@ -79,7 +79,7 @@ public sealed class ProfileSceneSettlementTrackerTests
     [Fact]
     public void Observe_RecoveryRetainsLastNonEmptyDirtUntilAdmission()
     {
-        var tracker = new ProfileSceneSettlementTracker(requiredConsecutive: 2);
+        var tracker = new ProfileSceneSettlementTracker(2);
         var dirty = Census(queuedDecodes: 1);
         var clean = Census();
 
@@ -97,7 +97,7 @@ public sealed class ProfileSceneSettlementTrackerTests
     [Fact]
     public void ObserveForCapture_NormalizesOnlyFrameCeilingMaintenanceAcrossStableDemand()
     {
-        var tracker = new ProfileSceneSettlementTracker(requiredConsecutive: 2);
+        var tracker = new ProfileSceneSettlementTracker(2);
         var clean = Census();
         var maintenance = Census(referenceBatchBuildInProgress: true);
         var trigger = CaptureSceneCensus.FrameCeilingBatchBuildTriggerCode;
@@ -113,7 +113,7 @@ public sealed class ProfileSceneSettlementTrackerTests
     [Fact]
     public void ObserveForCapture_FrameCeilingNeverExcusesOtherPendingWork()
     {
-        var tracker = new ProfileSceneSettlementTracker(requiredConsecutive: 2);
+        var tracker = new ProfileSceneSettlementTracker(2);
         var dirty = Census(
             activeReferenceTextureResolves: 1,
             referenceBatchBuildInProgress: true);
@@ -131,7 +131,7 @@ public sealed class ProfileSceneSettlementTrackerTests
     [Fact]
     public void Observe_StrictProfileGateStillRejectsFrameCeilingMaintenance()
     {
-        var tracker = new ProfileSceneSettlementTracker(requiredConsecutive: 1);
+        var tracker = new ProfileSceneSettlementTracker(1);
         var maintenance = Census(referenceBatchBuildInProgress: true);
 
         Assert.False(tracker.Observe(maintenance));
@@ -146,8 +146,7 @@ public sealed class ProfileSceneSettlementTrackerTests
     [InlineData(-1)]
     public void Constructor_RejectsNonPositiveRequirement(int requiredConsecutive)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => new ProfileSceneSettlementTracker(requiredConsecutive));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ProfileSceneSettlementTracker(requiredConsecutive));
     }
 
     private static CaptureSceneCensus Census(

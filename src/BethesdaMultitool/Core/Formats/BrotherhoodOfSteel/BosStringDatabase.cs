@@ -5,7 +5,12 @@ namespace BethesdaMultitool.Core.Formats.BrotherhoodOfSteel;
 
 /// <summary>One entry of a <see cref="BosStringDatabase" />: a hash and the string it names.</summary>
 /// <param name="Slot">Position in the hash table, which is the entry's only stable identity.</param>
-/// <param name="Hash">The stored hash. ⚠ The function that produces it is NOT established.</param>
+/// <param name="Hash">
+///     The stored hash. ⚑ The function IS established (2026-09-08): <see cref="BosNameHash" />,
+///     <c>default.xbe</c> <c>0x00014BE0</c>. When <c>BosNameHash.Compute(Value) == Hash</c> the
+///     entry is the record's own NAME; otherwise it is a display string filed under that name's
+///     key. 8,758 of the Xbox tree's 14,829 entries are names.
+/// </param>
 /// <param name="Offset">Byte offset of the string.</param>
 /// <param name="Value">The string itself.</param>
 internal readonly record struct BosStringEntry(int Slot, uint Hash, int Offset, string Value);
@@ -34,8 +39,12 @@ internal readonly record struct BosStringEntry(int Slot, uint Hash, int Offset, 
 ///         the terminator.
 ///     </para>
 ///     <para>
-///         ⛔ <b>The field names came from the disc's own <c>.NFO</c> debug dumps, and NOTHING
-///         else should.</b> Those files list a header and every string with hash, offset and name,
+///         ⛔
+///         <b>
+///             The field names came from the disc's own <c>.NFO</c> debug dumps, and NOTHING
+///             else should.
+///         </b>
+///         Those files list a header and every string with hash, offset and name,
 ///         which makes them look like a perfect oracle. They are not: measured against the shipped
 ///         database, <b>14 of the 65 names an NFO lists do not exist in it at all</b> and the
 ///         offsets have no constant delta. They describe a DIFFERENT BUILD. Use them for field
@@ -136,7 +145,7 @@ internal sealed class BosStringDatabase
 
         for (var slot = 0; slot < slots; slot++)
         {
-            var at = tableOffset + (slot * SlotLength);
+            var at = tableOffset + slot * SlotLength;
             var hash = BinaryPrimitives.ReadUInt32LittleEndian(bytes[at..]);
             var offset = BinaryPrimitives.ReadUInt32LittleEndian(bytes[(at + 4)..]);
 

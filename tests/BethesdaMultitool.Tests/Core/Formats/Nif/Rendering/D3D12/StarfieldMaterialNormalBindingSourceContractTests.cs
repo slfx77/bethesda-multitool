@@ -116,7 +116,8 @@ public sealed class StarfieldMaterialNormalBindingSourceContractTests
         Assert.Contains("BuildStarfieldNormalMapRequest(normalizedPath)", cache, StringComparison.Ordinal);
         Assert.Contains("!_resolver.IsUnauthoredStarfieldNormalMap(cacheKey)", cache,
             StringComparison.Ordinal);
-        Assert.Contains("normalMap: starfieldNormalMap", resolver, StringComparison.Ordinal);
+        SourceContract.AssertContainsIgnoringWhitespace(
+            "MaterialTexturePathResolver.ResolveStarfieldSlot(path, _sources, starfieldNormalMap)", resolver);
         // The key is now built in BuildPersistentCacheKey with two arms — a paired Xbox normal
         // gets a revision suffix, everything else keeps the bare identity|path form. Both arms
         // still start from _sourceSetIdentity, which is the property under test: the cache key is

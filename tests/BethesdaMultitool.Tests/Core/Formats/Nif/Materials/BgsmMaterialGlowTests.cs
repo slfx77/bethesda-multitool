@@ -12,12 +12,12 @@ public sealed class BgsmMaterialGlowTests
     public void Parse_Fallout76ExplicitGlow_RequiresEofFlagAndReadsRgbaPayload()
     {
         var material = Assert.IsType<BgsmMaterial>(ParseFixture(
-            version: 22,
-            emitEnabled: true,
-            glowFlag: true,
-            glowPath: "textures/test/glow.dds",
-            explicitColor: new Vector3(0.25f, 0.5f, 0.75f),
-            scale: 2.5f));
+            22,
+            true,
+            true,
+            "textures/test/glow.dds",
+            new Vector3(0.25f, 0.5f, 0.75f),
+            2.5f));
 
         Assert.True(material.EmissiveEnabled);
         Assert.True(material.GlowEnabled);
@@ -29,12 +29,12 @@ public sealed class BgsmMaterialGlowTests
     public void Parse_Fallout76GlowMapWithoutExplicitEmit_UsesWhiteScalarFallback()
     {
         var material = Assert.IsType<BgsmMaterial>(ParseFixture(
-            version: 22,
-            emitEnabled: false,
-            glowFlag: true,
-            glowPath: "textures/test/glow.dds",
-            explicitColor: Vector3.Zero,
-            scale: 3f));
+            22,
+            false,
+            true,
+            "textures/test/glow.dds",
+            Vector3.Zero,
+            3f));
 
         Assert.Equal("textures/test/glow.dds", material.GetTexturePath(BgsmMaterial.SlotGlow));
         Assert.True(material.EmissiveEnabled);
@@ -46,12 +46,12 @@ public sealed class BgsmMaterialGlowTests
     public void Parse_Fallout76PayloadWithoutEofGlowFlag_IsDisabled()
     {
         var material = Assert.IsType<BgsmMaterial>(ParseFixture(
-            version: 22,
-            emitEnabled: true,
-            glowFlag: false,
-            glowPath: "textures/test/glow.dds",
-            explicitColor: new Vector3(1f, 0.5f, 0.25f),
-            scale: 2f));
+            22,
+            true,
+            false,
+            "textures/test/glow.dds",
+            new Vector3(1f, 0.5f, 0.25f),
+            2f));
 
         Assert.False(material.EmissiveEnabled);
         Assert.False(material.GlowEnabled);
@@ -63,12 +63,12 @@ public sealed class BgsmMaterialGlowTests
     public void Parse_Fallout4GlowMapWithoutExplicitEmit_HasNoFallback()
     {
         var material = Assert.IsType<BgsmMaterial>(ParseFixture(
-            version: 2,
-            emitEnabled: false,
-            glowFlag: true,
-            glowPath: "textures/test/glow.dds",
-            explicitColor: Vector3.Zero,
-            scale: 3f));
+            2,
+            false,
+            true,
+            "textures/test/glow.dds",
+            Vector3.Zero,
+            3f));
 
         Assert.Equal("textures/test/glow.dds", material.GetTexturePath(BgsmMaterial.SlotGlow));
         Assert.False(material.EmissiveEnabled);
@@ -80,12 +80,12 @@ public sealed class BgsmMaterialGlowTests
     public void Parse_ShortEmissivePayload_FailsClosed()
     {
         var data = BuildFixture(
-            version: 22,
-            emitEnabled: true,
-            glowFlag: true,
-            glowPath: "textures/test/glow.dds",
-            explicitColor: Vector3.One,
-            scale: 2f);
+            22,
+            true,
+            true,
+            "textures/test/glow.dds",
+            Vector3.One,
+            2f);
         var emitOffset = data.Length - 24 - 17; // final tail + complete emit block
         Array.Resize(ref data, emitOffset + 5); // emit byte + one float, short of RGB + scale
         data[^24] = 1; // keep the EOF-relative gate set; only the payload guard rejects this input
@@ -103,8 +103,11 @@ public sealed class BgsmMaterialGlowTests
         bool glowFlag,
         string glowPath,
         Vector3 explicitColor,
-        float scale) => BgsmMaterial.Parse(BuildFixture(
+        float scale)
+    {
+        return BgsmMaterial.Parse(BuildFixture(
             version, emitEnabled, glowFlag, glowPath, explicitColor, scale));
+    }
 
     private static byte[] BuildFixture(
         byte version,
@@ -116,7 +119,7 @@ public sealed class BgsmMaterialGlowTests
     {
         var isFallout4 = version == 2;
         using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
         writer.Write(Encoding.ASCII.GetBytes("BGSM"));
         writer.Write((uint)version);
         writer.Write(new byte[(isFallout4 ? 63 : 60) - 8]);

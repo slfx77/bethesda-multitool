@@ -2,6 +2,8 @@
 //   OpenTESArena/src/Assets/Compression.cpp — Compression::decodeRLE (itself adapted
 //   from WinArena). License texts are collected centrally in THIRD_PARTY_LICENSES.
 
+using System.Buffers.Binary;
+
 namespace BethesdaMultitool.Core.Compression;
 
 /// <summary>
@@ -54,7 +56,7 @@ internal static class RleCodec
                     $"Word-RLE stream ended after {written} of {wordCount} words.");
             }
 
-            var sample = System.Buffers.Binary.BinaryPrimitives.ReadInt16LittleEndian(input[read..]);
+            var sample = BinaryPrimitives.ReadInt16LittleEndian(input[read..]);
             read += 2;
 
             if (sample == 0)
@@ -88,8 +90,8 @@ internal static class RleCodec
                 read += 2;
                 for (var i = 0; i < count; i++)
                 {
-                    output[((written + i) * 2) + 0] = low;
-                    output[((written + i) * 2) + 1] = high;
+                    output[(written + i) * 2 + 0] = low;
+                    output[(written + i) * 2 + 1] = high;
                 }
             }
 

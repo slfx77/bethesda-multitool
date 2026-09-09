@@ -97,6 +97,8 @@ internal static class NpcRenderHelpers
     /// </summary>
     internal static void TransformSubmesh(RenderableSubmesh sub, Matrix4x4 transform)
     {
+        sub.OblivionEyeBounds = NifLocalBoundsResolver.TransformAuthored(
+            sub.OblivionEyeBounds, transform, [], false);
         for (var i = 0; i < sub.Positions.Length; i += 3)
         {
             var v = Vector3.Transform(
@@ -370,7 +372,7 @@ internal static class NpcRenderHelpers
         var npcEntriesByFormId = npcEntries.ToDictionary(entry => entry.FormId);
         var npcEntriesByEditorId = npcEntries
             .Where(entry => !string.IsNullOrWhiteSpace(entry.EditorId))
-            .GroupBy(entry => entry.EditorId!, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(entry => entry.EditorId, StringComparer.OrdinalIgnoreCase)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
         var actorInfos = LoadRuntimeActorInfos(
             structReader, scanResult.RuntimeRefrFormEntries, useDmpEquipment);
@@ -420,13 +422,6 @@ internal static class NpcRenderHelpers
                 pluginName,
                 target.RuntimeWeaponSelection,
                 target.RuntimeEquipmentSelection);
-            if (appearance == null)
-            {
-                Log.Debug("Failed to resolve appearance for 0x{0:X8} ({1})", target.NpcEntry.FormId,
-                    target.NpcEntry.EditorId);
-                continue;
-            }
-
             CompareWithEsmCoefficients(resolver, appearance, npcRecord, pluginName);
             appearances.Add(appearance);
         }

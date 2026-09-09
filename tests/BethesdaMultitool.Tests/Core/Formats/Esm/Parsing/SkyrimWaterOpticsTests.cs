@@ -199,7 +199,7 @@ public sealed class SkyrimWaterOpticsTests
         Assert.Equal(.9241128f, halfBody, 6);
 
         // The former world-unit underwater planes used as normalized thresholds stay near .238.
-        var oldRipple = ((110f / 110f) - (-500f)) / (1600f - (-500f));
+        var oldRipple = (110f / 110f - -500f) / (1600f - -500f);
         Assert.InRange(oldRipple, .2385f, .2386f);
         Assert.InRange(oldRipple * .75f, .1789f, .1790f);
     }

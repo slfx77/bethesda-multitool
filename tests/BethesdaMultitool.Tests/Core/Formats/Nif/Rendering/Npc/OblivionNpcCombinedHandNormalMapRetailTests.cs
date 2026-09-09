@@ -41,21 +41,21 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
         Assert.SkipWhen(texturesPath is null, RealAssetPaths.SkipMessage("Oblivion - Textures - Compressed.bsa"));
 
         var cancellationToken = TestContext.Current.CancellationToken;
-        var appearanceIndex = await LoadAppearanceIndexAsync(esmPath!, cancellationToken);
+        var appearanceIndex = await LoadAppearanceIndexAsync(esmPath, cancellationToken);
         var npc = Assert.Contains(0x00085969u, appearanceIndex.Npcs);
         Assert.Equal(0x000191C0u, npc.RaceFormId);
         var appearance = new NpcAppearanceFactory(appearanceIndex).Build(0x00085969, npc, "Oblivion.esm");
         Assert.Equal(BethesdaGame.Oblivion, appearance.Game);
         Assert.True(appearance.IsFemale);
-        Assert.Equal(HandMesh, appearance.HandNifPath, ignoreCase: true);
+        Assert.Equal(HandMesh, appearance.HandNifPath, true);
         Assert.Equal(OrcDiffuse, appearance.HandTexturePath);
         Assert.Null(appearance.LeftHandNifPath);
         Assert.Null(appearance.RightHandNifPath);
         Assert.Null(appearance.LeftHandEgtPath);
         Assert.Null(appearance.RightHandEgtPath);
 
-        using var meshArchives = MeshArchiveSet.Open(meshesPath!, null);
-        using var resolver = new NifTextureResolver(texturesPath!);
+        using var meshArchives = MeshArchiveSet.Open(meshesPath, null);
+        using var resolver = new NifTextureResolver(texturesPath);
         var raw = NpcMeshHelpers.LoadNifRawFromBsa(HandMesh, meshArchives);
         Assert.NotNull(raw);
         Assert.Equal("NiTriShape", raw.Value.Info.Blocks[1].TypeName);
@@ -89,6 +89,7 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
             Assert.Null(hand.ShaderMetadata);
             Assert.False(hand.IsFaceGen);
         }
+
         var normal = resolver.GetTexture(ImperialNormal);
         Assert.NotNull(normal);
         Assert.NotEmpty(normal.MipLevels);
@@ -105,14 +106,15 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
         cancellationToken.ThrowIfCancellationRequested();
         var plan = NpcCompositionPlanner.CreatePlan(appearance, meshArchives, resolver, caches, options);
         var handPlan = Assert.Single(plan.BodyParts);
-        Assert.Equal(HandMesh, handPlan.MeshPath, ignoreCase: true);
+        Assert.Equal(HandMesh, handPlan.MeshPath, true);
         Assert.Equal(OrcDiffuse, handPlan.TextureOverride);
         Assert.Equal(0u, plan.CoveredSlots & 0x10u);
         Assert.NotNull(plan.Skeleton);
 
         using var headCache = NpcRenderModelCache.CreateHeadMeshCache();
         cancellationToken.ThrowIfCancellationRequested();
-        var cpu = NpcBodyBuilder.BuildFromPlan(plan, meshArchives, resolver, caches, new NpcRenderModelCache(headCache));
+        var cpu = NpcBodyBuilder.BuildFromPlan(plan, meshArchives, resolver, caches,
+            new NpcRenderModelCache(headCache));
         Assert.NotNull(cpu);
         var cpuHand = Assert.Single(cpu.Submeshes, static part => PathEquals(part.SourceNifPath, HandMesh));
         AssertComposedHand(cpuHand, authoredCpuHand);
@@ -121,12 +123,13 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
         cancellationToken.ThrowIfCancellationRequested();
         var export = NpcCompositionExportAdapter.BuildNpc(plan, meshArchives, resolver, caches);
         Assert.NotNull(export);
-        var exportHand = Assert.Single(export.MeshParts, static part => PathEquals(part.Submesh.SourceNifPath, HandMesh));
+        var exportHand =
+            Assert.Single(export.MeshParts, static part => PathEquals(part.Submesh.SourceNifPath, HandMesh));
         AssertComposedHand(exportHand.Submesh, authoredExportHand);
         Assert.NotNull(exportHand.Skin);
         AssertEquipmentMaterials(export.MeshParts.Select(static part => part.Submesh));
         var scene = BethesdaViewerSceneGlbAdapter.FromGlbScene(export, "Mazoga retail combined hand regression",
-            BethesdaViewerScenePurpose.NpcAppearance, game: BethesdaGame.Oblivion, textureSourcePaths: [texturesPath!]);
+            BethesdaViewerScenePurpose.NpcAppearance, game: BethesdaGame.Oblivion, textureSourcePaths: [texturesPath]);
         var handIndex = Assert.Single(Enumerable.Range(0, scene.MeshParts.Count),
             index => PathEquals(scene.MeshParts[index].Submesh.SourceNifPath, HandMesh));
         var nativeHand = scene.MeshParts[handIndex];
@@ -144,6 +147,7 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
             AssertFinite(scene.Nodes[nodeIndex].LocalTransform);
             AssertFinite(scene.Nodes[nodeIndex].WorldTransform);
         }
+
         Assert.Equal(1708, skin.PerVertexInfluences.Length);
         Assert.All(skin.PerVertexInfluences, influences =>
         {
@@ -166,12 +170,12 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
             Assert.Equal(1708, hand.Vertices.Length);
             Assert.Equal(2806 * 3, hand.Indices.Length);
             Assert.Equal(SkinDiffuse, hand.DiffuseTexturePath);
-            Assert.Equal(ImperialNormal, hand.NormalMapTexturePath, ignoreCase: true);
+            Assert.Equal(ImperialNormal, hand.NormalMapTexturePath, true);
             Assert.True(hand.HasBump);
             Assert.Equal(10f, hand.Glossiness);
             Assert.Equal(1f, hand.MaterialAlpha);
             Assert.Equal(Vector3.One, hand.SpecularColor);
-            Assert.Equal((Vector3?)Vector3.One, hand.MaterialDiffuse);
+            Assert.Equal(Vector3.One, hand.MaterialDiffuse);
             Assert.Equal(new Vector3(authoredExportHand.SpecularColor.R, authoredExportHand.SpecularColor.G,
                 authoredExportHand.SpecularColor.B), hand.SpecularColor);
             Assert.All(hand.Vertices, static vertex =>
@@ -185,11 +189,13 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
                 Assert.Equal(Vector4.One, vertex.VertexColor);
             });
         }
+
         Assert.True(decoded.MeshParts[handIndex].NativeSemantics.IsFaceGen);
         Assert.Null(decoded.MeshParts[handIndex].NativeSemantics.TintColor);
     }
 
-    private static async Task<NpcAppearanceIndex> LoadAppearanceIndexAsync(string esmPath, CancellationToken cancellationToken)
+    private static async Task<NpcAppearanceIndex> LoadAppearanceIndexAsync(string esmPath,
+        CancellationToken cancellationToken)
     {
         // The shared sequential collection protects the cache-owned mapping from concurrent eviction.
         var result = await RealAssetEsmCache.LoadAsync(esmPath, cancellationToken);
@@ -205,9 +211,9 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
     {
         AssertHandGeometry(hand);
         AssertAuthoredWhiteMaterial(hand);
-        Assert.Equal(HandMesh, hand.SourceNifPath, ignoreCase: true);
+        Assert.Equal(HandMesh, hand.SourceNifPath, true);
         Assert.Equal(SkinDiffuse, hand.DiffuseTexturePath);
-        Assert.Equal(ImperialNormal, hand.NormalMapTexturePath, ignoreCase: true);
+        Assert.Equal(ImperialNormal, hand.NormalMapTexturePath, true);
         // Literal authored-white assertions above pin preservation on every route. Agreement is
         // an additional nonmutation check, not proof that retail selects a specular shader pass.
         Assert.Equal(unmodified.SpecularColor, hand.SpecularColor);
@@ -224,7 +230,7 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
     private static void AssertAuthoredWhiteMaterial(RenderableSubmesh hand)
     {
         Assert.Equal((1f, 1f, 1f), hand.SpecularColor);
-        Assert.Equal(((float R, float G, float B)?)(1f, 1f, 1f), hand.MaterialDiffuse);
+        Assert.Equal((1f, 1f, 1f), hand.MaterialDiffuse);
         Assert.Equal(10f, hand.MaterialGlossiness);
         Assert.Equal(1f, hand.MaterialAlpha);
     }
@@ -255,11 +261,13 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
     private static void AssertEquipmentMaterials(IEnumerable<RenderableSubmesh> submeshes)
     {
         var equipment = submeshes.Where(static part => PathEquals(part.SourceNifPath, GreavesMesh) ||
-            PathEquals(part.SourceNifPath, BootsMesh) || PathEquals(part.SourceNifPath, CuirassMesh)).ToArray();
+                                                       PathEquals(part.SourceNifPath, BootsMesh) ||
+                                                       PathEquals(part.SourceNifPath, CuirassMesh)).ToArray();
         Assert.Equal(9, equipment.Length);
         foreach (var (mesh, block, diffuse, normal) in new[]
                  {
-                     (GreavesMesh, 1, @"body_skin\00085969_lowerbody.dds", @"textures\characters\imperial\female\LegFemale_n.dds"),
+                     (GreavesMesh, 1, @"body_skin\00085969_lowerbody.dds",
+                         @"textures\characters\imperial\female\LegFemale_n.dds"),
                      (GreavesMesh, 18, @"textures\armor\iron\f\Greaves.dds", @"textures\armor\iron\f\Greaves_n.dds"),
                      (GreavesMesh, 27, @"textures\armor\iron\f\Greaves.dds", @"textures\armor\iron\f\Greaves_n.dds"),
                      (BootsMesh, 1, @"textures\armor\iron\m\Boots.dds", @"textures\armor\iron\m\Boots_n.dds"),
@@ -270,9 +278,10 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
                      (CuirassMesh, 49, @"textures\armor\iron\f\Cuirass.dds", @"textures\armor\iron\f\Cuirass_n.dds")
                  })
         {
-            var part = Assert.Single(equipment, part => PathEquals(part.SourceNifPath, mesh) && part.SourceBlockIndex == block);
-            Assert.Equal(diffuse, part.DiffuseTexturePath, ignoreCase: true);
-            Assert.Equal(normal, part.NormalMapTexturePath, ignoreCase: true);
+            var part = Assert.Single(equipment,
+                part => PathEquals(part.SourceNifPath, mesh) && part.SourceBlockIndex == block);
+            Assert.Equal(diffuse, part.DiffuseTexturePath, true);
+            Assert.Equal(normal, part.NormalMapTexturePath, true);
             var exposedSkin = (PathEquals(mesh, GreavesMesh) && block == 1) ||
                               (PathEquals(mesh, CuirassMesh) && block is 1 or 23);
             Assert.Equal(exposedSkin, part.IsFaceGen);
@@ -280,10 +289,13 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
         }
     }
 
-    private static void AssertFinite(Vector3 value) =>
+    private static void AssertFinite(Vector3 value)
+    {
         Assert.True(float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z));
+    }
 
-    private static void AssertFinite(Matrix4x4 value) =>
+    private static void AssertFinite(Matrix4x4 value)
+    {
         Assert.All(new[]
         {
             value.M11, value.M12, value.M13, value.M14,
@@ -291,7 +303,10 @@ public sealed class OblivionNpcCombinedHandNormalMapRetailTests
             value.M31, value.M32, value.M33, value.M34,
             value.M41, value.M42, value.M43, value.M44
         }, static component => Assert.True(float.IsFinite(component)));
+    }
 
-    private static bool PathEquals(string? actual, string expected) =>
-        string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+    private static bool PathEquals(string? actual, string expected)
+    {
+        return string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+    }
 }

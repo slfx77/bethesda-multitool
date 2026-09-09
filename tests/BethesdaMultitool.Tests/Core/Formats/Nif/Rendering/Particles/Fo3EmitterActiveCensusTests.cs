@@ -62,7 +62,7 @@ public sealed class Fo3EmitterActiveCensusTests
         var repoRoot = FindRepoRoot();
         Assert.SkipWhen(repoRoot is null, "Repo root (Sample + src) not found from test base directory.");
 
-        var csvDir = Path.Combine(repoRoot!, "TestOutput", "fo3-parity-2026-08", "census");
+        var csvDir = Path.Combine(repoRoot, "TestOutput", "fo3-parity-2026-08", "census");
         Directory.CreateDirectory(csvDir);
         // New file: the 2026-08-10 census stays frozen beside it as the "before" for diffing.
         var csvPath = Path.Combine(csvDir, csvName);

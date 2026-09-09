@@ -15,8 +15,8 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 /// </summary>
 internal sealed class VanBurenGrpBackend : IArchiveBackend
 {
-    private readonly byte[] _bytes;
     private readonly VanBurenGrpArchive _archive;
+    private readonly byte[] _bytes;
 
     public VanBurenGrpBackend(string path)
     {

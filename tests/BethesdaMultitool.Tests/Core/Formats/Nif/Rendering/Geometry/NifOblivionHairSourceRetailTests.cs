@@ -22,7 +22,7 @@ public sealed class NifOblivionHairSourceRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var archivePath = RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion - Meshes.bsa");
         Assert.SkipWhen(archivePath is null, RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
-        using var archive = ArchiveReader.Open(archivePath!);
+        using var archive = ArchiveReader.Open(archivePath);
         var data = Assert.IsType<byte[]>(archive.ReadFile(@"meshes\characters\hair\style02.nif"));
         Assert.Equal("CA31B1CE277BC70DB1558CFD83C2A37A206B1EC8EA304CA827870D79389AB01F",
             Convert.ToHexString(SHA256.HashData(data)));

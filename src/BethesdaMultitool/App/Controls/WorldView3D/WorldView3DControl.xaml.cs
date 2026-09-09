@@ -69,19 +69,6 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private const int DefaultMaxTopDownFinalDimension = 2048;
 
     /// <summary>
-    ///     Largest final (post-downsample) dimension a top-down render may produce.
-    ///     <para>
-    ///         Defaults to the 2D map's budget: that overlay re-renders continuously while streaming
-    ///         converges, so its per-request readback has to stay small. A one-shot batch capture has
-    ///         no such loop and legitimately wants far more resolution — a whole worldspace at a
-    ///         fixed world-units-per-pixel scale is many thousands of pixels across — so it raises
-    ///         this. Beyond <see cref="SupersampleDropDimension" /> the 2× supersample is dropped, or
-    ///         the offscreen target would be 4× the pixels of an already very large image.
-    ///     </para>
-    /// </summary>
-    internal int TopDownMaxFinalDimension { get; set; } = DefaultMaxTopDownFinalDimension;
-
-    /// <summary>
     ///     Final dimension beyond which the top-down render stops supersampling. At this size the
     ///     image is already far above display resolution, so the aliasing supersampling exists to fix
     ///     is not visible, while the target cost (colour + depth + readback, all ×4) is.
@@ -112,9 +99,6 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private readonly bool _forceGpuTimestamps =
         EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.GpuTimestamps);
 
-    private readonly bool _referencePipelineStatisticsRequested =
-        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ReferencePipelineStatistics);
-
     // Placed-object categories hidden in the 3D view. Sky/glow props (DiamondCityGlow) start HIDDEN
     // (atmosphere-only meshes); Activators start VISIBLE (model-bearing
     // activators — the Anvil lighthouse fire bowl, flora — are real scenery and must render by
@@ -133,6 +117,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private readonly uint[] _moonSecundaPhaseTexIndices =
         new uint[BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere.MoonSky.PhaseCount];
 
+    /// <summary>
+    ///     Rolling frame-duration window behind the HUD's fps / p99 / 1%-low readout and the
+    ///     profiler's pacing figures, so both quote the same arithmetic.
+    /// </summary>
+    private readonly Core.Diagnostics.PerformanceSampler _performanceSampler = new();
+
     private readonly List<global::BethesdaMultitool.Core.WorldData.WorldSpatialCell> _pickCellScratch = new();
 
     private readonly List<PickHit> _pickHitScratch = new();
@@ -146,12 +136,6 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private readonly bool _profileLogging =
         EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ProfileLog);
 
-    // A settled benchmark can pause only the scored trace sinks while the normal live renderer keeps
-    // running and warming its scene. GPU timestamp results are still drained while paused; rows older
-    // than the first admitted frame are discarded when the window opens.
-    private bool _profileWindowEnabled = true;
-    private long _profileWindowStartFrame;
-
     private readonly int _profileLogIntervalMilliseconds =
         EnvironmentVariables.GetPositiveIntOrDefault(
             EnvironmentVariables.Viewer.ProfileIntervalMilliseconds, 2000, 1, int.MaxValue);
@@ -159,6 +143,10 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // Per-placement ACTI/REFR Enabled preview overrides. This table is scene-local and keyed by the
     // placed FormID, so changing one selected instance never mutates its parsed/base record or siblings.
     private readonly ReferenceEnabledOverrideStore _referenceEnabledOverrides = new();
+
+    private readonly bool _referencePipelineStatisticsRequested =
+        EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ReferencePipelineStatistics);
+
     private readonly List<PlacedReference> _selectionHistory = new();
 
     private readonly bool _showFrameStats =
@@ -176,6 +164,16 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // toggle flips it live (persists across ESM reloads like _showMarkers). The
     // FALLOUT_VIEWER_NIF_ANIMATION=0 kill-switch gates DECODE upstream; this only pauses playback.
     private bool _animationsEnabled = true;
+
+    /// <summary>
+    ///     Set when backend init failed AFTER the device was successfully created (root
+    ///     signature, shader compile, PSO build). The failure handler disposes and nulls
+    ///     <see cref="_gpu12" />, so this is the only surviving evidence of how far init got —
+    ///     without it every failure reads as "no D3D12 device", which is what masked the
+    ///     Windows 10 root-signature blocker.
+    /// </summary>
+    private bool _backendFailedAfterDeviceCreation;
+
     private bool _bloomEnabled = true;
     private uint? _boundWaterAppearanceFormId;
     private bool _canopyShadowsEnabled = true;
@@ -239,18 +237,9 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     // D3D12-only backend. The renderer interfaces (`I*Renderer`) plug
     // straight into the D3D12 concrete impls; no D3D11 fallback fields remain.
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.GpuDevice12? _gpu12;
-
-    /// <summary>
-    ///     Set when backend init failed AFTER the device was successfully created (root
-    ///     signature, shader compile, PSO build). The failure handler disposes and nulls
-    ///     <see cref="_gpu12" />, so this is the only surviving evidence of how far init got —
-    ///     without it every failure reads as "no D3D12 device", which is what masked the
-    ///     Windows 10 root-signature blocker.
-    /// </summary>
-    private bool _backendFailedAfterDeviceCreation;
+    private GpuReferencePipelineStatistics12? _gpuReferencePipelineStatistics12;
 
     private GpuTimestampProfiler12? _gpuTimestampProfiler12;
-    private GpuReferencePipelineStatistics12? _gpuReferencePipelineStatistics12;
     private bool _gpuTimestampsAutoEnabled;
     private bool _grassShadowsEnabled = true;
 
@@ -275,25 +264,21 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private bool _initializing = true;
 
     private double _lastControllerUpdateMilliseconds;
+
+    private long _lastFrameCompletionTimestamp = Stopwatch.GetTimestamp();
+
     // Two monotonic clocks with deliberately different boundaries:
     //   * frame-start drives camera integration (post-fence-wait to post-fence-wait), and
     //   * frame-completion drives delivered-frame pacing (post-Present to post-Present).
     // Keeping them separate makes a stall row line up with the body/wait that caused it without
     // changing the low-latency camera sampling point.
     private long _lastFrameStartTimestamp = Stopwatch.GetTimestamp();
-    private long _lastFrameCompletionTimestamp = Stopwatch.GetTimestamp();
     private int _lastGcGen0Collections = GC.CollectionCount(0);
     private int _lastGcGen1Collections = GC.CollectionCount(1);
     private int _lastGcGen2Collections = GC.CollectionCount(2);
     private string? _lastHudText;
 
     private long _lastHudUpdateTimestamp;
-
-    /// <summary>
-    ///     Rolling frame-duration window behind the HUD's fps / p99 / 1%-low readout and the
-    ///     profiler's pacing figures, so both quote the same arithmetic.
-    /// </summary>
-    private readonly Core.Diagnostics.PerformanceSampler _performanceSampler = new();
 
     // Process-wide monotonic allocation counter. Unlike live-heap size, its per-frame delta exposes
     // transient particle/controller churn even when a collection immediately reclaims the objects.
@@ -337,6 +322,12 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
     private Vector2 _pointerPressPosition;
     private Vector2 _previousPointerPosition;
     private long _profileFrameIndex;
+
+    // A settled benchmark can pause only the scored trace sinks while the normal live renderer keeps
+    // running and warming its scene. GPU timestamp results are still drained while paused; rows older
+    // than the first admitted frame are discarded when the window opens.
+    private bool _profileWindowEnabled = true;
+    private long _profileWindowStartFrame;
 
     private BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver?
         _referenceGpuTextureResolver12;
@@ -571,6 +562,19 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
                 _profileLogIntervalMilliseconds);
         }
     }
+
+    /// <summary>
+    ///     Largest final (post-downsample) dimension a top-down render may produce.
+    ///     <para>
+    ///         Defaults to the 2D map's budget: that overlay re-renders continuously while streaming
+    ///         converges, so its per-request readback has to stay small. A one-shot batch capture has
+    ///         no such loop and legitimately wants far more resolution — a whole worldspace at a
+    ///         fixed world-units-per-pixel scale is many thousands of pixels across — so it raises
+    ///         this. Beyond <see cref="SupersampleDropDimension" /> the 2× supersample is dropped, or
+    ///         the offscreen target would be 4× the pixels of an already very large image.
+    ///     </para>
+    /// </summary>
+    internal int TopDownMaxFinalDimension { get; set; } = DefaultMaxTopDownFinalDimension;
 
     /// <summary>The boolean most call sites actually ask: is the GUI in the HDR state?</summary>
     private bool HdrGuiActive =>

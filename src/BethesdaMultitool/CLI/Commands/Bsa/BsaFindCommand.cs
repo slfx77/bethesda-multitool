@@ -71,12 +71,24 @@ internal static class BsaFindCommand
 
         using var reader = ArchiveReader.Open(input);
         var searchPattern = pattern.Replace("*", "");
-        var matches = reader.ListFiles()
-            .Where(f => f.FullPath.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
-            .Take(limit)
-            .ToList();
 
-        AnsiConsole.MarkupLine("[cyan]Found {0} files matching[/] '{1}':", matches.Count, Markup.Escape(pattern));
+        // ⚠⚠ Count the WHOLE match set before applying the limit. Reporting the truncated count as
+        // the total is how a census goes silently wrong: this command answered "Found 50" for a
+        // pattern with 1,949 matches, which is the same failure CLAUDE.md records for `archive
+        // list` ("that error made every figure in an earlier BOS count wrong").
+        var all = reader.ListFiles()
+            .Where(f => f.FullPath.Contains(searchPattern, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        var matches = all.Take(limit).ToList();
+
+        AnsiConsole.MarkupLine("[cyan]Found {0} files matching[/] '{1}':", all.Count, Markup.Escape(pattern));
+        if (matches.Count < all.Count)
+        {
+            AnsiConsole.MarkupLine(
+                "[yellow]Showing the first {0}.[/] [grey]Pass -l/--limit for more — do NOT take this list as a census.[/]",
+                matches.Count);
+        }
+
         AnsiConsole.WriteLine();
 
         var table = new Table();

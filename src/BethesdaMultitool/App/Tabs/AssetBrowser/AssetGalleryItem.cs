@@ -4,9 +4,7 @@
 
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
-
 using BethesdaMultitool.Core.AssetBrowse;
-
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
@@ -34,8 +32,6 @@ public sealed class AssetGalleryItem : INotifyPropertyChanged
 
     /// <summary>Size, and the geometry once decoded.</summary>
     public string Caption { get; private set; } = string.Empty;
-
-    public event PropertyChangedEventHandler? PropertyChanged;
 
     public ImageSource? Thumbnail
     {
@@ -76,6 +72,8 @@ public sealed class AssetGalleryItem : INotifyPropertyChanged
 
     /// <summary>Whether this tile has already been queued in the current session.</summary>
     internal bool IsRequested { get; set; }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>Attaches a decoded thumbnail. UI thread only.</summary>
     /// <param name="source">The bitmap, or null when the asset could not be decoded.</param>

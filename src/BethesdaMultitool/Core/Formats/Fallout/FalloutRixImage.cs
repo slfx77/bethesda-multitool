@@ -20,7 +20,7 @@ namespace BethesdaMultitool.Core.Formats.Fallout;
 ///     </para>
 ///     <para>
 ///         ⚑ The palette is <b>6-bit VGA</b> (no component exceeds 63), like Fallout's other
-///         palettes, so it goes through <see cref="Palette.FromVga6Bit" />. Reading it as 8-bit
+///         palettes, so it goes through <see cref="Imaging.Palette.FromVga6Bit" />. Reading it as 8-bit
 ///         renders the splash four times too dark — the same trap <c>COLOR.PAL</c> sets.
 ///     </para>
 /// </summary>
@@ -89,7 +89,7 @@ internal sealed class FalloutRixImage
             return false;
         }
 
-        var required = HeaderLength + Palette.RgbByteCount + ((long)width * height);
+        var required = HeaderLength + Palette.RgbByteCount + (long)width * height;
         if (bytes.Length != required)
         {
             error = $"{name}: {width}x{height} needs exactly {required} bytes, not {bytes.Length}.";

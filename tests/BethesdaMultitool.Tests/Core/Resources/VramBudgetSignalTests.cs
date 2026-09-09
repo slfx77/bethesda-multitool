@@ -28,8 +28,10 @@ public sealed class VramBudgetSignalTests
     private const long Budget = 8_000_000_000L;
 
     /// <summary>A usable reading at <paramref name="permille" /> thousandths of the budget.</summary>
-    private static GpuVideoMemoryInfo At(int permille, long budget = Budget) =>
-        new(budget, budget / 1000 * permille, budget / 2, 0);
+    private static GpuVideoMemoryInfo At(int permille, long budget = Budget)
+    {
+        return new GpuVideoMemoryInfo(budget, budget / 1000 * permille, budget / 2, 0);
+    }
 
     private static VramPressureZone Feed(VramBudgetSignal signal, int permille, int samples)
     {

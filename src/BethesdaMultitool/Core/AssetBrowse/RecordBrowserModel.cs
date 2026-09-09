@@ -3,11 +3,27 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 
 namespace BethesdaMultitool.Core.AssetBrowse;
 
-/// <summary>One record type and the records of that type, in display order.</summary>
-internal sealed record RecordTypeGroup(string RecordType, IReadOnlyList<GenericEsmRecord> Records)
+/// <summary>
+///     One record type and the records of that type, in display order. Public, like
+///     <see cref="AssetNode" />, because the Data Explorer tree reaches <see cref="DisplayName" />
+///     through a reflection <c>{Binding}</c>, which sees public types only.
+/// </summary>
+public sealed record RecordTypeGroup(string RecordType, IReadOnlyList<GenericEsmRecord> Records)
 {
     /// <summary>Label for the tree node — the signature plus how many it holds.</summary>
     public string DisplayName => $"{RecordType} ({Records.Count:N0})";
+}
+
+/// <summary>
+///     One record as a tree leaf: the record plus the label a person looks for, so a group node
+///     and a record node present the same <c>DisplayName</c> to one tree template. (A bare
+///     <see cref="GenericEsmRecord" /> as tree content shows its <c>ToString()</c> — the record
+///     type name.)
+/// </summary>
+public sealed record RecordBrowserItem(GenericEsmRecord Record)
+{
+    /// <summary>Label for the tree node — editor id, else full name, else FormID.</summary>
+    public string DisplayName => RecordBrowserModel.DescribeRecord(Record);
 }
 
 /// <summary>
@@ -35,12 +51,15 @@ internal static class RecordBrowserModel
     {
         ArgumentNullException.ThrowIfNull(records);
 
-        return [.. records.GenericRecords
-            .GroupBy(r => r.RecordType, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
-            .Select(g => new RecordTypeGroup(
-                g.Key,
-                [.. g.OrderBy(SortKey, StringComparer.OrdinalIgnoreCase)]))];
+        return
+        [
+            .. records.GenericRecords
+                .GroupBy(r => r.RecordType, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(g => new RecordTypeGroup(
+                    g.Key,
+                    [.. g.OrderBy(SortKey, StringComparer.OrdinalIgnoreCase)]))
+        ];
     }
 
     /// <summary>Label for one record in a list: its name if it has one, else its FormID.</summary>
@@ -58,5 +77,8 @@ internal static class RecordBrowserModel
             : $"0x{record.FormId:X8}";
     }
 
-    private static string SortKey(GenericEsmRecord record) => DescribeRecord(record);
+    private static string SortKey(GenericEsmRecord record)
+    {
+        return DescribeRecord(record);
+    }
 }

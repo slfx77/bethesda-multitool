@@ -22,7 +22,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Particles;
 public sealed class NifParticleMeshEmitterColumnTests
 {
     private const string MeshesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+        @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa";
 
     private const string FxDustPath = @"meshes\effects\ambient\fxdustwhirlwind01.nif";
 
@@ -37,12 +37,12 @@ public sealed class NifParticleMeshEmitterColumnTests
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
 
-        using var archives = MeshArchiveSet.Open(bsaPath!, null, false);
+        using var archives = MeshArchiveSet.Open(bsaPath, null, false);
         Assert.True(archives.TryExtractFile(FxDustPath, out var data, out _), "FXDust NIF not found in BSA");
 
         var nif = NifParser.Parse(data);
         Assert.NotNull(nif);
-        if (nif!.IsBigEndian)
+        if (nif.IsBigEndian)
         {
             var converted = NifConverter.Convert(data);
             // Split: a compound assert cannot say which half failed.
@@ -57,7 +57,7 @@ public sealed class NifParticleMeshEmitterColumnTests
         var model = NifGeometryExtractor.Extract(data, nif, collectBillboards: true);
         Assert.NotNull(model);
 
-        var clouds = model!.Submeshes.Where(s => s.ShapeName == "ParticleCloud").ToList();
+        var clouds = model.Submeshes.Where(s => s.ShapeName == "ParticleCloud").ToList();
         Assert.NotEmpty(clouds);
         Assert.All(clouds, particleCloud => Assert.NotNull(particleCloud.ParticleRuntime));
 

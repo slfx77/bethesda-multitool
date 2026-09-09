@@ -17,11 +17,11 @@ namespace BethesdaMultitool.Core.WorldData;
 ///         MUST be time-boxed by the caller because a permanently-missing texture can pin the counter.
 ///     </para>
 ///     <para>
-    ///         An incremental reference batch build or required bounds refresh gates BOTH modes. Its
-    ///         published counters describe the previous complete aggregate until the staged sweep swaps
-    ///         atomically, so treating that stable-looking snapshot as quiescent can capture content one
-    ///         frame before it appears. Retryable GPU materialization failures are pending work too:
-    ///         they retain their decoded payload and must never masquerade as permanent missing content.
+///         An incremental reference batch build or required bounds refresh gates BOTH modes. Its
+///         published counters describe the previous complete aggregate until the staged sweep swaps
+///         atomically, so treating that stable-looking snapshot as quiescent can capture content one
+///         frame before it appears. Retryable GPU materialization failures are pending work too:
+///         they retain their decoded payload and must never masquerade as permanent missing content.
 ///     </para>
 ///     <para>
 ///         <b>Never</b> add a <c>ReferenceMeshMissing == 0</c> term: dense regions hold 10–28k

@@ -1,4 +1,3 @@
-using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Helpers;
@@ -20,11 +19,11 @@ namespace BethesdaMultitool.Tests.Helpers;
 [Collection(ProcessEnvironmentGroup.Name)]
 public sealed class RealAssetPathsTests : IDisposable
 {
-    private readonly string _root =
-        Path.Combine(Path.GetTempPath(), "bmt-assetpaths-" + Guid.NewGuid().ToString("N"));
-
     private readonly string? _previousRoot =
         Environment.GetEnvironmentVariable(RealAssetPaths.RootVariable);
+
+    private readonly string _root =
+        Path.Combine(Path.GetTempPath(), "bmt-assetpaths-" + Guid.NewGuid().ToString("N"));
 
     public RealAssetPathsTests()
     {
@@ -37,7 +36,7 @@ public sealed class RealAssetPathsTests : IDisposable
         Environment.SetEnvironmentVariable(RealAssetPaths.RootVariable, _previousRoot);
         try
         {
-            Directory.Delete(_root, recursive: true);
+            Directory.Delete(_root, true);
         }
         catch (IOException)
         {

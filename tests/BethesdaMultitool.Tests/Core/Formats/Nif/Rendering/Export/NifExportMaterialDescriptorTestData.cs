@@ -34,8 +34,8 @@ internal sealed class NifExportMaterialDescriptorTestData
             HasInlineStrings = bsVersion < 26
         };
         using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
-        int[] properties = material switch
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
+        var properties = material switch
         {
             "absent" => Array.Empty<int>(),
             "out-of-range" => [int.MaxValue],
@@ -54,6 +54,7 @@ internal sealed class NifExportMaterialDescriptorTestData
                 WriteInt(writer, 4);
                 WriteInt(writer, 6);
             }
+
             WriteInt(writer, 0); // Num Effects.
         });
         AddBlock(strips ? "NiTriStrips" : "NiTriShape", () => WriteShape(writer, "Primary", properties));
@@ -66,6 +67,7 @@ internal sealed class NifExportMaterialDescriptorTestData
             // Required Alpha is missing its final byte. Following blocks must not supply it.
             Info.Blocks[3].Size--;
         }
+
         if (multipleOwners)
         {
             AddBlock(strips ? "NiTriStrips" : "NiTriShape", () => WriteShape(writer, "Second", [5]));
@@ -86,9 +88,11 @@ internal sealed class NifExportMaterialDescriptorTestData
                 {
                     writer.Write((byte)0);
                 }
+
                 WriteInt(writer, 0); // Num Shader Textures.
             });
         }
+
         AddBlock("NiMaterialProperty", () => WriteMaterial(writer,
             new Vector3(0.9375f, 0.8125f, 0.6875f), new Vector3(8, 9, 10), 64f, 0.25f, "DetachedSkin"));
         writer.Flush();
@@ -127,6 +131,7 @@ internal sealed class NifExportMaterialDescriptorTestData
             WriteInt(writer, Info.Strings.Count);
             Info.Strings.Add(name);
         }
+
         WriteInt(writer, 0); // Num Extra Data List.
         WriteInt(writer, -1); // Controller.
     }
@@ -142,6 +147,7 @@ internal sealed class NifExportMaterialDescriptorTestData
         {
             WriteUShort(writer, 0);
         }
+
         WriteVector(writer, Vector3.Zero); // Translation.
         WriteVector(writer, Vector3.UnitX); // Identity Matrix33 rows.
         WriteVector(writer, Vector3.UnitY);
@@ -152,6 +158,7 @@ internal sealed class NifExportMaterialDescriptorTestData
         {
             WriteInt(writer, property);
         }
+
         WriteInt(writer, -1); // Collision Object.
     }
 
@@ -181,6 +188,7 @@ internal sealed class NifExportMaterialDescriptorTestData
             WriteVector(writer, new Vector3(0.0625f, 0.1875f, 0.3125f)); // Distinct ambient sentinel.
             WriteVector(writer, diffuse);
         }
+
         WriteVector(writer, specular);
         WriteVector(writer, new Vector3(0.875f, 0.6875f, 0.9375f)); // Distinct emissive sentinel.
         WriteFloat(writer, gloss);
@@ -201,6 +209,7 @@ internal sealed class NifExportMaterialDescriptorTestData
         {
             WriteVector(writer, position);
         }
+
         WriteUShort(writer, 0x1001); // One UV set and authored inline T/B.
         writer.Write((byte)1); // Has Normals.
         foreach (var axis in BasisAxes)
@@ -210,6 +219,7 @@ internal sealed class NifExportMaterialDescriptorTestData
                 WriteVector(writer, axis);
             }
         }
+
         WriteVector(writer, Vector3.Zero);
         WriteFloat(writer, 2f); // Bounding sphere.
         writer.Write((byte)0); // Has Vertex Colors.
@@ -218,6 +228,7 @@ internal sealed class NifExportMaterialDescriptorTestData
             WriteFloat(writer, position.X);
             WriteFloat(writer, position.Y);
         }
+
         WriteUShort(writer, 0); // Consistency Flags.
         WriteInt(writer, -1); // Additional Data.
         WriteUShort(writer, 1); // Num Triangles.
@@ -230,6 +241,7 @@ internal sealed class NifExportMaterialDescriptorTestData
         {
             WriteInt(writer, 3); // Num Triangle Points.
         }
+
         writer.Write((byte)1); // Has Points / Has Triangles.
         WriteUShort(writer, 0);
         WriteUShort(writer, 1);
@@ -247,9 +259,18 @@ internal sealed class NifExportMaterialDescriptorTestData
         WriteFloat(writer, value.Z);
     }
 
-    private void WriteFloat(BinaryWriter writer, float value) => WriteInt(writer, BitConverter.SingleToInt32Bits(value));
-    private void WriteInt(BinaryWriter writer, int value) =>
+    private void WriteFloat(BinaryWriter writer, float value)
+    {
+        WriteInt(writer, BitConverter.SingleToInt32Bits(value));
+    }
+
+    private void WriteInt(BinaryWriter writer, int value)
+    {
         writer.Write(Info.IsBigEndian ? BinaryPrimitives.ReverseEndianness(value) : value);
-    private void WriteUShort(BinaryWriter writer, ushort value) =>
+    }
+
+    private void WriteUShort(BinaryWriter writer, ushort value)
+    {
         writer.Write(Info.IsBigEndian ? BinaryPrimitives.ReverseEndianness(value) : value);
+    }
 }

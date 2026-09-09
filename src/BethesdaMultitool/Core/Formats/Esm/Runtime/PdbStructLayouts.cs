@@ -57,7 +57,8 @@ internal static class PdbStructLayouts
 
             foreach (var owner in layout.Fields
                          .Select(field => field.Owner)
-                         .Where(owner => owner != null && !string.Equals(owner, layout.ClassName, StringComparison.Ordinal))
+                         .Where(owner =>
+                             owner != null && !string.Equals(owner, layout.ClassName, StringComparison.Ordinal))
                          .Distinct(StringComparer.Ordinal))
             {
                 // Only ancestors that are themselves record classes matter — a pointer declared as
@@ -133,9 +134,9 @@ internal static class PdbStructLayouts
         0x3C, // ACRE — RuntimeRefrReader (via creature)
         0x41, // WRLD — RuntimeWorldReader/CellReader
         0x42, // LAND_ID — vestigial: the PDB enum maps 0x42 to TESLand, a class the engine never
-              // compiled (no layout exists), so no runtime instance carries this byte.
+        // compiled (no layout exists), so no runtime instance carries this byte.
         0x44, // TLOD_ID — the engine registers TESObjectLAND (runtime terrain) under this slot,
-              // NOT under LAND_ID; read by RuntimeWorldReader (PDB-verified 2026-08-25, both eras).
+        // NOT under LAND_ID; read by RuntimeWorldReader (PDB-verified 2026-08-25, both eras).
         0x45, // DIAL — RuntimeDialogueReader
         0x46, // INFO — RuntimeDialogueReader
         0x47, // QUST — RuntimeDialogueReader
@@ -145,97 +146,6 @@ internal static class PdbStructLayouts
         0x59, // AVIF — RuntimeActorReader
         0x66 // MUSC — RuntimeMusicTypeReader
     ];
-
-    /// <summary>
-    ///     All loaded type layouts indexed by FormType byte.
-    /// </summary>
-    public static IReadOnlyDictionary<byte, PdbTypeLayout> Layouts => LazyLayouts.Value;
-
-    /// <summary>
-    ///     Get the layout for a specific FormType, or null if not available.
-    /// </summary>
-    public static PdbTypeLayout? Get(byte formType)
-    {
-        return LazyLayouts.Value.GetValueOrDefault(formType);
-    }
-
-    /// <summary>
-    ///     Resolve a C++ class name (e.g. <c>SpellItem</c>) to its FormType byte. Lets a container
-    ///     walker turn a <c>BSSimpleList&lt;SpellItem *&gt;</c> element type into the FormType its
-    ///     members must carry, without a hand-maintained parallel table that could drift from the
-    ///     layout database.
-    /// </summary>
-    public static bool TryGetFormTypeByClassName(string className, out byte formType)
-    {
-        return LazyFormTypeByClassName.Value.TryGetValue(className, out formType);
-    }
-
-    /// <summary>
-    ///     Every FormType a pointer declared as <paramref name="className" /> may legitimately hold —
-    ///     the class's own plus each record class deriving from it. False when the name is not a
-    ///     record class, which callers must treat as "no narrowing available".
-    /// </summary>
-    public static bool TryGetAssignableFormTypes(string className, out IReadOnlySet<byte> formTypes)
-    {
-        return LazyAssignableFormTypes.Value.TryGetValue(className, out formTypes!);
-    }
-
-    /// <summary>
-    ///     Record classes that are an ancestor of at least one other record class, mapped to the
-    ///     FormTypes assignable to them. Exposed so a test can pin the derivation rather than
-    ///     asserting against a hand-copied list that would drift from the layout database.
-    /// </summary>
-    internal static IEnumerable<KeyValuePair<string, IReadOnlySet<byte>>> PolymorphicRecordClasses =>
-        LazyAssignableFormTypes.Value.Where(pair => pair.Value.Count > 1);
-
-    /// <summary>
-    ///     Resolve the member layout of a non-record struct — the payload behind a container or an
-    ///     indirection. Returns false when this build's layout database has no entry, which callers
-    ///     must treat as "decline to read" rather than falling back to hard-coded offsets: the whole
-    ///     point of sourcing these from the PDB is that a different build can move them.
-    /// </summary>
-    public static bool TryGetAuxStruct(string className, out PdbAuxStructLayout layout)
-    {
-        return LazyAuxStructs.Value.TryGetValue(className, out layout!);
-    }
-
-    /// <summary>
-    ///     Every non-record struct layout, keyed by class name.
-    ///     <para>
-    ///         Until 2026-09-04 the only way in was <see cref="TryGetAuxStruct" />, so a caller had to
-    ///         already know a name to ask about — which meant the 449 entries were never swept for
-    ///         what they contain. That is how 60 string-bearing classes stayed invisible to ownership
-    ///         analysis while a hand-written table guessed at a subset of the same offsets.
-    ///     </para>
-    /// </summary>
-    public static IReadOnlyDictionary<string, PdbAuxStructLayout> AuxStructs => LazyAuxStructs.Value;
-
-    /// <summary>
-    ///     Returns the offset of the embedded <c>TESForm</c> subobject from the complete-object base.
-    ///     PDB field offsets are complete-object-relative, while runtime form maps store <c>TESForm*</c>.
-    /// </summary>
-    internal static int GetTesFormInteriorOffset(PdbTypeLayout layout)
-    {
-        ArgumentNullException.ThrowIfNull(layout);
-
-        var cFormType = layout.Fields.FirstOrDefault(field => field is { Owner: "TESForm", Name: "cFormType" });
-        if (cFormType == null || cFormType.Offset < 4 || cFormType.Offset >= layout.StructSize)
-        {
-            return 0;
-        }
-
-        // cFormType is four bytes into TESForm on Xbox 360. Subtracting that local offset
-        // converts its complete-object-relative PDB offset into the TESForm interior offset.
-        return cFormType.Offset - 4;
-    }
-
-    /// <summary>
-    ///     Returns true if the given FormType has a hand-written specialized reader.
-    /// </summary>
-    public static bool HasSpecializedReader(byte formType)
-    {
-        return SpecializedFormTypes.Contains(formType);
-    }
 
     /// <summary>
     ///     Members that hold a nested payload — one owning class and field name each. They sit on
@@ -271,6 +181,100 @@ internal static class PdbStructLayouts
     });
 
     /// <summary>
+    ///     All loaded type layouts indexed by FormType byte.
+    /// </summary>
+    public static IReadOnlyDictionary<byte, PdbTypeLayout> Layouts => LazyLayouts.Value;
+
+    /// <summary>
+    ///     Record classes that are an ancestor of at least one other record class, mapped to the
+    ///     FormTypes assignable to them. Exposed so a test can pin the derivation rather than
+    ///     asserting against a hand-copied list that would drift from the layout database.
+    /// </summary>
+    internal static IEnumerable<KeyValuePair<string, IReadOnlySet<byte>>> PolymorphicRecordClasses =>
+        LazyAssignableFormTypes.Value.Where(pair => pair.Value.Count > 1);
+
+    /// <summary>
+    ///     Every non-record struct layout, keyed by class name.
+    ///     <para>
+    ///         Until 2026-09-04 the only way in was <see cref="TryGetAuxStruct" />, so a caller had to
+    ///         already know a name to ask about — which meant the 449 entries were never swept for
+    ///         what they contain. That is how 60 string-bearing classes stayed invisible to ownership
+    ///         analysis while a hand-written table guessed at a subset of the same offsets.
+    ///     </para>
+    /// </summary>
+    public static IReadOnlyDictionary<string, PdbAuxStructLayout> AuxStructs => LazyAuxStructs.Value;
+
+    /// <summary>Every FormType carrying a nested payload member. Diagnostics and tests.</summary>
+    public static IReadOnlySet<byte> NestedPayloadFormTypes => LazyNestedPayloadFormTypes.Value;
+
+    /// <summary>
+    ///     Get the layout for a specific FormType, or null if not available.
+    /// </summary>
+    public static PdbTypeLayout? Get(byte formType)
+    {
+        return LazyLayouts.Value.GetValueOrDefault(formType);
+    }
+
+    /// <summary>
+    ///     Resolve a C++ class name (e.g. <c>SpellItem</c>) to its FormType byte. Lets a container
+    ///     walker turn a <c>BSSimpleList&lt;SpellItem *&gt;</c> element type into the FormType its
+    ///     members must carry, without a hand-maintained parallel table that could drift from the
+    ///     layout database.
+    /// </summary>
+    public static bool TryGetFormTypeByClassName(string className, out byte formType)
+    {
+        return LazyFormTypeByClassName.Value.TryGetValue(className, out formType);
+    }
+
+    /// <summary>
+    ///     Every FormType a pointer declared as <paramref name="className" /> may legitimately hold —
+    ///     the class's own plus each record class deriving from it. False when the name is not a
+    ///     record class, which callers must treat as "no narrowing available".
+    /// </summary>
+    public static bool TryGetAssignableFormTypes(string className, out IReadOnlySet<byte> formTypes)
+    {
+        return LazyAssignableFormTypes.Value.TryGetValue(className, out formTypes!);
+    }
+
+    /// <summary>
+    ///     Resolve the member layout of a non-record struct — the payload behind a container or an
+    ///     indirection. Returns false when this build's layout database has no entry, which callers
+    ///     must treat as "decline to read" rather than falling back to hard-coded offsets: the whole
+    ///     point of sourcing these from the PDB is that a different build can move them.
+    /// </summary>
+    public static bool TryGetAuxStruct(string className, out PdbAuxStructLayout layout)
+    {
+        return LazyAuxStructs.Value.TryGetValue(className, out layout!);
+    }
+
+    /// <summary>
+    ///     Returns the offset of the embedded <c>TESForm</c> subobject from the complete-object base.
+    ///     PDB field offsets are complete-object-relative, while runtime form maps store <c>TESForm*</c>.
+    /// </summary>
+    internal static int GetTesFormInteriorOffset(PdbTypeLayout layout)
+    {
+        ArgumentNullException.ThrowIfNull(layout);
+
+        var cFormType = layout.Fields.FirstOrDefault(field => field is { Owner: "TESForm", Name: "cFormType" });
+        if (cFormType == null || cFormType.Offset < 4 || cFormType.Offset >= layout.StructSize)
+        {
+            return 0;
+        }
+
+        // cFormType is four bytes into TESForm on Xbox 360. Subtracting that local offset
+        // converts its complete-object-relative PDB offset into the TESForm interior offset.
+        return cFormType.Offset - 4;
+    }
+
+    /// <summary>
+    ///     Returns true if the given FormType has a hand-written specialized reader.
+    /// </summary>
+    public static bool HasSpecializedReader(byte formType)
+    {
+        return SpecializedFormTypes.Contains(formType);
+    }
+
+    /// <summary>
     ///     True when this FormType's layout carries at least one nested payload member. Lets a
     ///     caller skip the struct read for the majority of FormTypes that carry none, so sweeping
     ///     every runtime entry costs a set lookup rather than a read.
@@ -279,9 +283,6 @@ internal static class PdbStructLayouts
     {
         return LazyNestedPayloadFormTypes.Value.Contains(formType);
     }
-
-    /// <summary>Every FormType carrying a nested payload member. Diagnostics and tests.</summary>
-    public static IReadOnlySet<byte> NestedPayloadFormTypes => LazyNestedPayloadFormTypes.Value;
 
     /// <summary>
     ///     Returns readable fields for a FormType — fields that the generic reader can

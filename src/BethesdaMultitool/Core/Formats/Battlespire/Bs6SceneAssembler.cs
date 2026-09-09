@@ -4,6 +4,12 @@ using BethesdaMultitool.Core.Formats.Xngine.Mesh;
 namespace BethesdaMultitool.Core.Formats.Battlespire;
 
 /// <summary>What an assembly run resolved, and what it could not.</summary>
+/// <summary>What a flat assembly produced, and which sprite names the archive lacks.</summary>
+internal sealed record Bs6FlatAssembly(
+    IReadOnlyList<XnGineMeshInstance> Instances,
+    int Placed,
+    IReadOnlyList<string> MissingSprites);
+
 internal sealed record Bs6SceneAssembly(
     IReadOnlyList<XnGineMeshInstance> Instances,
     int Placed,
@@ -89,6 +95,65 @@ internal static class Bs6SceneAssembler
                * Matrix4x4.CreateRotationX(angles.X * scale)
                * Matrix4x4.CreateRotationZ(angles.Z * scale)
                * Matrix4x4.CreateTranslation(position.X, position.Y, position.Z);
+    }
+
+    /// <summary>
+    ///     Places the level's FLATS — the billboards a level uses for monsters, items and flames.
+    ///     <para>
+    ///         ⚑ Separate from <see cref="Assemble" /> deliberately: a flat resolves by NAME through
+    ///         <c>BSI.BSA</c> while a mesh resolves by number through the mesh archives, and the two
+    ///         had been wrongly coupled — the board recorded flats as blocked on the undecoded mesh
+    ///         textures, which they never were. See <see cref="Bs6FlatBillboard" />.
+    ///     </para>
+    /// </summary>
+    /// <param name="flats">The level's flats.</param>
+    /// <param name="sizeOf">Sprite name → pixel size, or null when the archive has no such image.</param>
+    /// <param name="register">Sprite name → the texture record index the billboard is keyed by.</param>
+    /// <remarks>
+    ///     Takes the flat list rather than the whole <see cref="Bs6File" /> for the same reason the
+    ///     Daggerfall assemblers take their sub-records: that type is constructible only by its
+    ///     parser, and placement needs nothing else from it.
+    /// </remarks>
+    public static Bs6FlatAssembly AssembleFlats(
+        IReadOnlyList<Bs6Flat> flats, Func<string, (int Width, int Height)?> sizeOf, Func<string, int> register)
+    {
+        ArgumentNullException.ThrowIfNull(flats);
+        ArgumentNullException.ThrowIfNull(sizeOf);
+        ArgumentNullException.ThrowIfNull(register);
+
+        var instances = new List<XnGineMeshInstance>();
+        var missing = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var flat in flats)
+        {
+            if (string.IsNullOrEmpty(flat.FileName))
+            {
+                continue;
+            }
+
+            var size = sizeOf(flat.FileName);
+            if (size is null)
+            {
+                if (seen.Add(flat.FileName))
+                {
+                    missing.Add(flat.FileName);
+                }
+
+                continue;
+            }
+
+            var mesh = Bs6FlatBillboard.Build(register(flat.FileName), size.Value.Width, size.Value.Height);
+
+            // ⚠ Position only. A flat carries no ANGS, and SCAL is 0 on 2,262 of the 2,272 retail
+            // flats, so there is nothing to rotate or scale by.
+            instances.Add(new XnGineMeshInstance(
+                mesh,
+                Matrix4x4.CreateTranslation(flat.Position.X, flat.Position.Y, flat.Position.Z),
+                $"flat_{flat.Id}_{flat.FileName}"));
+        }
+
+        return new Bs6FlatAssembly(instances, flats.Count, missing);
     }
 
     /// <summary>

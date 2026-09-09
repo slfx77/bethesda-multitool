@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 using static BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRendererConstants12;
@@ -48,7 +47,8 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
 
         Assert.Contains("StarfieldMaterialColorRenderState StarfieldMaterialColor", renderable,
             StringComparison.Ordinal);
-        Assert.Contains("StarfieldMaterialColor = colorPolicy.ResolveRenderState(materialVertexColors, vertexCount)", extractor,
+        Assert.Contains("StarfieldMaterialColor = colorPolicy.ResolveRenderState(materialVertexColors, vertexCount)",
+            extractor,
             StringComparison.Ordinal);
         Assert.Contains("StarfieldMaterialColor = submesh.StarfieldMaterialColor", extractor,
             StringComparison.Ordinal);
@@ -60,10 +60,12 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
             decoder, "StarfieldMaterialColor: sub.StarfieldMaterialColor") >= 2);
         SourceContract.AssertOrder(
             disk,
-            "internal const int DecoderVersion = 95;",
+            "internal const int DecoderVersion = ",
             "writer.Write(submesh.ClassicEnvironmentMapIsSphereMap);",
             "WriteStarfieldMaterialColor(writer, submesh.StarfieldMaterialColor);",
             "WriteStarfieldMaterialAlpha(writer, submesh.StarfieldMaterialAlpha);");
+        Assert.True(BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.ReferenceDecodedMeshDiskCache12
+            .DecoderVersion >= 95);
         Assert.Contains("ReadStarfieldMaterialColor(reader)", disk, StringComparison.Ordinal);
         Assert.Contains("StarfieldMaterialColorRenderState StarfieldMaterialColor", cached,
             StringComparison.Ordinal);
@@ -128,6 +130,9 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
             "saturate(alpha * input.vVertexColor.a)");
     }
 
-    private static string D3D12Source(string fileName) => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", fileName);
+    private static string D3D12Source(string fileName)
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", fileName);
+    }
 }

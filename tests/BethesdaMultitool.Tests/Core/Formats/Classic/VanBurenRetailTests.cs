@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Audio;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.VanBuren;
@@ -13,7 +10,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Classic;
 /// <summary>
 ///     Opt-in checks (<c>RUN_BUCKET_B=1</c>) of the cancelled Fallout 3 "Van Buren" prototype
 ///     (Dec 9 2003). The build is staged as a <c>.rar</c> inside
-///     <c>Sample/Full_Builds/Fallout 3 (Dec 9, 2003 prototype).zip</c>; these run against an
+///     <c>Van Buren (2003-12-9, PC - Prototype)/Fallout 3 (Dec 9, 2003 prototype).zip</c>; these run against an
 ///     extracted tree and skip when it is absent, so nothing here depends on an unpack step having
 ///     been done.
 /// </summary>
@@ -29,13 +26,181 @@ public sealed class VanBurenRetailTests
         var root = RepositoryRoot();
         var candidates = new[]
         {
-            Path.Combine(root, "Sample", "Full_Builds", "Van Buren (Dec 9 2003)", "data"),
-            Path.Combine(root, "Sample", "Full_Builds", "F3_Demo", "data")
+            Path.Combine(root, "Sample", "Builds", "Van Buren (2003-12-9, PC - Prototype)", "data"),
+            Path.Combine(root, "Sample", "Builds", "F3_Demo", "data")
         };
 
         var found = candidates.FirstOrDefault(Directory.Exists);
         Assert.SkipWhen(found is null, RealAssetPaths.SkipMessage("Van Buren prototype data"));
-        return found!;
+        return found;
+    }
+
+    [Fact]
+    public void TheSecondUntaggedFamilyIsGrannyAndDeclaresAConstantHeaderSize()
+    {
+        // ⚑ IDENTIFICATION, not a decode: 547 payloads open with the exact 16-byte Granny 2
+        // signature, all declare header size 352, and the build ships granny2.dll beside the
+        // executable. ⛔ Granny is proprietary with no permissive reference, so nothing decodes it.
+        var data = RequireDataDirectory();
+        var granny = 0;
+        var sizes = new HashSet<int>();
+
+        foreach (var file in Directory.GetFiles(data, "*.grp"))
+        {
+            var bytes = File.ReadAllBytes(file);
+            if (!VanBurenGrpArchive.TryParse(bytes, Path.GetFileName(file), out var archive, out _))
+            {
+                continue;
+            }
+
+            foreach (var entry in archive.Entries)
+            {
+                var payload = VanBurenGrpArchive.Read(bytes, entry);
+                if (!VanBurenGrannyFile.IsGranny(payload))
+                {
+                    continue;
+                }
+
+                granny++;
+                sizes.Add(VanBurenGrannyFile.ReadDeclaredHeaderSize(payload));
+            }
+        }
+
+        Assert.True(granny > 500, $"expected ~547 Granny payloads, saw {granny}");
+
+        // ⚠ One constant across the whole family — a build declaring anything else should surface
+        // rather than be waved through as this one's 352.
+        Assert.Equal([VanBurenGrannyFile.DeclaredHeaderSize], sizes);
+    }
+
+    [Fact]
+    public void TheUntaggedImageFamilyDecodesWithPowerOfTwoDimensions()
+    {
+        // ⚑ The largest NAMELESS payload family in the .grp archives is an image format: format id
+        // 0x00020000, u16 w/h at +12, bpp at +16, pixels from +18. Measured 2026-09-06 over all
+        // 1,526: bpp is only ever 24 or 32, every dimension is a power of two, and the size
+        // accounts for the pixels with either no trailer or a 26-byte one.
+        var data = RequireDataDirectory();
+        var images = 0;
+        var withTrailer = 0;
+        var powerOfTwo = 0;
+        var depths = new HashSet<int>();
+        var failures = new List<string>();
+
+        foreach (var file in Directory.GetFiles(data, "*.grp"))
+        {
+            var bytes = File.ReadAllBytes(file);
+            if (!VanBurenGrpArchive.TryParse(bytes, Path.GetFileName(file), out var archive, out _))
+            {
+                continue;
+            }
+
+            foreach (var entry in archive.Entries)
+            {
+                var payload = VanBurenGrpArchive.Read(bytes, entry);
+                if (payload.Length < 4 || BinaryPrimitives.ReadUInt32LittleEndian(payload.AsSpan(0, 4)) !=
+                    VanBurenImageFile.UncompressedFormat)
+                {
+                    continue;
+                }
+
+                if (!VanBurenImageFile.TryParse(payload, $"{Path.GetFileName(file)}#{entry.Index}",
+                        out var image, out var error))
+                {
+                    failures.Add(error);
+                    continue;
+                }
+
+                images++;
+                depths.Add(image.BitsPerPixel);
+                if (image.TrailerLength == 26)
+                {
+                    withTrailer++;
+                }
+
+                if ((image.Width & (image.Width - 1)) == 0 && (image.Height & (image.Height - 1)) == 0)
+                {
+                    powerOfTwo++;
+                }
+
+                var rgb = VanBurenImageFile.DecodeRgb(payload, image);
+                Assert.Equal(image.Width * image.Height * 3, rgb.Length);
+            }
+        }
+
+        Assert.Empty(failures);
+        Assert.True(images > 1_400, $"expected ~1,526 images, saw {images}");
+
+        // ⚠ Only 24 and 32 bpp ship.
+        Assert.Equal([24, 32], depths.OrderBy(d => d));
+
+        // ⚠ MOST dims are powers of two but NOT all — 82 are screen art (800x472, 149x150), so a
+        // power-of-two check must never be used as a gate.
+        Assert.True(powerOfTwo > 1_400, $"expected ~1,444 power-of-two images, saw {powerOfTwo}");
+        Assert.True(images - powerOfTwo > 50, "expected the ~82 non-power-of-two screen images");
+
+        // ⚠ Most carry a 26-byte trailer, so the payload length cannot derive the dimensions.
+        Assert.True(withTrailer > 800, $"expected ~939 with a trailer, saw {withTrailer}");
+    }
+
+    [Fact]
+    public void EverySceneChunkStreamTilesItsDeclaredContentExactly()
+    {
+        // ⚑ PARSING IS THE PROOF: the chunks must consume [8, 8+declaredLength) with nothing left
+        // over. Measured 2026-09-06 over all 39 shipped 8TRE scenes.
+        var data = RequireDataDirectory();
+        var failures = new List<string>();
+        var scenes = 0;
+        var chunks = 0;
+        var sequences = new HashSet<string>(StringComparer.Ordinal);
+        var trailerless = 0;
+
+        foreach (var file in Directory.GetFiles(data, "*.grp"))
+        {
+            var bytes = File.ReadAllBytes(file);
+            if (!VanBurenGrpArchive.TryParse(bytes, Path.GetFileName(file), out var archive, out _))
+            {
+                continue;
+            }
+
+            foreach (var entry in archive.Entries)
+            {
+                var payload = VanBurenGrpArchive.Read(bytes, entry);
+                if (!VanBurenSceneFile.IsScene(payload))
+                {
+                    continue;
+                }
+
+                scenes++;
+                if (!VanBurenSceneFile.TryParse(payload, $"{Path.GetFileName(file)}#{entry.Index}",
+                        out var scene, out var error))
+                {
+                    failures.Add(error);
+                    continue;
+                }
+
+                chunks += scene.Chunks.Count;
+                sequences.Add(string.Join(' ', scene.Chunks.Select(c => c.Tag)));
+                if (scene.TrailerLength == 0)
+                {
+                    trailerless++;
+                }
+            }
+        }
+
+        Assert.Empty(failures);
+        Assert.Equal(39, scenes);
+
+        // ⚠ EVERY scene carries a trailer after its declared content. Walking to the end of the
+        // payload instead of to 8+length therefore fails on nearly all of them.
+        Assert.Equal(0, trailerless);
+
+        // ⚑ The layout is ordered and near-fixed: only THREE distinct top-level sequences across
+        // the whole corpus, all sharing HEAD ... MATD TXTD VTXD TREE.
+        Assert.Equal(3, sequences.Count);
+        Assert.All(sequences, s => Assert.StartsWith("HEAD", s, StringComparison.Ordinal));
+        Assert.All(sequences, s => Assert.EndsWith("MATD TXTD VTXD TREE", s, StringComparison.Ordinal));
+        Assert.True(chunks >= 39 * 6, $"expected at least six chunks per scene, saw {chunks}");
     }
 
     [Fact]
@@ -195,9 +360,9 @@ public sealed class VanBurenRetailTests
         {
             var bytes = archive.ReadFile(entry.FullPath);
             Assert.NotNull(bytes);
-            Assert.True(RiffWaveFile.IsRiffWave(bytes!), $"{entry.Name} does not carry a RIFF header");
+            Assert.True(RiffWaveFile.IsRiffWave(bytes), $"{entry.Name} does not carry a RIFF header");
 
-            var wave = RiffWaveFile.Parse(bytes!, entry.Name);
+            var wave = RiffWaveFile.Parse(bytes, entry.Name);
             Assert.True(wave.SampleRate > 0, $"{entry.Name} declares no sample rate");
             decoded++;
         }
@@ -281,6 +446,59 @@ public sealed class VanBurenRetailTests
             directory = directory.Parent;
         }
 
-        return directory?.FullName ?? throw new InvalidOperationException("BethesdaMultitool.slnx not found above the test binary.");
+        return directory?.FullName ??
+               throw new InvalidOperationException("BethesdaMultitool.slnx not found above the test binary.");
+    }
+
+    [Fact]
+    public void EveryEffectGroupTilesItsPayloadExactly()
+    {
+        // ⚑ The proof for the VEG family (2026-09-06): all 119 consume their payload EXACTLY —
+        // header, the counted VFX blocks, and the trailing UNTAGGED group block. Walking only the
+        // counted blocks leaves exactly 91 bytes over on every file, which is what hid the group
+        // block; exact tiling is what makes the reading certain rather than plausible.
+        var root = RequireDataDirectory();
+        var groups = 0;
+        var failures = new List<string>();
+
+        foreach (var file in Directory.EnumerateFiles(root, "*.grp", SearchOption.AllDirectories))
+        {
+            var bytes = File.ReadAllBytes(file);
+            if (!VanBurenGrpArchive.TryParse(bytes, Path.GetFileName(file), out var archive, out _))
+            {
+                continue;
+            }
+
+            foreach (var entry in archive.Entries)
+            {
+                var payload = VanBurenGrpArchive.Read(bytes, entry);
+                if (!VanBurenVegFile.IsVeg(payload))
+                {
+                    continue;
+                }
+
+                groups++;
+                if (!VanBurenVegFile.TryParse(payload, $"{Path.GetFileName(file)}#{entry.Index}",
+                        out var veg, out var error))
+                {
+                    if (failures.Count < 8)
+                    {
+                        failures.Add(error);
+                    }
+
+                    continue;
+                }
+
+                // ⚠ Retail's group block is always these three; a different set means the trailing
+                // block was mis-framed rather than the data being unusual.
+                Assert.Equal<string[]>(
+                    ["Loop", "MinStartTime", "MaxStartTime"],
+                    [.. veg.GroupProperties.Select(x => x.Name)]);
+                Assert.NotEmpty(veg.Blocks);
+            }
+        }
+
+        Assert.True(groups > 100, $"expected ~119 VEG groups, saw {groups}");
+        Assert.Empty(failures);
     }
 }

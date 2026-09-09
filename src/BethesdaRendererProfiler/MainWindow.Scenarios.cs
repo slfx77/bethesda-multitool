@@ -3,8 +3,8 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
-using Microsoft.UI.Xaml;
 using BethesdaMultitool.Core.WorldData;
+using Microsoft.UI.Xaml;
 
 namespace BethesdaRendererProfiler;
 

@@ -1,4 +1,3 @@
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Redguard;
 using Xunit;
 
@@ -11,23 +10,23 @@ namespace BethesdaMultitool.Tests.Core.Formats.Redguard;
 public sealed class RedguardWorldIniTests
 {
     private const string Sample = """
-        [world]
-        start_world=1
-        start_marker=0
-        ;test_map_order = 0,1,2
+                                  [world]
+                                  start_world=1
+                                  start_marker=0
+                                  ;test_map_order = 0,1,2
 
-        world_map[0]=MAPS\start.rgm
-        world_world[0]=MAPS\hideout.WLD
-        world_palette[0]=3DART\sunset.COL
-        world_sky[0]=system\sunset.GXA
-        world_redbook[0]=7
+                                  world_map[0]=MAPS\start.rgm
+                                  world_world[0]=MAPS\hideout.WLD
+                                  world_palette[0]=3DART\sunset.COL
+                                  world_sky[0]=system\sunset.GXA
+                                  world_redbook[0]=7
 
-        world_map[1]=MAPS\ISLAND.rgm
-        world_palette[1]=3DART\island.COL
-        world_node_map1[1]=maps\islan001.noo
-        world_node_map2[1]=maps\islan002.noo
-        world_node_map10[1]=maps\islan010.noo
-        """;
+                                  world_map[1]=MAPS\ISLAND.rgm
+                                  world_palette[1]=3DART\island.COL
+                                  world_node_map1[1]=maps\islan001.noo
+                                  world_node_map2[1]=maps\islan002.noo
+                                  world_node_map10[1]=maps\islan010.noo
+                                  """;
 
     [Fact]
     public void ParseReadsTheLooseSectionKeys()

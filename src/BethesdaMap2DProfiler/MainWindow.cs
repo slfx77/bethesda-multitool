@@ -73,6 +73,8 @@ internal sealed class MainWindow : Window, IDisposable
         }
 
         _disposed = true;
+        _worldMap.Loaded -= OnWorldMapLoaded;
+        Closed -= OnClosed;
         _providerReadyTimer?.Stop();
         _providerReadyTimer = null;
         _timedExitTimer?.Stop();
@@ -152,7 +154,7 @@ internal sealed class MainWindow : Window, IDisposable
 
     private async void OnWorldMapLoaded(object sender, RoutedEventArgs e)
     {
-        if (_started)
+        if (_started || _disposed)
         {
             return;
         }
@@ -163,12 +165,21 @@ internal sealed class MainWindow : Window, IDisposable
             SetStatus("Loading map data...");
             var progress = new Progress<string>(message =>
             {
+                if (_disposed)
+                {
+                    return;
+                }
+
                 SetStatus(message);
                 Log.Info(message);
             });
 
             var data = await Task.Run(async () =>
                 await Map2DProfilerDataLoader.LoadAsync(_options, progress));
+            if (_disposed)
+            {
+                return;
+            }
 
             SetStatus("Loading data into WorldMapControl...");
             _worldMap.LoadData(data);
@@ -235,6 +246,11 @@ internal sealed class MainWindow : Window, IDisposable
         }
         catch (Exception ex)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             _progressBar.IsIndeterminate = false;
             SetStatus($"Failed: {ex.GetType().Name}: {ex.Message}");
             Log.Error("Map 2D profiler startup failed: {0}", ex);

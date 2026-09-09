@@ -46,7 +46,8 @@ internal sealed class DaggerfallArch3DFile
         var archive = XnGineBsaParser.Parse(path);
         if (!archive.IsNumbered)
         {
-            throw new InvalidDataException($"'{Path.GetFileName(path)}' is a name-record BSA; ARCH3D.BSA is number-record.");
+            throw new InvalidDataException(
+                $"'{Path.GetFileName(path)}' is a name-record BSA; ARCH3D.BSA is number-record.");
         }
 
         return new DaggerfallArch3DFile(File.ReadAllBytes(path), archive.Entries);
@@ -70,7 +71,8 @@ internal sealed class DaggerfallArch3DFile
         var entry = _entries[index];
         if (entry.Offset < 0 || entry.Size < 0 || entry.Offset + entry.Size > _bytes.Length)
         {
-            throw new InvalidDataException($"ARCH3D record {index} ({entry.Offset}+{entry.Size}) lies outside the {_bytes.Length}-byte archive.");
+            throw new InvalidDataException(
+                $"ARCH3D record {index} ({entry.Offset}+{entry.Size}) lies outside the {_bytes.Length}-byte archive.");
         }
 
         return new ReadOnlyMemory<byte>(_bytes, (int)entry.Offset, entry.Size);

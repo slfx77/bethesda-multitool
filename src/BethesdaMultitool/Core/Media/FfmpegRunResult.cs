@@ -22,12 +22,18 @@ internal sealed record FfmpegRunResult
     /// <summary>True when the run ended because the caller cancelled it, not because it failed.</summary>
     public bool Cancelled { get; init; }
 
-    internal static FfmpegRunResult Ok(string outputPath) =>
-        new() { Success = true, OutputPath = outputPath };
+    internal static FfmpegRunResult Ok(string outputPath)
+    {
+        return new FfmpegRunResult { Success = true, OutputPath = outputPath };
+    }
 
-    internal static FfmpegRunResult Failed(string message) =>
-        new() { ErrorMessage = message };
+    internal static FfmpegRunResult Failed(string message)
+    {
+        return new FfmpegRunResult { ErrorMessage = message };
+    }
 
-    internal static FfmpegRunResult WasCancelled() =>
-        new() { Cancelled = true, ErrorMessage = "Cancelled" };
+    internal static FfmpegRunResult WasCancelled()
+    {
+        return new FfmpegRunResult { Cancelled = true, ErrorMessage = "Cancelled" };
+    }
 }

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using BethesdaMultitool.Core.Utils;
 
@@ -144,7 +145,7 @@ internal static class FfmpegRunner
                 return FfmpegRunResult.Failed("ffmpeg reported success but wrote no output.");
             }
 
-            File.Move(staged, outputPath, overwrite: true);
+            File.Move(staged, outputPath, true);
             staged = null!;
             return FfmpegRunResult.Ok(outputPath);
         }
@@ -157,7 +158,7 @@ internal static class FfmpegRunner
             return FfmpegRunResult.Failed("ffmpeg stopped responding while finishing the file.");
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
-                                       or System.ComponentModel.Win32Exception or InvalidOperationException)
+                                       or Win32Exception or InvalidOperationException)
         {
             return FfmpegRunResult.Failed(ex.Message);
         }
@@ -171,7 +172,10 @@ internal static class FfmpegRunner
     }
 
     /// <summary>Wraps a path in quotes for an ffmpeg argument string.</summary>
-    public static string Quote(string path) => $"\"{path}\"";
+    public static string Quote(string path)
+    {
+        return $"\"{path}\"";
+    }
 
     /// <summary>
     ///     Reads stderr line by line, reporting progress. Every line is consumed even when there
@@ -217,12 +221,12 @@ internal static class FfmpegRunner
         {
             if (!process.HasExited)
             {
-                process.Kill(entireProcessTree: true);
+                process.Kill(true);
             }
 
             await process.WaitForExitAsync().WaitAsync(KillGrace).ConfigureAwait(false);
         }
-        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception
+        catch (Exception ex) when (ex is InvalidOperationException or Win32Exception
                                        or TimeoutException or NotSupportedException)
         {
             // Cleanup that fails must never turn into a second failure for the caller.

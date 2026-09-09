@@ -136,7 +136,7 @@ internal enum ShadowkeyProductType : ushort
     Armor = 3,
 
     /// <summary>A consumable — 58 retail records.</summary>
-    Consumable = 4,
+    Consumable = 4
 }
 
 /// <summary>
@@ -177,7 +177,7 @@ internal enum ShadowkeyClasses : ushort
     Thief = 256,
 
     /// <summary>All nine — the 133 records with no restriction.</summary>
-    All = 511,
+    All = 511
 }
 
 /// <summary>
@@ -258,7 +258,7 @@ internal sealed record ShadowkeyProductTable(ushort FormatTag, IReadOnlyList<Sha
 
         var formatTag = BinaryPrimitives.ReadUInt16LittleEndian(bytes);
         int count = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(2));
-        var expected = HeaderLength + ((long)count * RecordLength);
+        var expected = HeaderLength + (long)count * RecordLength;
         if (expected != bytes.Length)
         {
             throw new InvalidDataException(
@@ -268,7 +268,7 @@ internal sealed record ShadowkeyProductTable(ushort FormatTag, IReadOnlyList<Sha
         var products = new ShadowkeyProduct[count];
         for (var i = 0; i < count; i++)
         {
-            var offset = HeaderLength + (i * RecordLength);
+            var offset = HeaderLength + i * RecordLength;
             var record = bytes.AsSpan(offset, RecordLength);
 
             var flagCount = BinaryPrimitives.ReadUInt16LittleEndian(record[15..]);

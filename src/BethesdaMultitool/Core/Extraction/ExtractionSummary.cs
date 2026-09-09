@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Carving;
-
 namespace BethesdaMultitool.Core.Extraction;
 
 /// <summary>

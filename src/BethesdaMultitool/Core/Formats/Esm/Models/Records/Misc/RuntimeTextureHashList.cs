@@ -7,8 +7,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 ///         The engine allocates the <c>BSFileEntry*</c> array from <c>cTextureCount</c> and fills it
 ///         as the model's textures load, so a dump routinely catches a list part-filled. Measured on
 ///         <c>xex44</c> (2026-08-30): of 5,443 lists that were not fully populated, 3,811 had every
-///         slot null — an allocation that never received its entries — while <b>1,632 held 10,761
-///         real hashes</b> alongside their holes.
+///         slot null — an allocation that never received its entries — while
+///         <b>
+///             1,632 held 10,761
+///             real hashes
+///         </b>
+///         alongside their holes.
 ///     </para>
 ///     <para>
 ///         Slot position is the whole point. A hash's meaning is "the texture in slot <c>i</c> of

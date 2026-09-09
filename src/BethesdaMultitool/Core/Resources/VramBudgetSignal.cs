@@ -99,9 +99,9 @@ internal sealed class VramBudgetSignal
     public const int BudgetLatchSamples = 16;
 
     private readonly long[] _recentBudgets = new long[BudgetLatchSamples];
+    private double _peakUsageBytes;
     private int _recentBudgetCount;
     private int _recentBudgetCursor;
-    private double _peakUsageBytes;
 
     /// <summary>Current pressure zone. Starts <see cref="VramPressureZone.Inert" /> — nothing sampled yet.</summary>
     public VramPressureZone Zone { get; private set; } = VramPressureZone.Inert;
@@ -211,17 +211,22 @@ internal sealed class VramBudgetSignal
     }
 
     /// <summary>The fraction at which a zone is entered. <see cref="VramPressureZone.Relaxed" /> has none.</summary>
-    public static double EntryThresholdFor(VramPressureZone zone) => zone switch
+    public static double EntryThresholdFor(VramPressureZone zone)
     {
-        VramPressureZone.Emergency => EmergencyThreshold,
-        VramPressureZone.Shed => ShedThreshold,
-        VramPressureZone.Watch => WatchThreshold,
-        _ => 0.0
-    };
+        return zone switch
+        {
+            VramPressureZone.Emergency => EmergencyThreshold,
+            VramPressureZone.Shed => ShedThreshold,
+            VramPressureZone.Watch => WatchThreshold,
+            _ => 0.0
+        };
+    }
 
     /// <summary>The fraction a zone must fall below to be left — its entry threshold less the hysteresis.</summary>
-    public static double ReleaseThresholdFor(VramPressureZone zone) =>
-        Math.Max(0.0, EntryThresholdFor(zone) - ReleaseHysteresis);
+    public static double ReleaseThresholdFor(VramPressureZone zone)
+    {
+        return Math.Max(0.0, EntryThresholdFor(zone) - ReleaseHysteresis);
+    }
 
     /// <summary>The zone a fraction maps to, ignoring hysteresis and dwell.</summary>
     public static VramPressureZone ZoneFor(double usageFraction)

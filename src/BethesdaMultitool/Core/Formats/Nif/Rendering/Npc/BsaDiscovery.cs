@@ -39,7 +39,7 @@ internal static class BsaDiscovery
     /// </summary>
     internal static BsaDiscoveryResult DiscoverInDirectory(string dir)
     {
-        return DiscoverInDirectoryCore(dir, knownArchive: null);
+        return DiscoverInDirectoryCore(dir, null);
     }
 
     /// <summary>
@@ -231,25 +231,6 @@ internal static class BsaDiscovery
         return DirectoryCache.GetOrAdd(cacheKey, static _ => new DiscoveryCacheSlot());
     }
 
-    private readonly record struct ArchiveFileIdentity(
-        string Path,
-        long Length,
-        long LastWriteTimeUtcTicks);
-
-    private readonly record struct KnownArchiveClassification(
-        string Path,
-        bool Meshes,
-        bool Textures);
-
-    private sealed class DiscoveryCacheSlot
-    {
-        internal object Gate { get; } = new();
-
-        internal ArchiveFileIdentity[]? Identity { get; set; }
-
-        internal BsaDiscoveryResult? Result { get; set; }
-    }
-
     /// <summary>
     ///     Classifies an archive by its header <see cref="BsaFileFlags" /> (cheap, header-only read).
     ///     Falls back to inspecting top-level folder names only when the flags are unset (some
@@ -334,7 +315,7 @@ internal static class BsaDiscovery
                 FileShare.Read,
                 64 * 1024,
                 FileOptions.SequentialScan);
-            using var reader = new BinaryReader(stream, Encoding.UTF8, leaveOpen: true);
+            using var reader = new BinaryReader(stream, Encoding.UTF8, true);
             var header = Ba2Header.Read(reader);
             if (header.Type != Ba2HeaderType.General || !header.HasNameTable)
             {
@@ -383,7 +364,7 @@ internal static class BsaDiscovery
             return (hasMeshes, hasTextures);
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or
-                                   UnauthorizedAccessException or OverflowException)
+                                       UnauthorizedAccessException or OverflowException)
         {
             return (false, false);
         }
@@ -407,7 +388,7 @@ internal static class BsaDiscovery
             var value = path[index];
             if (value is >= (byte)'A' and <= (byte)'Z')
             {
-                value += (byte)('a' - 'A');
+                value += 'a' - 'A';
             }
 
             if (value != root[index])
@@ -417,5 +398,24 @@ internal static class BsaDiscovery
         }
 
         return true;
+    }
+
+    private readonly record struct ArchiveFileIdentity(
+        string Path,
+        long Length,
+        long LastWriteTimeUtcTicks);
+
+    private readonly record struct KnownArchiveClassification(
+        string Path,
+        bool Meshes,
+        bool Textures);
+
+    private sealed class DiscoveryCacheSlot
+    {
+        internal object Gate { get; } = new();
+
+        internal ArchiveFileIdentity[]? Identity { get; set; }
+
+        internal BsaDiscoveryResult? Result { get; set; }
     }
 }

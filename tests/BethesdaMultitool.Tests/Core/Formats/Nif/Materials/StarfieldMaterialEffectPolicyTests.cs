@@ -96,8 +96,8 @@ public sealed class StarfieldMaterialEffectPolicyTests
         };
         var db = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(StarfieldMaterialOrmPolicyTests.BuildDatabase(
-                useDiffChunks: true,
-                unsupported: unsupported is "extra-layer" or "flipbook" ? unsupported : null,
+                true,
+                unsupported is "extra-layer" or "flipbook" ? unsupported : null,
                 shaderRoute: unsupported == "deferred" ? "Deferred" : "Effect",
                 shaderModel: "1LayerEffectGlass",
                 effectSettings: effect)));
@@ -114,7 +114,7 @@ public sealed class StarfieldMaterialEffectPolicyTests
     {
         var db = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(StarfieldMaterialOrmPolicyTests.BuildDatabase(
-                useDiffChunks: true,
+                true,
                 shaderRoute: "Effect",
                 shaderModel: "1LayerEffectGlass")));
 
@@ -126,12 +126,14 @@ public sealed class StarfieldMaterialEffectPolicyTests
         Assert.False(policy.TryResolveStaticGlassAlphaBlend(out _));
     }
 
-    private static StarfieldEffectSettingsFixture Glass() =>
-        new(
-            IsGlass: true,
-            HasFrosting: false,
-            UsesVertexColor: false,
-            MaterialOverallAlpha: 0.35f,
-            BlendingMode: "AlphaBlend",
-            OpacityTexturePath: OpacityPath);
+    private static StarfieldEffectSettingsFixture Glass()
+    {
+        return new StarfieldEffectSettingsFixture(
+            true,
+            false,
+            false,
+            0.35f,
+            "AlphaBlend",
+            OpacityPath);
+    }
 }

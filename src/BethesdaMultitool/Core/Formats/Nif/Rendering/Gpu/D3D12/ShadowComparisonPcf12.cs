@@ -41,8 +41,10 @@ internal static class ShadowComparisonPcf12
     ///     An explicit caller macro wins, which keeps compiler tests able to force either branch.
     /// </summary>
     internal static ShaderMacro[] ApplyRuntimeOptIn(
-        string fileName, string profile, ShaderMacro[] macros) =>
-        Apply(fileName, profile, macros, RuntimeEnvironmentValue);
+        string fileName, string profile, ShaderMacro[] macros)
+    {
+        return Apply(fileName, profile, macros, RuntimeEnvironmentValue);
+    }
 
     /// <summary>Pure overload for policy tests; <paramref name="environmentValue" /> is untrusted.</summary>
     internal static ShaderMacro[] Apply(
@@ -141,8 +143,8 @@ internal static class ShadowComparisonPcf12
             return false;
         }
 
-        var comparisonMacro = effectiveMacros.FirstOrDefault(
-            macro => string.Equals(macro.Name, ShaderMacroName, StringComparison.Ordinal));
+        var comparisonMacro = effectiveMacros.FirstOrDefault(macro =>
+            string.Equals(macro.Name, ShaderMacroName, StringComparison.Ordinal));
         var macroDefinition = comparisonMacro.Name is null ? null : comparisonMacro.Definition;
         var normalizedMacros = string.Join(
             ",",

@@ -64,12 +64,12 @@ internal sealed class RedguardRgmFile
         "COMMON", "CAMERA", "CYRUS", "DEBUG"
     ];
 
-    private static ReadOnlySpan<byte> Terminator => "END "u8;
-
     private RedguardRgmFile(string name)
     {
         Name = name;
     }
+
+    private static ReadOnlySpan<byte> Terminator => "END "u8;
 
     /// <summary>Source file name, for messages.</summary>
     public string Name { get; }
@@ -155,7 +155,8 @@ internal sealed class RedguardRgmFile
         var strings = Payload(span, byTag, "RAST");
         file.Strings = SplitStrings(strings);
         file.CompileWord = BinaryPrimitives.ReadUInt32LittleEndian(span[(objectTable.Offset + 4)..]);
-        file.Objects = ReadObjects(span, objectTable, Payload(span, byTag, "RANM"), Payload(span, byTag, "RASB"), strings, name);
+        file.Objects = ReadObjects(span, objectTable, Payload(span, byTag, "RANM"), Payload(span, byTag, "RASB"),
+            strings, name);
         file.AnimationMeshes = ReadAnimationMeshes(Payload(span, byTag, "RAAN"), file.Objects, name);
         file.Placements = ReadPlacements(Payload(span, byTag, "MPOB"), name);
         file.StaticMeshes = ReadStaticMeshes(Payload(span, byTag, "MPSO"), name);
@@ -182,7 +183,8 @@ internal sealed class RedguardRgmFile
 
             if (position + ChunkHeaderLength > bytes.Length)
             {
-                throw new InvalidDataException($"{name}: {bytes.Length - position} trailing bytes at {position} are neither a chunk nor \"END \".");
+                throw new InvalidDataException(
+                    $"{name}: {bytes.Length - position} trailing bytes at {position} are neither a chunk nor \"END \".");
             }
 
             for (var i = 0; i < 4; i++)
@@ -196,9 +198,10 @@ internal sealed class RedguardRgmFile
             var tag = Encoding.ASCII.GetString(bytes.Slice(position, 4));
             var length = BinaryPrimitives.ReadUInt32BigEndian(bytes.Slice(position + 4, 4));
             var offset = position + ChunkHeaderLength;
-            if (length > int.MaxValue || offset + (long)length > bytes.Length)
+            if (length > int.MaxValue || offset + length > bytes.Length)
             {
-                throw new InvalidDataException($"{name}: chunk '{tag}' declares {length} bytes at {offset}, past the end of the file.");
+                throw new InvalidDataException(
+                    $"{name}: chunk '{tag}' declares {length} bytes at {offset}, past the end of the file.");
             }
 
             chunks.Add(new RedguardRgmChunk(tag, offset, (int)length));
@@ -215,7 +218,8 @@ internal sealed class RedguardRgmFile
             : throw new InvalidDataException($"{name}: no '{tag}' chunk.");
     }
 
-    private static ReadOnlySpan<byte> Payload(ReadOnlySpan<byte> bytes, Dictionary<string, RedguardRgmChunk> byTag, string tag)
+    private static ReadOnlySpan<byte> Payload(ReadOnlySpan<byte> bytes, Dictionary<string, RedguardRgmChunk> byTag,
+        string tag)
     {
         return byTag.TryGetValue(tag, out var chunk) ? bytes.Slice(chunk.Offset, chunk.Length) : default;
     }
@@ -233,7 +237,7 @@ internal sealed class RedguardRgmFile
         }
 
         var count = BinaryPrimitives.ReadUInt32LittleEndian(payload);
-        if (count > int.MaxValue / stride || 4 + (long)count * stride != payload.Length)
+        if (count > int.MaxValue / stride || 4 + count * stride != payload.Length)
         {
             throw new InvalidDataException(
                 $"{name}: '{tag}' declares {count} records of {stride} bytes, which do not tile its {payload.Length}-byte payload.");
@@ -311,40 +315,42 @@ internal sealed class RedguardRgmFile
                 var at = refOffset + 4 * k;
                 if (at < 0 || at + 4 > stringRefs.Length)
                 {
-                    throw new InvalidDataException($"{name}: object {i} references RASB entry {k} at {at}, outside the {stringRefs.Length}-byte chunk.");
+                    throw new InvalidDataException(
+                        $"{name}: object {i} references RASB entry {k} at {at}, outside the {stringRefs.Length}-byte chunk.");
                 }
 
-                refs.Add(ReadCString(strings, (int)BinaryPrimitives.ReadUInt32LittleEndian(stringRefs[at..]), name, $"object {i} string reference {k}"));
+                refs.Add(ReadCString(strings, (int)BinaryPrimitives.ReadUInt32LittleEndian(stringRefs[at..]), name,
+                    $"object {i} string reference {k}"));
             }
 
             objects.Add(new RedguardRgmObject(
-                Index: i,
-                Label: ReadPaddedName(record.Slice(4, 9)),
-                ScriptName: scriptName,
-                InstanceCount: (int)BinaryPrimitives.ReadUInt32LittleEndian(record[13..]),
-                VariablesPerInstance: (int)BinaryPrimitives.ReadUInt32LittleEndian(record[117..]),
-                AnimationMeshCount: (int)BinaryPrimitives.ReadUInt32LittleEndian(record[33..]),
-                FrameCount: (int)BinaryPrimitives.ReadUInt32LittleEndian(record[133..]),
-                ScriptOffset: (int)BinaryPrimitives.ReadUInt32LittleEndian(record[81..]),
-                ScriptLength: (int)BinaryPrimitives.ReadUInt32LittleEndian(record[77..]),
-                HookLength: (int)BinaryPrimitives.ReadUInt32LittleEndian(record[89..]),
-                LocalVectorCount: (int)BinaryPrimitives.ReadUInt32LittleEndian(record[97..]),
-                MeshSizeIndices:
+                i,
+                ReadPaddedName(record.Slice(4, 9)),
+                scriptName,
+                (int)BinaryPrimitives.ReadUInt32LittleEndian(record[13..]),
+                (int)BinaryPrimitives.ReadUInt32LittleEndian(record[117..]),
+                (int)BinaryPrimitives.ReadUInt32LittleEndian(record[33..]),
+                (int)BinaryPrimitives.ReadUInt32LittleEndian(record[133..]),
+                (int)BinaryPrimitives.ReadUInt32LittleEndian(record[81..]),
+                (int)BinaryPrimitives.ReadUInt32LittleEndian(record[77..]),
+                (int)BinaryPrimitives.ReadUInt32LittleEndian(record[89..]),
+                (int)BinaryPrimitives.ReadUInt32LittleEndian(record[97..]),
                 [
                     BinaryPrimitives.ReadInt32LittleEndian(record[137..]),
                     BinaryPrimitives.ReadInt32LittleEndian(record[141..]),
                     BinaryPrimitives.ReadInt32LittleEndian(record[145..])
                 ],
-                CharacterId: BinaryPrimitives.ReadUInt16LittleEndian(record[155..]),
-                IsActor: BinaryPrimitives.ReadUInt16LittleEndian(record[149..]) == 1,
-                StringReferences: refs,
-                CollisionSphereCount: (int)BinaryPrimitives.ReadUInt32LittleEndian(record[161..])));
+                BinaryPrimitives.ReadUInt16LittleEndian(record[155..]),
+                BinaryPrimitives.ReadUInt16LittleEndian(record[149..]) == 1,
+                refs,
+                (int)BinaryPrimitives.ReadUInt32LittleEndian(record[161..])));
         }
 
         return objects;
     }
 
-    private static List<RedguardRgmAnimationMesh> ReadAnimationMeshes(ReadOnlySpan<byte> payload, IReadOnlyList<RedguardRgmObject> objects, string name)
+    private static List<RedguardRgmAnimationMesh> ReadAnimationMeshes(ReadOnlySpan<byte> payload,
+        IReadOnlyList<RedguardRgmObject> objects, string name)
     {
         var list = new List<RedguardRgmAnimationMesh>();
         var position = 0;
@@ -354,7 +360,8 @@ internal sealed class RedguardRgmFile
             {
                 if (position + 6 > payload.Length)
                 {
-                    throw new InvalidDataException($"{name}: RAAN runs out at entry {list.Count} for object {owner.Label}.");
+                    throw new InvalidDataException(
+                        $"{name}: RAAN runs out at entry {list.Count} for object {owner.Label}.");
                 }
 
                 var planeCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(payload[position..]);
@@ -382,16 +389,16 @@ internal sealed class RedguardRgmFile
         {
             var r = payload.Slice(4 + i * PlacementRecordLength, PlacementRecordLength);
             list.Add(new RedguardRgmPlacement(
-                Index: i,
-                Type: BinaryPrimitives.ReadUInt16LittleEndian(r[4..]),
-                ObjectName: ReadPaddedName(r.Slice(6, 9)),
-                MeshName: ReadPaddedName(r.Slice(15, 9)),
-                HasMesh: BinaryPrimitives.ReadUInt16LittleEndian(r[24..]) != 0,
-                Position: ReadVector(r[26..]),
-                Rotation: ReadVector(r[38..]),
-                MeshSlot: BinaryPrimitives.ReadInt16LittleEndian(r[56..]),
-                WorldIndex: BinaryPrimitives.ReadUInt16LittleEndian(r[58..]),
-                LightRadius: BinaryPrimitives.ReadUInt16LittleEndian(r[54..])));
+                i,
+                BinaryPrimitives.ReadUInt16LittleEndian(r[4..]),
+                ReadPaddedName(r.Slice(6, 9)),
+                ReadPaddedName(r.Slice(15, 9)),
+                BinaryPrimitives.ReadUInt16LittleEndian(r[24..]) != 0,
+                ReadVector(r[26..]),
+                ReadVector(r[38..]),
+                BinaryPrimitives.ReadInt16LittleEndian(r[56..]),
+                BinaryPrimitives.ReadUInt16LittleEndian(r[58..]),
+                BinaryPrimitives.ReadUInt16LittleEndian(r[54..])));
         }
 
         return list;
@@ -424,14 +431,14 @@ internal sealed class RedguardRgmFile
         {
             var r = payload.Slice(4 + i * LightRecordLength, LightRecordLength);
             list.Add(new RedguardRgmLight(
-                Index: i,
-                WorldIndex: (int)BinaryPrimitives.ReadUInt32LittleEndian(r[4..]),
-                Position: ReadVector(r[8..]),
-                Radius: BinaryPrimitives.ReadUInt16LittleEndian(r[20..]),
-                KindAValue: BinaryPrimitives.ReadInt16LittleEndian(r[22..]),
-                Red: BinaryPrimitives.ReadInt16LittleEndian(r[24..]),
-                Green: BinaryPrimitives.ReadInt16LittleEndian(r[26..]),
-                Blue: BinaryPrimitives.ReadInt16LittleEndian(r[28..])));
+                i,
+                (int)BinaryPrimitives.ReadUInt32LittleEndian(r[4..]),
+                ReadVector(r[8..]),
+                BinaryPrimitives.ReadUInt16LittleEndian(r[20..]),
+                BinaryPrimitives.ReadInt16LittleEndian(r[22..]),
+                BinaryPrimitives.ReadInt16LittleEndian(r[24..]),
+                BinaryPrimitives.ReadInt16LittleEndian(r[26..]),
+                BinaryPrimitives.ReadInt16LittleEndian(r[28..])));
         }
 
         return list;
@@ -473,12 +480,12 @@ internal sealed class RedguardRgmFile
         {
             var r = payload.Slice(4 + i * RopeRecordLength, RopeRecordLength);
             list.Add(new RedguardRgmRope(
-                Index: i,
-                Anchor: ReadVector(r[4..]),
-                LinkCount: BinaryPrimitives.ReadUInt16LittleEndian(r[32..]),
-                AnchorMeshName: ReadPaddedName(r.Slice(34, 9)),
-                LinkMeshName: ReadPaddedName(r.Slice(43, 9)),
-                Colour: ReadVector(r[52..])));
+                i,
+                ReadVector(r[4..]),
+                BinaryPrimitives.ReadUInt16LittleEndian(r[32..]),
+                ReadPaddedName(r.Slice(34, 9)),
+                ReadPaddedName(r.Slice(43, 9)),
+                ReadVector(r[52..])));
         }
 
         return list;
@@ -488,7 +495,8 @@ internal sealed class RedguardRgmFile
     {
         if (payload.Length % MeshSizeRowLength != 0)
         {
-            throw new InvalidDataException($"{name}: MPSZ is {payload.Length} bytes, not a multiple of {MeshSizeRowLength}.");
+            throw new InvalidDataException(
+                $"{name}: MPSZ is {payload.Length} bytes, not a multiple of {MeshSizeRowLength}.");
         }
 
         var count = payload.Length / MeshSizeRowLength;
@@ -523,7 +531,8 @@ internal sealed class RedguardRgmFile
             var body = payload.Slice(position + 4, bodyLength);
             if (body.Length < 24)
             {
-                throw new InvalidDataException($"{name}: WDNM map {m} body is {body.Length} bytes, shorter than its header.");
+                throw new InvalidDataException(
+                    $"{name}: WDNM map {m} body is {body.Length} bytes, shorter than its header.");
             }
 
             var nodeCount = (int)BinaryPrimitives.ReadUInt32LittleEndian(body);
@@ -535,7 +544,8 @@ internal sealed class RedguardRgmFile
                 var routeCount = body[at + 11];
                 if (nodeLength != 8 + 4 * routeCount)
                 {
-                    throw new InvalidDataException($"{name}: WDNM map {m} node {n} declares {nodeLength} bytes for {routeCount} routes.");
+                    throw new InvalidDataException(
+                        $"{name}: WDNM map {m} node {n} declares {nodeLength} bytes for {routeCount} routes.");
                 }
 
                 var routes = new RedguardRgmNavigationRoute[routeCount];
@@ -581,7 +591,8 @@ internal sealed class RedguardRgmFile
     {
         if (payload.Length % CollisionSphereLength != 0)
         {
-            throw new InvalidDataException($"{name}: RAVC is {payload.Length} bytes, not a multiple of {CollisionSphereLength}.");
+            throw new InvalidDataException(
+                $"{name}: RAVC is {payload.Length} bytes, not a multiple of {CollisionSphereLength}.");
         }
 
         var list = new List<RedguardRgmCollisionSphere>(payload.Length / CollisionSphereLength);
@@ -614,7 +625,8 @@ internal readonly record struct RedguardRgmVector(int X, int Y, int Z)
 {
     /// <summary>The triple in whole world units.</summary>
     public (int X, int Y, int Z) WorldUnits =>
-        (X / RedguardRgmFile.UnitsPerWorldUnit, Y / RedguardRgmFile.UnitsPerWorldUnit, Z / RedguardRgmFile.UnitsPerWorldUnit);
+        (X / RedguardRgmFile.UnitsPerWorldUnit, Y / RedguardRgmFile.UnitsPerWorldUnit,
+            Z / RedguardRgmFile.UnitsPerWorldUnit);
 }
 
 /// <summary>
@@ -676,41 +688,96 @@ internal sealed record RedguardRgmPlacement(
 
     /// <summary>A type-2 point marker named <c>ENT*</c> or <c>EXT*</c> — where the map is entered or left.</summary>
     public bool IsEntryOrExit =>
-        Type == 2 && (ObjectName.StartsWith("ENT", StringComparison.Ordinal) || ObjectName.StartsWith("EXT", StringComparison.Ordinal));
+        Type == 2 && (ObjectName.StartsWith("ENT", StringComparison.Ordinal) ||
+                      ObjectName.StartsWith("EXT", StringComparison.Ordinal));
 }
 
-/// <summary>One <c>MPSO</c> static mesh: a ROB segment name, a position and a 3×3 rotation in 4.28 fixed point (1.0 = 0x10000000).</summary>
-internal sealed record RedguardRgmStaticMesh(int Index, string MeshName, RedguardRgmVector Position, IReadOnlyList<int> Rotation);
+/// <summary>
+///     One <c>MPSO</c> static mesh: a ROB segment name, a position and a 3×3 rotation in 4.28 fixed point (1.0 =
+///     0x10000000).
+/// </summary>
+internal sealed record RedguardRgmStaticMesh(
+    int Index,
+    string MeshName,
+    RedguardRgmVector Position,
+    IReadOnlyList<int> Rotation);
 
 /// <summary>One <c>MPSL</c> light. <see cref="WorldIndex" /> is a WORLD.INI world index, or 0 for the second record kind.</summary>
 internal readonly record struct RedguardRgmLight(
-    int Index, int WorldIndex, RedguardRgmVector Position, ushort Radius, short KindAValue, short Red, short Green, short Blue);
+    int Index,
+    int WorldIndex,
+    RedguardRgmVector Position,
+    ushort Radius,
+    short KindAValue,
+    short Red,
+    short Green,
+    short Blue);
 
-/// <summary>One <c>MPSF</c> flat: a position and a <c>3dart\TEXTURE.nnn</c> record in Daggerfall's archive×128+record packing.</summary>
-internal readonly record struct RedguardRgmFlat(int Index, RedguardRgmVector Position, int TextureArchive, int TextureRecord);
+/// <summary>
+///     One <c>MPSF</c> flat: a position and a <c>3dart\TEXTURE.nnn</c> record in Daggerfall's archive×128+record
+///     packing.
+/// </summary>
+internal readonly record struct RedguardRgmFlat(
+    int Index,
+    RedguardRgmVector Position,
+    int TextureArchive,
+    int TextureRecord);
 
 /// <summary>One <c>MPMK</c> marker; <see cref="IsUsed" /> is false on the reserved empty slots.</summary>
 internal readonly record struct RedguardRgmMarker(int Index, RedguardRgmVector Position, bool IsUsed);
 
 /// <summary>One <c>MPRP</c> rope or chain, built from <see cref="LinkMeshName" /> links.</summary>
 internal sealed record RedguardRgmRope(
-    int Index, RedguardRgmVector Anchor, ushort LinkCount, string AnchorMeshName, string LinkMeshName, RedguardRgmVector Colour);
+    int Index,
+    RedguardRgmVector Anchor,
+    ushort LinkCount,
+    string AnchorMeshName,
+    string LinkMeshName,
+    RedguardRgmVector Colour);
 
 /// <summary>One <c>MPSZ</c> row: a mesh's clamped bounding half-extents in whole units, and their sum.</summary>
 internal readonly record struct RedguardRgmMeshSize(
-    int Index, RedguardRgmVector Extent, RedguardRgmVector PositiveHalfExtent, RedguardRgmVector NegativeHalfExtent);
+    int Index,
+    RedguardRgmVector Extent,
+    RedguardRgmVector PositiveHalfExtent,
+    RedguardRgmVector NegativeHalfExtent);
 
-/// <summary>One <c>RAAN</c> entry: an animation mesh an object uses. <see cref="Path" /> says <c>.3d</c>; retail ships it as <c>.3DC</c>.</summary>
-internal sealed record RedguardRgmAnimationMesh(int ObjectIndex, string Path, int PlaneCount, byte FrameCount, char Flag);
+/// <summary>
+///     One <c>RAAN</c> entry: an animation mesh an object uses. <see cref="Path" /> says <c>.3d</c>; retail ships it
+///     as <c>.3DC</c>.
+/// </summary>
+internal sealed record RedguardRgmAnimationMesh(
+    int ObjectIndex,
+    string Path,
+    int PlaneCount,
+    byte FrameCount,
+    char Flag);
 
-/// <summary>One <c>WDNM</c> route: <see cref="Distance" /> is exactly ⌊3-D Euclidean distance⌋ to <see cref="TargetNode" />.</summary>
+/// <summary>
+///     One <c>WDNM</c> route: <see cref="Distance" /> is exactly ⌊3-D Euclidean distance⌋ to
+///     <see cref="TargetNode" />.
+/// </summary>
 internal readonly record struct RedguardRgmNavigationRoute(ushort TargetNode, ushort Distance);
 
 /// <summary>One <c>WDNM</c> node. X and Z are unsigned (graphs straddle 32,767); Y is signed.</summary>
-internal sealed record RedguardRgmNavigationNode(int Index, ushort X, short Y, ushort Z, IReadOnlyList<RedguardRgmNavigationRoute> Routes);
+internal sealed record RedguardRgmNavigationNode(
+    int Index,
+    ushort X,
+    short Y,
+    ushort Z,
+    IReadOnlyList<RedguardRgmNavigationRoute> Routes);
 
 /// <summary>One <c>WDNM</c> graph: the engine's "Total nodes in map %d at (%d,%d,%d) radius %d".</summary>
-internal sealed record RedguardRgmNavigationMap(int Index, RedguardRgmVector Centre, int Radius, IReadOnlyList<RedguardRgmNavigationNode> Nodes);
+internal sealed record RedguardRgmNavigationMap(
+    int Index,
+    RedguardRgmVector Centre,
+    int Radius,
+    IReadOnlyList<RedguardRgmNavigationNode> Nodes);
 
 /// <summary>One <c>RAVC</c> collision sphere anchored at a model vertex plus an offset.</summary>
-internal readonly record struct RedguardRgmCollisionSphere(sbyte OffsetX, sbyte OffsetY, sbyte OffsetZ, ushort VertexIndex, uint Radius);
+internal readonly record struct RedguardRgmCollisionSphere(
+    sbyte OffsetX,
+    sbyte OffsetY,
+    sbyte OffsetZ,
+    ushort VertexIndex,
+    uint Radius);

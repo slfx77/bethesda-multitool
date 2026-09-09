@@ -82,7 +82,7 @@ public sealed class SubmittedInstanceMatrixMatcherTests
         SourceContract.AssertOrder(eligibility,
             "submesh.AlphaBlend,", "submesh.AlphaTest,", "submesh.MaterialAlpha,",
             "submesh.MaterialAlphaController is not null,", "submesh.ClassicBasicShaderMode,",
-            "submesh.AlphaTestFunction);");
+            "submesh.AlphaTestFunction,", "_fnvActiveAdtFogSupported);");
         SourceContract.AssertOrder(renderer,
             "state.Z = FnvActiveAdtBasePolicy.ApplyRuntimeFlags(",
             "allowAlphaTested: FnvAdtAlphaTestEnabled);");
@@ -126,6 +126,9 @@ public sealed class SubmittedInstanceMatrixMatcherTests
             diagnostics, StringComparison.Ordinal);
     }
 
-    private static string RendererSource(string name) => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", name);
+    private static string RendererSource(string name)
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", name);
+    }
 }

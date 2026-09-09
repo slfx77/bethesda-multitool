@@ -65,7 +65,7 @@ internal sealed class DaggerfallWoodsFile
     {
         x = Math.Clamp(x, 0, Width - 1);
         y = Math.Clamp(y, 0, Height - 1);
-        return HeightMap.Span[(y * Width) + x];
+        return HeightMap.Span[y * Width + x];
     }
 
     /// <summary>
@@ -77,7 +77,7 @@ internal sealed class DaggerfallWoodsFile
         x = Math.Clamp(x, 0, Width - 1);
         y = Math.Clamp(y, 0, Height - 1);
 
-        var entry = _offsetTableStart + (((y * Width) + x) * 4);
+        var entry = _offsetTableStart + (y * Width + x) * 4;
         var cellOffset = (long)BinaryPrimitives.ReadUInt32LittleEndian(_file.AsSpan(entry)) + CellDataSkip;
         var gridLength = CellGridSize * CellGridSize;
         if (cellOffset < 0 || cellOffset + gridLength > _file.Length)
@@ -103,7 +103,7 @@ internal sealed class DaggerfallWoodsFile
     {
         ArgumentNullException.ThrowIfNull(bytes);
 
-        if (bytes.Length < HeaderLength + (PixelCount * 4))
+        if (bytes.Length < HeaderLength + PixelCount * 4)
         {
             throw new InvalidDataException(
                 $"'{name}' is too small for the WOODS header and offset table ({bytes.Length} bytes).");

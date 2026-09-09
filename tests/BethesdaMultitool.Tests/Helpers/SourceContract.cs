@@ -80,6 +80,23 @@ internal static class SourceContract
         }
     }
 
+    /// <summary>Assert source fragments without pinning indentation or line wrapping.</summary>
+    public static void AssertContainsIgnoringWhitespace(string value, string source)
+    {
+        Assert.Contains(RemoveWhitespace(value), RemoveWhitespace(source), StringComparison.Ordinal);
+    }
+
+    /// <summary>Assert source ordering without pinning indentation or line wrapping.</summary>
+    public static void AssertOrderIgnoringWhitespace(string source, params string[] values)
+    {
+        AssertOrder(RemoveWhitespace(source), values.Select(RemoveWhitespace).ToArray());
+    }
+
+    private static string RemoveWhitespace(string source)
+    {
+        return string.Concat(source.Where(character => !char.IsWhiteSpace(character)));
+    }
+
     /// <summary>Count non-overlapping occurrences of <paramref name="value" />.</summary>
     public static int CountOccurrences(string source, string value)
     {

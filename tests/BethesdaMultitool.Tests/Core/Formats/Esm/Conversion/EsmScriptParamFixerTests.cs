@@ -32,7 +32,7 @@ public class EsmScriptParamFixerTests
 
         Assert.NotNull(fixedData);
         // One appended SCRO = 6-byte header + 4-byte payload.
-        Assert.Equal(recordData.Length + 10, fixedData!.Length);
+        Assert.Equal(recordData.Length + 10, fixedData.Length);
 
         var subrecords = ParseSubrecords(fixedData);
         var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
@@ -124,7 +124,7 @@ public class EsmScriptParamFixerTests
         var fixedData = CreateFixer(stats).FixScriptRegionParams(recordData);
 
         Assert.NotNull(fixedData);
-        Assert.Equal(recordData.Length, fixedData!.Length); // no growth
+        Assert.Equal(recordData.Length, fixedData.Length); // no growth
 
         var subrecords = ParseSubrecords(fixedData);
         Assert.Equal(2, subrecords.Count(s => s.Signature == "SCRO"));
@@ -152,7 +152,7 @@ public class EsmScriptParamFixerTests
         var fixedData = CreateFixer().FixScriptRegionParams(recordData);
 
         Assert.NotNull(fixedData);
-        Assert.Equal(recordData.Length, fixedData!.Length); // reuse, no growth
+        Assert.Equal(recordData.Length, fixedData.Length); // reuse, no growth
 
         var subrecords = ParseSubrecords(fixedData);
         var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
@@ -175,7 +175,7 @@ public class EsmScriptParamFixerTests
         var fixedData = CreateFixer().FixScriptRegionParams(recordData);
 
         Assert.NotNull(fixedData);
-        Assert.Equal(recordData.Length + 10, fixedData!.Length);
+        Assert.Equal(recordData.Length + 10, fixedData.Length);
 
         var subrecords = ParseSubrecords(fixedData);
         var newScda = subrecords.Single(s => s.Signature == "SCDA").Payload;
@@ -200,7 +200,7 @@ public class EsmScriptParamFixerTests
         var fixedData = CreateFixer(stats).FixScriptRegionParams(recordData);
 
         Assert.NotNull(fixedData);
-        var subrecords = ParseSubrecords(fixedData!);
+        var subrecords = ParseSubrecords(fixedData);
         _ = Assert.Single(subrecords, s => s.Signature == "SCRO");
         Assert.Equal(2, stats.ScriptRegionSitesRewritten);
         Assert.Equal(1, stats.ScriptRegionScrosAppended);
@@ -229,7 +229,7 @@ public class EsmScriptParamFixerTests
 
         var schema = SubrecordSchemaRegistry.GetSchema("SCHR", "SCPT", 20);
         Assert.NotNull(schema);
-        Assert.Equal(SubrecordFieldType.UInt16LittleEndian, schema!.Fields[^2].Type);
+        Assert.Equal(SubrecordFieldType.UInt16LittleEndian, schema.Fields[^2].Type);
         Assert.Equal(SubrecordFieldType.UInt16LittleEndian, schema.Fields[^1].Type);
     }
 

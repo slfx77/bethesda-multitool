@@ -19,7 +19,7 @@ public sealed class DmpCommandHexdumpTests
     [InlineData(FileLength - 1)]
     public void ClassifyBareOffset_WithinFile_IsInRange(long offset)
     {
-        var result = DmpCommand.ClassifyBareOffset(offset, FileLength, resolvesAsVirtualAddress: false);
+        var result = DmpCommand.ClassifyBareOffset(offset, FileLength, false);
 
         Assert.Equal(DmpCommand.BareOffsetClassification.InRange, result);
     }
@@ -28,7 +28,7 @@ public sealed class DmpCommandHexdumpTests
     public void ClassifyBareOffset_WithinFile_StaysInRangeEvenIfItResolvesAsVa()
     {
         // A small offset can coincide with a captured VA; an in-file offset must still dump.
-        var result = DmpCommand.ClassifyBareOffset(0x200, FileLength, resolvesAsVirtualAddress: true);
+        var result = DmpCommand.ClassifyBareOffset(0x200, FileLength, true);
 
         Assert.Equal(DmpCommand.BareOffsetClassification.InRange, result);
     }
@@ -39,7 +39,7 @@ public sealed class DmpCommandHexdumpTests
     [InlineData(0x7FFFFFFFL)] // large, but below the VA heuristic threshold
     public void ClassifyBareOffset_PastEof_IsOutOfRange(long offset)
     {
-        var result = DmpCommand.ClassifyBareOffset(offset, FileLength, resolvesAsVirtualAddress: false);
+        var result = DmpCommand.ClassifyBareOffset(offset, FileLength, false);
 
         Assert.Equal(DmpCommand.BareOffsetClassification.OutOfRange, result);
     }
@@ -49,7 +49,7 @@ public sealed class DmpCommandHexdumpTests
     [InlineData(0x82041204L)] // typical Xbox 360 module VA
     public void ClassifyBareOffset_PastEofAboveVaThreshold_SuggestsVaPrefix(long offset)
     {
-        var result = DmpCommand.ClassifyBareOffset(offset, FileLength, resolvesAsVirtualAddress: false);
+        var result = DmpCommand.ClassifyBareOffset(offset, FileLength, false);
 
         Assert.Equal(DmpCommand.BareOffsetClassification.OutOfRangeLikelyVirtualAddress, result);
     }
@@ -59,7 +59,7 @@ public sealed class DmpCommandHexdumpTests
     {
         // Below 0x80000000 but the module/region tables resolve it (e.g. a heap VA).
         var result = DmpCommand.ClassifyBareOffset(
-            0x40001000, FileLength, resolvesAsVirtualAddress: true);
+            0x40001000, FileLength, true);
 
         Assert.Equal(DmpCommand.BareOffsetClassification.OutOfRangeLikelyVirtualAddress, result);
     }
@@ -68,7 +68,7 @@ public sealed class DmpCommandHexdumpTests
     public void ClassifyBareOffset_NegativeOffset_IsOutOfRange()
     {
         // "FFFFFFFFFFFFFFFF" parses to -1 via long hex parsing.
-        var result = DmpCommand.ClassifyBareOffset(-1, FileLength, resolvesAsVirtualAddress: false);
+        var result = DmpCommand.ClassifyBareOffset(-1, FileLength, false);
 
         Assert.Equal(DmpCommand.BareOffsetClassification.OutOfRange, result);
     }

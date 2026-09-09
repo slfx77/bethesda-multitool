@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -44,7 +40,7 @@ public sealed class OblivionMobileRecordSourceTests : IDisposable
         {
             try
             {
-                Directory.Delete(root, recursive: true);
+                Directory.Delete(root, true);
             }
             catch (IOException)
             {
@@ -140,7 +136,7 @@ public sealed class OblivionMobileRecordSourceTests : IDisposable
         Assert.Equal("demo", Field<string>(inside, "DrawnMaps"));
 
         // The same atlas over a 16-wide frame on an 8-wide sheet: one overhang, still a record.
-        var overhang = BuildInstall(frameWidth: 16);
+        var overhang = BuildInstall(16);
         var wide = Single(Populate(overhang), OblivionMobileRecordSource.AtlasRecordType);
         Assert.Equal(1, Field<int>(wide, "OutOfBoundsFrames"));
     }
@@ -215,12 +211,12 @@ public sealed class OblivionMobileRecordSourceTests : IDisposable
         Assert.False(Field<bool>(baseSeven, "DuplicatesBaseTable"));
 
         var overlaySeven = text[ClassicFormIdScheme.Compose(
-            OblivionMobileRecordSource.TextDomain, (3 * OblivionMobileRecordSource.TextIdsPerOverlay) + 7)];
+            OblivionMobileRecordSource.TextDomain, 3 * OblivionMobileRecordSource.TextIdsPerOverlay + 7)];
         Assert.Equal("lang_3.txt", Field<string>(overlaySeven, "File"));
         Assert.True(Field<bool>(overlaySeven, "DuplicatesBaseTable"));
 
         var overlayLine = text[ClassicFormIdScheme.Compose(
-            OblivionMobileRecordSource.TextDomain, (3 * OblivionMobileRecordSource.TextIdsPerOverlay) + 42)];
+            OblivionMobileRecordSource.TextDomain, 3 * OblivionMobileRecordSource.TextIdsPerOverlay + 42)];
         Assert.Equal("Overlay line", Field<string>(overlayLine, "Text"));
         Assert.False(Field<bool>(overlayLine, "DuplicatesBaseTable"));
     }
@@ -471,7 +467,8 @@ public sealed class OblivionMobileRecordSourceTests : IDisposable
 public sealed class OblivionMobileRecordSourceRetailTests
 {
     /// <summary>Per level: stem, W, H, layers, blocked cells, distinct ids, placed tiles, atlas.</summary>
-    private static readonly (string Stem, int Width, int Height, int Layers, int Blocked, int Ids, int Placed, string Atlas)[]
+    private static readonly (string Stem, int Width, int Height, int Layers, int Blocked, int Ids, int Placed, string
+        Atlas)[]
         LevelCensus =
         [
             ("l01_1", 44, 59, 5, 420, 26, 2435, "l01_1.cml"),
@@ -490,7 +487,7 @@ public sealed class OblivionMobileRecordSourceRetailTests
             ("l11_1", 46, 40, 5, 705, 24, 2397, "l11_l11.cml"),
             ("l12_1", 43, 52, 5, 873, 17, 2367, "l12_l12.cml"),
             ("l13_clrl", 17, 22, 4, 61, 6, 402, "l13_clrl.cml"),
-            ("l14_1", 15, 15, 3, 55, 6, 202, "l14_l14.cml"),
+            ("l14_1", 15, 15, 3, 55, 6, 202, "l14_l14.cml")
         ];
 
     /// <summary>
@@ -503,7 +500,7 @@ public sealed class OblivionMobileRecordSourceRetailTests
         ("startup", "(none)"),
         ("startup2", "0"),
         ("l06_6_ba", "6"),
-        ("end_15", "7"),
+        ("end_15", "7")
     ];
 
     private static RecordCollection Populate()
@@ -513,7 +510,7 @@ public sealed class OblivionMobileRecordSourceRetailTests
         Assert.SkipWhen(jar is null, RealAssetPaths.SkipMessage("the Oblivion mobile JAR"));
 
         var records = new RecordCollection();
-        using var install = new ArchiveFileSystem(jar!);
+        using var install = new ArchiveFileSystem(jar);
         OblivionMobileRecordSource.Populate(install, records);
         return records;
     }
@@ -708,7 +705,7 @@ public sealed class OblivionMobileRecordSourceRetailTests
         {
             var expected = ClassicFormIdScheme.Compose(
                 OblivionMobileRecordSource.TextDomain,
-                (uint)((Field<int>(record, "Overlay") * OblivionMobileRecordSource.TextIdsPerOverlay)
+                (uint)(Field<int>(record, "Overlay") * OblivionMobileRecordSource.TextIdsPerOverlay
                        + Field<int>(record, "Id")));
             Assert.Equal(expected, record.FormId);
         }

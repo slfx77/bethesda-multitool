@@ -6,8 +6,10 @@ namespace BethesdaMultitool.Tests.Core.Ui;
 
 public sealed class NpcStartupActorSelectorTests
 {
-    private static NpcListItem Npc(uint formId, string? editorId, string? fullName) =>
-        new(formId, editorId, fullName, isFemale: false, raceFormId: null);
+    private static NpcListItem Npc(uint formId, string? editorId, string? fullName)
+    {
+        return new NpcListItem(formId, editorId, fullName, false, null);
+    }
 
     [Theory]
     [InlineData("0x00085969")]

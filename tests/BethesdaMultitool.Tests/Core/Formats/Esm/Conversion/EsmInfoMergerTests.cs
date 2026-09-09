@@ -52,7 +52,7 @@ public class EsmInfoMergerTests
     private static List<string> SignaturesOf(byte[]? buffer)
     {
         Assert.NotNull(buffer);
-        return EsmRecordParser.ParseSubrecords(buffer!, false).Select(s => s.Signature).ToList();
+        return EsmRecordParser.ParseSubrecords(buffer, false).Select(s => s.Signature).ToList();
     }
 
     #region ClassifyBySubrecords

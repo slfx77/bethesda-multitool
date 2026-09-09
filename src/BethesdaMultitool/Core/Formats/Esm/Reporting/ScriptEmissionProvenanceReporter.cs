@@ -493,7 +493,7 @@ internal static class ScriptEmissionProvenanceReporter
     private static bool ByteArraysEqual(byte[]? left, byte[]? right)
     {
         return ReferenceEquals(left, right)
-               || left is not null && right is not null && left.AsSpan().SequenceEqual(right);
+               || (left is not null && right is not null && left.AsSpan().SequenceEqual(right));
     }
 
     private static int GetDecodedLength(byte[] payload)

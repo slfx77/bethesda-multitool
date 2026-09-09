@@ -88,7 +88,7 @@ public static class BuildDirectoryLoader
         }
 
         // Note: saved transcriptions are loaded and applied by the caller
-        // (PlaylistView.SetBuildResult) so migration runs on the actual _project
+        // (PlaylistView.SetBuildResultAsync) so migration runs on the actual _project
         // used for export. Applying here with a temporary project would set SubtitleText
         // on entries, causing the caller's ApplyToEntries to skip them all.
 

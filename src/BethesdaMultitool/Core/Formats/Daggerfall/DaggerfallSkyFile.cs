@@ -40,7 +40,7 @@ internal sealed class DaggerfallSkyFile
     public const int ImageDataOffset = 549_120;
 
     /// <summary>Exact byte length of a sky set.</summary>
-    public const int FileLength = ImageDataOffset + (FrameCount * FrameWidth * FrameHeight);
+    public const int FileLength = ImageDataOffset + FrameCount * FrameWidth * FrameHeight;
 
     private const int FrameLength = FrameWidth * FrameHeight;
 
@@ -65,7 +65,8 @@ internal sealed class DaggerfallSkyFile
     {
         if ((uint)frameIndex >= FrameCount)
         {
-            throw new ArgumentOutOfRangeException(nameof(frameIndex), frameIndex, $"A sky set has {FrameCount} frames.");
+            throw new ArgumentOutOfRangeException(nameof(frameIndex), frameIndex,
+                $"A sky set has {FrameCount} frames.");
         }
 
         return Palettes[frameIndex % FramesPerHalf];
@@ -76,10 +77,11 @@ internal sealed class DaggerfallSkyFile
     {
         if ((uint)half >= 2 || (uint)step >= FramesPerHalf)
         {
-            throw new ArgumentOutOfRangeException(nameof(step), $"Half {half}, step {step} is outside 2x{FramesPerHalf}.");
+            throw new ArgumentOutOfRangeException(nameof(step),
+                $"Half {half}, step {step} is outside 2x{FramesPerHalf}.");
         }
 
-        return Frames[(half * FramesPerHalf) + step];
+        return Frames[half * FramesPerHalf + step];
     }
 
     /// <summary>Whether a name follows the SKYnn.DAT convention (two digits — SKYPAL.DAT is not a set).</summary>
@@ -111,7 +113,7 @@ internal sealed class DaggerfallSkyFile
         var frames = new List<IndexedBitmap>(FrameCount);
         for (var i = 0; i < FrameCount; i++)
         {
-            var pixels = bytes.Slice(ImageDataOffset + (i * FrameLength), FrameLength).ToArray();
+            var pixels = bytes.Slice(ImageDataOffset + i * FrameLength, FrameLength).ToArray();
             frames.Add(new IndexedBitmap(FrameWidth, FrameHeight, pixels));
         }
 

@@ -6,11 +6,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 /// </summary>
 internal static class BethesdaViewerAnimationClockPolicy
 {
-    internal readonly record struct Window(
-        float RawOriginSeconds,
-        float PresentationDurationSeconds,
-        float ClampEndClockSeconds);
-
     internal static Window Resolve(BethesdaViewerAnimationClip clip)
     {
         ArgumentNullException.ThrowIfNull(clip);
@@ -43,11 +38,11 @@ internal static class BethesdaViewerAnimationClockPolicy
             // A positive controller enters at Start and exits at End. A negative controller runs
             // the same authored window backwards, so its entry and terminal boundaries swap.
             var entry = frequency > 0d
-                ? ((double)clip.StartTime - phase) / frequency
-                : ((double)clip.EndTime - phase) / frequency;
+                ? (clip.StartTime - phase) / frequency
+                : (clip.EndTime - phase) / frequency;
             var exit = frequency > 0d
-                ? ((double)clip.EndTime - phase) / frequency
-                : ((double)clip.StartTime - phase) / frequency;
+                ? (clip.EndTime - phase) / frequency
+                : (clip.StartTime - phase) / frequency;
             var period = localSpan / Math.Abs(frequency);
             if (!double.IsFinite(entry) || !double.IsFinite(exit) ||
                 !double.IsFinite(period) || exit < entry || period <= 0d)
@@ -151,4 +146,9 @@ internal static class BethesdaViewerAnimationClockPolicy
             _ => (float)value
         };
     }
+
+    internal readonly record struct Window(
+        float RawOriginSeconds,
+        float PresentationDurationSeconds,
+        float ClampEndClockSeconds);
 }

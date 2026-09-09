@@ -32,7 +32,7 @@ public sealed class VaultSignWindingProbe
 
         Assert.SkipWhen(nifPath is null, "FNV VSignStairsR01 NIF not available");
 
-        var data = File.ReadAllBytes(nifPath!);
+        var data = File.ReadAllBytes(nifPath);
         var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
 
         using var textureResolver = new NifTextureResolver();

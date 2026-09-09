@@ -14,9 +14,11 @@ internal static class BethesdaViewerPerspectiveFramingPolicy
 {
     internal const float ActorFramingMargin = 1.1f;
 
-    internal static bool ShouldUseProjectedBoundsFit(BethesdaViewerScenePurpose purpose) =>
-        purpose is BethesdaViewerScenePurpose.NpcAppearance or
+    internal static bool ShouldUseProjectedBoundsFit(BethesdaViewerScenePurpose purpose)
+    {
+        return purpose is BethesdaViewerScenePurpose.NpcAppearance or
             BethesdaViewerScenePurpose.CreatureAppearance;
+    }
 
     /// <summary>
     ///     Finds the shortest eye-to-target distance that keeps every AABB corner inside a

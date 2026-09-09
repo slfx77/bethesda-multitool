@@ -100,6 +100,7 @@ public sealed class ShadowComparisonPcfTests
             {
                 Assert.InRange(Math.Abs(optimized[texel] - legacy[texel]), 0.0, 1e-12);
             }
+
             Assert.InRange(Math.Abs(optimized.Sum() - 3.0), 0.0, 1e-12);
         }
     }
@@ -226,12 +227,12 @@ public sealed class ShadowComparisonPcfTests
         Assert.Equal("main", enabled["entryPoint"]);
         Assert.Equal("ps_5_1", enabled["profile"]);
         Assert.Equal("ALPHA_TO_COVERAGE=1,SHADOW_COMPARISON_PCF=1", enabled["macros"]);
-        Assert.Equal(true, enabled["shadowComparisonPcfEffective"]);
+        Assert.True(Assert.IsType<bool>(enabled["shadowComparisonPcfEffective"]));
         Assert.Equal("1", enabled["shadowComparisonPcfMacro"]);
         Assert.Equal("15D18EA0CC5BD2665B7C4EB39805771377E3CB87831EEA48EDEDA448B2815337",
             enabled["bytecodeSha256"]);
         Assert.Equal(bytecode.Length, enabled["bytecodeBytes"]);
-        Assert.Equal(false, enabled["cacheHit"]);
+        Assert.False(Assert.IsType<bool>(enabled["cacheHit"]));
 
         Assert.False(ShadowComparisonPcf12.TryBuildTraceProof(
             sessionId,
@@ -256,9 +257,9 @@ public sealed class ShadowComparisonPcfTests
             true,
             out var control));
         Assert.NotNull(control);
-        Assert.Equal(false, control["shadowComparisonPcfEffective"]);
+        Assert.False(Assert.IsType<bool>(control["shadowComparisonPcfEffective"]));
         Assert.Null(control["shadowComparisonPcfMacro"]);
-        Assert.Equal(true, control["cacheHit"]);
+        Assert.True(Assert.IsType<bool>(control["cacheHit"]));
 
         Assert.False(ShadowComparisonPcf12.TryBuildTraceProof(
             sessionId,
@@ -292,9 +293,9 @@ public sealed class ShadowComparisonPcfTests
         SourceContract.AssertOrder(compiler,
             "if (BytecodeCache.TryGetValue(key, out var cached))",
             "ShadowComparisonPcf12.TraceSuccessfulShader(",
-            "cacheHit: true);",
+            "key, cached, true);",
             "shippedPack.TryGetBytecode(key, out var precompiled)",
-            "cacheHit: !added);",
+            "!added);",
             "var bytecode = CompileSource(",
             "var selectedBytecode = BytecodeCache.GetOrAdd(key, bytecode);",
             "ShadowComparisonPcf12.TraceSuccessfulShader(",

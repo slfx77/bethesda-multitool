@@ -166,6 +166,7 @@ struct PSInput
     nointerpolation float4 vSoftParticle  : TEXCOORD14; // encoded depth slot/view, near, far, signed soft depth
     nointerpolation float vSpecularLodFade : TEXCOORD15; // classic FNV direct-sun specular only
     float3 vFnvActiveAdtBaseLight : TEXCOORD16; // SLS2000 normalized tangent-space Sun vector
+    float vFnvActiveAdtFogAmount : TEXCOORD20; // SLS2000 vertex COLOR1.w, perspective-interpolated
     nointerpolation float4 vHeatmap : TEXCOORD17; // FormID heatmap: rgb = ramp tint, w = active
     bool   IsFrontFace  : SV_IsFrontFace;
 };
@@ -1258,7 +1259,17 @@ float4 main(PSInput input) : SV_Target
         outAlpha = a2cCoverage;
     }
 #endif
-    float3 outputRgb = ApplyFog(lit, input.vWorldPos, input.vEnvMap.w);
+    // The recovered ADT fog is one final RGB blend using the interpolated vertex result.
+    // Its source-proven finite lane never also runs generic radial fog; output alpha is untouched.
+    float3 outputRgb;
+    if (fnvActiveAdtBase && uFogColorFogEnabled.w >= 0.5)
+    {
+        outputRgb = lerp(lit, uFogColorFogEnabled.rgb, input.vFnvActiveAdtFogAmount);
+    }
+    else
+    {
+        outputRgb = ApplyFog(lit, input.vWorldPos, input.vEnvMap.w);
+    }
     if (input.vHeatmap.w > 0.5)
     {
         // FormID-heatmap debug overlay: REPLACE the lit result with the exact palette color so the

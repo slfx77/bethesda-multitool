@@ -67,7 +67,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             NpcSceneViewer.InvalidateViewport();
         }
 
-        if (ReferenceEquals(selected, SummaryTab) && !_session.RecordBreakdownPopulated && _session.HasEsmRecords)
+        if (ReferenceEquals(selected, SummaryTab) && !_session.RecordBreakdownPopulated &&
+            _session.HasBrowsableRecords)
         {
             await EnsureSemanticParseAsync();
             PopulateRecordBreakdown();
@@ -86,7 +87,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             {
                 await PopulateSaveBrowserAsync();
             }
-            else if (_session.HasEsmRecords)
+            else if (_session.HasBrowsableRecords)
             {
                 ParseButton_Click(sender, new RoutedEventArgs());
             }
@@ -95,7 +96,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         // Auto-populate Dialogue when first selected
         if (ReferenceEquals(selected, DialogueViewerTab) &&
             !_session.DialogueViewerPopulated &&
-            _session.HasEsmRecords)
+            _session.HasBrowsableRecords)
         {
             _tasks.Post("populate-dialogue", PopulateDialogueViewerAsync);
         }
@@ -358,7 +359,15 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         }
 
         var autoLoadFile = Program.AutoLoadFile;
-        if (string.IsNullOrEmpty(autoLoadFile) || !File.Exists(autoLoadFile)) return;
+
+        // A classic install is a DIRECTORY, exactly as AnalyzeButton_Click accepts one. Testing
+        // only File.Exists here left --file silently doing nothing for all nine pre-plugin
+        // games: the window opened empty with no error, which reads as the flag being ignored.
+        if (string.IsNullOrEmpty(autoLoadFile) ||
+            (!File.Exists(autoLoadFile) && !Directory.Exists(autoLoadFile)))
+        {
+            return;
+        }
 
         MinidumpPathTextBox.Text = autoLoadFile;
         UpdateOutputPathFromInput(autoLoadFile);
@@ -800,11 +809,25 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 }
             }
 
-            // Run semantic parse BEFORE loading HexViewer
-            if (_session.HasEsmRecords)
+            // Run semantic parse BEFORE loading HexViewer. A classic install has no ESM byte
+            // scan, so it is admitted by its parked result instead: ClassicGameAnalyzer already
+            // built the finished collection, and this is the stage that adopts it. Without the
+            // second test the collection is computed, parked and thrown away, and every
+            // record-backed tab stays empty for all nine pre-plugin games.
+            Core.Diagnostics.Logger.Instance.Debug(
+                "[Analyze] type={0} esmRecords={1} pendingClassic={2}",
+                fileType, _session.HasEsmRecords, _pendingClassicResult != null);
+
+            if (_session.HasEsmRecords || _pendingClassicResult != null)
             {
                 await RunSemanticParsePipelineAsync(artifacts.EsmFileBuffer, profile, refreshCarvedFiles: false);
             }
+
+            Core.Diagnostics.Logger.Instance.Debug(
+                "[Analyze] after parse: semanticResult={0} records={1} browsable={2}",
+                _session.SemanticResult != null,
+                _session.SemanticResult?.TotalRecordsParsed ?? -1,
+                _session.HasBrowsableRecords);
 
             // Apply any pre-analyze load-order selection now: AFTER _session.Open above (which
             // disposed the previous LoadOrder — entries staged earlier would have been wiped) and
@@ -827,17 +850,24 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 BuildResultsFilterCheckboxes();
             }
 
-            // Load HexViewer AFTER all analysis and parsing is complete
-            SetPipelinePhase(AnalysisPipelinePhase.LoadingMap);
-            StatusTextBlock.Text = "Preparing raw view...";
-            if (profile == null)
+            // Load HexViewer AFTER all analysis and parsing is complete — and only for a source
+            // that is actually a mapped file. A classic install is a DIRECTORY: it has no
+            // accessor and its RawView tab is hidden by policy, but HexDataManager still reached
+            // new FileInfo(<directory>).Length, threw FileNotFoundException, and failed the whole
+            // run with an "Analysis Failed" dialog after the records had loaded successfully.
+            if (_session.HasAccessor)
             {
-                await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
-            }
-            else
-            {
-                await profile.TimeAsync("Hex/raw metadata",
-                    () => HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!));
+                SetPipelinePhase(AnalysisPipelinePhase.LoadingMap);
+                StatusTextBlock.Text = "Preparing raw view...";
+                if (profile == null)
+                {
+                    await HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!);
+                }
+                else
+                {
+                    await profile.TimeAsync("Hex/raw metadata",
+                        () => HexViewer.LoadDataAsync(filePath, _analysisResult, _session.Accessor!));
+                }
             }
 
             StatusTextBlock.Text = "Preparing selected tab...";
@@ -851,8 +881,11 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                     () => AutoPopulateCurrentTabAsync(selectedTabForAutoPopulate));
             }
 
-            // Run coverage analysis for memory dumps only
-            if (!_session.IsEsmFile && !_session.IsSaveFile)
+            // Run coverage analysis for memory dumps only. Stated as a positive test: the old
+            // negative form also admitted classic installs, which reach CoverageAnalyzer with a
+            // null accessor and are saved only by an early return inside it — a latent null
+            // dereference that happened to be masked.
+            if (_session.FileType == AnalysisFileType.Minidump)
             {
                 await RunCoverageAnalysisAsync();
             }
@@ -862,6 +895,11 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         }
         catch (Exception ex)
         {
+            // Log BEFORE the dialog. A dialog that fails to surface — no XamlRoot, another dialog
+            // already open, the window closing — otherwise leaves a failed analysis with no trace
+            // anywhere, which reads as the run silently doing nothing.
+            Core.Diagnostics.Logger.Instance.Error(
+                "[Analyze] FAILED for {0}: {1}: {2}", filePath, ex.GetType().Name, ex.Message);
             await ShowDialogAsync("Analysis Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}",
                 true);
         }

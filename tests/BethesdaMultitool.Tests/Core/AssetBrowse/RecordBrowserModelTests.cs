@@ -1,4 +1,3 @@
-using System.Linq;
 using BethesdaMultitool.Core.AssetBrowse;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
@@ -11,11 +10,15 @@ namespace BethesdaMultitool.Tests.Core.AssetBrowse;
 /// </summary>
 public sealed class RecordBrowserModelTests
 {
-    private static GenericEsmRecord Record(string type, uint formId, string? editorId = null, string? fullName = null) =>
-        new() { RecordType = type, FormId = formId, EditorId = editorId, FullName = fullName };
+    private static GenericEsmRecord Record(string type, uint formId, string? editorId = null, string? fullName = null)
+    {
+        return new GenericEsmRecord { RecordType = type, FormId = formId, EditorId = editorId, FullName = fullName };
+    }
 
-    private static RecordCollection Collection(params GenericEsmRecord[] records) =>
-        new() { GenericRecords = [.. records] };
+    private static RecordCollection Collection(params GenericEsmRecord[] records)
+    {
+        return new RecordCollection { GenericRecords = [.. records] };
+    }
 
     [Fact]
     public void Build_GroupsByRecordTypeAndSortsTypesAlphabetically()
@@ -59,6 +62,15 @@ public sealed class RecordBrowserModelTests
     {
         // Several classic sources carry padded fixed-width names that decode to blanks.
         Assert.Equal("0x00000007", RecordBrowserModel.DescribeRecord(Record("A", 7, "   ", "  ")));
+    }
+
+    [Fact]
+    public void RecordBrowserItem_DisplayName_IsTheLabelAPersonLooksFor()
+    {
+        // The Data Explorer's one tree template binds DisplayName on group and record nodes alike.
+        Assert.Equal("EDID", new RecordBrowserItem(Record("A", 1, "EDID", "Full")).DisplayName);
+        Assert.Equal("Full", new RecordBrowserItem(Record("A", 1, null, "Full")).DisplayName);
+        Assert.Equal("0x0000002A", new RecordBrowserItem(Record("A", 42)).DisplayName);
     }
 
     [Fact]

@@ -56,7 +56,7 @@ public sealed class EgmFormat : FileFormatBase
             return null;
         }
 
-        var totalSize = HeaderSize + (long)(symCount + asymCount) * (4 + (long)vertexCount * 6);
+        var totalSize = HeaderSize + (symCount + asymCount) * (4 + (long)vertexCount * 6);
         if (totalSize > MaxSize)
         {
             return null;

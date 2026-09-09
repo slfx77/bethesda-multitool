@@ -45,7 +45,7 @@ public sealed class WorldRenderInfrastructureTests
 
         Assert.NotNull(mask);
         Assert.Same(mask, maskAgain);
-        Assert.All(mask!, value => Assert.Equal((byte)180, value));
+        Assert.All(mask, value => Assert.Equal((byte)180, value));
     }
 
     [Fact]

@@ -82,7 +82,7 @@ internal static class StarfieldSunPresetTestStreamBuilder
         StarfieldSunPresetSchemaMutation schemaMutation = StarfieldSunPresetSchemaMutation.None)
     {
         var schema = BuildSchema(schemaMutation);
-        var body = new List<byte> { };
+        var body = new List<byte>();
         body.AddRange(U32(schema.Tokens[RootType]));
 
         if (!omitReflectedParent)
@@ -140,6 +140,7 @@ internal static class StarfieldSunPresetTestStreamBuilder
         {
             body.AddRange(U16(ushort.MaxValue));
         }
+
         var chunks = new List<byte[]>(schema.Chunks) { Chunk(objectChunk, [.. body]) };
         return ReflectionStream(schema.StringTable, chunks);
     }
@@ -182,7 +183,10 @@ internal static class StarfieldSunPresetTestStreamBuilder
             stringTable.Add(0);
         }
 
-        uint Named(string name) => tokens[name];
+        uint Named(string name)
+        {
+            return tokens[name];
+        }
 
         var nightFields = new[]
         {
@@ -211,6 +215,7 @@ internal static class StarfieldSunPresetTestStreamBuilder
         {
             (rootFields[1], rootFields[2]) = (rootFields[2], rootFields[1]);
         }
+
         if (mutation == StarfieldSunPresetSchemaMutation.WrongRuntimeOffset)
         {
             rootFields[1] = rootFields[1] with { RuntimeOffset = 289 };
@@ -258,7 +263,7 @@ internal static class StarfieldSunPresetTestStreamBuilder
     }
 
     private static byte[] ClassChunk(
-        IReadOnlyDictionary<string, uint> tokens,
+        Dictionary<string, uint> tokens,
         string className,
         uint formToken,
         ushort flags,
@@ -279,8 +284,9 @@ internal static class StarfieldSunPresetTestStreamBuilder
         return Chunk("CLAS", [.. body]);
     }
 
-    private static byte[] ReflectionStream(byte[] strings, IReadOnlyList<byte[]> chunks) =>
-        Concat(
+    private static byte[] ReflectionStream(byte[] strings, List<byte[]> chunks)
+    {
+        return Concat(
             Encoding.ASCII.GetBytes("BETH"),
             U32(8),
             U32(4),
@@ -289,6 +295,7 @@ internal static class StarfieldSunPresetTestStreamBuilder
             U32(checked((uint)strings.Length)),
             strings,
             Concat([.. chunks]));
+    }
 
     private static byte[] ReflectedString(string value)
     {
@@ -316,12 +323,25 @@ internal static class StarfieldSunPresetTestStreamBuilder
         body.AddRange(U16(ushort.MaxValue));
     }
 
-    private static byte[] Chunk(string signature, byte[] body) =>
-        Concat(Encoding.ASCII.GetBytes(signature), U32(checked((uint)body.Length)), body);
+    private static byte[] Chunk(string signature, byte[] body)
+    {
+        return Concat(Encoding.ASCII.GetBytes(signature), U32(checked((uint)body.Length)), body);
+    }
 
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
-    private static byte[] F32(float value) => BitConverter.GetBytes(value);
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] F32(float value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {

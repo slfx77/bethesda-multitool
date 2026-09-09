@@ -109,7 +109,7 @@ public sealed class ReferencePlacementBroadphaseRingTests
         var explicitZero = new List<RenderableReference>();
 
         cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, legacy);
-        cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, explicitZero, 0f);
+        cache.QueryPlacementCandidates(cell, 0f, 0f, 100_000f, ForwardFrustum(), 512f, explicitZero);
 
         Assert.Equal(legacy.Count, explicitZero.Count);
     }

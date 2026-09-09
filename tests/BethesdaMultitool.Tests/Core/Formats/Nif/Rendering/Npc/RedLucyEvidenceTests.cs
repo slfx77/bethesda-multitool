@@ -47,10 +47,10 @@ public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
         var recordData = NpcRecordDataReader.ReadRecordData(
             esm.Data,
             esm.IsBigEndian,
-            record!);
+            record);
         Assert.NotNull(recordData);
 
-        var subrecords = EsmRecordParser.ParseSubrecords(recordData!, esm.IsBigEndian);
+        var subrecords = EsmRecordParser.ParseSubrecords(recordData, esm.IsBigEndian);
         var maleModel = EsmRecordParser.GetSubrecordString(
             Assert.IsType<AnalyzerSubrecordInfo>(
                 EsmRecordParser.FindSubrecord(subrecords, "MODL")));
@@ -76,8 +76,8 @@ public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
         Assert.SkipWhen(pcNifPath is null, "PC lucassimms OutfitF NIF not available");
         Assert.SkipWhen(xboxNifPath is null, "Xbox lucassimms OutfitF NIF not available");
 
-        var pcEvidence = LoadOutfitEvidence(pcNifPath!);
-        var xboxEvidence = LoadOutfitEvidence(xboxNifPath!);
+        var pcEvidence = LoadOutfitEvidence(pcNifPath);
+        var xboxEvidence = LoadOutfitEvidence(xboxNifPath);
 
         Assert.NotEmpty(pcEvidence);
         Assert.NotEmpty(xboxEvidence);
@@ -100,7 +100,7 @@ public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
             "Xbox lucassimms specular texture not available");
         Assert.SkipWhen(xboxNifPath is null, "Xbox lucassimms OutfitF NIF not available");
 
-        var evidence = LoadOutfitEvidence(xboxNifPath!);
+        var evidence = LoadOutfitEvidence(xboxNifPath);
 
         Assert.NotEmpty(evidence);
         Assert.All(
@@ -119,13 +119,13 @@ public sealed class RedLucyEvidenceTests(SampleFileFixture samples)
     {
         BucketBTestGuard.SkipUnlessEnabled();
         var dumpChunkPath = SampleFileFixture.FindSamplePath(
-            @"Sample\MemoryDump\Fallout_Release_Beta.xex10.dmp");
+            @"Sample\MemoryDumps\Fallout_Release_Beta.xex10.dmp");
 
         Assert.SkipWhen(
             dumpChunkPath is null,
             "Release beta dump chunk not available");
 
-        var dumpData = File.ReadAllBytes(dumpChunkPath!);
+        var dumpData = File.ReadAllBytes(dumpChunkPath);
 
         Assert.NotEmpty(
             BinaryPatternSearcher.FindTextMatches(dumpData, "lucassimms"));

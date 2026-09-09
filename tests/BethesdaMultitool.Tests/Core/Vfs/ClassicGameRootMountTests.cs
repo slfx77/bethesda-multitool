@@ -102,7 +102,7 @@ public sealed class ClassicGameRootMountTests : IDisposable
         Write(@"ARENA2\TEXTURE.000", [1]);
 
         using var fs = GameFileSystem.OpenGameRoot(
-            GameProfiles.For(BethesdaGame.Daggerfall), _root, includeLooseFiles: false);
+            GameProfiles.For(BethesdaGame.Daggerfall), _root, false);
 
         Assert.False(fs.Exists("TEXTURE.000"));
     }

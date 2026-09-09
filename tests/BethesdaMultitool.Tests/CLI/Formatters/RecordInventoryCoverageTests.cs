@@ -117,8 +117,10 @@ public sealed class RecordInventoryCoverageTests
 
         Assert.Equal($"Overlay{mergedRecord.GetType().Name}", EditorIdOf(mergedRecord));
 
-        static object? EditorIdOf(object record) =>
-            record.GetType().GetProperty("EditorId")?.GetValue(record);
+        static object? EditorIdOf(object record)
+        {
+            return record.GetType().GetProperty("EditorId")?.GetValue(record);
+        }
     }
 
     [Theory]

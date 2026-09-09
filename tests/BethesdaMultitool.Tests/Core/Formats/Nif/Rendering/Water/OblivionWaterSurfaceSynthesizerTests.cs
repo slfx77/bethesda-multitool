@@ -55,8 +55,8 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
             OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater),
             OblivionWaterSurfaceSynthesizer.GetSettingsKey(changedSpectrum));
         Assert.NotEqual(
-            OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater, useHighResolution: true),
-            OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater, useHighResolution: false));
+            OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater, true),
+            OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater, false));
         Assert.Equal(
             OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater with { WaveAmplitude = 0f }),
             OblivionWaterSurfaceSynthesizer.GetSettingsKey(defaultWater with { WaveAmplitude = -0f }));
@@ -120,7 +120,7 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
         var dampingLength = largeWaveLength / 75f;
         // The recovered 90-degree convention is sin(theta)*kx + cos(theta)*ky.
         var windDotK = MathF.Sin(MathF.PI / 2f) * kx + MathF.Cos(MathF.PI / 2f) * ky;
-        var expected = (0.5f / 100000f) *
+        var expected = 0.5f / 100000f *
                        MathF.Exp(-1f / (kSquared * largeWaveLength * largeWaveLength)) *
                        windDotK * windDotK *
                        MathF.Exp(-kSquared * dampingLength * dampingLength) /
@@ -172,14 +172,14 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
     public void WaterHmap005Normal_UsesRecoveredAbsoluteHeightSobelKernel()
     {
         var actual = OblivionWaterSurfaceSynthesizer.ComputeNormal(
-            northWest: -1f,
-            north: -2f,
-            northEast: -3f,
-            west: -4f,
-            east: 5f,
-            southWest: 6f,
-            south: 7f,
-            southEast: 8f);
+            -1f,
+            -2f,
+            -3f,
+            -4f,
+            5f,
+            6f,
+            7f,
+            8f);
         const float expectedXGradient = 4.8f;
         const float expectedYGradient = 16f;
         var inverseLength = 1f / MathF.Sqrt(
@@ -251,8 +251,8 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
     {
         var frames = OblivionWaterSurfaceSynthesizer.GenerateFrames();
         var lowResolutionFrames = OblivionWaterSurfaceSynthesizer.GenerateFrames(
-            surface: null,
-            useHighResolution: false);
+            null,
+            false);
 
         Assert.Equal(OblivionWaterSurfaceSynthesizer.FrameCount, frames.Length);
         Assert.All(frames, frame => Assert.Equal(
@@ -279,7 +279,7 @@ public sealed class OblivionWaterSurfaceSynthesizerTests
     [InlineData(1f, 255)]
     public void NormalEncoding_UsesRetailEightBitTrueColorTarget(float component, int expected)
     {
-        Assert.Equal(expected, (int)OblivionWaterSurfaceSynthesizer.EncodeUnorm8(component));
+        Assert.Equal(expected, OblivionWaterSurfaceSynthesizer.EncodeUnorm8(component));
     }
 
     [Fact]

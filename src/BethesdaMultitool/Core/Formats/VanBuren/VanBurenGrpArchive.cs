@@ -106,7 +106,7 @@ internal sealed class VanBurenGrpArchive
             }
 
             Span<byte> header = stackalloc byte[HeaderLength];
-            if (stream.ReadAtLeast(header, HeaderLength, throwOnEndOfStream: false) < HeaderLength ||
+            if (stream.ReadAtLeast(header, HeaderLength, false) < HeaderLength ||
                 BinaryPrimitives.ReadUInt32LittleEndian(header) != Magic ||
                 BinaryPrimitives.ReadUInt32LittleEndian(header[4..]) != Version)
             {
@@ -119,14 +119,14 @@ internal sealed class VanBurenGrpArchive
                 return false;
             }
 
-            var directoryEnd = HeaderLength + ((long)count * EntryLength);
+            var directoryEnd = HeaderLength + (long)count * EntryLength;
             if (directoryEnd > length)
             {
                 return false;
             }
 
             var directory = new byte[count * EntryLength];
-            if (stream.ReadAtLeast(directory, directory.Length, throwOnEndOfStream: false) < directory.Length)
+            if (stream.ReadAtLeast(directory, directory.Length, false) < directory.Length)
             {
                 return false;
             }
@@ -135,8 +135,8 @@ internal sealed class VanBurenGrpArchive
             for (var i = 0; i < count; i++)
             {
                 var offset = BinaryPrimitives.ReadUInt32LittleEndian(directory.AsSpan(i * EntryLength));
-                var size = BinaryPrimitives.ReadUInt32LittleEndian(directory.AsSpan((i * EntryLength) + 4));
-                if (offset != cursor || cursor + (long)size > length)
+                var size = BinaryPrimitives.ReadUInt32LittleEndian(directory.AsSpan(i * EntryLength + 4));
+                if (offset != cursor || cursor + size > length)
                 {
                     return false;
                 }
@@ -196,7 +196,7 @@ internal sealed class VanBurenGrpArchive
             return false;
         }
 
-        var directoryEnd = HeaderLength + ((int)count * EntryLength);
+        var directoryEnd = HeaderLength + (int)count * EntryLength;
         if (directoryEnd > bytes.Length)
         {
             error = $"{name}: {count} entries need {directoryEnd} bytes of {bytes.Length}.";
@@ -207,7 +207,7 @@ internal sealed class VanBurenGrpArchive
         var cursor = directoryEnd;
         for (var i = 0; i < count; i++)
         {
-            var at = HeaderLength + (i * EntryLength);
+            var at = HeaderLength + i * EntryLength;
             var offset = BinaryPrimitives.ReadUInt32LittleEndian(bytes[at..]);
             var size = BinaryPrimitives.ReadUInt32LittleEndian(bytes[(at + 4)..]);
 
@@ -218,7 +218,8 @@ internal sealed class VanBurenGrpArchive
                 return false;
             }
 
-            entries[i] = new VanBurenGrpEntry(i, offset, (int)size, ReadTag(bytes.Slice((int)offset, (int)Math.Min(size, 4))));
+            entries[i] = new VanBurenGrpEntry(i, offset, (int)size,
+                ReadTag(bytes.Slice((int)offset, (int)Math.Min(size, 4))));
             cursor = (int)(offset + size);
         }
 

@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.AssetBrowse;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Vfs;
@@ -62,7 +58,7 @@ public sealed class ClassicGameMountRetailTests
         Assert.SkipWhen(dataRoot is null, RealAssetPaths.SkipMessage(game.ToString()));
 
         var profile = GameProfiles.For(game);
-        var installRoot = InstallRootOf(dataRoot!, profile);
+        var installRoot = InstallRootOf(dataRoot, profile);
 
         // The derived install root is the one the app's single detection rule recognises.
         var detected = ClassicGameLocator.DetectFromDirectory(installRoot);
@@ -89,7 +85,7 @@ public sealed class ClassicGameMountRetailTests
         var dataRoot = DataRootFor(game);
         Assert.SkipWhen(dataRoot is null, RealAssetPaths.SkipMessage(game.ToString()));
 
-        var installRoot = InstallRootOf(dataRoot!, GameProfiles.For(game));
+        var installRoot = InstallRootOf(dataRoot, GameProfiles.For(game));
 
         using var session = AssetBrowseSession.TryOpenGameRoot(installRoot);
 

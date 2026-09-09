@@ -1,4 +1,3 @@
-using System;
 using BethesdaMultitool.Core.Compression;
 using Xunit;
 
@@ -40,7 +39,7 @@ public class RleCodecWordTests
         [
             0x01, 0x00, 0x11, 0x22, // +1 literal: 0x2211
             0xFE, 0xFF, 0x33, 0x44, // -2 repeat:  0x4433 twice
-            0x01, 0x00, 0x55, 0x66  // +1 literal: 0x6655
+            0x01, 0x00, 0x55, 0x66 // +1 literal: 0x6655
         ];
 
         var result = RleCodec.DecompressWords(input, 4);

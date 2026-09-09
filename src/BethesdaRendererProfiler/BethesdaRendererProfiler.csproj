@@ -88,13 +88,14 @@
        hard-coding the producer's TargetDir and does not invoke its Build target recursively: the
        ordinary ProjectReference build has already produced BethesdaMultitool before this profiler
        AfterTargets=Build hook runs. GetShaderBytecodePackOutput itself only depends on the pack
-       generator and returns its exact output item. -->
+       generator and returns its exact output item. Use the prepared reference and the same property
+       metadata as ResolveProjectReferences so solution configuration/platform mappings are retained. -->
   <Target Name="CopyShaderBytecodePackFromBethesdaMultitool"
           AfterTargets="Build"
           Condition="'$(_ShaderBytecodePackPropagationEnabled)' == 'true'">
     <ItemGroup>
-      <_ShaderBytecodePackProducerProject Include="@(ProjectReference)"
-          Condition="'%(ProjectReference.ShaderBytecodePackProducer)' == 'true'" />
+      <_ShaderBytecodePackProducerProject Include="@(_MSBuildProjectReferenceExistent)"
+          Condition="'%(_MSBuildProjectReferenceExistent.ShaderBytecodePackProducer)' == 'true'" />
     </ItemGroup>
     <Error Condition="'@(_ShaderBytecodePackProducerProject)' == ''"
            Text="No ProjectReference is marked as the shader-bytecode-pack producer." />
@@ -102,7 +103,8 @@
            Text="Exactly one ProjectReference must be marked as the shader-bytecode-pack producer." />
     <MSBuild Projects="@(_ShaderBytecodePackProducerProject)"
              Targets="GetShaderBytecodePackOutput"
-             Properties="Configuration=$(Configuration);Platform=$(Platform);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier)"
+             Properties="%(_ShaderBytecodePackProducerProject.SetConfiguration); %(_ShaderBytecodePackProducerProject.SetPlatform); %(_ShaderBytecodePackProducerProject.SetTargetFramework)"
+             RemoveProperties="%(_ShaderBytecodePackProducerProject.GlobalPropertiesToRemove)$(_GlobalPropertiesToRemoveFromProjectReferences)"
              BuildInParallel="false"
              RebaseOutputs="false">
       <Output TaskParameter="TargetOutputs" ItemName="_ProfilerShaderBytecodePackSource" />

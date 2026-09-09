@@ -175,15 +175,18 @@ internal static class StarfieldEnvironmentCaptureTelemetry
         string? editorId,
         string decodeStatus,
         string? decodeFailure,
-        Dictionary<string, object?>? settings) => new()
+        Dictionary<string, object?>? settings)
     {
-        ["referencedFormId"] = FormId(referencedFormId),
-        ["found"] = found,
-        ["editorId"] = editorId,
-        ["decodeStatus"] = decodeStatus,
-        ["decodeFailure"] = decodeFailure,
-        ["settings"] = settings
-    };
+        return new Dictionary<string, object?>
+        {
+            ["referencedFormId"] = FormId(referencedFormId),
+            ["found"] = found,
+            ["editorId"] = editorId,
+            ["decodeStatus"] = decodeStatus,
+            ["decodeFailure"] = decodeFailure,
+            ["settings"] = settings
+        };
+    }
 
     private static Dictionary<string, object?> CloudEnvelope(
         uint? referencedFormId,
@@ -191,15 +194,18 @@ internal static class StarfieldEnvironmentCaptureTelemetry
         string? editorId,
         string decodeStatus,
         string? decodeFailure,
-        Dictionary<string, object?>? definition) => new()
+        Dictionary<string, object?>? definition)
     {
-        ["referencedFormId"] = FormId(referencedFormId),
-        ["found"] = found,
-        ["editorId"] = editorId,
-        ["decodeStatus"] = decodeStatus,
-        ["decodeFailure"] = decodeFailure,
-        ["definition"] = definition
-    };
+        return new Dictionary<string, object?>
+        {
+            ["referencedFormId"] = FormId(referencedFormId),
+            ["found"] = found,
+            ["editorId"] = editorId,
+            ["decodeStatus"] = decodeStatus,
+            ["decodeFailure"] = decodeFailure,
+            ["definition"] = definition
+        };
+    }
 
     private static Dictionary<string, object?> AtmosphereEnvelope(
         uint? referencedFormId,
@@ -209,171 +215,196 @@ internal static class StarfieldEnvironmentCaptureTelemetry
         string? resolutionFailure,
         IReadOnlyList<uint> inheritanceChain,
         Dictionary<string, object?>? structuralReferences,
-        uint? failureFormId = null) => new()
+        uint? failureFormId = null)
     {
-        ["referencedFormId"] = FormId(referencedFormId),
-        ["found"] = found,
-        ["editorId"] = editorId,
-        ["resolutionStatus"] = resolutionStatus,
-        ["resolutionFailure"] = resolutionFailure,
-        ["failureFormId"] = FormId(failureFormId),
-        ["inheritanceChain"] = inheritanceChain.Select(formId => FormId(formId)).ToArray(),
-        ["structuralReferences"] = structuralReferences,
-        ["dataScope"] =
-            "decoded/resolved source data only; no CE2 equations applied; no runtime weather-selection claim",
-        ["ce2EquationsApplied"] = false,
-        ["runtimeWeatherSelectionClaimed"] = false
-    };
+        return new Dictionary<string, object?>
+        {
+            ["referencedFormId"] = FormId(referencedFormId),
+            ["found"] = found,
+            ["editorId"] = editorId,
+            ["resolutionStatus"] = resolutionStatus,
+            ["resolutionFailure"] = resolutionFailure,
+            ["failureFormId"] = FormId(failureFormId),
+            ["inheritanceChain"] = inheritanceChain.Select(formId => FormId(formId)).ToArray(),
+            ["structuralReferences"] = structuralReferences,
+            ["dataScope"] =
+                "decoded/resolved source data only; no CE2 equations applied; no runtime weather-selection claim",
+            ["ce2EquationsApplied"] = false,
+            ["runtimeWeatherSelectionClaimed"] = false
+        };
+    }
 
     private static Dictionary<string, object?> AtmosphereReferences(
-        StarfieldAtmospherePatch patch) => new()
+        StarfieldAtmospherePatch patch)
     {
-        ["parentFormId"] = FormId(patch.ParentFormId),
-        ["sunPresetOverrideFormId"] = FormId(patch.SunPresetOverrideFormId),
-        ["climateOverrideFormId"] = FormId(patch.ClimateOverrideFormId)
-    };
+        return new Dictionary<string, object?>
+        {
+            ["parentFormId"] = FormId(patch.ParentFormId),
+            ["sunPresetOverrideFormId"] = FormId(patch.SunPresetOverrideFormId),
+            ["climateOverrideFormId"] = FormId(patch.ClimateOverrideFormId)
+        };
+    }
 
     private static Dictionary<string, object?> VolumetricSettings(
-        StarfieldVolumetricLightingSettings settings) => new()
+        StarfieldVolumetricLightingSettings settings)
     {
-        ["exteriorAndInterior"] = new Dictionary<string, object?>
+        return new Dictionary<string, object?>
         {
-            ["scatteringVolumeNear"] = settings.ExteriorAndInterior.ScatteringVolumeNear,
-            ["scatteringVolumeFar"] = settings.ExteriorAndInterior.ScatteringVolumeFar,
-            ["highFrequencyNoiseScale"] = settings.ExteriorAndInterior.HighFrequencyNoiseScale,
-            ["highFrequencyNoiseDensityScale"] = settings.ExteriorAndInterior.HighFrequencyNoiseDensityScale
-        },
-        ["exterior"] = new Dictionary<string, object?>
-        {
-            ["fogThickness"] = new Dictionary<string, object?>
+            ["exteriorAndInterior"] = new Dictionary<string, object?>
             {
-                ["thicknessNoiseScale"] = settings.Exterior.FogThickness.ThicknessNoiseScale,
-                ["thicknessNoiseBias"] = settings.Exterior.FogThickness.ThicknessNoiseBias,
-                ["minFogThickness"] = settings.Exterior.FogThickness.MinFogThickness,
-                ["maxFogThickness"] = settings.Exterior.FogThickness.MaxFogThickness
+                ["scatteringVolumeNear"] = settings.ExteriorAndInterior.ScatteringVolumeNear,
+                ["scatteringVolumeFar"] = settings.ExteriorAndInterior.ScatteringVolumeFar,
+                ["highFrequencyNoiseScale"] = settings.ExteriorAndInterior.HighFrequencyNoiseScale,
+                ["highFrequencyNoiseDensityScale"] = settings.ExteriorAndInterior.HighFrequencyNoiseDensityScale
             },
-            ["fogDensity"] = new Dictionary<string, object?>
+            ["exterior"] = new Dictionary<string, object?>
             {
-                ["densityNoiseScale"] = settings.Exterior.FogDensity.DensityNoiseScale,
-                ["densityNoiseBias"] = settings.Exterior.FogDensity.DensityNoiseBias,
-                ["minFogDensity"] = settings.Exterior.FogDensity.MinFogDensity,
-                ["maxFogDensity"] = settings.Exterior.FogDensity.MaxFogDensity,
-                ["densityStartDistance"] = settings.Exterior.FogDensity.DensityStartDistance,
-                ["densityFullDistance"] = settings.Exterior.FogDensity.DensityFullDistance,
-                ["densityDistanceExponent"] = settings.Exterior.FogDensity.DensityDistanceExponent
+                ["fogThickness"] = new Dictionary<string, object?>
+                {
+                    ["thicknessNoiseScale"] = settings.Exterior.FogThickness.ThicknessNoiseScale,
+                    ["thicknessNoiseBias"] = settings.Exterior.FogThickness.ThicknessNoiseBias,
+                    ["minFogThickness"] = settings.Exterior.FogThickness.MinFogThickness,
+                    ["maxFogThickness"] = settings.Exterior.FogThickness.MaxFogThickness
+                },
+                ["fogDensity"] = new Dictionary<string, object?>
+                {
+                    ["densityNoiseScale"] = settings.Exterior.FogDensity.DensityNoiseScale,
+                    ["densityNoiseBias"] = settings.Exterior.FogDensity.DensityNoiseBias,
+                    ["minFogDensity"] = settings.Exterior.FogDensity.MinFogDensity,
+                    ["maxFogDensity"] = settings.Exterior.FogDensity.MaxFogDensity,
+                    ["densityStartDistance"] = settings.Exterior.FogDensity.DensityStartDistance,
+                    ["densityFullDistance"] = settings.Exterior.FogDensity.DensityFullDistance,
+                    ["densityDistanceExponent"] = settings.Exterior.FogDensity.DensityDistanceExponent
+                },
+                ["horizonFog"] = new Dictionary<string, object?>
+                {
+                    ["fogThickness"] = settings.Exterior.HorizonFog.FogThickness,
+                    ["fogDensity"] = settings.Exterior.HorizonFog.FogDensity,
+                    ["densityStartDistance"] = settings.Exterior.HorizonFog.DensityStartDistance,
+                    ["densityFullDistance"] = settings.Exterior.HorizonFog.DensityFullDistance
+                },
+                ["fogMap"] = new Dictionary<string, object?>
+                {
+                    ["heightAboveTerrain"] = settings.Exterior.FogMap.HeightAboveTerrain,
+                    ["terrainMatch"] = settings.Exterior.FogMap.TerrainMatch,
+                    ["albedo"] = Float4(settings.Exterior.FogMap.Albedo),
+                    ["anisotropy"] = settings.Exterior.FogMap.Anisotropy,
+                    ["minMeanFreePath"] = settings.Exterior.FogMap.MinMeanFreePath,
+                    ["maxMeanFreePath"] = settings.Exterior.FogMap.MaxMeanFreePath,
+                    ["heightFalloffExponent"] = settings.Exterior.FogMap.HeightFalloffExponent,
+                    ["span"] = settings.Exterior.FogMap.Span
+                }
             },
-            ["horizonFog"] = new Dictionary<string, object?>
+            ["distantLighting"] = new Dictionary<string, object?>
             {
-                ["fogThickness"] = settings.Exterior.HorizonFog.FogThickness,
-                ["fogDensity"] = settings.Exterior.HorizonFog.FogDensity,
-                ["densityStartDistance"] = settings.Exterior.HorizonFog.DensityStartDistance,
-                ["densityFullDistance"] = settings.Exterior.HorizonFog.DensityFullDistance
-            },
-            ["fogMap"] = new Dictionary<string, object?>
-            {
-                ["heightAboveTerrain"] = settings.Exterior.FogMap.HeightAboveTerrain,
-                ["terrainMatch"] = settings.Exterior.FogMap.TerrainMatch,
-                ["albedo"] = Float4(settings.Exterior.FogMap.Albedo),
-                ["anisotropy"] = settings.Exterior.FogMap.Anisotropy,
-                ["minMeanFreePath"] = settings.Exterior.FogMap.MinMeanFreePath,
-                ["maxMeanFreePath"] = settings.Exterior.FogMap.MaxMeanFreePath,
-                ["heightFalloffExponent"] = settings.Exterior.FogMap.HeightFalloffExponent,
-                ["span"] = settings.Exterior.FogMap.Span
+                ["scatteringTransition"] = settings.DistantLighting.ScatteringTransition,
+                ["scatteringFar"] = settings.DistantLighting.ScatteringFar
             }
-        },
-        ["distantLighting"] = new Dictionary<string, object?>
+        };
+    }
+
+    private static Dictionary<string, object?> CloudDefinition(StarfieldCloudFormDefinition definition)
+    {
+        return new Dictionary<string, object?>
         {
-            ["scatteringTransition"] = settings.DistantLighting.ScatteringTransition,
-            ["scatteringFar"] = settings.DistantLighting.ScatteringFar
-        }
-    };
+            ["shadows"] = new Dictionary<string, object?>
+            {
+                ["enabled"] = definition.Shadows.Enabled,
+                ["opacityTexture"] = definition.Shadows.OpacityTexture,
+                ["tilingPerKm"] = definition.Shadows.TilingPerKm,
+                ["elevationKm"] = definition.Shadows.ElevationKm,
+                ["strength"] = definition.Shadows.Strength,
+                ["windScale"] = definition.Shadows.WindScale
+            },
+            ["layerCount"] = definition.Layers.Count,
+            ["planeCount"] = definition.Planes.Count,
+            ["layers"] = definition.Layers.Select(CloudLayer).ToArray(),
+            ["planes"] = definition.Planes.Select(CloudPlane).ToArray(),
+            ["cloudCardSequenceFormId"] = FormId(definition.CloudCardSequenceFormId)
+        };
+    }
 
-    private static Dictionary<string, object?> CloudDefinition(StarfieldCloudFormDefinition definition) => new()
+    private static Dictionary<string, object?> CloudLayer(StarfieldCloudLayer layer)
     {
-        ["shadows"] = new Dictionary<string, object?>
+        return new Dictionary<string, object?>
         {
-            ["enabled"] = definition.Shadows.Enabled,
-            ["opacityTexture"] = definition.Shadows.OpacityTexture,
-            ["tilingPerKm"] = definition.Shadows.TilingPerKm,
-            ["elevationKm"] = definition.Shadows.ElevationKm,
-            ["strength"] = definition.Shadows.Strength,
-            ["windScale"] = definition.Shadows.WindScale
-        },
-        ["layerCount"] = definition.Layers.Count,
-        ["planeCount"] = definition.Planes.Count,
-        ["layers"] = definition.Layers.Select(CloudLayer).ToArray(),
-        ["planes"] = definition.Planes.Select(CloudPlane).ToArray(),
-        ["cloudCardSequenceFormId"] = FormId(definition.CloudCardSequenceFormId)
-    };
+            ["name"] = layer.Name,
+            ["colorTexture"] = layer.ColorTexture,
+            ["thicknessTexture"] = layer.ThicknessTexture,
+            ["normalTexture"] = layer.NormalTexture,
+            ["opacityTexture"] = layer.OpacityTexture,
+            ["elevationKm"] = layer.ElevationKm,
+            ["heightKm"] = layer.HeightKm,
+            ["distanceKm"] = layer.DistanceKm,
+            ["thickness"] = layer.Thickness,
+            ["textureShadowOffset"] = layer.TextureShadowOffset,
+            ["textureShadowStrength"] = layer.TextureShadowStrength,
+            ["normalShadowStrength"] = layer.NormalShadowStrength,
+            ["tiling"] = layer.Tiling,
+            ["verticalTiling"] = layer.VerticalTiling,
+            ["topBlendDistanceKm"] = layer.TopBlendDistanceKm,
+            ["topBlendStartKm"] = layer.TopBlendStartKm,
+            ["bottomBlendDistanceKm"] = layer.BottomBlendDistanceKm,
+            ["bottomBlendStartKm"] = layer.BottomBlendStartKm,
+            ["windScale"] = layer.WindScale,
+            ["density"] = layer.Density,
+            ["coverage"] = layer.Coverage,
+            ["alphaAdd"] = layer.AlphaAdd,
+            ["alphaMultiply"] = layer.AlphaMultiply,
+            ["tint"] = CloudTint(layer.Tint)
+        };
+    }
 
-    private static Dictionary<string, object?> CloudLayer(StarfieldCloudLayer layer) => new()
+    private static Dictionary<string, object?> CloudPlane(StarfieldCloudPlane plane)
     {
-        ["name"] = layer.Name,
-        ["colorTexture"] = layer.ColorTexture,
-        ["thicknessTexture"] = layer.ThicknessTexture,
-        ["normalTexture"] = layer.NormalTexture,
-        ["opacityTexture"] = layer.OpacityTexture,
-        ["elevationKm"] = layer.ElevationKm,
-        ["heightKm"] = layer.HeightKm,
-        ["distanceKm"] = layer.DistanceKm,
-        ["thickness"] = layer.Thickness,
-        ["textureShadowOffset"] = layer.TextureShadowOffset,
-        ["textureShadowStrength"] = layer.TextureShadowStrength,
-        ["normalShadowStrength"] = layer.NormalShadowStrength,
-        ["tiling"] = layer.Tiling,
-        ["verticalTiling"] = layer.VerticalTiling,
-        ["topBlendDistanceKm"] = layer.TopBlendDistanceKm,
-        ["topBlendStartKm"] = layer.TopBlendStartKm,
-        ["bottomBlendDistanceKm"] = layer.BottomBlendDistanceKm,
-        ["bottomBlendStartKm"] = layer.BottomBlendStartKm,
-        ["windScale"] = layer.WindScale,
-        ["density"] = layer.Density,
-        ["coverage"] = layer.Coverage,
-        ["alphaAdd"] = layer.AlphaAdd,
-        ["alphaMultiply"] = layer.AlphaMultiply,
-        ["tint"] = CloudTint(layer.Tint)
-    };
+        return new Dictionary<string, object?>
+        {
+            ["name"] = plane.Name,
+            ["colorTexture"] = plane.ColorTexture,
+            ["thicknessTexture"] = plane.ThicknessTexture,
+            ["normalTexture"] = plane.NormalTexture,
+            ["opacityTexture"] = plane.OpacityTexture,
+            ["elevationKm"] = plane.ElevationKm,
+            ["fadeStartKm"] = plane.FadeStartKm,
+            ["fadeDistanceKm"] = plane.FadeDistanceKm,
+            ["thickness"] = plane.Thickness,
+            ["textureShadowOffset"] = plane.TextureShadowOffset,
+            ["textureShadowStrength"] = plane.TextureShadowStrength,
+            ["normalShadowStrength"] = plane.NormalShadowStrength,
+            ["tilingPerKm"] = plane.TilingPerKm,
+            ["windScale"] = plane.WindScale,
+            ["density"] = plane.Density,
+            ["coverage"] = plane.Coverage,
+            ["alphaAdd"] = plane.AlphaAdd,
+            ["alphaMultiply"] = plane.AlphaMultiply,
+            ["tint"] = CloudTint(plane.Tint)
+        };
+    }
 
-    private static Dictionary<string, object?> CloudPlane(StarfieldCloudPlane plane) => new()
+    private static Dictionary<string, object?> Float4(StarfieldVolumetricFloat4 value)
     {
-        ["name"] = plane.Name,
-        ["colorTexture"] = plane.ColorTexture,
-        ["thicknessTexture"] = plane.ThicknessTexture,
-        ["normalTexture"] = plane.NormalTexture,
-        ["opacityTexture"] = plane.OpacityTexture,
-        ["elevationKm"] = plane.ElevationKm,
-        ["fadeStartKm"] = plane.FadeStartKm,
-        ["fadeDistanceKm"] = plane.FadeDistanceKm,
-        ["thickness"] = plane.Thickness,
-        ["textureShadowOffset"] = plane.TextureShadowOffset,
-        ["textureShadowStrength"] = plane.TextureShadowStrength,
-        ["normalShadowStrength"] = plane.NormalShadowStrength,
-        ["tilingPerKm"] = plane.TilingPerKm,
-        ["windScale"] = plane.WindScale,
-        ["density"] = plane.Density,
-        ["coverage"] = plane.Coverage,
-        ["alphaAdd"] = plane.AlphaAdd,
-        ["alphaMultiply"] = plane.AlphaMultiply,
-        ["tint"] = CloudTint(plane.Tint)
-    };
+        return new Dictionary<string, object?>
+        {
+            ["x"] = value.X,
+            ["y"] = value.Y,
+            ["z"] = value.Z,
+            ["w"] = value.W
+        };
+    }
 
-    private static Dictionary<string, object?> Float4(StarfieldVolumetricFloat4 value) => new()
+    private static Dictionary<string, object?> CloudTint(StarfieldCloudTint tint)
     {
-        ["x"] = value.X,
-        ["y"] = value.Y,
-        ["z"] = value.Z,
-        ["w"] = value.W
-    };
+        return new Dictionary<string, object?>
+        {
+            ["r"] = tint.R,
+            ["g"] = tint.G,
+            ["b"] = tint.B,
+            ["a"] = tint.A
+        };
+    }
 
-    private static Dictionary<string, object?> CloudTint(StarfieldCloudTint tint) => new()
+    private static string? FormId(uint? formId)
     {
-        ["r"] = tint.R,
-        ["g"] = tint.G,
-        ["b"] = tint.B,
-        ["a"] = tint.A
-    };
-
-    private static string? FormId(uint? formId) =>
-        formId is uint value ? $"0x{value:X8}" : null;
+        return formId is uint value ? $"0x{value:X8}" : null;
+    }
 }
-

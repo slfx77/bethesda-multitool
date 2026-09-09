@@ -18,7 +18,7 @@ public class ArenaDfaDecoderTests
         // 5 - and must show frame 1's values at pixels 2..3, proving deltas never chain off
         // frame 2. Both chunk-group size fields are deliberately bogus: the reference reads
         // and ignores them.
-        var bytes = DfaHeader(imageCount: 3, width: 3, height: 2, firstFrameCompressedLength: 7);
+        var bytes = DfaHeader(3, 3, 2, 7);
         bytes.AddRange(new byte[] { 0x05, 1, 2, 3, 4, 5, 6 });
 
         // Frame 2 chunk group: one update.
@@ -63,7 +63,7 @@ public class ArenaDfaDecoderTests
     [Fact]
     public void Decode_SingleFrame_NoChunkDataNeeded()
     {
-        var bytes = DfaHeader(imageCount: 1, width: 2, height: 2, firstFrameCompressedLength: 5);
+        var bytes = DfaHeader(1, 2, 2, 5);
         bytes.AddRange(new byte[] { 0x03, 9, 8, 7, 6 }); // literal packet: 4 verbatim bytes
 
         var frames = ArenaDfaDecoder.Decode(bytes.ToArray());
@@ -75,7 +75,7 @@ public class ArenaDfaDecoderTests
     [Fact]
     public void Decode_ZeroImages_Throws()
     {
-        var bytes = DfaHeader(imageCount: 0, width: 1, height: 1, firstFrameCompressedLength: 0);
+        var bytes = DfaHeader(0, 1, 1, 0);
 
         Assert.Throws<InvalidDataException>(() => ArenaDfaDecoder.Decode(bytes.ToArray()));
     }
@@ -90,7 +90,7 @@ public class ArenaDfaDecoderTests
     public void Decode_TruncatedFirstFrameRle_Throws()
     {
         // Literal packet declares 6 bytes but only 1 follows.
-        var bytes = DfaHeader(imageCount: 1, width: 3, height: 2, firstFrameCompressedLength: 7);
+        var bytes = DfaHeader(1, 3, 2, 7);
         bytes.AddRange(new byte[] { 0x05, 1 });
 
         Assert.Throws<InvalidDataException>(() => ArenaDfaDecoder.Decode(bytes.ToArray()));
@@ -99,7 +99,7 @@ public class ArenaDfaDecoderTests
     [Fact]
     public void Decode_TruncatedChunkGroupHeader_Throws()
     {
-        var bytes = DfaHeader(imageCount: 2, width: 3, height: 2, firstFrameCompressedLength: 7);
+        var bytes = DfaHeader(2, 3, 2, 7);
         bytes.AddRange(new byte[] { 0x05, 1, 2, 3, 4, 5, 6 });
         bytes.AddRange(new byte[] { 0x01, 0x00 }); // 4-byte chunk-group header owed
 
@@ -109,7 +109,7 @@ public class ArenaDfaDecoderTests
     [Fact]
     public void Decode_TruncatedUpdateData_Throws()
     {
-        var bytes = DfaHeader(imageCount: 2, width: 3, height: 2, firstFrameCompressedLength: 7);
+        var bytes = DfaHeader(2, 3, 2, 7);
         bytes.AddRange(new byte[] { 0x05, 1, 2, 3, 4, 5, 6 });
         AddUInt16(bytes, 0);
         AddUInt16(bytes, 1); // one update
@@ -124,7 +124,7 @@ public class ArenaDfaDecoderTests
     public void Decode_UpdateWritesPastFrame_Throws()
     {
         // Update at pixel offset 5, count 3, in a 6-pixel frame: pixels 5..7 overrun.
-        var bytes = DfaHeader(imageCount: 2, width: 3, height: 2, firstFrameCompressedLength: 7);
+        var bytes = DfaHeader(2, 3, 2, 7);
         bytes.AddRange(new byte[] { 0x05, 1, 2, 3, 4, 5, 6 });
         AddUInt16(bytes, 0);
         AddUInt16(bytes, 1);
@@ -135,7 +135,8 @@ public class ArenaDfaDecoderTests
         Assert.Throws<InvalidDataException>(() => ArenaDfaDecoder.Decode(bytes.ToArray()));
     }
 
-    private static List<byte> DfaHeader(ushort imageCount, ushort width, ushort height, ushort firstFrameCompressedLength)
+    private static List<byte> DfaHeader(ushort imageCount, ushort width, ushort height,
+        ushort firstFrameCompressedLength)
     {
         var bytes = new List<byte>();
         AddUInt16(bytes, imageCount);

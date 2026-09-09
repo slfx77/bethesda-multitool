@@ -274,14 +274,14 @@ public static class RecordCatalog
         // capture that read NaN twice is "the same capture twice", not an endless difference.
         if (kept is GameSettingRecord keptSetting && discarded is GameSettingRecord discardedSetting)
         {
-            return (keptSetting with { Offset = 0 }) == (discardedSetting with { Offset = 0 })
+            return keptSetting with { Offset = 0 } == discardedSetting with { Offset = 0 }
                 ? "false"
                 : "true";
         }
 
         if (kept is GlobalRecord keptGlobal && discarded is GlobalRecord discardedGlobal)
         {
-            return (keptGlobal with { Offset = 0 }) == (discardedGlobal with { Offset = 0 })
+            return keptGlobal with { Offset = 0 } == discardedGlobal with { Offset = 0 }
                 ? "false"
                 : "true";
         }

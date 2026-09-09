@@ -27,7 +27,7 @@ public sealed class NestedPayloadSubrecordTests
         var encoded = NewRecordSubrecords.EncodeAlternateTexturesSubrecord("MODS", entries);
 
         Assert.Equal("MODS", encoded.Signature);
-        Assert.Equal(entries, AlternateTextureParser.Parse(encoded.Bytes, isBigEndian: false));
+        Assert.Equal(entries, AlternateTextureParser.Parse(encoded.Bytes, false));
     }
 
     [Fact]

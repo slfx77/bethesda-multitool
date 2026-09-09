@@ -1,8 +1,5 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Redguard;
 using Xunit;
@@ -19,14 +16,6 @@ public sealed class RedguardRtxFileTests : IDisposable
 {
     private readonly List<string> _tempFiles = [];
 
-    private string WriteTemp(byte[] bytes)
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"redguard-rtx-{Guid.NewGuid():N}.rtx");
-        File.WriteAllBytes(path, bytes);
-        _tempFiles.Add(path);
-        return path;
-    }
-
     public void Dispose()
     {
         foreach (var path in _tempFiles)
@@ -42,20 +31,30 @@ public sealed class RedguardRtxFileTests : IDisposable
         }
     }
 
+    private string WriteTemp(byte[] bytes)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"redguard-rtx-{Guid.NewGuid():N}.rtx");
+        File.WriteAllBytes(path, bytes);
+        _tempFiles.Add(path);
+        return path;
+    }
+
     private static byte[] Payload(string text, byte[]? pcm = null, int sampleRate = 22050, bool sixteenBit = true)
     {
         var bytes = new List<byte>();
         bytes.AddRange(BitConverter.GetBytes((ushort)0)); // placeholder for the BE kind word
         var kind = (ushort)(pcm is null ? 0 : RedguardRtxFile.VoicedKind);
-        BinaryPrimitives.WriteUInt16BigEndian(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(bytes), kind);
+        BinaryPrimitives.WriteUInt16BigEndian(CollectionsMarshal.AsSpan(bytes), kind);
         bytes.AddRange(BitConverter.GetBytes((uint)text.Length));
         bytes.AddRange(Encoding.ASCII.GetBytes(text));
         if (pcm is not null)
         {
             var header = new byte[RedguardPcmHeader.Length];
             BinaryPrimitives.WriteUInt32LittleEndian(header, sixteenBit ? 1u : 0u);
-            BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(RedguardPcmHeader.DepthFlagOffset), sixteenBit ? 1u : 0u);
-            BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(RedguardPcmHeader.SampleRateOffset), (uint)sampleRate);
+            BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(RedguardPcmHeader.DepthFlagOffset),
+                sixteenBit ? 1u : 0u);
+            BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(RedguardPcmHeader.SampleRateOffset),
+                (uint)sampleRate);
             header[12] = 100;
             BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(18), 0xFFFFFFFF);
             BinaryPrimitives.WriteUInt32LittleEndian(header.AsSpan(RedguardPcmHeader.LengthOffset), (uint)pcm.Length);
@@ -101,20 +100,22 @@ public sealed class RedguardRtxFileTests : IDisposable
         using var file = RedguardRtxFile.Open(WriteTemp(Build(
             ("#bon", Payload("BOATMAN BONE SOUND", [1, 0, 2, 0])),
             ("xtor", Payload("EXAMINE TORCH")),
-            ("zbza", Payload("GET BACK IN YOUR JAR.", new byte[441], sampleRate: 11025, sixteenBit: false)))));
+            ("zbza", Payload("GET BACK IN YOUR JAR.", new byte[441], 11025, false)))));
 
         Assert.Equal(["#bon", "xtor", "zbza"], file.Entries.Select(e => e.Tag));
         Assert.Equal([0, 1, 2], file.Entries.Select(e => e.Index));
 
         var bone = file.Entries[0];
-        Assert.Equal(("BOATMAN BONE SOUND", true, 22050, 16), (bone.Text, bone.IsVoiced, bone.Sound!.Value.SampleRate, bone.Sound.Value.BitsPerSample));
+        Assert.Equal(("BOATMAN BONE SOUND", true, 22050, 16),
+            (bone.Text, bone.IsVoiced, bone.Sound!.Value.SampleRate, bone.Sound.Value.BitsPerSample));
         Assert.Equal([1, 0, 2, 0], file.ReadSamples(bone));
 
         Assert.Equal(("EXAMINE TORCH", false), (file.Entries[1].Text, file.Entries[1].IsVoiced));
         Assert.Throws<InvalidOperationException>(() => file.ReadSamples(file.Entries[1]));
 
         var jar = file.Find("zbza")!;
-        Assert.Equal((11025, 8, 441), (jar.Sound!.Value.SampleRate, jar.Sound.Value.BitsPerSample, jar.Sound.Value.ByteLength));
+        Assert.Equal((11025, 8, 441),
+            (jar.Sound!.Value.SampleRate, jar.Sound.Value.BitsPerSample, jar.Sound.Value.ByteLength));
         Assert.Equal(441 / 11025.0, jar.Sound.Value.DurationSeconds, 6);
         Assert.Null(file.Find("none"));
     }
@@ -150,7 +151,8 @@ public sealed class RedguardRtxFileTests : IDisposable
 
         // Point the first index entry one byte late.
         var offsetAt = indexOffset + 4;
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offsetAt), BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offsetAt)) + 1);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(offsetAt),
+            BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offsetAt)) + 1);
 
         Assert.Throws<InvalidDataException>(() => RedguardRtxFile.Open(WriteTemp(bytes)));
     }

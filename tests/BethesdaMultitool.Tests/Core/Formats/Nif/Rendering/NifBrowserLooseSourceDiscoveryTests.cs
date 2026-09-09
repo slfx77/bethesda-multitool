@@ -25,7 +25,7 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -47,7 +47,7 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -68,7 +68,7 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -88,7 +88,7 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -111,7 +111,7 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -136,17 +136,17 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
             var nifData = service.ReadNifData(nifPath);
             Assert.NotNull(nifData);
 
-            var glb = service.BuildGlb(nifData!, nifPath);
+            var glb = service.BuildGlb(nifData, nifPath);
 
             Assert.NotNull(glb);
-            using var stream = new MemoryStream(glb!, writable: false);
+            using var stream = new MemoryStream(glb, false);
             var model = ModelRoot.ReadGLB(stream);
             Assert.NotEmpty(model.LogicalMeshes);
             Assert.Contains(model.LogicalMeshes, mesh => mesh.Primitives.Count > 0);
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -176,7 +176,7 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
                 Assert.NotNull(nifData);
 
                 var build = service.BuildViewerSceneWithDiagnostics(
-                    nifData!,
+                    nifData,
                     "body.nif",
                     nifPath,
                     new AlwaysCompatibleRigInspector());
@@ -185,13 +185,13 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
                 catalog = scene.ModelFamilyAnimations;
                 var resolved = Assert.IsType<NifModelFamilyAnimationCatalog>(catalog);
                 var selected = Assert.Single(resolved.Animations);
-                payload = service.ReadModelFamilyAnimationData(selected);
+                payload = service.ReadModelFamilyAnimationData(selected, TestContext.Current.CancellationToken);
                 var oversized = selected with
                 {
                     Size = BethesdaViewerKfAnimationBinder.MaximumPayloadBytes + 1
                 };
                 Assert.Throws<InvalidDataException>(() =>
-                    service.ReadModelFamilyAnimationData(oversized));
+                    service.ReadModelFamilyAnimationData(oversized, TestContext.Current.CancellationToken));
             }
 
             var snapshot = Assert.IsType<NifModelFamilyAnimationCatalog>(catalog);
@@ -208,14 +208,14 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
     private static byte[] BuildStarfieldNif(string meshPath)
     {
         var geometryBlock = BuildBsGeometryBlock(meshPath);
-        var shaderBlock = BuildNiObjectNet(nameIndex: 1);
+        var shaderBlock = BuildNiObjectNet(1);
         string[] blockTypes = ["BSGeometry", "BSLightingShaderProperty"];
         string[] strings = ["Triangle", @"materials\test\triangle.mat"];
 
@@ -261,7 +261,7 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
 
     private static byte[] BuildBsGeometryBlock(string meshPath)
     {
-        var bytes = new List<byte>(BuildNiObjectNet(nameIndex: 0));
+        var bytes = new List<byte>(BuildNiObjectNet(0));
         bytes.AddRange(BitConverter.GetBytes(0u)); // external mesh (inline-data flag clear)
         AddVector3(bytes, 0f, 0f, 0f);
         AddMatrix33Identity(bytes);
@@ -285,7 +285,7 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
         var bytes = new List<byte>();
         bytes.AddRange(BitConverter.GetBytes(0u)); // mesh version
         bytes.AddRange(BitConverter.GetBytes(3u));
-        foreach (ushort index in new ushort[] { 0, 1, 2 })
+        foreach (var index in new ushort[] { 0, 1, 2 })
         {
             bytes.AddRange(BitConverter.GetBytes(index));
         }
@@ -348,14 +348,14 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
 
     private static void AddPackedPosition(List<byte> bytes, short x, short y, short z)
     {
-        var xy = (uint)(ushort)x | ((uint)(ushort)y << 16);
+        var xy = (ushort)x | ((uint)(ushort)y << 16);
         bytes.AddRange(BitConverter.GetBytes(xy));
         bytes.AddRange(BitConverter.GetBytes((ushort)z));
     }
 
     private static void AddHalfPair(List<byte> bytes, float u, float v)
     {
-        var packed = (uint)BitConverter.HalfToUInt16Bits((Half)u) |
+        var packed = BitConverter.HalfToUInt16Bits((Half)u) |
                      ((uint)BitConverter.HalfToUInt16Bits((Half)v) << 16);
         bytes.AddRange(BitConverter.GetBytes(packed));
     }
@@ -371,10 +371,14 @@ public sealed class NifBrowserLooseSourceDiscoveryTests
 
     private sealed class AlwaysCompatibleRigInspector : INifModelFamilyRigInspector
     {
-        public NifModelFamilyModelRig? InspectModel(byte[] data) =>
-            new(["Bip01"]);
+        public NifModelFamilyModelRig? InspectModel(byte[] data)
+        {
+            return new NifModelFamilyModelRig(["Bip01"]);
+        }
 
-        public NifModelFamilySkeletonRig? InspectSkeleton(byte[] data) =>
-            new(["Bip01"]);
+        public NifModelFamilySkeletonRig? InspectSkeleton(byte[] data)
+        {
+            return new NifModelFamilySkeletonRig(["Bip01"]);
+        }
     }
 }

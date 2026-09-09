@@ -77,8 +77,8 @@ internal static class ThumbnailScaler
 
             for (var x = 0; x < width; x++)
             {
-                var source = sourceRow + (x / factor * BytesPerPixel);
-                var target = targetRow + (x * BytesPerPixel);
+                var source = sourceRow + x / factor * BytesPerPixel;
+                var target = targetRow + x * BytesPerPixel;
                 output[target] = image.Rgba[source];
                 output[target + 1] = image.Rgba[source + 1];
                 output[target + 2] = image.Rgba[source + 2];
@@ -108,7 +108,7 @@ internal static class ThumbnailScaler
                     image, sourceLeft, sourceTop, sourceRight, sourceBottom,
                     out var red, out var green, out var blue, out var alpha, out var count);
 
-                var target = ((y * width) + x) * BytesPerPixel;
+                var target = (y * width + x) * BytesPerPixel;
 
                 // Dividing colour by the alpha total rather than the pixel count is what keeps a
                 // fully transparent neighbour from voting for its key colour.
@@ -134,7 +134,7 @@ internal static class ThumbnailScaler
             var row = y * image.Width * BytesPerPixel;
             for (var x = left; x < right; x++)
             {
-                var source = row + (x * BytesPerPixel);
+                var source = row + x * BytesPerPixel;
                 var a = image.Rgba[source + 3];
 
                 red += image.Rgba[source] * a;

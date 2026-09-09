@@ -19,7 +19,7 @@ public sealed class NifOblivionTailSourceRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var archivePath = RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion - Meshes.bsa");
         Assert.SkipWhen(archivePath is null, RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
-        using var archive = ArchiveReader.Open(archivePath!);
+        using var archive = ArchiveReader.Open(archivePath);
         var data = Assert.IsType<byte[]>(archive.ReadFile(@"meshes\characters\khajiit\khajiittail.nif"));
         const string expectedHash = "E49AA6FABB2C52BB8A5185DD83630581D3D5A7F48A331EB77A5B0207C0E0C05F";
         Assert.Equal(expectedHash, Convert.ToHexString(SHA256.HashData(data)));

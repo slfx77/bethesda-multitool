@@ -1036,6 +1036,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
     private bool _fnvActiveAdtLightingEnabled;
     private bool _fnvProjectedSunShadowActive;
     private bool _fnvActiveAdtFogEnabled;
+    private bool _fnvActiveAdtFogSupported;
     private float _externalEmittanceGameHour = 12f;
     private AtmosphereState.ClimateTiming? _externalEmittanceClimateTiming;
 
@@ -1071,17 +1072,19 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
 
     /// <summary>
     ///     Supplies the global gates for the bounded active ID193/BSSM_ADT path. SLS2000 has no
-    ///     projected-shadow sampler, and the viewer has not yet reproduced its per-vertex fog
-    ///     interpolator, so either active feature selects the combined fallback.
+    ///     projected-shadow sampler. Fog requires the finite, unrepaired source subset and the
+    ///     exact effective atmosphere values bound for this pass; unsupported states retain fallback.
     /// </summary>
     public void SetFnvActiveAdtBaseState(
         bool lightingEnabled,
         bool projectedSunShadowActive,
-        bool fogEnabled)
+        bool fogEnabled,
+        bool hasSupportedFog = false)
     {
         _fnvActiveAdtLightingEnabled = lightingEnabled;
         _fnvProjectedSunShadowActive = projectedSunShadowActive;
         _fnvActiveAdtFogEnabled = fogEnabled;
+        _fnvActiveAdtFogSupported = hasSupportedFog;
     }
 
     /// <summary>
@@ -1385,7 +1388,8 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
             submesh.MaterialAlpha,
             submesh.MaterialAlphaController is not null,
             submesh.ClassicBasicShaderMode,
-            submesh.AlphaTestFunction);
+            submesh.AlphaTestFunction,
+            _fnvActiveAdtFogSupported);
 
     private string? ResolveFnvActiveAdtBaseFallbackReason()
     {
@@ -1409,8 +1413,8 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
             return "projected-shadow-permutation-unrecovered";
         }
 
-        return _fnvActiveAdtFogEnabled
-            ? "per-vertex-fog-interpolator-unrecovered"
+        return _fnvActiveAdtFogEnabled && !_fnvActiveAdtFogSupported
+            ? "fog-source-outside-finite-adt-subset"
             : null;
     }
 
@@ -2158,7 +2162,7 @@ internal sealed partial class ReferenceRenderer12 : Abstractions.IReferenceRende
             _fnvActiveAdtLightingEnabled &&
             _placedLightCount == 0 &&
             !_fnvProjectedSunShadowActive &&
-            !_fnvActiveAdtFogEnabled;
+            (!_fnvActiveAdtFogEnabled || _fnvActiveAdtFogSupported);
         var activeAdtFallbackReason = ResolveFnvActiveAdtBaseFallbackReason();
         LastStats.ReferenceFnvActiveAdtBaseFallbackReason = activeAdtFallbackReason;
         // Preserve the historical candidate/fallback diagnostic keys for existing traces while

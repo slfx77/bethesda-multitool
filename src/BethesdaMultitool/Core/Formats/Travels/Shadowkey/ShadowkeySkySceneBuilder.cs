@@ -54,9 +54,6 @@ namespace BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 /// </summary>
 internal static class ShadowkeySkySceneBuilder
 {
-    /// <summary>The scene texture key a built sky uses for its image.</summary>
-    internal static string SkyTextureKey(string zoneName) => $"shadowkey:{zoneName}#sky";
-
     /// <summary>
     ///     Divisor turning a raw corner coordinate into a normalised 0..1 UV. See reading 2 in the
     ///     type remarks: the field is a u16 fraction, not the 8.8 texel count it looks like.
@@ -68,6 +65,12 @@ internal static class ShadowkeySkySceneBuilder
     ///     outside the geometry rather than cutting through it. A display constant.
     /// </summary>
     public const float EnclosureMargin = 1.15f;
+
+    /// <summary>The scene texture key a built sky uses for its image.</summary>
+    internal static string SkyTextureKey(string zoneName)
+    {
+        return $"shadowkey:{zoneName}#sky";
+    }
 
     /// <summary>
     ///     Adds <paramref name="skybox" /> to <paramref name="scene" />, sized to enclose a zone
@@ -158,7 +161,7 @@ internal static class ShadowkeySkySceneBuilder
             {
                 var v = Require(vertexIndices[k], skybox.Vertices.Count, skybox.Name, "vertex");
                 var c = Require(cornerIndices[k], skybox.Corners.Count, skybox.Name, "corner");
-                var corner = (f * 3) + k;
+                var corner = f * 3 + k;
 
                 var source = skybox.Vertices[v];
 
@@ -166,12 +169,12 @@ internal static class ShadowkeySkySceneBuilder
                 // the same swap the mesh bridge makes. The horizon ring is pulled to
                 // baseHeightTiles so the sky meets the ground rather than floating.
                 var placed = new Vector3(source.X, source.Z, source.Y - horizon) * scale;
-                positions[(corner * 3) + 0] = placed.X + centre.X;
-                positions[(corner * 3) + 1] = placed.Y + centre.Y;
-                positions[(corner * 3) + 2] = placed.Z + centre.Z;
+                positions[corner * 3 + 0] = placed.X + centre.X;
+                positions[corner * 3 + 1] = placed.Y + centre.Y;
+                positions[corner * 3 + 2] = placed.Z + centre.Z;
 
-                uvs[(corner * 2) + 0] = skybox.Corners[c].U / UvScale;
-                uvs[(corner * 2) + 1] = skybox.Corners[c].V / UvScale;
+                uvs[corner * 2 + 0] = skybox.Corners[c].U / UvScale;
+                uvs[corner * 2 + 1] = skybox.Corners[c].V / UvScale;
                 indices[corner] = (ushort)corner;
             }
         }
@@ -198,7 +201,7 @@ internal static class ShadowkeySkySceneBuilder
         var height = 0f;
         foreach (var vertex in skybox.Vertices)
         {
-            var radius = MathF.Sqrt((vertex.X * (float)vertex.X) + (vertex.Z * (float)vertex.Z));
+            var radius = MathF.Sqrt(vertex.X * (float)vertex.X + vertex.Z * (float)vertex.Z);
             if (radius > widest)
             {
                 widest = radius;
@@ -221,7 +224,7 @@ internal static class ShadowkeySkySceneBuilder
         foreach (var vertex in skybox.Vertices)
         {
             widest = MathF.Max(
-                widest, MathF.Sqrt((vertex.X * (float)vertex.X) + (vertex.Z * (float)vertex.Z)));
+                widest, MathF.Sqrt(vertex.X * (float)vertex.X + vertex.Z * (float)vertex.Z));
         }
 
         if (widest <= 0f)
@@ -229,7 +232,7 @@ internal static class ShadowkeySkySceneBuilder
             return 1f;
         }
 
-        var half = MathF.Sqrt((widthTiles * widthTiles) + (heightTiles * heightTiles)) * 0.5f;
+        var half = MathF.Sqrt(widthTiles * widthTiles + heightTiles * heightTiles) * 0.5f;
         return half * EnclosureMargin / widest;
     }
 

@@ -155,6 +155,10 @@ float3 ProjectClassicSkinDirection(float3 tangent, float3 bitangent, float3 norm
 }
 #endif
 
+#if !defined(REFERENCE_SPECIALIZED_DIRECT_VERTEX) && !defined(REFERENCE_OBLIVION_CLASSIC_SKIN)
+#include "fnv_active_adt_fog.hlsli"
+#endif
+
 struct VSOutput
 {
     float4 Position     : SV_Position;
@@ -192,6 +196,9 @@ struct VSOutput
 #endif
 #ifndef REFERENCE_SPECIALIZED_DIRECT_VERTEX
     float3 vFnvActiveAdtBaseLight : TEXCOORD16;
+#if !defined(REFERENCE_SPECIALIZED_DIRECT_VERTEX) && !defined(REFERENCE_OBLIVION_CLASSIC_SKIN)
+    float vFnvActiveAdtFogAmount : TEXCOORD20;
+#endif
     // FormID-heatmap debug overlay: rgb = ramp tint, w = 1 when active (0 = ordinary shading).
     nointerpolation float4 vHeatmap : TEXCOORD17;
 #endif
@@ -260,6 +267,13 @@ VSOutput main(VSInput input)
     }
 #endif
     o.Position = mul(uViewProj, worldPos);
+#if !defined(REFERENCE_SPECIALIZED_DIRECT_VERTEX) && !defined(REFERENCE_OBLIVION_CLASSIC_SKIN)
+    o.vFnvActiveAdtFogAmount = 0.0;
+    if (IsFnvActiveAdtBaseMaterial(uTextureState.z) && uFogColorFogEnabled.w >= 0.5)
+    {
+        o.vFnvActiveAdtFogAmount = EvaluateFnvActiveAdtVertexFog(o.Position);
+    }
+#endif
     o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)
     // Uniform scale only — pass the normal through the world rotation (3x3 sub-matrix). For
     // non-uniform scale we'd want the inverse-transpose, but Bethesda REFR.Scale is uniform.

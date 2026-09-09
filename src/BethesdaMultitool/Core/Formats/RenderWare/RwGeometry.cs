@@ -194,8 +194,8 @@ internal sealed class RwGeometry
             for (var i = 0; i < vertices; i++)
             {
                 uvs[i] = new Vector2(
-                    BinaryPrimitives.ReadSingleLittleEndian(structBody[(position + (i * 8))..]),
-                    BinaryPrimitives.ReadSingleLittleEndian(structBody[(position + (i * 8) + 4)..]));
+                    BinaryPrimitives.ReadSingleLittleEndian(structBody[(position + i * 8)..]),
+                    BinaryPrimitives.ReadSingleLittleEndian(structBody[(position + i * 8 + 4)..]));
             }
 
             uvSets[set] = uvs;
@@ -205,7 +205,7 @@ internal sealed class RwGeometry
         var faces = new RwTriangle[triangles];
         for (var i = 0; i < triangles; i++)
         {
-            var at = position + (i * 8);
+            var at = position + i * 8;
 
             // File order is v1, v0, materialIndex, v2 — the first two are swapped on disk.
             var v1 = BinaryPrimitives.ReadUInt16LittleEndian(structBody[at..]);
@@ -229,7 +229,7 @@ internal sealed class RwGeometry
         var positions = new Vector3[vertices];
         for (var i = 0; i < vertices; i++)
         {
-            positions[i] = ReadVector3(structBody, position + (i * 12));
+            positions[i] = ReadVector3(structBody, position + i * 12);
         }
 
         position += vertices * 12;
@@ -240,16 +240,18 @@ internal sealed class RwGeometry
             normals = new Vector3[vertices];
             for (var i = 0; i < vertices; i++)
             {
-                normals[i] = ReadVector3(structBody, position + (i * 12));
+                normals[i] = ReadVector3(structBody, position + i * 12);
             }
         }
 
         return new RwGeometry(flags, positions, normals, uvSets, colours, faces, sphere);
     }
 
-    private static Vector3 ReadVector3(ReadOnlySpan<byte> data, int offset) =>
-        new(
+    private static Vector3 ReadVector3(ReadOnlySpan<byte> data, int offset)
+    {
+        return new Vector3(
             BinaryPrimitives.ReadSingleLittleEndian(data[offset..]),
             BinaryPrimitives.ReadSingleLittleEndian(data[(offset + 4)..]),
             BinaryPrimitives.ReadSingleLittleEndian(data[(offset + 8)..]));
+    }
 }

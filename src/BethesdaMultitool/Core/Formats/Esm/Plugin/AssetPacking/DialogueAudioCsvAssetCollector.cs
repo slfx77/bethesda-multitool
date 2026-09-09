@@ -802,7 +802,7 @@ internal static class DialogueAudioCsvAssetCollector
             // Recomputing from quest+topic+resp gives the engine exactly what it'll ask for.
             var ext0 = Path.GetExtension(normalized);
             packPath = EngineVoicePathBuilder.Build(
-                outputEspFileName!,
+                outputEspFileName,
                 matchedBinding.VoiceTypeEditorId!,
                 matchedBinding.QuestEditorId!,
                 matchedBinding.ParentDialEditorId,
@@ -831,7 +831,7 @@ internal static class DialogueAudioCsvAssetCollector
         }
         else if (allocatedFormId.HasValue && !string.IsNullOrWhiteSpace(outputEspFileName))
         {
-            packPath = RewritePathForNewEsp(normalized, sourceFormId, allocatedFormId.Value, outputEspFileName!);
+            packPath = RewritePathForNewEsp(normalized, sourceFormId, allocatedFormId.Value, outputEspFileName);
         }
         else
         {

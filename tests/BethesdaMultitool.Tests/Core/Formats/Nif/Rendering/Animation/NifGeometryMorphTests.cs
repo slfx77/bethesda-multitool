@@ -133,7 +133,9 @@ public sealed class NifGeometryMorphTests
         var fixture = new Fixture();
         var morph = Read(fixture);
         var scene = Scene(morph);
-        Assert.True(BethesdaViewerGeometryMorphPolicy.TryCreateClip(fixture.Data, fixture.Nif, scene, out var clip, out var error), error);
+        Assert.True(
+            BethesdaViewerGeometryMorphPolicy.TryCreateClip(fixture.Data, fixture.Nif, scene, out var clip,
+                out var error), error);
         Assert.NotNull(clip);
         Assert.Empty(clip.NodeTracks);
         scene.AnimationClips.Add(clip);
@@ -167,7 +169,8 @@ public sealed class NifGeometryMorphTests
     [Theory]
     [InlineData(2f, 1f, -0.5f, 1f)]
     [InlineData(0f, 1f, 0f, 0f)]
-    public void MorphOnlyClock_UsesAuthoredRateAndDormantZeroFrequency(float frequency, float phase, float origin, float duration)
+    public void MorphOnlyClock_UsesAuthoredRateAndDormantZeroFrequency(float frequency, float phase, float origin,
+        float duration)
     {
         var clip = Clip(Read(new Fixture()) with { Frequency = frequency, Phase = phase });
         var window = BethesdaViewerAnimationClockPolicy.Resolve(clip);
@@ -180,7 +183,7 @@ public sealed class NifGeometryMorphTests
     {
         var morph = Read(new Fixture());
         var curve = new NifMorphScalarCurve(NifKeyInterpolation.Quadratic, 0f,
-            [new NifMorphScalarKey(0f, 0f, 0f, 8f), new NifMorphScalarKey(2f, 0f, -8f, 0f)]);
+            [new NifMorphScalarKey(0f, 0f, 0f, 8f), new NifMorphScalarKey(2f, 0f, -8f)]);
         morph.Targets[1] = morph.Targets[1] with { Curve = curve };
         var bounds = NifGeometryMorphEvaluator.GetConservativeBounds(morph);
         var weights = new float[2];
@@ -189,9 +192,12 @@ public sealed class NifGeometryMorphTests
         Assert.True(bounds.Maximum.X >= 15f);
         var clip = Clip(morph) with
         {
-            NodeTracks = [new BethesdaViewerNodeAnimationTrack(0, 1f, 0f,
-                BethesdaViewerKeyInterpolation.Linear, [], BethesdaViewerKeyInterpolation.Linear,
-                [new BethesdaViewerVector3Key(0f, Vector3.Zero)], BethesdaViewerKeyInterpolation.Linear, [])]
+            NodeTracks =
+            [
+                new BethesdaViewerNodeAnimationTrack(0, 1f, 0f,
+                    BethesdaViewerKeyInterpolation.Linear, [], BethesdaViewerKeyInterpolation.Linear,
+                    [new BethesdaViewerVector3Key(0f, Vector3.Zero)], BethesdaViewerKeyInterpolation.Linear, [])
+            ]
         };
         Assert.False(BethesdaViewerAnimationValidator.TryValidate(clip, 2, 1, out _));
     }
@@ -202,16 +208,20 @@ public sealed class NifGeometryMorphTests
         return morph;
     }
 
-    private static BethesdaViewerAnimationClip Clip(NifGeometryMorphData morph) =>
-        new("Morph", morph.StartTime, morph.StopTime, morph.Loops, [], [], [],
+    private static BethesdaViewerAnimationClip Clip(NifGeometryMorphData morph)
+    {
+        return new BethesdaViewerAnimationClip("Morph", morph.StartTime, morph.StopTime, morph.Loops, [], [], [],
             GeometryMorphTracks: [new BethesdaViewerGeometryMorphTrack(0, morph)]);
+    }
 
-    private static GpuMeshUploader.GpuVertex[] Vertices(NifGeometryMorphData morph) =>
-        morph.Targets[0].Positions.Select(static position => new GpuMeshUploader.GpuVertex
+    private static GpuMeshUploader.GpuVertex[] Vertices(NifGeometryMorphData morph)
+    {
+        return morph.Targets[0].Positions.Select(static position => new GpuMeshUploader.GpuVertex
         {
             Position = position, Normal = Vector3.UnitZ, TexCoord = new Vector2(0.2f, 0.4f),
             VertexColorRgba = 0x12345678u, Tangent = Vector3.UnitX, Bitangent = Vector3.UnitY
         }).ToArray();
+    }
 
     private static BethesdaViewerScene Scene(NifGeometryMorphData morph)
     {
@@ -233,42 +243,88 @@ public sealed class NifGeometryMorphTests
 
     private sealed class Fixture
     {
-        internal NifInfo Nif { get; } = new() { BinaryVersion = 0x14020007, BsVersion = 34, UserVersion = 11 };
-        internal byte[] Data { get; }
-
         internal Fixture()
         {
-            var kinds = new[] { "NiTriStrips", "NiGeomMorpherController", "NiMorphData", "NiFloatInterpolator", "NiFloatData", "NiTriStripsData" };
+            var kinds = new[]
+            {
+                "NiTriStrips", "NiGeomMorpherController", "NiMorphData", "NiFloatInterpolator", "NiFloatData",
+                "NiTriStripsData"
+            };
             var sizes = new[] { 88, 53, 89, 8, 40, 45 };
             var offset = 0;
             for (var index = 0; index < sizes.Length; index++)
             {
-                Nif.Blocks.Add(new BlockInfo { Index = index, TypeName = kinds[index], DataOffset = offset, Size = sizes[index] });
+                Nif.Blocks.Add(new BlockInfo
+                    { Index = index, TypeName = kinds[index], DataOffset = offset, Size = sizes[index] });
                 offset += sizes[index];
             }
+
             Nif.Strings.AddRange(["Base", "Delta"]);
             Nif.BlockCount = Nif.Blocks.Count;
             Data = new byte[offset];
-            I32(0, 8, 1); I32(0, 72, -1); I32(0, 76, 5); I32(0, 80, -1);
-            I32(1, 0, -1); U16(1, 4, 72); Float(1, 6, 1f); Float(1, 18, 2f);
-            I32(1, 22, 0); I32(1, 28, 2); U32(1, 33, 2); I32(1, 37, 3); I32(1, 45, 3);
-            U32(2, 0, 2); U32(2, 4, 3); Data[Nif.Blocks[2].DataOffset + 8] = 1; I32(2, 49, 1);
-            var positions = new[] { new Vector3(10f, 20f, 30f), new Vector3(11f, 20f, 30f), new Vector3(10f, 21f, 30f) };
-            U16(5, 4, 3); Data[Nif.Blocks[5].DataOffset + 8] = 1;
+            I32(0, 8, 1);
+            I32(0, 72, -1);
+            I32(0, 76, 5);
+            I32(0, 80, -1);
+            I32(1, 0, -1);
+            U16(1, 4, 72);
+            Float(1, 6, 1f);
+            Float(1, 18, 2f);
+            I32(1, 22, 0);
+            I32(1, 28, 2);
+            U32(1, 33, 2);
+            I32(1, 37, 3);
+            I32(1, 45, 3);
+            U32(2, 0, 2);
+            U32(2, 4, 3);
+            Data[Nif.Blocks[2].DataOffset + 8] = 1;
+            I32(2, 49, 1);
+            var positions = new[]
+                { new Vector3(10f, 20f, 30f), new Vector3(11f, 20f, 30f), new Vector3(10f, 21f, 30f) };
+            U16(5, 4, 3);
+            Data[Nif.Blocks[5].DataOffset + 8] = 1;
             for (var vertex = 0; vertex < positions.Length; vertex++)
             {
                 var position = positions[vertex];
-                Float(2, 13 + vertex * 12, position.X); Float(2, 17 + vertex * 12, position.Y); Float(2, 21 + vertex * 12, position.Z);
+                Float(2, 13 + vertex * 12, position.X);
+                Float(2, 17 + vertex * 12, position.Y);
+                Float(2, 21 + vertex * 12, position.Z);
                 Float(2, 53 + vertex * 12, 2f);
-                Float(5, 9 + vertex * 12, position.X); Float(5, 13 + vertex * 12, position.Y); Float(5, 17 + vertex * 12, position.Z);
+                Float(5, 9 + vertex * 12, position.X);
+                Float(5, 13 + vertex * 12, position.Y);
+                Float(5, 17 + vertex * 12, position.Z);
             }
-            Float(3, 0, float.MinValue); I32(3, 4, 4);
-            U32(4, 0, 2); U32(4, 4, 2); Float(4, 20, 2f); Float(4, 24, 2f); Float(4, 28, 1f);
+
+            Float(3, 0, float.MinValue);
+            I32(3, 4, 4);
+            U32(4, 0, 2);
+            U32(4, 4, 2);
+            Float(4, 20, 2f);
+            Float(4, 24, 2f);
+            Float(4, 28, 1f);
         }
 
-        internal void U32(int block, int offset, uint value) => BinaryPrimitives.WriteUInt32LittleEndian(Data.AsSpan(Nif.Blocks[block].DataOffset + offset), value);
-        internal void I32(int block, int offset, int value) => BinaryPrimitives.WriteInt32LittleEndian(Data.AsSpan(Nif.Blocks[block].DataOffset + offset), value);
-        internal void U16(int block, int offset, ushort value) => BinaryPrimitives.WriteUInt16LittleEndian(Data.AsSpan(Nif.Blocks[block].DataOffset + offset), value);
-        internal void Float(int block, int offset, float value) => I32(block, offset, BitConverter.SingleToInt32Bits(value));
+        internal NifInfo Nif { get; } = new() { BinaryVersion = 0x14020007, BsVersion = 34, UserVersion = 11 };
+        internal byte[] Data { get; }
+
+        internal void U32(int block, int offset, uint value)
+        {
+            BinaryPrimitives.WriteUInt32LittleEndian(Data.AsSpan(Nif.Blocks[block].DataOffset + offset), value);
+        }
+
+        internal void I32(int block, int offset, int value)
+        {
+            BinaryPrimitives.WriteInt32LittleEndian(Data.AsSpan(Nif.Blocks[block].DataOffset + offset), value);
+        }
+
+        internal void U16(int block, int offset, ushort value)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(Data.AsSpan(Nif.Blocks[block].DataOffset + offset), value);
+        }
+
+        internal void Float(int block, int offset, float value)
+        {
+            I32(block, offset, BitConverter.SingleToInt32Bits(value));
+        }
     }
 }

@@ -19,11 +19,11 @@ public sealed class StarfieldPlanetDataMergerTests
         [
             Master(a, b, c),
             Override(
-                new(b, StarfieldPlanetWorldspaceOperation.Removed),
-                new(d, StarfieldPlanetWorldspaceOperation.Added)),
+                new StarfieldPlanetWorldspaceDelta(b, StarfieldPlanetWorldspaceOperation.Removed),
+                new StarfieldPlanetWorldspaceDelta(d, StarfieldPlanetWorldspaceOperation.Added)),
             Override(
-                new(a, StarfieldPlanetWorldspaceOperation.Removed),
-                new(b, StarfieldPlanetWorldspaceOperation.Added))
+                new StarfieldPlanetWorldspaceDelta(a, StarfieldPlanetWorldspaceOperation.Removed),
+                new StarfieldPlanetWorldspaceDelta(b, StarfieldPlanetWorldspaceOperation.Added))
         ]);
 
         Assert.True(result.IsResolved, result.FailureDetail);
@@ -41,8 +41,8 @@ public sealed class StarfieldPlanetDataMergerTests
         [
             Master(earth, moon),
             Override(
-                new(earth, StarfieldPlanetWorldspaceOperation.Removed),
-                new(earth, StarfieldPlanetWorldspaceOperation.Added))
+                new StarfieldPlanetWorldspaceDelta(earth, StarfieldPlanetWorldspaceOperation.Removed),
+                new StarfieldPlanetWorldspaceDelta(earth, StarfieldPlanetWorldspaceOperation.Added))
         ]);
 
         Assert.True(result.IsResolved, result.FailureDetail);
@@ -63,8 +63,8 @@ public sealed class StarfieldPlanetDataMergerTests
         [
             Master(positiveZero),
             Override(
-                new(negativeZero, StarfieldPlanetWorldspaceOperation.Added),
-                new(differentWorldspace, StarfieldPlanetWorldspaceOperation.Added))
+                new StarfieldPlanetWorldspaceDelta(negativeZero, StarfieldPlanetWorldspaceOperation.Added),
+                new StarfieldPlanetWorldspaceDelta(differentWorldspace, StarfieldPlanetWorldspaceOperation.Added))
         ]);
 
         Assert.NotEqual(positiveZero.LatitudeRawBits, negativeZero.LatitudeRawBits);

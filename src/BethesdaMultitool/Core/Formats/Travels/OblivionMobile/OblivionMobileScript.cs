@@ -8,8 +8,12 @@ namespace BethesdaMultitool.Core.Formats.Travels.OblivionMobile;
 ///     content: level set-up, dialogue, item and spell tables, sprite choreography. Original RE
 ///     (2026-09-05); big-endian throughout, in the J2ME <c>DataInputStream</c> house style.
 ///     <para>
-///         Layout. A u8 label count <c>N</c>; then <c>N</c> table entries of <c>{u8 id, u16
-///         offset}</c> where the offset is ABSOLUTE into the file; then a definition section of
+///         Layout. A u8 label count <c>N</c>; then <c>N</c> table entries of
+///         <c>
+///             {u8 id, u16
+///             offset}
+///         </c>
+///         where the offset is ABSOLUTE into the file; then a definition section of
 ///         zero or more blocks, each framed <c>0x1E kind ... 0x1F</c>; then the code, one chunk per
 ///         label, each preceded by the 3-byte marker <c>00 &lt;labelId&gt; 01</c>. A chunk's byte
 ///         range is <c>[offset, nextOffset - 3)</c>, the last running to EOF, so a file tiles as
@@ -177,7 +181,8 @@ internal sealed class OblivionMobileScript
         int labelCount = bytes[0];
         if (labelCount == 0)
         {
-            throw new InvalidDataException($"'{name}': the label count at byte 0 is zero; every script has at least label 1.");
+            throw new InvalidDataException(
+                $"'{name}': the label count at byte 0 is zero; every script has at least label 1.");
         }
 
         var position = 1;
@@ -273,8 +278,6 @@ internal sealed class OblivionMobileScript
             case OblivionMobileScriptOpcodes.LoadLang:
                 overlay = instruction.Operands[1].Value;
                 break;
-            default:
-                break;
         }
     }
 
@@ -319,7 +322,8 @@ internal sealed class OblivionMobileScript
             position++;
             if (position >= bytes.Length)
             {
-                throw new InvalidDataException($"'{name}': a definition block opens at byte {start} with no kind byte before the end of the file.");
+                throw new InvalidDataException(
+                    $"'{name}': a definition block opens at byte {start} with no kind byte before the end of the file.");
             }
 
             var kindByte = bytes[position];
@@ -341,13 +345,13 @@ internal sealed class OblivionMobileScript
         return blocks;
     }
 
-    private static byte SlotOf(IReadOnlyList<OblivionMobileScriptField> fields)
+    private static byte SlotOf(List<OblivionMobileScriptField> fields)
     {
         // Key 0 is the record's 1-based slot index and is always written first. A kind-7 block has
         // no keys at all — its entries are raw bytes that all report key 0 — so it reports slot 0.
         return fields.Count > 0
-            && fields[0].Key == 0
-            && fields[0].ValueKind != OblivionMobileValueKind.RawByte
+               && fields[0].Key == 0
+               && fields[0].ValueKind != OblivionMobileValueKind.RawByte
             ? (byte)fields[0].Value
             : (byte)0;
     }
@@ -386,7 +390,8 @@ internal sealed class OblivionMobileScript
             }
 
             fields.Add(new OblivionMobileScriptField(0, OblivionMobileValueKind.RawByte, bytes[position], null, null));
-            fields.Add(new OblivionMobileScriptField(0, OblivionMobileValueKind.RawByte, bytes[position + 1], null, null));
+            fields.Add(new OblivionMobileScriptField(0, OblivionMobileValueKind.RawByte, bytes[position + 1], null,
+                null));
             position += 2;
         }
     }
@@ -554,7 +559,8 @@ internal sealed class OblivionMobileScript
         return new OblivionMobileScriptChunk(label.Id, label.Offset, end - label.Offset, instructions, dead);
     }
 
-    private static OblivionMobileScriptInstruction ReadInstruction(ReadOnlySpan<byte> bytes, string name, ref int position)
+    private static OblivionMobileScriptInstruction ReadInstruction(ReadOnlySpan<byte> bytes, string name,
+        ref int position)
     {
         var start = position;
         var opcode = bytes[position];
@@ -594,7 +600,7 @@ internal sealed class OblivionMobileScript
                 {
                     OblivionMobileOperandForm.LabelId => OblivionMobileOperandKind.Label,
                     OblivionMobileOperandForm.ObjectSlot => OblivionMobileOperandKind.ObjectSlot,
-                    _ => OblivionMobileOperandKind.UInt8,
+                    _ => OblivionMobileOperandKind.UInt8
                 };
                 return new OblivionMobileScriptOperand(kind, bytes[position++]);
             case OblivionMobileOperandForm.UInt16:
@@ -766,7 +772,7 @@ internal sealed record OblivionMobileScriptBlock(
             OblivionMobileBlockKind.Spell => 15,
             OblivionMobileBlockKind.LevelParameters => 21,
             OblivionMobileBlockKind.LootEntry => 4,
-            _ => 0,
+            _ => 0
         };
     }
 
@@ -808,7 +814,7 @@ internal sealed record OblivionMobileScriptBlock(
             {
                 1 => OblivionMobileValueKind.Text,
                 7 or 14 or 15 => OblivionMobileValueKind.UInt16,
-                _ => null,
+                _ => null
             },
             OblivionMobileBlockKind.Armor => key switch
             {
@@ -816,7 +822,7 @@ internal sealed record OblivionMobileScriptBlock(
                 5 => OblivionMobileValueKind.UInt24,
                 6 => OblivionMobileValueKind.Flag,
                 9 => OblivionMobileValueKind.UInt16,
-                _ => null,
+                _ => null
             },
             OblivionMobileBlockKind.Potion => key switch
             {
@@ -824,20 +830,20 @@ internal sealed record OblivionMobileScriptBlock(
                 4 => OblivionMobileValueKind.Flag,
                 5 => OblivionMobileValueKind.UInt24,
                 13 => OblivionMobileValueKind.UInt16,
-                _ => null,
+                _ => null
             },
             OblivionMobileBlockKind.Weapon => key switch
             {
                 1 => OblivionMobileValueKind.TextRef,
                 7 => OblivionMobileValueKind.UInt16,
-                _ => null,
+                _ => null
             },
             OblivionMobileBlockKind.PlayerClass => key switch
             {
                 1 => OblivionMobileValueKind.TextRef,
                 2 or 3 => OblivionMobileValueKind.ListItem,
                 6 or 13 or 14 => OblivionMobileValueKind.UInt16,
-                _ => null,
+                _ => null
             },
             OblivionMobileBlockKind.TileAttribute => key == 2 ? OblivionMobileValueKind.UInt16 : null,
             OblivionMobileBlockKind.Spell => key switch
@@ -845,15 +851,15 @@ internal sealed record OblivionMobileScriptBlock(
                 1 => OblivionMobileValueKind.TextRef,
                 6 => OblivionMobileValueKind.UInt24,
                 14 => OblivionMobileValueKind.UInt16,
-                _ => null,
+                _ => null
             },
             OblivionMobileBlockKind.LevelParameters => key switch
             {
                 1 or 2 => OblivionMobileValueKind.UInt16,
                 20 => OblivionMobileValueKind.ListItem,
-                _ => null,
+                _ => null
             },
-            _ => null,
+            _ => null
         };
     }
 }
@@ -958,7 +964,7 @@ internal enum OblivionMobileBlockKind
     LevelParameters = 9,
 
     /// <summary>Loot table entry; 172 rows across 21 level scripts, slots 1..10.</summary>
-    LootEntry = 10,
+    LootEntry = 10
 }
 
 /// <summary>How a definition-block field's value was encoded.</summary>
@@ -995,7 +1001,7 @@ internal enum OblivionMobileValueKind
     RawByte,
 
     /// <summary>Placeholder for the text reference before its branch is known.</summary>
-    TextRef,
+    TextRef
 }
 
 /// <summary>What one decoded instruction operand is.</summary>
@@ -1029,5 +1035,5 @@ internal enum OblivionMobileOperandKind
     ByteList,
 
     /// <summary>Opcode 34's sub-command, with its argument in <c>SubArgument</c>.</summary>
-    SubCommand,
+    SubCommand
 }

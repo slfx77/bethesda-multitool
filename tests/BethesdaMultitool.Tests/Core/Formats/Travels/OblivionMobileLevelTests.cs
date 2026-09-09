@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Travels.OblivionMobile;
 using Xunit;
@@ -69,7 +65,7 @@ public sealed class OblivionMobileLevelTests
             .. imageAttributes,
             0, // pairCount — empty on 48/48 retail entries
             (byte)sprites.Length,
-            .. sprites.SelectMany(s => s),
+            .. sprites.SelectMany(s => s)
         ];
     }
 
@@ -165,7 +161,7 @@ public sealed class OblivionMobileLevelTests
         stream.AddRange(Run(0x0A, 0x01));
         stream.AddRange(Run(0x05, 0x00));
         // Pad out the remaining passability cells plus one whole tile layer.
-        var remaining = (15 * 15) - 0x14 - 0x0A - 0x05;
+        var remaining = 15 * 15 - 0x14 - 0x0A - 0x05;
         stream.AddRange(Run(remaining, 0x00));
         stream.AddRange(Run(126, 0x08));
         stream.AddRange(Run(99, 0x08));
@@ -466,7 +462,7 @@ public sealed class OblivionMobileLevelTests
             2, // pairCount
             0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
             0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC,
-            1, .. Sprite(SpriteHeader(6), frame),
+            1, .. Sprite(SpriteHeader(6), frame)
         ];
 
         var atlas = OblivionMobileAtlas.Parse(Cml(string.Empty, entry), "pairs.cml");
@@ -530,7 +526,7 @@ public sealed class OblivionMobileLevelTests
         byte[] bytes =
         [
             0, 0, 6, .. Encoding.ASCII.GetBytes("/a.png"),
-            .. RawMask(1 << OblivionMobileAttributes.SourceXBit), 0x00,
+            .. RawMask(1 << OblivionMobileAttributes.SourceXBit), 0x00
         ];
 
         var error = Assert.Throws<InvalidDataException>(() => OblivionMobileAtlas.Parse(bytes, "sx.cml"));
@@ -608,7 +604,7 @@ public sealed class OblivionMobileLevelTests
         // sx = (wx - wy) / 8 - 16, sy = (wx + wy) / 16, with 128-unit cells.
         var wx = i * 128;
         var wy = j * 128;
-        var expected = (((wx - wy) / 8) - 16, (wx + wy) / 16);
+        var expected = ((wx - wy) / 8 - 16, (wx + wy) / 16);
 
         Assert.Equal(expected, OblivionMobileIsometric.CellOrigin(i, j));
     }

@@ -21,6 +21,7 @@ public sealed class OblivionDaedrothAnimationRetailTests
     private const uint DaedrothFormId = 0x0002B19A;
     private const string IdlePath = @"meshes\creatures\daedroth\idle.kf";
     private const string RootMtIdlePath = @"meshes\creatures\daedroth\mtidle.kf";
+
     private const string LocomotionMtIdlePath =
         @"meshes\creatures\daedroth\locomotion\mtidle.kf";
 
@@ -36,7 +37,7 @@ public sealed class OblivionDaedrothAnimationRetailTests
         Assert.SkipWhen(meshesPath is null, RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
 
         var cancellationToken = TestContext.Current.CancellationToken;
-        var result = await RealAssetEsmCache.LoadAsync(esmPath!, cancellationToken);
+        var result = await RealAssetEsmCache.LoadAsync(esmPath, cancellationToken);
         var records = result.RawResult.EsmRecords
                       ?? throw new InvalidOperationException(
                           "Retail ESM load did not retain its record descriptors.");
@@ -71,9 +72,9 @@ public sealed class OblivionDaedrothAnimationRetailTests
         Assert.True(creature.AnimationPaths is null or { Length: 0 });
         Assert.Null(creature.ResolveIdleAnimationPath());
 
-        using var meshArchives = MeshArchiveSet.Open(meshesPath!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesPath, null);
         Assert.True(meshArchives.TryResolvePath(IdlePath, out _, out var resolvedIdlePath));
-        Assert.Equal(IdlePath, resolvedIdlePath, ignoreCase: true);
+        Assert.Equal(IdlePath, resolvedIdlePath, true);
         Assert.False(meshArchives.TryResolvePath(RootMtIdlePath, out _, out _));
         Assert.False(meshArchives.TryResolvePath(LocomotionMtIdlePath, out _, out _));
 
@@ -86,7 +87,7 @@ public sealed class OblivionDaedrothAnimationRetailTests
         Assert.NotNull(posedPlan.BoneTransforms);
         var animationOverrides = posedPlan.AnimationOverrides;
         var posedTransforms = posedPlan.BoneTransforms;
-        Assert.Equal(IdlePath, posedPlan.AnimationSourcePath, ignoreCase: true);
+        Assert.Equal(IdlePath, posedPlan.AnimationSourcePath, true);
         Assert.Equal(57, animationOverrides.Count);
         Assert.Contains("Bip01 Pelvis", animationOverrides);
         Assert.Contains("Bip01 Tail4", animationOverrides);

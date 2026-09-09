@@ -8,8 +8,10 @@ public sealed class BethesdaViewerInputTraceBudgetTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void RejectsNonpositiveLimits(int limit) =>
+    public void RejectsNonpositiveLimits(int limit)
+    {
         Assert.Throws<ArgumentOutOfRangeException>(() => new BethesdaViewerInputTraceBudget(limit));
+    }
 
     [Fact]
     public void AllowsExactly256RecordsThenOneTruncationMarker()

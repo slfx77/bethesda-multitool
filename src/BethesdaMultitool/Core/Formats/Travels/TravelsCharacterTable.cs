@@ -10,11 +10,15 @@ namespace BethesdaMultitool.Core.Formats.Travels;
 ///         Layout (big-endian, Java stream semantics — see <see cref="TravelsDataReader" />):
 ///     </para>
 ///     <list type="number">
-///         <item>five counted string lists — stat labels (10), attribute labels (16: each of the
-///         8 attributes followed by its "&lt;Attr&gt; Increases" counter), class names (7), race
-///         names (6) and skill names (14);</item>
-///         <item><see cref="SkillCount" /> shorts, one per skill: an EVEN index into the attribute
-///         label list, i.e. the attribute that governs the skill;</item>
+///         <item>
+///             five counted string lists — stat labels (10), attribute labels (16: each of the
+///             8 attributes followed by its "&lt;Attr&gt; Increases" counter), class names (7), race
+///             names (6) and skill names (14);
+///         </item>
+///         <item>
+///             <see cref="SkillCount" /> shorts, one per skill: an EVEN index into the attribute
+///             label list, i.e. the attribute that governs the skill;
+///         </item>
 ///         <item>one <see cref="ClassRowLength" />-short row per class name, row-major.</item>
 ///     </list>
 ///     <para>
@@ -49,7 +53,7 @@ internal sealed record TravelsCharacterTable(
     public const int ClassRowPrefixLength = 13;
 
     /// <summary>Shorts in a class row: 13 fixed columns plus a rank/percentage pair per skill.</summary>
-    public const int ClassRowLength = ClassRowPrefixLength + (2 * SkillCount);
+    public const int ClassRowLength = ClassRowPrefixLength + 2 * SkillCount;
 
     /// <summary>String lists at the head of the file, in order.</summary>
     public const int StringListCount = 5;

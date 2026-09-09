@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using BethesdaMultitool.Core.Formats.Audio;
 using Xunit;
 
@@ -13,10 +11,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Audio;
 public sealed class RiffWaveFileTests
 {
     /// <summary>Builds a minimal PCM wave; <paramref name="declaredBias" /> perturbs the RIFF length.</summary>
-    private static byte[] Wave(int sampleRate = 11025, int bits = 8, int channels = 1, int samples = 4, int declaredBias = 0, int formatTag = 1)
+    private static byte[] Wave(int sampleRate = 11025, int bits = 8, int channels = 1, int samples = 4,
+        int declaredBias = 0, int formatTag = 1)
     {
-        var data = new byte[samples];
-        var riff = new byte[44 + data.Length];
+        var riff = new byte[44 + samples];
         "RIFF"u8.CopyTo(riff);
         BitConverter.GetBytes(riff.Length - 8 + declaredBias).CopyTo(riff, 4);
         "WAVE"u8.CopyTo(riff.AsSpan(8));
@@ -29,7 +27,7 @@ public sealed class RiffWaveFileTests
         BitConverter.GetBytes((ushort)(channels * bits / 8)).CopyTo(riff, 32);
         BitConverter.GetBytes((ushort)bits).CopyTo(riff, 34);
         "data"u8.CopyTo(riff.AsSpan(36));
-        BitConverter.GetBytes(data.Length).CopyTo(riff, 40);
+        BitConverter.GetBytes(samples).CopyTo(riff, 40);
         return riff;
     }
 
@@ -44,7 +42,7 @@ public sealed class RiffWaveFileTests
     [Fact]
     public void Parse_ReadsTheFormatChunk()
     {
-        var wave = RiffWaveFile.Parse(Wave(32000, 8, 1), "89");
+        var wave = RiffWaveFile.Parse(Wave(32000), "89");
 
         Assert.Equal((32000, 8, 1), (wave.SampleRate, wave.BitsPerSample, wave.Channels));
         Assert.Equal("89", wave.Name);
@@ -96,7 +94,7 @@ public sealed class RiffWaveFileTests
     public void Parse_WithNoFormatChunk_Throws()
     {
         var riff = Wave();
-        "junk"u8.CopyTo(riff.AsSpan(12));   // blank out the fmt tag
+        "junk"u8.CopyTo(riff.AsSpan(12)); // blank out the fmt tag
 
         Assert.Throws<InvalidDataException>(() => RiffWaveFile.Parse(riff, "nofmt"));
     }
@@ -104,7 +102,7 @@ public sealed class RiffWaveFileTests
     [Fact]
     public void DurationSeconds_FollowsTheFormat()
     {
-        var wave = RiffWaveFile.Parse(Wave(sampleRate: 8, bits: 8, channels: 1, samples: 16), "d");
+        var wave = RiffWaveFile.Parse(Wave(8, 8, 1, 16), "d");
 
         Assert.Equal(2.0, wave.DurationSeconds, 3);
     }

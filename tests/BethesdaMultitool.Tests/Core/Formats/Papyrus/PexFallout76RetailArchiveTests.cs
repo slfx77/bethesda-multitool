@@ -23,12 +23,12 @@ public sealed class PexFallout76RetailArchiveTests
         Assert.SkipUnless(archivePath is not null,
             "Fallout 76 MiscClient.ba2 not found (set BETHESDA_TEST_DATA_ROOT or install Fallout 76).");
 
-        using (var stream = File.OpenRead(archivePath!))
+        using (var stream = File.OpenRead(archivePath))
         {
             Assert.Equal(ExpectedSha256, Convert.ToHexString(SHA256.HashData(stream)));
         }
 
-        using var archive = PexArchiveReader.Open(archivePath!);
+        using var archive = PexArchiveReader.Open(archivePath);
         Assert.Equal(ExpectedScriptCount, archive.Entries.Count);
         var sawObjectTail = false;
         var sawUnmappedFunctionFlags = false;

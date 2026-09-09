@@ -801,7 +801,7 @@ public class GenericSweepWiredEncoderTests
         ];
         Assert.Equal(expected, result.Subrecords.Select(s => s.Signature).ToArray());
         Assert.Equal(
-            ZString(result.Subrecords.Where(s => s.Signature == "MODL").Last()),
+            ZString(result.Subrecords.Last(s => s.Signature == "MODL")),
             ZString(result.Subrecords.Single(s => s.Signature == "MOD2")));
         Assert.Equal(@"casino\blackjacktable.nif", ZString(result.Subrecords.Single(s => s.Signature == "MOD3")));
         Assert.All(

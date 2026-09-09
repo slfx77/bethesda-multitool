@@ -89,7 +89,8 @@ internal static class DaggerfallRecordSource
     ///     Reads <paramref name="dataRoot" /> (the ARENA2 directory) and appends every synthesized
     ///     record to <paramref name="records" />.
     /// </summary>
-    public static void Populate(string dataRoot, RecordCollection records, CancellationToken cancellationToken = default)
+    public static void Populate(string dataRoot, RecordCollection records,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dataRoot);
         ArgumentNullException.ThrowIfNull(records);
@@ -270,7 +271,8 @@ internal static class DaggerfallRecordSource
 
         if (quest.Compiled.Length > 0)
         {
-            fields["CompiledHeader"] = string.Join(" ", quest.CompiledHeader.Take(16).Select(w => w.ToString("X4", CultureInfo.InvariantCulture)));
+            fields["CompiledHeader"] = string.Join(" ",
+                quest.CompiledHeader.Take(16).Select(w => w.ToString("X4", CultureInfo.InvariantCulture)));
         }
 
         string? first = null;
@@ -352,8 +354,6 @@ internal static class DaggerfallRecordSource
                 break;
             case DaggerfallBlockType.Rdb:
                 DescribeRdb(blocks.ParseRdb(index), fields);
-                break;
-            default:
                 break;
         }
 
@@ -465,7 +465,8 @@ internal static class DaggerfallRecordSource
         foreach (var path in bookPaths)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            records.GenericRecords.Add(BuildBookRecord(DaggerfallBookFile.Parse(File.ReadAllBytes(path), Path.GetFileName(path))));
+            records.GenericRecords.Add(
+                BuildBookRecord(DaggerfallBookFile.Parse(File.ReadAllBytes(path), Path.GetFileName(path))));
         }
     }
 
@@ -681,12 +682,14 @@ internal static class DaggerfallRecordSource
     {
         if (regionIndex is < 0 or >= DaggerfallMapsFile.RegionCount)
         {
-            throw new ArgumentOutOfRangeException(nameof(regionIndex), regionIndex, "Region index is outside the 62-region table.");
+            throw new ArgumentOutOfRangeException(nameof(regionIndex), regionIndex,
+                "Region index is outside the 62-region table.");
         }
 
         if (locationIndex is < 0 or > 0xFFFF)
         {
-            throw new ArgumentOutOfRangeException(nameof(locationIndex), locationIndex, "Location index does not fit the 16-bit slot.");
+            throw new ArgumentOutOfRangeException(nameof(locationIndex), locationIndex,
+                "Location index does not fit the 16-bit slot.");
         }
 
         return ((uint)regionIndex << 16) | (uint)locationIndex;

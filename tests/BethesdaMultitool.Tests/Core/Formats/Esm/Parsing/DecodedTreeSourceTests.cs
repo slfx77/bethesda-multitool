@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Generated;
@@ -85,8 +86,10 @@ public sealed class DecodedTreeSourceTests
         return (source, descriptor, data);
     }
 
-    /// <summary>Flattens to comparable text — <c>DecodedNode.Children</c> is an interface, so the
-    /// synthesized record equality degrades to reference equality and proves nothing.</summary>
+    /// <summary>
+    ///     Flattens to comparable text — <c>DecodedNode.Children</c> is an interface, so the
+    ///     synthesized record equality degrades to reference equality and proves nothing.
+    /// </summary>
     private static List<string> Flatten(IReadOnlyList<DecodedNode>? nodes, string prefix = "")
     {
         var result = new List<string>();
@@ -128,8 +131,8 @@ public sealed class DecodedTreeSourceTests
         // Guards the trap directly: if FormVersion were dropped on the way to the re-decode, these
         // two would agree and the 97 layout would be silently mis-read. Inner Radius is the field
         // that enters at 97 and shifts everything after it.
-        var (v97Source, v97Descriptor, _) = BuildSource(97, includeInnerRadius: true);
-        var (v96Source, v96Descriptor, _) = BuildSource(96, includeInnerRadius: false);
+        var (v97Source, v97Descriptor, _) = BuildSource(97, true);
+        var (v96Source, v96Descriptor, _) = BuildSource(96, false);
 
         var v97 = Flatten(v97Source.GetTree(v97Descriptor));
         var v96 = Flatten(v96Source.GetTree(v96Descriptor));
@@ -143,7 +146,7 @@ public sealed class DecodedTreeSourceTests
     {
         // The cache is what makes a browser selection cheap on the second look; without it every
         // repaint would re-read and re-decode the record.
-        var (source, descriptor, _) = BuildSource(97, includeInnerRadius: true);
+        var (source, descriptor, _) = BuildSource(97, true);
 
         var first = source.GetTree(descriptor);
         var second = source.GetTree(descriptor);
@@ -155,7 +158,7 @@ public sealed class DecodedTreeSourceTests
     [Fact]
     public void A_record_with_no_descriptor_or_no_schema_yields_null_rather_than_throwing()
     {
-        var (source, descriptor, _) = BuildSource(97, includeInnerRadius: true);
+        var (source, descriptor, _) = BuildSource(97, true);
 
         Assert.Null(source.GetTree(null));
         Assert.Null(source.GetTree(descriptor with { RecordType = "ZZZZ" }));
@@ -166,8 +169,8 @@ public sealed class DecodedTreeSourceTests
     {
         // The whole point of the side-table shape: ~190 consuming call sites keep reading
         // record.DecodedTree and never learn that it is now rebuilt on demand.
-        var (source, descriptor, data) = BuildSource(97, includeInnerRadius: true);
-        var record = new BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.GenericEsmRecord
+        var (source, descriptor, data) = BuildSource(97, true);
+        var record = new GenericEsmRecord
         {
             FormId = descriptor.FormId,
             RecordType = descriptor.RecordType,
@@ -184,10 +187,10 @@ public sealed class DecodedTreeSourceTests
     [Fact]
     public void An_explicitly_set_tree_wins_over_the_lazy_source()
     {
-        var (source, descriptor, _) = BuildSource(97, includeInnerRadius: true);
+        var (source, descriptor, _) = BuildSource(97, true);
         var pinned = new List<DecodedNode> { new() { Label = "Pinned" } };
 
-        var record = new BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc.GenericEsmRecord
+        var record = new GenericEsmRecord
         {
             FormId = descriptor.FormId,
             RecordType = descriptor.RecordType,

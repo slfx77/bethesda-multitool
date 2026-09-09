@@ -15,22 +15,6 @@ public sealed class DdsFormat : FileFormatBase, IGapAssessor
     /// </summary>
     private const int MaxDdsHeaderSize = 148;
 
-    /// <inheritdoc />
-    /// <remarks>
-    ///     Mip surfaces are stored largest-first and are located by walking sizes from the header,
-    ///     so a hole in mip 0 costs the usable image while one deep in the chain costs only detail.
-    ///     Reporting the header case is the part that changes a usability verdict.
-    /// </remarks>
-    public string? AssessGaps(
-        ReadOnlySpan<byte> data,
-        IReadOnlyList<CarveHole> holes,
-        IReadOnlyDictionary<string, object>? metadata)
-    {
-        return GapAssessment.Overlaps(holes, 0, Math.Min(MaxDdsHeaderSize, data.Length))
-            ? "the DDS header (dimensions, pixel format and mip count are unreadable)"
-            : null;
-    }
-
     public override string FormatId => "dds";
     public override string DisplayName => "DDS";
     public override string Extension => ".dds";
@@ -48,6 +32,22 @@ public sealed class DdsFormat : FileFormatBase, IGapAssessor
             Description = "DirectDraw Surface texture"
         }
     ];
+
+    /// <inheritdoc />
+    /// <remarks>
+    ///     Mip surfaces are stored largest-first and are located by walking sizes from the header,
+    ///     so a hole in mip 0 costs the usable image while one deep in the chain costs only detail.
+    ///     Reporting the header case is the part that changes a usability verdict.
+    /// </remarks>
+    public string? AssessGaps(
+        ReadOnlySpan<byte> data,
+        IReadOnlyList<CarveHole> holes,
+        IReadOnlyDictionary<string, object>? metadata)
+    {
+        return GapAssessment.Overlaps(holes, 0, Math.Min(MaxDdsHeaderSize, data.Length))
+            ? "the DDS header (dimensions, pixel format and mip count are unreadable)"
+            : null;
+    }
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {

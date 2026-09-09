@@ -1,5 +1,4 @@
 using System.Runtime.InteropServices;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 using static BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRendererConstants12;
@@ -152,6 +151,9 @@ public sealed class Fo4BendableSplineWindSourceContractTests
             StringComparison.Ordinal);
     }
 
-    private static string D3D12Source(string fileName) => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", fileName);
+    private static string D3D12Source(string fileName)
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", fileName);
+    }
 }

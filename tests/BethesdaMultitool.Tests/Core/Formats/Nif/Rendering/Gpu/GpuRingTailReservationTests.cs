@@ -13,17 +13,17 @@ public sealed class GpuRingTailReservationTests
     private const int ShadowCascadeCount = 4;
     private const uint ShadowPassRingReservationBytes = CaptureShadowPrimingPolicy.RingReservationBytes;
 
-    // The current reference ABI spans two CB alignment blocks; the old 96-byte fixture hid
-    // that requirement. Terrain b0/b2 sizes and allocation shape are source-pinned separately
-    // by CaptureShadowPrimingPolicyTests.
-    private static readonly uint[] ShadowAllocationSizes = [InstancedShadowPerFrameConstants.ByteSize, 64, 16];
-
     // Mirrors WorldView3DControl's WaterPassRingReservationBytes (WINDOWS_GUI-only). Kept in sync here
     // so the water reservation's sizing contract is pinned the same way the shadow one is above.
     private const uint WaterPassMaxReservedBatches = 64;
 
     private const uint WaterPassRingReservationBytes =
         WaterPassMaxReservedBatches * 4u * GpuRingBuffer12.CbAlignment;
+
+    // The current reference ABI spans two CB alignment blocks; the old 96-byte fixture hid
+    // that requirement. Terrain b0/b2 sizes and allocation shape are source-pinned separately
+    // by CaptureShadowPrimingPolicyTests.
+    private static readonly uint[] ShadowAllocationSizes = [InstancedShadowPerFrameConstants.ByteSize, 64, 16];
 
     [Fact]
     public void ShadowSizedTail_FitsBeforeSceneConsumesItsAllocationWindow()

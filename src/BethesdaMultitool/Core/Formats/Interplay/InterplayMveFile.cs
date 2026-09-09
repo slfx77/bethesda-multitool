@@ -76,7 +76,8 @@ internal sealed class InterplayMveFile
     /// <summary>Content probe: the ASCII signature.</summary>
     public static bool IsMveFile(ReadOnlySpan<byte> bytes)
     {
-        return bytes.Length >= HeaderLength && bytes[..Signature.Length].SequenceEqual(Encoding.ASCII.GetBytes(Signature));
+        return bytes.Length >= HeaderLength &&
+               bytes[..Signature.Length].SequenceEqual(Encoding.ASCII.GetBytes(Signature));
     }
 
     /// <summary>Reads a movie's metadata, throwing when the container does not walk.</summary>

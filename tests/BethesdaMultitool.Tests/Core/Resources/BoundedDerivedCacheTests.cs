@@ -15,13 +15,10 @@ namespace BethesdaMultitool.Tests.Core.Resources;
 /// </summary>
 public sealed class BoundedDerivedCacheTests
 {
-    /// <summary>Reference-identity keys, matching how the production caches key on CellRecord.</summary>
-    private sealed class Key(string name)
+    private static BoundedDerivedCache<Key, string> Create(long maxBytes)
     {
-        public override string ToString() => name;
+        return new BoundedDerivedCache<Key, string>(maxBytes);
     }
-
-    private static BoundedDerivedCache<Key, string> Create(long maxBytes) => new(maxBytes);
 
     [Fact]
     public void A_value_survives_until_the_ceiling_is_reached()
@@ -145,5 +142,14 @@ public sealed class BoundedDerivedCacheTests
         Assert.True(cache.Bytes <= 100_000, $"held {cache.Bytes} B over the ceiling");
         Assert.Equal(cache.Count * 100L, cache.Bytes);
         Assert.True(cache.Count > 0);
+    }
+
+    /// <summary>Reference-identity keys, matching how the production caches key on CellRecord.</summary>
+    private sealed class Key(string name)
+    {
+        public override string ToString()
+        {
+            return name;
+        }
     }
 }

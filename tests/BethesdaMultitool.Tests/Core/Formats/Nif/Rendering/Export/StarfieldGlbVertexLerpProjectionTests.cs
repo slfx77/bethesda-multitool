@@ -164,7 +164,7 @@ public sealed class StarfieldGlbVertexLerpProjectionTests
             10, 20, 30, 40,
             50, 60, 70, 80,
             90, 100, 110, 120
-        ], isVertexLerp: false));
+        ], false));
         using var resolver = ResolverWithDiffuse();
 
         var model = Read(GlbWriter.WriteToBytes(scene, resolver));
@@ -250,15 +250,14 @@ public sealed class StarfieldGlbVertexLerpProjectionTests
     private static NifTextureResolver ResolverWithDiffuse()
     {
         var texture = DecodedTexture.FromBaseLevel([32, 64, 128, 255], 1, 1, false);
-        return new NifTextureResolver(
-            path => string.Equals(path, DiffusePath, StringComparison.OrdinalIgnoreCase)
-                ? texture
-                : null);
+        return new NifTextureResolver(path => string.Equals(path, DiffusePath, StringComparison.OrdinalIgnoreCase)
+            ? texture
+            : null);
     }
 
     private static ModelRoot Read(byte[] glb)
     {
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         return ModelRoot.ReadGLB(stream);
     }
 }

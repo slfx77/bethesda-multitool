@@ -145,20 +145,26 @@ public sealed class NifOblivionHairSourceReaderTests
     {
         var fixture = new NifOblivionHairTestData();
         var exported = Assert.Single(NifExportExtractor.Extract(fixture.Data, fixture.Info).MeshParts).Submesh;
-        var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(fixture.Data, fixture.Info, bindPoseOnly: true));
+        var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(fixture.Data, fixture.Info,
+            bindPoseOnly: true));
         var rendered = Assert.Single(model.Submeshes);
         Assert.True(exported.HasAuthoredOblivionHairLayerInputs);
         Assert.True(rendered.HasAuthoredOblivionHairLayerInputs);
         Assert.False(rendered.UsesClassicHairMaterial); // Source proof alone never selects an actor material.
         Assert.True(RenderableSubmeshCloner.DeepClone(exported).HasAuthoredOblivionHairLayerInputs);
-        Assert.True(RenderableSubmeshCloner.CloneGeometryWithRenderState(exported, rendered).HasAuthoredOblivionHairLayerInputs);
+        Assert.True(RenderableSubmeshCloner.CloneGeometryWithRenderState(exported, rendered)
+            .HasAuthoredOblivionHairLayerInputs);
         exported.HasAuthoredOblivionHairLayerInputs = false;
-        Assert.False(RenderableSubmeshCloner.CloneGeometryWithRenderState(exported, rendered).HasAuthoredOblivionHairLayerInputs);
+        Assert.False(RenderableSubmeshCloner.CloneGeometryWithRenderState(exported, rendered)
+            .HasAuthoredOblivionHairLayerInputs);
         exported.HasAuthoredOblivionHairLayerInputs = true;
         rendered.HasAuthoredOblivionHairLayerInputs = false;
-        Assert.False(RenderableSubmeshCloner.CloneGeometryWithRenderState(exported, rendered).HasAuthoredOblivionHairLayerInputs);
+        Assert.False(RenderableSubmeshCloner.CloneGeometryWithRenderState(exported, rendered)
+            .HasAuthoredOblivionHairLayerInputs);
     }
 
-    private static bool Read(NifOblivionHairTestData fixture) =>
-        NifOblivionHairSourceReader.IsEligible(fixture.Data, fixture.Info, 2);
+    private static bool Read(NifOblivionHairTestData fixture)
+    {
+        return NifOblivionHairSourceReader.IsEligible(fixture.Data, fixture.Info, 2);
+    }
 }

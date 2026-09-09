@@ -23,12 +23,14 @@ public sealed partial class BethesdaSceneViewerControl
             _traceGestureSerial++;
             _traceAcceptedDelta = Vector2.Zero;
         }
+
         var cameraBefore = TraceCameraState();
         if (_inputTrace is not null)
         {
             TracePointer("pointer-press-enter", e, point, $"requested-gesture-{gesture}",
                 cameraBefore: cameraBefore);
         }
+
         if (gesture == BethesdaSceneViewerPointerGesture.None)
         {
             TracePointer("pointer-press", e, point, "no-button-gesture", cameraBefore: cameraBefore);
@@ -100,6 +102,7 @@ public sealed partial class BethesdaSceneViewerControl
             TracePointer("pointer-release", e, e.GetCurrentPoint(RenderPanel),
                 _capturedPointerId == e.Pointer.PointerId ? "matching-owner" : "pointer-id-mismatch");
         }
+
         if (_capturedPointerId != e.Pointer.PointerId) return;
 
         RenderPanel.ReleasePointerCapture(e.Pointer);
@@ -114,6 +117,7 @@ public sealed partial class BethesdaSceneViewerControl
             TracePointer("pointer-capture-lost", e, e.GetCurrentPoint(RenderPanel),
                 _capturedPointerId == e.Pointer.PointerId ? "matching-owner" : "pointer-id-mismatch");
         }
+
         if (_capturedPointerId == e.Pointer.PointerId)
         {
             ResetPointerGesture();
@@ -150,7 +154,8 @@ public sealed partial class BethesdaSceneViewerControl
     }
 
     private void ResetPointerGesture(
-        [System.Runtime.CompilerServices.CallerMemberName] string traceReason = "")
+        [System.Runtime.CompilerServices.CallerMemberName]
+        string traceReason = "")
     {
         _inputTrace?.Write("pointer-gesture-reset", new
         {

@@ -146,7 +146,7 @@ public sealed class Fallout4WaterDataTests
                 BuildFallout4Dnam(bigEndian), bigEndian), null);
 
         Assert.NotNull(appearance);
-        Assert.Equal((R: (byte)0x3A, G: (byte)0x35, B: (byte)0x21), appearance!.Shallow);
+        Assert.Equal((R: (byte)0x3A, G: (byte)0x35, B: (byte)0x21), appearance.Shallow);
         Assert.Equal((R: (byte)0x3A, G: (byte)0x39, B: (byte)0x29), appearance.Deep);
         Assert.Equal((R: (byte)0x51, G: (byte)0x62, B: (byte)0x73), appearance.Reflection);
         Assert.Equal((R: (byte)0x2F, G: (byte)0x2B, B: (byte)0x1A), appearance.DarkSilt);
@@ -190,5 +190,4 @@ public sealed class Fallout4WaterDataTests
         Assert.Equal(0f, def.ColorShallowRange);
         Assert.Equal(0f, def.ColorDeepRange);
     }
-
 }

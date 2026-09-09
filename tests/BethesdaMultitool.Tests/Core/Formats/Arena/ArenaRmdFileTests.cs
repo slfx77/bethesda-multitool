@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Arena;
 using Xunit;
 
@@ -35,8 +33,8 @@ public class ArenaRmdFileTests
         bytes[3] = 0x00;
         bytes[ArenaRmdFile.BytesPerLayer] = 0x22;
         bytes[ArenaRmdFile.BytesPerLayer + 1] = 0x00;
-        bytes[(ArenaRmdFile.BytesPerLayer * 2) + 0] = 0x33;
-        bytes[(ArenaRmdFile.BytesPerLayer * 2) + 1] = 0x00;
+        bytes[ArenaRmdFile.BytesPerLayer * 2 + 0] = 0x33;
+        bytes[ArenaRmdFile.BytesPerLayer * 2 + 1] = 0x00;
 
         var chunk = ArenaRmdFile.Parse(bytes, "001.RMD");
 
@@ -52,8 +50,8 @@ public class ArenaRmdFileTests
     public void Parse_UncompressedChunkOfTheWrongSize_Throws()
     {
         // Declared length 0 means "stored raw", which pins the file size exactly.
-        var ex = Assert.Throws<InvalidDataException>(
-            () => ArenaRmdFile.Parse(new byte[ArenaRmdFile.UncompressedFileLength - 2], "BAD.RMD"));
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            ArenaRmdFile.Parse(new byte[ArenaRmdFile.UncompressedFileLength - 2], "BAD.RMD"));
 
         Assert.Contains("24576", ex.Message, StringComparison.Ordinal);
     }
@@ -108,7 +106,7 @@ public class ArenaRmdFileTests
 
         // Voxel (x=1, z=2) of the floor layer = index 1 + (2 * 64) = 129.
         bytes[129 * 2] = 0xCD;
-        bytes[(129 * 2) + 1] = 0xAB;
+        bytes[129 * 2 + 1] = 0xAB;
 
         var chunk = ArenaRmdFile.Parse(bytes, "T.RMD");
 

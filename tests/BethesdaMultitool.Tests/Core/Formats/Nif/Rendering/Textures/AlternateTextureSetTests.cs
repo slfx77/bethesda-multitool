@@ -26,7 +26,7 @@ public sealed class AlternateTextureSetTests
 
         Assert.NotNull(a);
         Assert.NotNull(b);
-        Assert.Equal(a!.VariantKey, b!.VariantKey);
+        Assert.Equal(a.VariantKey, b.VariantKey);
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class AlternateTextureSetTests
         var yellow = AlternateTextureSet.Create([], null, 0.3125f);
 
         Assert.NotNull(blue);
-        Assert.Equal(0.6875f, blue!.GradientMapVOverride);
+        Assert.Equal(0.6875f, blue.GradientMapVOverride);
         Assert.Equal(blue.VariantKey, blueAgain!.VariantKey);
         Assert.NotEqual(blue.VariantKey, yellow!.VariantKey);
     }
@@ -105,7 +105,7 @@ public sealed class AlternateTextureSetTests
         var cool = AlternateTextureSet.Create([], externalEmittanceColor: new Vector3(0.25f, 0.5f, 1f));
 
         Assert.NotNull(warm);
-        Assert.Equal(new Vector3(1f, 0.5f, 0.25f), warm!.ExternalEmittanceColor);
+        Assert.Equal(new Vector3(1f, 0.5f, 0.25f), warm.ExternalEmittanceColor);
         Assert.Equal(warm.VariantKey, warmAgain!.VariantKey);
         Assert.NotEqual(warm.VariantKey, cool!.VariantKey);
     }

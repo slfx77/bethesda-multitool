@@ -225,17 +225,19 @@ public sealed class BethesdaViewerSceneDecoder12Tests
             0f,
             5f,
             false,
-            [new BethesdaViewerNodeAnimationTrack(
-                BethesdaViewerScene.RootNodeIndex,
-                2f,
-                1f,
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BsplineTransform: transform)],
+            [
+                new BethesdaViewerNodeAnimationTrack(
+                    BethesdaViewerScene.RootNodeIndex,
+                    2f,
+                    1f,
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BsplineTransform: transform)
+            ],
             [],
             []);
         scene.AnimationClips.Add(clip);
@@ -290,7 +292,7 @@ public sealed class BethesdaViewerSceneDecoder12Tests
         {
             255, 0, 0, 64,
             0, 255, 0, 128,
-            0, 0, 255, 255,
+            0, 0, 255, 255
         };
         var scene = new BethesdaViewerScene(
             "raw-atmosphere",

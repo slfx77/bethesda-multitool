@@ -118,7 +118,7 @@ public class AssetPackNamingAuthorityTests
         var sourcePath = @"textures\clutter\mug01" + extension;
 
         Assert.Equal(extension,
-            PrototypeAssetConverter.ExtensionAfterConversion(sourcePath, sourceIsXbox360: false));
+            PrototypeAssetConverter.ExtensionAfterConversion(sourcePath, false));
     }
 
     /// <summary>
@@ -136,6 +136,6 @@ public class AssetPackNamingAuthorityTests
         _ = because;
 
         Assert.Equal(expected,
-            PrototypeAssetConverter.ExtensionAfterConversion(sourcePath, sourceIsXbox360: true));
+            PrototypeAssetConverter.ExtensionAfterConversion(sourcePath, true));
     }
 }

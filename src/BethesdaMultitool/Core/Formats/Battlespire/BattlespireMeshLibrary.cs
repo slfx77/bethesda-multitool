@@ -20,9 +20,9 @@ internal sealed class BattlespireMeshLibrary : IDisposable
     private static readonly string[] ArchiveNames = ["3D.BSA", "3D.BS6"];
 
     private readonly List<BattlespireMeshArchive> _archives = [];
-    private readonly Dictionary<string, string> _loose = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, XnGineTriangleMesh?> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> _failures = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, string> _loose = new(StringComparer.OrdinalIgnoreCase);
 
     private BattlespireMeshLibrary()
     {
@@ -36,6 +36,16 @@ internal sealed class BattlespireMeshLibrary : IDisposable
 
     /// <summary>Meshes that failed to parse, by name.</summary>
     public IReadOnlyDictionary<string, string> Failures => _failures;
+
+    public void Dispose()
+    {
+        foreach (var archive in _archives)
+        {
+            archive.Dispose();
+        }
+
+        _archives.Clear();
+    }
 
     /// <summary>Opens every mesh source in a directory (an install root's GAMEDATA).</summary>
     public static BattlespireMeshLibrary Open(string directory)
@@ -118,15 +128,5 @@ internal sealed class BattlespireMeshLibrary : IDisposable
         }
 
         return null;
-    }
-
-    public void Dispose()
-    {
-        foreach (var archive in _archives)
-        {
-            archive.Dispose();
-        }
-
-        _archives.Clear();
     }
 }

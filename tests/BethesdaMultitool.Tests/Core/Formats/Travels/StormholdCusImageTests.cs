@@ -1,6 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
 using BethesdaMultitool.Core.Formats.Travels.Stormhold;
 using Xunit;
 
@@ -22,7 +20,7 @@ public sealed class StormholdCusImageTests
     /// </summary>
     private static byte[] BuildCus(int width, int height, byte flag, ushort key, ushort[] palette, byte[] pixels)
     {
-        var bytes = new byte[12 + (2 * palette.Length) + pixels.Length];
+        var bytes = new byte[12 + 2 * palette.Length + pixels.Length];
         BinaryPrimitives.WriteInt32BigEndian(bytes, width);
         BinaryPrimitives.WriteInt32BigEndian(bytes.AsSpan(4), height);
         bytes[8] = flag;
@@ -30,10 +28,10 @@ public sealed class StormholdCusImageTests
         bytes[11] = (byte)palette.Length;
         for (var i = 0; i < palette.Length; i++)
         {
-            BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(12 + (i * 2)), palette[i]);
+            BinaryPrimitives.WriteUInt16BigEndian(bytes.AsSpan(12 + i * 2), palette[i]);
         }
 
-        pixels.CopyTo(bytes, 12 + (2 * palette.Length));
+        pixels.CopyTo(bytes, 12 + 2 * palette.Length);
         return bytes;
     }
 
@@ -103,7 +101,7 @@ public sealed class StormholdCusImageTests
     [Fact]
     public void Parse_TakesTheTransparentSlotFromTheKeyColourNotFromIndexZero()
     {
-        var image = StormholdCusImage.Parse(ReferenceImage(key: 0x0008), "keyed.cus");
+        var image = StormholdCusImage.Parse(ReferenceImage(0x0008), "keyed.cus");
 
         Assert.Equal(2, image.TransparentIndex);
         Assert.Equal((byte)255, image.Palette.GetEntry(0).A);
@@ -139,7 +137,7 @@ public sealed class StormholdCusImageTests
     [Fact]
     public void Parse_ReportsNoTransparentSlotWhenTheKeyIsNotInThePalette()
     {
-        var image = StormholdCusImage.Parse(ReferenceImage(key: 0x0ABC), "unkeyed.cus");
+        var image = StormholdCusImage.Parse(ReferenceImage(0x0ABC), "unkeyed.cus");
 
         Assert.True(image.HasKeyColour);
         Assert.Equal(-1, image.TransparentIndex);
@@ -249,9 +247,12 @@ public sealed class StormholdCusImageTests
     ///     width far past the cap. The full sweep found zero false positives over 2,147 files.
     /// </summary>
     [Theory]
-    [InlineData(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52 })]
-    [InlineData(new byte[] { 0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34, 0x00, 0x2A, 0x0A, 0x00, 0x0C, 0x00, 0x22, 0x09 })]
-    [InlineData(new byte[] { 0x00, 0x0B, 0x2F, 0x62, 0x61, 0x67, 0x73, 0x6D, 0x61, 0x6C, 0x6C, 0x00, 0x00, 0x0A, 0x2F, 0x62 })]
+    [InlineData(new byte[]
+        { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52 })]
+    [InlineData(new byte[]
+        { 0xCA, 0xFE, 0xBA, 0xBE, 0x00, 0x00, 0x00, 0x34, 0x00, 0x2A, 0x0A, 0x00, 0x0C, 0x00, 0x22, 0x09 })]
+    [InlineData(new byte[]
+        { 0x00, 0x0B, 0x2F, 0x62, 0x61, 0x67, 0x73, 0x6D, 0x61, 0x6C, 0x6C, 0x00, 0x00, 0x0A, 0x2F, 0x62 })]
     public void TryProbe_RejectsTheOtherResourcesInTheSameJar(byte[] bytes)
     {
         Assert.False(StormholdCusImage.TryProbe(bytes));

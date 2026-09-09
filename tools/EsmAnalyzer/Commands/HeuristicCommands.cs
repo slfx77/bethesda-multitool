@@ -198,7 +198,7 @@ public static class HeuristicCommands
         var wanted = ResolveSubrecordFilters(recordType, subrecordFilters);
 
         var candidates = subrecords
-            .Where(s => wanted.Contains(s.Signature, StringComparer.OrdinalIgnoreCase))
+            .Where(s => wanted.Contains(s.Signature))
             .ToList();
 
         if (candidates.Count > 0)
@@ -305,13 +305,13 @@ public static class HeuristicCommands
     private static HashSet<string> ResolveSubrecordFilters(string recordType, string[]? subrecordFilters)
     {
         return subrecordFilters is { Length: > 0 }
-            ? [.. subrecordFilters.Select(s => s.ToUpperInvariant())]
+            ? new HashSet<string>(subrecordFilters, StringComparer.OrdinalIgnoreCase)
             : recordType switch
             {
-                "LAND" => new HashSet<string>(["VNML", "VHGT", "VCLR", "VTXT"]),
-                "NAVM" => new HashSet<string>(["NVVX", "NVTR", "NVGD"]),
-                "WRLD" => new HashSet<string>(["OFST"]),
-                _ => []
+                "LAND" => new HashSet<string>(["VNML", "VHGT", "VCLR", "VTXT"], StringComparer.OrdinalIgnoreCase),
+                "NAVM" => new HashSet<string>(["NVVX", "NVTR", "NVGD"], StringComparer.OrdinalIgnoreCase),
+                "WRLD" => new HashSet<string>(["OFST"], StringComparer.OrdinalIgnoreCase),
+                _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             };
     }
 

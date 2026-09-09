@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.InstallShield;
@@ -22,14 +18,6 @@ public sealed class InstallShieldCabinetTests : IDisposable
 {
     private readonly List<string> _tempFiles = [];
 
-    private string WriteTemp(byte[] bytes, string extension = ".cab")
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"installshield-{Guid.NewGuid():N}{extension}");
-        File.WriteAllBytes(path, bytes);
-        _tempFiles.Add(path);
-        return path;
-    }
-
     public void Dispose()
     {
         foreach (var path in _tempFiles)
@@ -43,6 +31,14 @@ public sealed class InstallShieldCabinetTests : IDisposable
                 // Temp cleanup only.
             }
         }
+    }
+
+    private string WriteTemp(byte[] bytes, string extension = ".cab")
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"installshield-{Guid.NewGuid():N}{extension}");
+        File.WriteAllBytes(path, bytes);
+        _tempFiles.Add(path);
+        return path;
     }
 
     [Fact]
@@ -89,13 +85,14 @@ public sealed class RedguardCabinetRetailTests
     private static readonly string[] OracleFiles =
     [
         "WORLD.INI", "ENGLISH.RTX", "COMBAT.INI", "ITEM.INI",
-        "maps/ISLAND.RGM", "maps/ISLAND.WLD", "3dart/BELLTOWR.ROB", "3dart/TEXTURE.352", "sound/MAIN.SFX",
+        "maps/ISLAND.RGM", "maps/ISLAND.WLD", "3dart/BELLTOWR.ROB", "3dart/TEXTURE.352", "sound/MAIN.SFX"
     ];
 
     private static string RequireCabinet()
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        var path = Path.Combine(RepositoryRoot(), "Sample", "Full_Builds", "Redguard_Disc1_iso", "DATA1.CAB");
+        var path = Path.Combine(RepositoryRoot(), "Sample", "Builds",
+            "The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)", "Disc 1 (Install)", "iso", "DATA1.CAB");
         Assert.SkipWhen(!File.Exists(path), RealAssetPaths.SkipMessage("Redguard Disc 1 DATA1.CAB"));
         return path;
     }
@@ -108,7 +105,8 @@ public sealed class RedguardCabinetRetailTests
             directory = directory.Parent;
         }
 
-        return directory?.FullName ?? throw new InvalidOperationException("BethesdaMultitool.slnx not found above the test binary.");
+        return directory?.FullName ??
+               throw new InvalidOperationException("BethesdaMultitool.slnx not found above the test binary.");
     }
 
     [Fact]
@@ -150,7 +148,7 @@ public sealed class RedguardCabinetRetailTests
         var compared = 0;
         foreach (var relative in OracleFiles)
         {
-            var loose = Path.Combine(steam!, relative.Replace('/', Path.DirectorySeparatorChar));
+            var loose = Path.Combine(steam, relative.Replace('/', Path.DirectorySeparatorChar));
             if (!File.Exists(loose) || !entries.TryGetValue(relative, out var entry))
             {
                 continue;
@@ -160,7 +158,7 @@ public sealed class RedguardCabinetRetailTests
             Assert.NotNull(fromCabinet);
             var fromDisk = File.ReadAllBytes(loose);
 
-            Assert.Equal(fromDisk.Length, fromCabinet!.Length);
+            Assert.Equal(fromDisk.Length, fromCabinet.Length);
             var difference = fromDisk.AsSpan().CommonPrefixLength(fromCabinet);
             Assert.True(difference == fromDisk.Length, $"{relative} first differs at byte {difference}");
             compared++;

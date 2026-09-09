@@ -17,9 +17,9 @@ public sealed class BendableSplineGeometryTests
     {
         var mesh = BendableSplineGeometry.TryBuild(
             0x00123456,
-            Definition(slices: 4, tiles: 2f),
-            Placement(new Vector3(50f, 0f, 0f), thickness: 10f),
-            textureSet: null);
+            Definition(4, 2f),
+            Placement(new Vector3(50f, 0f, 0f), 10f),
+            null);
 
         Assert.NotNull(mesh);
         Assert.Equal(25, mesh.SegmentCount);
@@ -46,7 +46,7 @@ public sealed class BendableSplineGeometryTests
         var start = new Vector3(-50f, 0f, 10f);
         var end = new Vector3(50f, 0f, 10f);
 
-        var control = BendableSplineGeometry.ComputeControlPoint(start, end, slack: 0.25f);
+        var control = BendableSplineGeometry.ComputeControlPoint(start, end, 0.25f);
         var curveCenter = BendableSplineGeometry.EvaluateQuadratic(start, control, end, 0.5f);
 
         Assert.Equal(0f, control.X, 5);
@@ -62,7 +62,7 @@ public sealed class BendableSplineGeometryTests
         var control = BendableSplineGeometry.ComputeControlPoint(
             new Vector3(0f, 0f, -40f),
             new Vector3(0f, 0f, 40f),
-            slack: 1f);
+            1f);
 
         Assert.Equal(Vector3.Zero, control);
     }
@@ -72,9 +72,9 @@ public sealed class BendableSplineGeometryTests
     {
         var mesh = BendableSplineGeometry.TryBuild(
             7,
-            Definition(slices: 6, tiles: 0.05f, relative: true),
-            Placement(new Vector3(50f, 0f, 0f), thickness: 4f),
-            textureSet: null);
+            Definition(6, 0.05f, true),
+            Placement(new Vector3(50f, 0f, 0f), 4f),
+            null);
 
         Assert.NotNull(mesh);
         Assert.Equal(5f, mesh.TextureTileCount, 3);
@@ -89,7 +89,7 @@ public sealed class BendableSplineGeometryTests
             DiffuseTexture = @"textures\utility\wire_d.dds",
             NormalTexture = @"textures\utility\wire_n.dds"
         };
-        var definition = Definition(slices: 4, tiles: 1f) with
+        var definition = Definition(4, 1f) with
         {
             DefaultColor = new Vector3(0.25f, 0.5f, 0.75f)
         };
@@ -97,7 +97,7 @@ public sealed class BendableSplineGeometryTests
         var mesh = BendableSplineGeometry.TryBuild(
             9,
             definition,
-            Placement(new Vector3(20f, 0f, 0f), thickness: 2f),
+            Placement(new Vector3(20f, 0f, 0f), 2f),
             textureSet);
 
         Assert.NotNull(mesh);
@@ -116,9 +116,9 @@ public sealed class BendableSplineGeometryTests
     {
         var mesh = BendableSplineGeometry.TryBuild(
             10,
-            Definition(slices: 3, tiles: 1f),
-            Placement(new Vector3(20f, 0f, 0f), thickness: 2f),
-            textureSet: null);
+            Definition(3, 1f),
+            Placement(new Vector3(20f, 0f, 0f), 2f),
+            null);
 
         Assert.NotNull(mesh);
         Assert.Null(mesh.DiffuseTexturePath);
@@ -130,7 +130,7 @@ public sealed class BendableSplineGeometryTests
     [Fact]
     public void TryBuild_WindWithTnam_UsesWhiteRgbAndRecoveredAlphaPayload()
     {
-        var definition = Definition(slices: 4, tiles: 1f) with
+        var definition = Definition(4, 1f) with
         {
             DefaultColor = new Vector3(0.25f, 0.5f, 0.75f),
             WindSensibility = 2f,
@@ -145,7 +145,7 @@ public sealed class BendableSplineGeometryTests
         var mesh = BendableSplineGeometry.TryBuild(
             11,
             definition,
-            Placement(new Vector3(50f, 0f, 0f), thickness: 10f, slack: 0.25f),
+            Placement(new Vector3(50f, 0f, 0f), 10f, 0.25f),
             textureSet);
 
         Assert.NotNull(mesh);
@@ -164,7 +164,7 @@ public sealed class BendableSplineGeometryTests
         var staticMesh = BendableSplineGeometry.TryBuild(
             13,
             definition with { WindSensibility = 0f },
-            Placement(new Vector3(50f, 0f, 0f), thickness: 10f, slack: 0.25f),
+            Placement(new Vector3(50f, 0f, 0f), 10f, 0.25f),
             textureSet);
         Assert.NotNull(staticMesh);
         Assert.Equal(
@@ -185,7 +185,7 @@ public sealed class BendableSplineGeometryTests
     [Fact]
     public void TryBuild_WindWithoutTnam_RetainsDnamRgb()
     {
-        var definition = Definition(slices: 4, tiles: 1f) with
+        var definition = Definition(4, 1f) with
         {
             DefaultColor = new Vector3(0.25f, 0.5f, 0.75f),
             WindSensibility = 2f
@@ -194,8 +194,8 @@ public sealed class BendableSplineGeometryTests
         var mesh = BendableSplineGeometry.TryBuild(
             12,
             definition,
-            Placement(new Vector3(50f, 0f, 0f), thickness: 10f, slack: 0.25f),
-            textureSet: null);
+            Placement(new Vector3(50f, 0f, 0f), 10f, 0.25f),
+            null);
 
         Assert.NotNull(mesh);
         var color = GpuMeshUploader.UnpackColor(mesh.Vertices[mesh.Vertices.Length / 2].VertexColorRgba);
@@ -214,9 +214,9 @@ public sealed class BendableSplineGeometryTests
     {
         var mesh = BendableSplineGeometry.TryBuild(
             1,
-            Definition(slices, tiles: 1f),
-            Placement(new Vector3(10f, 0f, 0f), thickness: 2f),
-            textureSet: null);
+            Definition(slices, 1f),
+            Placement(new Vector3(10f, 0f, 0f), 2f),
+            null);
 
         Assert.Null(mesh);
     }
@@ -226,9 +226,9 @@ public sealed class BendableSplineGeometryTests
     {
         var mesh = BendableSplineGeometry.TryBuild(
             14,
-            Definition(slices: 4, tiles: 1f) with { WindFlexibility = 123f },
-            Placement(new Vector3(50f, 0f, 0f), thickness: 10f, slack: 0.25f),
-            textureSet: null);
+            Definition(4, 1f) with { WindFlexibility = 123f },
+            Placement(new Vector3(50f, 0f, 0f), 10f, 0.25f),
+            null);
 
         Assert.NotNull(mesh);
         Assert.False(mesh.UsesWindShader);
@@ -243,7 +243,7 @@ public sealed class BendableSplineGeometryTests
         var definition = new BendableSplineRecord
         {
             FormId = 0x100,
-            Data = Definition(slices: 4, tiles: 1f)
+            Data = Definition(4, 1f)
         };
         var placement = new PlacedReference
         {
@@ -255,14 +255,14 @@ public sealed class BendableSplineGeometryTests
             Y = 200f,
             Z = 300f,
             Scale = 2f,
-            BendableSpline = Placement(new Vector3(30f, 0f, 0f), thickness: 4f)
+            BendableSpline = Placement(new Vector3(30f, 0f, 0f), 4f)
         };
 
         var renderable = RenderableReference.TryBuildBendableSpline(
             placement,
             definition,
-            textureSet: null,
-            category: PlacedObjectCategory.Unknown);
+            null,
+            PlacedObjectCategory.Unknown);
 
         Assert.NotNull(renderable);
         Assert.NotNull(renderable.Value.BendableSplineMesh);
@@ -275,25 +275,29 @@ public sealed class BendableSplineGeometryTests
     private static BendableSplineDefinitionData Definition(
         ushort slices,
         float tiles,
-        bool relative = false) =>
-        new()
+        bool relative = false)
+    {
+        return new BendableSplineDefinitionData
         {
             DefaultTileCount = tiles,
             DefaultSliceCount = slices,
             TilesRelativeToLengthRaw = relative ? (ushort)1 : (ushort)0,
             DefaultColor = Vector3.One
         };
+    }
 
     private static BendableSplinePlacementData Placement(
         Vector3 halfExtents,
         float thickness,
-        float slack = 0f) =>
-        new()
+        float slack = 0f)
+    {
+        return new BendableSplinePlacementData
         {
             HalfExtents = halfExtents,
             Thickness = thickness,
             Slack = slack
         };
+    }
 
     private static void AssertRingAt(
         ReadOnlySpan<GpuMeshUploader.GpuVertex> ring,

@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Arena;
 using Xunit;
@@ -120,8 +119,8 @@ public class ArenaExeUnpackerTests
     [Fact]
     public void Unpack_MissingTerminator_Throws()
     {
-        var ex = Assert.Throws<InvalidDataException>(
-            () => ArenaExeUnpacker.Unpack(BuildExe([0x3A, 0x00, 0x4E, 0xFF, 0x00, 0x00], 1), "BAD.EXE"));
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            ArenaExeUnpacker.Unpack(BuildExe([0x3A, 0x00, 0x4E, 0xFF, 0x00, 0x00], 1), "BAD.EXE"));
 
         Assert.Contains("0xFFFF", ex.Message, StringComparison.Ordinal);
     }
@@ -146,8 +145,8 @@ public class ArenaExeUnpackerTests
     public void Unpack_MoreOutputThanDeclared_Throws()
     {
         // Declares one byte but the stream produces four.
-        var ex = Assert.Throws<InvalidDataException>(
-            () => ArenaExeUnpacker.Unpack(BuildExe([0xDE, 0x01, 0x4E, 0x01, 0xFF, 0xFF, 0xFF], 1), "BAD.EXE"));
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            ArenaExeUnpacker.Unpack(BuildExe([0xDE, 0x01, 0x4E, 0x01, 0xFF, 0xFF, 0xFF], 1), "BAD.EXE"));
 
         Assert.Contains("more than", ex.Message, StringComparison.Ordinal);
     }

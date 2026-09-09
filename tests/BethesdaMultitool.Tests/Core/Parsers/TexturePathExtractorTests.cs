@@ -231,7 +231,7 @@ public class TexturePathExtractorTests
     public void FindPrecedingPath_TrimsLeadingGarbage()
     {
         // Arrange - path with leading garbage characters
-        var pathBytes = "\x00\x00textures\\test.ddx"u8.ToArray();
+        var pathBytes = "\0\0textures\\test.ddx"u8.ToArray();
         var data = new byte[pathBytes.Length + 100];
         pathBytes.CopyTo(data, 0);
 

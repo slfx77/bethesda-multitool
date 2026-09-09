@@ -4,7 +4,6 @@
 // and would otherwise be untestable.
 
 using System.Runtime.InteropServices.WindowsRuntime;
-
 using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace BethesdaMultitool;

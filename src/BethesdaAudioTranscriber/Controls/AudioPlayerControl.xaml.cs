@@ -13,6 +13,7 @@ public sealed partial class AudioPlayerControl : UserControl
     private readonly DispatcherTimer? _positionTimer;
     private VoiceFileEntry? _currentEntry;
     private bool _isSeeking;
+    private int _playbackGeneration;
 
     // Seek requested while stopped: there is no stream yet to seek, so remember
     // the position and apply it once playback starts.
@@ -32,13 +33,25 @@ public sealed partial class AudioPlayerControl : UserControl
     /// </summary>
     public void SetPlaybackService(AudioPlaybackService service)
     {
+        ClearPlaybackService();
+        _playbackService = service;
+        _playbackService.PlaybackStateChanged += OnPlaybackStateChanged;
+    }
+
+    public void ClearPlaybackService()
+    {
+        _playbackGeneration++;
+        _positionTimer?.Stop();
         if (_playbackService != null)
         {
             _playbackService.PlaybackStateChanged -= OnPlaybackStateChanged;
         }
 
-        _playbackService = service;
-        _playbackService.PlaybackStateChanged += OnPlaybackStateChanged;
+        _playbackService = null;
+        _currentEntry = null;
+        _pendingSeek = null;
+        _isSeeking = false;
+        SeekSlider.IsEnabled = false;
     }
 
     /// <summary>
@@ -60,7 +73,9 @@ public sealed partial class AudioPlayerControl : UserControl
     /// </summary>
     public async Task PlayFileAsync(VoiceFileEntry entry)
     {
-        if (_playbackService == null)
+        var service = _playbackService;
+        var generation = _playbackGeneration;
+        if (service == null)
         {
             return;
         }
@@ -74,15 +89,20 @@ public sealed partial class AudioPlayerControl : UserControl
 
         try
         {
-            await _playbackService.PlayAsync(entry);
+            await service.PlayAsync(entry);
+            if (generation != _playbackGeneration || !ReferenceEquals(_playbackService, service) ||
+                !ReferenceEquals(_currentEntry, entry) || service.State != PlaybackState.Playing)
+            {
+                return;
+            }
 
             // Apply a seek made while stopped, now that the stream exists
             if (_pendingSeek is { } pending)
             {
                 _pendingSeek = null;
-                if (pending < _playbackService.Duration)
+                if (pending < service.Duration)
                 {
-                    _playbackService.Seek(pending);
+                    service.Seek(pending);
                 }
             }
 
@@ -97,8 +117,15 @@ public sealed partial class AudioPlayerControl : UserControl
 
     private void OnPlaybackStateChanged(object? sender, PlaybackState state)
     {
+        var generation = _playbackGeneration;
         DispatcherQueue.TryEnqueue(() =>
         {
+            if (generation != _playbackGeneration || _playbackService == null ||
+                !ReferenceEquals(sender, _playbackService))
+            {
+                return;
+            }
+
             switch (state)
             {
                 case PlaybackState.Playing:

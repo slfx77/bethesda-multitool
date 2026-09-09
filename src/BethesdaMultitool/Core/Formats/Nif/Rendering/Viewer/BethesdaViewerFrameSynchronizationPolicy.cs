@@ -9,6 +9,8 @@ internal static class BethesdaViewerFrameSynchronizationPolicy
 {
     internal static bool RequiresGpuIdleBeforeFrame(
         bool sessionReady,
-        bool texturesSettled) =>
-        sessionReady && !texturesSettled;
+        bool texturesSettled)
+    {
+        return sessionReady && !texturesSettled;
+    }
 }

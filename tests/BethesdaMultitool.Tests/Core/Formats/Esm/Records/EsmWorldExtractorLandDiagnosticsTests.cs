@@ -88,6 +88,49 @@ public class EsmWorldExtractorLandDiagnosticsTests
     }
 
     [Fact]
+    public void EnrichLandRecordsWithCellWorldspaces_ReadsCellStreamOnceForParentAndGridLookups()
+    {
+        var scanResult = new EsmRecordScanResult
+        {
+            LandRecords =
+            [
+                new ExtractedLandRecord
+                {
+                    Header = new DetectedMainRecord("LAND", 0, 0, 0x000ABCDE, 0x1000, false),
+                    ParentCellFormId = 0x00006000
+                },
+                new ExtractedLandRecord
+                {
+                    Header = new DetectedMainRecord("LAND", 0, 0, 0x000ABCDF, 0x2000, false),
+                    CellX = 2,
+                    CellY = -3
+                }
+            ]
+        };
+        var pending = new Queue<CellRecord>(
+        [
+            new CellRecord
+            {
+                FormId = 0x00006000,
+                GridX = 2,
+                GridY = -3,
+                WorldspaceFormId = 0x00002000
+            }
+        ]);
+        var cells = Enumerable.Range(0, 1).Select(_ => pending.Dequeue());
+
+        EsmLandEnricher.EnrichLandRecordsWithCellWorldspaces(scanResult, cells);
+
+        Assert.All(scanResult.LandRecords, land =>
+        {
+            Assert.Equal(0x00006000u, land.ParentCellFormId);
+            Assert.Equal(0x00002000u, land.WorldspaceFormId);
+            Assert.Equal(2, land.CellX);
+            Assert.Equal(-3, land.CellY);
+        });
+    }
+
+    [Fact]
     public void EnrichLandRecordsWithCellWorldspaces_PreservesExistingLandWorldspace()
     {
         var scanResult = new EsmRecordScanResult

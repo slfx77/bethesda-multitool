@@ -59,12 +59,14 @@ internal sealed class DaggerfallTextFile
         var headerLength = BinaryPrimitives.ReadUInt16LittleEndian(bytes);
         if (headerLength < EntryLength || headerLength % EntryLength != 0)
         {
-            throw new InvalidDataException($"TEXT.RSC header length {headerLength} is not a whole number of 6-byte entries.");
+            throw new InvalidDataException(
+                $"TEXT.RSC header length {headerLength} is not a whole number of 6-byte entries.");
         }
 
         if (bytes.Length < 2 + headerLength)
         {
-            throw new InvalidDataException($"TEXT.RSC declares a {headerLength}-byte table but is only {bytes.Length} bytes.");
+            throw new InvalidDataException(
+                $"TEXT.RSC declares a {headerLength}-byte table but is only {bytes.Length} bytes.");
         }
 
         var count = headerLength / EntryLength - 1;
@@ -77,7 +79,8 @@ internal sealed class DaggerfallTextFile
             var offset = BinaryPrimitives.ReadUInt32LittleEndian(entry[2..]);
             if (offset >= (uint)bytes.Length)
             {
-                throw new InvalidDataException($"TEXT.RSC record {id} starts at {offset}, past the {bytes.Length}-byte file.");
+                throw new InvalidDataException(
+                    $"TEXT.RSC record {id} starts at {offset}, past the {bytes.Length}-byte file.");
             }
 
             var end = Array.IndexOf(bytes, DaggerfallTextTokens.EndOfRecord, (int)offset);

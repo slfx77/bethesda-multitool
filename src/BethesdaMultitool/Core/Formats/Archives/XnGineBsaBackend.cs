@@ -13,9 +13,9 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 /// </summary>
 internal sealed class XnGineBsaBackend : IArchiveBackend
 {
+    private readonly MemoryMappedViewAccessor _accessor;
     private readonly XnGineBsaArchive _archive;
     private readonly MemoryMappedFile _mmf;
-    private readonly MemoryMappedViewAccessor _accessor;
 
     public XnGineBsaBackend(XnGineBsaArchive archive)
     {

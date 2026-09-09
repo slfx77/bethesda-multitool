@@ -13,7 +13,7 @@ internal static class NpcRecordDataReader
         AnalyzerRecordInfo record)
     {
         var headerSize = record.RecordHeaderSize;
-        var dataStart = (long)record.Offset + headerSize;
+        var dataStart = record.Offset + headerSize;
         var dataSize = (long)record.DataSize;
 
         if (headerSize <= 0 || dataStart < 0 || dataSize < 0 || dataStart + dataSize > esmData.Length)

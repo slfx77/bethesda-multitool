@@ -46,15 +46,6 @@ internal static class GpuShaderCompiler12
     /// <summary>Logical-name prefix stamped onto every shader by the csproj EmbeddedResource item.</summary>
     private const string ResourcePrefix = "BethesdaMultitool.Shaders.";
 
-    /// <summary>
-    ///     Compile settings that participate in the shipped-pack fingerprint. Keep the API revision
-    ///     in this one decision site if compiler behavior changes; the actual enum values are derived
-    ///     from the same constants passed to <c>Compiler.Compile</c> below.
-    /// </summary>
-    internal static string BytecodeCompilerContract { get; } = string.Create(
-        CultureInfo.InvariantCulture,
-        $"Vortice.D3DCompiler={typeof(Compiler).Assembly.GetName().Version};Compiler.Compile/v1;ShaderFlags={(int)EnableUnboundedDescriptorTables};EffectFlags={(int)EffectFlags.None}");
-
     private static readonly Logger Log = Logger.Instance;
 
     private static readonly Lazy<FrozenDictionary<string, string>> Index = new(BuildIndex);
@@ -71,6 +62,15 @@ internal static class GpuShaderCompiler12
     private static long _cacheHitCount;
     private static long _precompiledHitCount;
     private static double _totalCompileMilliseconds;
+
+    /// <summary>
+    ///     Compile settings that participate in the shipped-pack fingerprint. Keep the API revision
+    ///     in this one decision site if compiler behavior changes; the actual enum values are derived
+    ///     from the same constants passed to <c>Compiler.Compile</c> below.
+    /// </summary>
+    internal static string BytecodeCompilerContract { get; } = string.Create(
+        CultureInfo.InvariantCulture,
+        $"Vortice.D3DCompiler={typeof(Compiler).Assembly.GetName().Version};Compiler.Compile/v1;ShaderFlags={(int)EnableUnboundedDescriptorTables};EffectFlags={(int)EffectFlags.None}");
 
     /// <summary>Shader file name → manifest resource name. Exact, case-insensitive on the file name.</summary>
     internal static FrozenDictionary<string, string> ResourceIndex => Index.Value;
@@ -95,7 +95,7 @@ internal static class GpuShaderCompiler12
         {
             Interlocked.Increment(ref _cacheHitCount);
             ShadowComparisonPcf12.TraceSuccessfulShader(
-                fileName, entryPoint, profile, effectiveMacros, key, cached, cacheHit: true);
+                fileName, entryPoint, profile, effectiveMacros, key, cached, true);
             return cached;
         }
 
@@ -122,7 +122,7 @@ internal static class GpuShaderCompiler12
 
             ShadowComparisonPcf12.TraceSuccessfulShader(
                 fileName, entryPoint, profile, effectiveMacros, key, selectedPrecompiled,
-                cacheHit: !added);
+                !added);
             return selectedPrecompiled;
         }
 
@@ -143,7 +143,7 @@ internal static class GpuShaderCompiler12
         var selectedBytecode = BytecodeCache.GetOrAdd(key, bytecode);
         ShadowComparisonPcf12.TraceSuccessfulShader(
             fileName, entryPoint, profile, effectiveMacros, key, selectedBytecode,
-            cacheHit: !ReferenceEquals(selectedBytecode, bytecode));
+            !ReferenceEquals(selectedBytecode, bytecode));
         return selectedBytecode;
     }
 
@@ -186,9 +186,11 @@ internal static class GpuShaderCompiler12
         {
             var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
             Interlocked.Increment(ref _compileCount);
+            double totalCompileMilliseconds;
             lock (Index)
             {
                 _totalCompileMilliseconds += elapsed;
+                totalCompileMilliseconds = _totalCompileMilliseconds;
             }
 
             // Compile cost was previously never measured anywhere, so nobody could tell that
@@ -196,7 +198,7 @@ internal static class GpuShaderCompiler12
             Log.Debug(
                 "GpuShaderCompiler12: {0} [{1}/{2}{3}] {4:0.0}ms (compiles={5} cacheHits={6} total={7:0}ms)",
                 sourceName, entryPoint, profile, DescribeMacros(macros), elapsed,
-                CompileCount, CacheHitCount, _totalCompileMilliseconds);
+                CompileCount, CacheHitCount, totalCompileMilliseconds);
             return bytecode.AsBytes().ToArray();
         }
         finally

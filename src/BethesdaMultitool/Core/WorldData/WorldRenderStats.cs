@@ -133,6 +133,7 @@ internal sealed class WorldRenderStats
     ///     re-runs is the difference between fixing it and guessing at it.
     /// </summary>
     internal int ReferenceBatchReuseBlocker { get; set; }
+
     internal bool ReferenceBatchBuildInProgress { get; set; }
     internal bool ReferenceCullRefreshPending { get; set; }
     internal bool ReferenceBatchBuildIncrementalAdvanced { get; set; }
@@ -333,17 +334,20 @@ internal sealed class WorldRenderStats
     internal double ReferenceBatchFinalizeMilliseconds { get; set; }
     internal double ReferenceGpuUploadMilliseconds { get; set; }
     internal double ReferenceBlendedRefreshMilliseconds { get; set; }
+
     /// <summary>
     ///     Coarse wall time for the complete opaque submission pass. This deliberately replaces
     ///     per-batch stopwatch reads: on dense FO76 scenes those reads ran tens of thousands of
     ///     times per frame and materially changed the frame time being measured.
     /// </summary>
     internal double ReferenceOpaqueSubmissionMilliseconds { get; set; }
+
     /// <summary>
     ///     Coarse wall time for all depth-writing and deferred blended submission passes recorded
     ///     against this frame's stats. Measured once per pass, never once per draw.
     /// </summary>
     internal double ReferenceBlendedSubmissionMilliseconds { get; set; }
+
     // Legacy low-frequency timing remnants. Per-draw/per-batch stopwatch reads were removed after
     // CPU sampling proved that the observer cost dominated the work. Use the coarse submission
     // fields above for complete pass costs; these now cover only explicitly timed reservations/binds.

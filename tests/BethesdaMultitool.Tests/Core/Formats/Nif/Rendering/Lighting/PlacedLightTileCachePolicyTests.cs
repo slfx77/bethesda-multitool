@@ -67,20 +67,24 @@ public sealed class PlacedLightTileCachePolicyTests
         int height,
         Vector3 origin,
         ReadOnlySpan<PlacedLight> lights)
-        => PlacedLightTileCachePolicy.Matches(
+    {
+        return PlacedLightTileCachePolicy.Matches(
             cachedMatrix, cachedWidth, cachedHeight, cachedOrigin, cachedLights,
             matrix, width, height, origin, lights);
+    }
 
     private static PlacedLight Light(uint id, Vector3 position)
-        => new(
+    {
+        return new PlacedLight(
             id,
             id + 100,
             position,
-            Radius: 256f + id,
-            Color: new Vector3(1f, 0.5f, 0.25f),
-            FalloffExponent: 0f,
-            FieldOfView: 0f,
-            Intensity: 1f,
-            Flags: 0,
-            IsInitiallyDisabled: false);
+            256f + id,
+            new Vector3(1f, 0.5f, 0.25f),
+            0f,
+            0f,
+            1f,
+            0,
+            false);
+    }
 }

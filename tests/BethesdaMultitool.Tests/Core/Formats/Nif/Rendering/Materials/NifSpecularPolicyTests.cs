@@ -74,7 +74,7 @@ public sealed class NifSpecularPolicyTests
         var model = LoadRetailModel(@"meshes\landscape\rocks\cliffs\cliffverti_c2.nif");
         Assert.SkipWhen(model is null, "Retail Fallout - Meshes.bsa is not available.");
 
-        var lit = model!.Submeshes
+        var lit = model.Submeshes
             .Where(static sub => sub.ShaderMetadata?.PropertyType == "BSShaderPPLightingProperty")
             .ToArray();
 
@@ -99,7 +99,7 @@ public sealed class NifSpecularPolicyTests
         var model = LoadRetailModel(@"meshes\architecture\goodsprings\nv_prospectorsaloon.nif");
         Assert.SkipWhen(model is null, "Retail Fallout - Meshes.bsa is not available.");
 
-        var main = Assert.Single(model!.Submeshes,
+        var main = Assert.Single(model.Submeshes,
             static sub => sub.ShapeName == "NV_ProspectorSaloon:0");
         Assert.Equal(0u, main.ShaderMetadata!.ShaderFlags!.Value & 1u);
         Assert.False(NifSpecularPolicy.IsEnabled(main));
@@ -167,7 +167,7 @@ public sealed class NifSpecularPolicyTests
         {
             Path.Combine(Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT") ?? string.Empty,
                 "Fallout - Meshes.bsa"),
-            Path.GetFullPath(Path.Combine("Sample", "Full_Builds", "Fallout New Vegas (PC Final)",
+            Path.GetFullPath(Path.Combine("Sample", "Builds", "Fallout - New Vegas (2022-5-24, Steam - Final)",
                 "Data", "Fallout - Meshes.bsa")),
             RealAssetPaths.SteamGameFile("Fallout New Vegas", @"Data\Fallout - Meshes.bsa")
         };

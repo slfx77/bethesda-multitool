@@ -39,22 +39,20 @@ internal sealed class VanBurenStringTable
     /// <summary>The first header dword on the shipped table.</summary>
     public const uint Version = 3;
 
-    private readonly IReadOnlyList<string> _strings;
-
     private VanBurenStringTable(string name, IReadOnlyList<string> strings)
     {
         Name = name;
-        _strings = strings;
+        Strings = strings;
     }
 
     /// <summary>Source file name, for messages.</summary>
     public string Name { get; }
 
     /// <summary>The strings, in directory order — the order the game indexes them by.</summary>
-    public IReadOnlyList<string> Strings => _strings;
+    public IReadOnlyList<string> Strings { get; }
 
     /// <summary>How many strings the table holds.</summary>
-    public int Count => _strings.Count;
+    public int Count => Strings.Count;
 
     /// <summary>Content probe: the two constant header dwords plus a directory that fits.</summary>
     public static bool IsStringTable(ReadOnlySpan<byte> bytes)
@@ -101,11 +99,11 @@ internal sealed class VanBurenStringTable
             return false;
         }
 
-        var cursor = HeaderLength + ((int)count * RecordLength);
+        var cursor = HeaderLength + (int)count * RecordLength;
         var strings = new string[count];
         for (var i = 0; i < count; i++)
         {
-            var at = HeaderLength + (i * RecordLength);
+            var at = HeaderLength + i * RecordLength;
             var offset = BinaryPrimitives.ReadUInt32LittleEndian(bytes[at..]);
             var length = BinaryPrimitives.ReadUInt32LittleEndian(bytes[(at + 4)..]);
 

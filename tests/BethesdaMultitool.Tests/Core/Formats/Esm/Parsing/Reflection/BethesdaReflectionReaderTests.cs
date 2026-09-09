@@ -83,7 +83,7 @@ public sealed class BethesdaReflectionReaderTests
     [Fact]
     public void ReadObject_RejectsMissingOutOfLineListChunk()
     {
-        var stream = BuildFullStream(includeList: false);
+        var stream = BuildFullStream(false);
 
         Assert.False(BethesdaReflectionReader.TryReadObject(
             stream, false, "Root", out var value, out var error));
@@ -137,7 +137,7 @@ public sealed class BethesdaReflectionReaderTests
     public void ReadObject_RejectsUserChunkWithWrongDeclaredClass()
     {
         Assert.False(BethesdaReflectionReader.TryReadObject(
-            BuildUserStream(false, U64(1), wrongDeclaredType: true),
+            BuildUserStream(false, U64(1), true),
             false, "Root", out var value, out var error));
 
         Assert.Null(value);
@@ -246,7 +246,7 @@ public sealed class BethesdaReflectionReaderTests
         };
         if (includeUserChunk)
         {
-            chunks.Add(Chunk((userChunkIsDiff ?? isDiff) ? "USRD" : "USER", Concat(
+            chunks.Add(Chunk(userChunkIsDiff ?? isDiff ? "USRD" : "USER", Concat(
                 U32(offsets[wrongDeclaredType ? "Other" : "Hook"]),
                 U32(serializedType),
                 serializedPayload)));
@@ -310,7 +310,7 @@ public sealed class BethesdaReflectionReaderTests
         return Chunk("CLAS", [.. body]);
     }
 
-    private static byte[] ReflectionStream(byte[] strings, IReadOnlyList<byte[]> chunks)
+    private static byte[] ReflectionStream(byte[] strings, List<byte[]> chunks)
     {
         return Concat(
             Encoding.ASCII.GetBytes("BETH"), U32(8), U32(4), U32((uint)chunks.Count + 2),
@@ -323,13 +323,25 @@ public sealed class BethesdaReflectionReaderTests
         return Concat(Encoding.ASCII.GetBytes(signature), U32((uint)body.Length), body);
     }
 
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
-    private static byte[] U64(ulong value) => BitConverter.GetBytes(value);
+    private static byte[] U64(ulong value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
-    private static byte[] F32(float value) => BitConverter.GetBytes(value);
+    private static byte[] F32(float value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {

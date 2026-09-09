@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Arena;
 using BethesdaMultitool.Core.Rendering.Level2D;
@@ -20,8 +17,8 @@ namespace BethesdaMultitool.Tests.Core.Rendering.Level2D;
 /// </remarks>
 public sealed class Level2DSourceTests
 {
-    private static readonly byte[] LzhufAab = [0xE6, 0xE2, 0xF3, 0x80];
     private const int LzhufAabLength = 3;
+    private static readonly byte[] LzhufAab = [0xE6, 0xE2, 0xF3, 0x80];
 
     private static List<byte> Chunk(string tag, IEnumerable<byte> payload)
     {
@@ -88,7 +85,7 @@ public sealed class Level2DSourceTests
     [Fact]
     public void ScaleIsAppliedToTheRenderedImage()
     {
-        var source = ArenaMapLevel2DSource.ForMifLevel(FloorOnlyMap(), 0, scale: 4);
+        var source = ArenaMapLevel2DSource.ForMifLevel(FloorOnlyMap(), 0, 4);
 
         var render = Assert.NotNull(source.Render(Level2DLayer.Floor));
 

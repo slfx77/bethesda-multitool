@@ -23,7 +23,7 @@ public class LeveledListDecodeTests
         Assert.SkipWhen(esm is null, RealAssetPaths.SkipMessage(Path.GetFileName(relativePath)));
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         var leveled = result.Records.GenericRecords
             .Where(r => r.RecordType is "LVLI" or "LVLC" or "LVSP")

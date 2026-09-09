@@ -70,8 +70,8 @@ public sealed class LooseFileSystem : IGameFileSystem
                 FileMode.Open,
                 FileAccess.Read,
                 FileShare.Read,
-                bufferSize: 64 * 1024,
-                options: FileOptions.SequentialScan);
+                64 * 1024,
+                FileOptions.SequentialScan);
             var length = stream.Length;
             if (length < 0 || length > maximumBytes)
             {

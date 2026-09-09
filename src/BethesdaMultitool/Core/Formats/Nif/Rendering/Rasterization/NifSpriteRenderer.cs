@@ -395,6 +395,7 @@ internal static class NifSpriteRenderer
                 starfieldOpacityMap = textureResolver.GetTexture(
                     MaterialTexturePathResolver.BuildStarfieldOpacityMapRequest(starfieldMaterialPath));
             }
+
             if (textureResolver != null && uvs != null && submesh.NormalMapTexturePath != null)
             {
                 normalMap = textureResolver.GetTexture(submesh.NormalMapTexturePath);

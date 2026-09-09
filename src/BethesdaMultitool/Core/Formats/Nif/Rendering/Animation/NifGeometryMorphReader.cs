@@ -48,7 +48,8 @@ internal static class NifGeometryMorphReader
         {
             var offset = checked(m + 9 + target * (4 + 12 * (int)vertices));
             var nameRef = BinaryUtils.ReadInt32(data, offset, false);
-            if ((uint)nameRef >= (uint)nif.Strings.Count || string.IsNullOrWhiteSpace(nif.Strings[nameRef])) return false;
+            if ((uint)nameRef >= (uint)nif.Strings.Count || string.IsNullOrWhiteSpace(nif.Strings[nameRef]))
+                return false;
             var positions = new Vector3[(int)vertices];
             for (var vertex = 0; vertex < positions.Length; vertex++)
             {
@@ -61,7 +62,8 @@ internal static class NifGeometryMorphReader
             var item = p + 37 + target * 8;
             var interpolatorRef = BinaryUtils.ReadInt32(data, item, false);
             var fallback = BinaryUtils.ReadFloat(data, item + 4, false);
-            if (!Finite(fallback) || !TryReadCurve(data, nif, interpolatorRef, fallback, ref totalKeys, out var curve)) return false;
+            if (!Finite(fallback) ||
+                !TryReadCurve(data, nif, interpolatorRef, fallback, ref totalKeys, out var curve)) return false;
             targets[target] = new NifGeometryMorphTarget(nif.Strings[nameRef], positions, curve);
         }
 
@@ -71,12 +73,13 @@ internal static class NifGeometryMorphReader
         return Finite(bounds.Minimum) && Finite(bounds.Maximum);
     }
 
-    private static bool ValidateShape(byte[] data, NifInfo nif, BlockInfo shape, int controllerIndex, NifGeometryMorphData morph)
+    private static bool ValidateShape(byte[] data, NifInfo nif, BlockInfo shape, int controllerIndex,
+        NifGeometryMorphData morph)
     {
         if (!Readable(data, shape, 12)) return false;
         var end = (long)shape.DataOffset + shape.Size;
         var extras = BinaryUtils.ReadUInt32(data, shape.DataOffset + 4, false);
-        var controllerOffset = (long)shape.DataOffset + 8L + 4L * extras;
+        var controllerOffset = shape.DataOffset + 8L + 4L * extras;
         if (controllerOffset + 64L > end) return false;
         var p = (int)controllerOffset;
         if (BinaryUtils.ReadInt32(data, p, false) != controllerIndex) return false;
@@ -87,7 +90,8 @@ internal static class NifGeometryMorphReader
         p = (int)geometryOffset;
         var geometryRef = BinaryUtils.ReadInt32(data, p, false);
         if (BinaryUtils.ReadInt32(data, p + 4, false) != -1 || !Block(nif, geometryRef, out var geometry) ||
-            geometry.TypeName is not ("NiTriShapeData" or "NiTriStripsData") || !Readable(data, geometry, 9)) return false;
+            geometry.TypeName is not ("NiTriShapeData" or "NiTriStripsData") ||
+            !Readable(data, geometry, 9)) return false;
         var vertexCount = BinaryUtils.ReadUInt16(data, geometry.DataOffset + 4, false);
         if (vertexCount != morph.VertexCount || data[geometry.DataOffset + 8] != 1 ||
             geometry.Size < 9L + 12L * vertexCount) return false;
@@ -118,7 +122,8 @@ internal static class NifGeometryMorphReader
             return true;
         }
 
-        if (!Block(nif, dataRef, out var values) || values.TypeName != "NiFloatData" || !Readable(data, values, 4)) return false;
+        if (!Block(nif, dataRef, out var values) || values.TypeName != "NiFloatData" ||
+            !Readable(data, values, 4)) return false;
         var count = BinaryUtils.ReadUInt32(data, values.DataOffset, false);
         if (count == 0)
         {
@@ -136,11 +141,12 @@ internal static class NifGeometryMorphReader
         for (var index = 0; index < keys.Length; index++)
         {
             var k = values.DataOffset + 8 + index * stride;
-            var key = new NifMorphScalarKey(BinaryUtils.ReadFloat(data, k, false), BinaryUtils.ReadFloat(data, k + 4, false),
+            var key = new NifMorphScalarKey(BinaryUtils.ReadFloat(data, k, false),
+                BinaryUtils.ReadFloat(data, k + 4, false),
                 basis == 2 ? BinaryUtils.ReadFloat(data, k + 8, false) : 0f,
                 basis == 2 ? BinaryUtils.ReadFloat(data, k + 12, false) : 0f);
             if (!Finite(key.Time) || !Finite(key.Value) || !Finite(key.InTangent) || !Finite(key.OutTangent) ||
-                index > 0 && key.Time <= keys[index - 1].Time) return false;
+                (index > 0 && key.Time <= keys[index - 1].Time)) return false;
             keys[index] = key;
         }
 
@@ -162,6 +168,13 @@ internal static class NifGeometryMorphReader
         return block.DataOffset >= 0 && block.Size >= minimum && (long)block.DataOffset + block.Size <= data.Length;
     }
 
-    internal static bool Finite(float value) => float.IsFinite(value) && MathF.Abs(value) < 1e20f;
-    internal static bool Finite(Vector3 value) => Finite(value.X) && Finite(value.Y) && Finite(value.Z);
+    internal static bool Finite(float value)
+    {
+        return float.IsFinite(value) && MathF.Abs(value) < 1e20f;
+    }
+
+    internal static bool Finite(Vector3 value)
+    {
+        return Finite(value.X) && Finite(value.Y) && Finite(value.Z);
+    }
 }

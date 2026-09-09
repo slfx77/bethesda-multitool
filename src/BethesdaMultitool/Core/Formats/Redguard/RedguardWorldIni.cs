@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace BethesdaMultitool.Core.Formats.Redguard;
@@ -40,7 +41,8 @@ internal sealed class RedguardWorld
 
     private int? Integer(string key)
     {
-        return Value(key) is { } raw && int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+        return Value(key) is { } raw &&
+               int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? parsed
             : null;
     }
@@ -144,7 +146,7 @@ internal sealed partial class RedguardWorldIni
         var path = Path.Combine(dataRoot, FileName);
         // Latin-1 rather than UTF-8: the file is a DOS-era registry, and although retail is pure
         // ASCII a byte above 0x7F must round-trip rather than become a replacement character.
-        return Parse(File.ReadAllText(path, System.Text.Encoding.Latin1));
+        return Parse(File.ReadAllText(path, Encoding.Latin1));
     }
 
     /// <summary>

@@ -89,8 +89,10 @@ internal static class ProfileEndCaptureStateGuard
         return true;
     }
 
-    private static bool Near(float retained, float current, float tolerance) =>
-        float.IsFinite(retained) &&
-        float.IsFinite(current) &&
-        MathF.Abs(retained - current) <= tolerance;
+    private static bool Near(float retained, float current, float tolerance)
+    {
+        return float.IsFinite(retained) &&
+               float.IsFinite(current) &&
+               MathF.Abs(retained - current) <= tolerance;
+    }
 }

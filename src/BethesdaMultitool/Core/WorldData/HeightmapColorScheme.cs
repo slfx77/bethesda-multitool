@@ -48,12 +48,14 @@ internal sealed record HeightmapColorScheme(string Name, byte R, byte G, byte B)
     ///     (<see cref="DefaultForFile" />) when the game is unknown.
     /// </summary>
     public static HeightmapColorScheme DefaultForGame(BethesdaGame game, string? filePath)
-        => game switch
+    {
+        return game switch
         {
             BethesdaGame.FalloutNewVegas => Amber,
             BethesdaGame.Unknown => DefaultForFile(filePath),
             _ => Green
         };
+    }
 
     /// <summary>
     ///     Returns the default color scheme based on filename (fallback when the game is unknown).
@@ -76,5 +78,8 @@ internal sealed record HeightmapColorScheme(string Name, byte R, byte G, byte B)
         return Green;
     }
 
-    public override string ToString() => Name;
+    public override string ToString()
+    {
+        return Name;
+    }
 }

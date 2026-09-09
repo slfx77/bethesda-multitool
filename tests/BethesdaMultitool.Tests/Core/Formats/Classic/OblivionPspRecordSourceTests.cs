@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Games;
@@ -28,7 +23,7 @@ public sealed class OblivionPspRecordSourceTests
         var root = RealAssetPaths.Travels.OblivionPspBuildsRoot();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP betas"));
 
-        var buildRoot = Path.Combine(root!, build);
+        var buildRoot = Path.Combine(root, build);
         Assert.SkipWhen(
             !File.Exists(Path.Combine(buildRoot, @"PSP_GAME\USRDIR\GR.ARC")),
             RealAssetPaths.SkipMessage($"Oblivion PSP build '{build}'"));
@@ -47,7 +42,7 @@ public sealed class OblivionPspRecordSourceTests
     {
         var root = BuildRoot(build);
 
-        var result = await ClassicGameAnalyzer.LoadAsync(root);
+        var result = await ClassicGameAnalyzer.LoadAsync(root, TestContext.Current.CancellationToken);
 
         Assert.Equal(BethesdaGame.OblivionPsp, result.Records.Game);
         var records = result.Records.GenericRecords;
@@ -69,7 +64,7 @@ public sealed class OblivionPspRecordSourceTests
         // falls back to the name's extension at all.
         Assert.Equal(stringDatabases, records.Count(r => (string?)r.Fields["Kind"] == "sdb"));
         Assert.DoesNotContain(records, r => (string?)r.Fields["Kind"] == "unknown" && (long)r.Fields["Size"]! > 0
-                                            && Path.HasExtension(r.FullName));
+            && Path.HasExtension(r.FullName));
     }
 
     [Fact]
@@ -78,7 +73,7 @@ public sealed class OblivionPspRecordSourceTests
         // A prison/crypt slideshow build: 43 of its 64 entries are JPEG stills and only 14 are
         // RenderWare. Worth pinning, because it is the single clearest sign that this pack predates
         // the game proper rather than being a subset of it.
-        var records = (await ClassicGameAnalyzer.LoadAsync(BuildRoot("1june 9th 2006"))).Records.GenericRecords;
+        var records = (await ClassicGameAnalyzer.LoadAsync(BuildRoot("1june 9th 2006"), TestContext.Current.CancellationToken)).Records.GenericRecords;
 
         Assert.Equal(43, records.Count(r => (string?)r.Fields["Kind"] == "jpeg"));
         Assert.Equal(14, records.Count(r => (string?)r.Fields["Kind"] == "renderware"));
@@ -96,8 +91,8 @@ public sealed class OblivionPspRecordSourceTests
         // GlobalStream is one of only two names present in every dated beta, and it moves position
         // between them (the packs are rebuilt), so it is the exact case a position-derived id would
         // get wrong.
-        var first = await ClassicGameAnalyzer.LoadAsync(BuildRoot("2November 21st 2006"));
-        var later = await ClassicGameAnalyzer.LoadAsync(BuildRoot("6April 27th 2007"));
+        var first = await ClassicGameAnalyzer.LoadAsync(BuildRoot("2November 21st 2006"), TestContext.Current.CancellationToken);
+        var later = await ClassicGameAnalyzer.LoadAsync(BuildRoot("6April 27th 2007"), TestContext.Current.CancellationToken);
 
         var a = first.Records.GenericRecords.Single(r => r.FullName == "GlobalStream");
         var b = later.Records.GenericRecords.Single(r => r.FullName == "GlobalStream");
@@ -111,12 +106,12 @@ public sealed class OblivionPspRecordSourceTests
     [Fact]
     public async Task TheRepackedDiscSurfacesItsTruncatedEntryAndItsSignature()
     {
-        var modified = await ClassicGameAnalyzer.LoadAsync(BuildRoot("Modified 5Feburary 1st 2007"));
+        var modified = await ClassicGameAnalyzer.LoadAsync(BuildRoot("Modified 5Feburary 1st 2007"), TestContext.Current.CancellationToken);
         var records = modified.Records.GenericRecords;
 
         var hub = records.Single(r => r.FullName == "Hub_5_Demo");
         Assert.Equal(0L, hub.Fields["Size"]);
-        Assert.Equal(true, hub.Fields["Empty"]);
+        Assert.True(Assert.IsType<bool>(hub.Fields["Empty"]));
 
         // The 18-byte entry the repacker added to sign its work.
         var credits = records.Single(r => r.FullName == "Credits");
@@ -134,11 +129,11 @@ public sealed class OblivionPspRecordSourceTests
             var usrdir = Path.Combine(temp.FullName, @"PSP_GAME\USRDIR");
             Directory.CreateDirectory(usrdir);
             Directory.CreateDirectory(Path.Combine(temp.FullName, @"PSP_GAME\SYSDIR"));
-            await File.WriteAllBytesAsync(Path.Combine(temp.FullName, @"PSP_GAME\PARAM.SFO"), [0]);
-            await File.WriteAllBytesAsync(Path.Combine(temp.FullName, @"PSP_GAME\SYSDIR\EBOOT.BIN"), [0]);
+            await File.WriteAllBytesAsync(Path.Combine(temp.FullName, @"PSP_GAME\PARAM.SFO"), [0], TestContext.Current.CancellationToken);
+            await File.WriteAllBytesAsync(Path.Combine(temp.FullName, @"PSP_GAME\SYSDIR\EBOOT.BIN"), [0], TestContext.Current.CancellationToken);
 
             var records = new RecordCollection();
-            OblivionPspRecordSource.Populate(temp.FullName, records);
+            OblivionPspRecordSource.Populate(temp.FullName, records, TestContext.Current.CancellationToken);
             Assert.Empty(records.GenericRecords);
         }
         finally

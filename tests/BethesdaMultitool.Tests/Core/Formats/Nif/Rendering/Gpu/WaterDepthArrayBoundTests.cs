@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -39,9 +40,9 @@ public sealed class WaterDepthArrayBoundTests
         var persistentMatch = Regex.Match(device, @"persistentCapacity\s*:\s*(\d+)");
         Assert.True(persistentMatch.Success, "persistentCapacity not found in WorldView3DControl.Device.cs");
 
-        var hlslBound = int.Parse(hlslMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+        var hlslBound = int.Parse(hlslMatch.Groups[1].Value, CultureInfo.InvariantCulture);
         var persistentCapacity = int.Parse(
-            persistentMatch.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+            persistentMatch.Groups[1].Value, CultureInfo.InvariantCulture);
 
         Assert.True(hlslBound >= persistentCapacity,
             $"water_common.hlsli bounds gWaterDepthTexturesMsaa at {hlslBound}, but the descriptor heap's " +

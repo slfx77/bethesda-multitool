@@ -20,7 +20,8 @@ public sealed class StarfieldWaterApproximationSourceContractTests
         // everything it already created; the pin follows the creation through that wrapper.
         Assert.Contains("_psoStarfield = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState", renderer,
             StringComparison.Ordinal);
-        Assert.Contains("_psoStarfieldDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState", renderer,
+        Assert.Contains("_psoStarfieldDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState",
+            renderer,
             StringComparison.Ordinal);
         Assert.Contains("depthSample ? _psoStarfieldDepthSample : _psoStarfield", renderer,
             StringComparison.Ordinal);
@@ -68,10 +69,11 @@ public sealed class StarfieldWaterApproximationSourceContractTests
             .ToArray();
 
         Assert.Equal(2, permutations.Length);
-        Assert.Single(permutations, permutation => permutation.Macros.All(
-            macro => macro.Name != "WATER_HARDWARE_OCCLUSION"));
-        Assert.Single(permutations, permutation => permutation.Macros.Any(
-            macro => macro.Name == "WATER_HARDWARE_OCCLUSION" && macro.Definition == "1"));
+        Assert.Single(permutations,
+            permutation => permutation.Macros.All(macro => macro.Name != "WATER_HARDWARE_OCCLUSION"));
+        Assert.Single(permutations,
+            permutation =>
+                permutation.Macros.Any(macro => macro.Name == "WATER_HARDWARE_OCCLUSION" && macro.Definition == "1"));
     }
 
     [Fact]
@@ -113,7 +115,10 @@ public sealed class StarfieldWaterApproximationSourceContractTests
             StringComparison.Ordinal);
     }
 
-    private static string ReadRenderer() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "WaterRenderer12.cs");
+    private static string ReadRenderer()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "WaterRenderer12.cs");
+    }
 }

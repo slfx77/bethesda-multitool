@@ -1,9 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
-using BethesdaMultitool.Core.Formats.Png;
 using BethesdaMultitool.Core.Formats.Travels.OblivionMobile;
 using BethesdaMultitool.Core.Rendering.Level2D;
 using Xunit;
@@ -26,13 +22,20 @@ public sealed class OblivionMobileLevel2DSourceTests
 {
     // ---------------------------------------------------------------- fixture builders
 
-    private static byte[] Run(int count, int value) =>
-        [OblivionMobileTileMap.RunMarker, (byte)count, (byte)value];
+    private static byte[] Run(int count, int value)
+    {
+        return [OblivionMobileTileMap.RunMarker, (byte)count, (byte)value];
+    }
 
-    private static byte[] Literals(params int[] values) => [.. values.Select(v => (byte)v)];
+    private static byte[] Literals(params int[] values)
+    {
+        return [.. values.Select(v => (byte)v)];
+    }
 
-    private static byte[] Jtm(int width, int height, params byte[][] parts) =>
-        [(byte)width, (byte)height, .. parts.SelectMany(p => p)];
+    private static byte[] Jtm(int width, int height, params byte[][] parts)
+    {
+        return [(byte)width, (byte)height, .. parts.SelectMany(p => p)];
+    }
 
     private static byte[] Attributes(params (int Bit, int[] Bytes)[] fields)
     {
@@ -48,8 +51,9 @@ public sealed class OblivionMobileLevel2DSourceTests
     }
 
     /// <summary>An image-attribute block describing one whole-sheet tile.</summary>
-    private static byte[] Tile(int id, int sx, int sy, int w, int h, int dx = 0, int dy = 0, int mirror = 0) =>
-        Attributes(
+    private static byte[] Tile(int id, int sx, int sy, int w, int h, int dx = 0, int dy = 0, int mirror = 0)
+    {
+        return Attributes(
             (OblivionMobileAttributes.IdBit, [id]),
             (OblivionMobileAttributes.SourceXBit, [sx >> 8, sx & 0xFF]),
             (OblivionMobileAttributes.SourceYBit, [sy >> 8, sy & 0xFF]),
@@ -58,6 +62,7 @@ public sealed class OblivionMobileLevel2DSourceTests
             (OblivionMobileAttributes.OffsetXBit, [dx & 0xFF]),
             (OblivionMobileAttributes.OffsetYBit, [dy & 0xFF]),
             (OblivionMobileAttributes.MirrorBit, [mirror]));
+    }
 
     private static byte[] Entry(int defaultId, string path, byte[] imageAttributes)
     {
@@ -78,9 +83,9 @@ public sealed class OblivionMobileLevel2DSourceTests
         for (var i = 0; i < width * height; i++)
         {
             rgba[i * 4] = r;
-            rgba[(i * 4) + 1] = g;
-            rgba[(i * 4) + 2] = b;
-            rgba[(i * 4) + 3] = a;
+            rgba[i * 4 + 1] = g;
+            rgba[i * 4 + 2] = b;
+            rgba[i * 4 + 3] = a;
         }
 
         return PngWriter.EncodeRgba(rgba, width, height);
@@ -88,7 +93,7 @@ public sealed class OblivionMobileLevel2DSourceTests
 
     private static (byte R, byte G, byte B, byte A) Pixel(Level2DRender render, int x, int y)
     {
-        var offset = ((y * render.Width) + x) * 4;
+        var offset = (y * render.Width + x) * 4;
         return (render.Rgba[offset], render.Rgba[offset + 1], render.Rgba[offset + 2], render.Rgba[offset + 3]);
     }
 
@@ -125,7 +130,7 @@ public sealed class OblivionMobileLevel2DSourceTests
 
         // Cell (0,1) spans x -32..32 at y 8; cell (1,0) spans x 0..32 at the same y. Sample inside
         // the overlap, in canvas coordinates (the canvas starts at the leftmost placed pixel).
-        var sample = Pixel(render!.Value, 48, 8);
+        var sample = Pixel(render.Value, 48, 8);
         Assert.Equal((byte)20, sample.R);
         Assert.Equal((byte)200, sample.B);
     }
@@ -171,7 +176,7 @@ public sealed class OblivionMobileLevel2DSourceTests
             OblivionMobileAtlas.Parse(cml, "l.cml"),
             path => path.Contains("under", StringComparison.Ordinal)
                 ? SolidPng(32, 16, 10, 220, 10)
-                : SolidPng(32, 16, 250, 0, 0, a: 0));
+                : SolidPng(32, 16, 250, 0, 0, 0));
 
         // Floor takes every layer but the last, so the "under" tile is the one that draws.
         var render = source.Render(Level2DLayer.Floor)!.Value;
@@ -192,8 +197,8 @@ public sealed class OblivionMobileLevel2DSourceTests
         rgba[3] = 255;
         for (var x = 1; x < 4; x++)
         {
-            rgba[(x * 4) + 2] = 255;
-            rgba[(x * 4) + 3] = 255;
+            rgba[x * 4 + 2] = 255;
+            rgba[x * 4 + 3] = 255;
         }
 
         var source = OblivionMobileLevel2DSource.ForMap(
@@ -266,7 +271,7 @@ public sealed class OblivionMobileLevel2DSourceTests
         Assert.NotNull(render);
 
         var colours = new HashSet<(byte, byte, byte, byte)>();
-        for (var y = 0; y < render!.Value.Height; y++)
+        for (var y = 0; y < render.Value.Height; y++)
         {
             for (var x = 0; x < render.Value.Width; x++)
             {
@@ -300,11 +305,8 @@ public sealed class OblivionMobileLevel2DSourceTests
         var map = OblivionMobileTileMap.Parse(Jtm(1, 1, Run(1, 1), Literals(0)), "l.jtm");
         var atlas = OblivionMobileAtlas.Parse(Cml("gfx/"), "l.cml");
 
-        Assert.Throws<ArgumentNullException>(
-            () => OblivionMobileLevel2DSource.ForMap(null!, atlas, _ => null));
-        Assert.Throws<ArgumentNullException>(
-            () => OblivionMobileLevel2DSource.ForMap(map, null!, _ => null));
-        Assert.Throws<ArgumentNullException>(
-            () => OblivionMobileLevel2DSource.ForMap(map, atlas, null!));
+        Assert.Throws<ArgumentNullException>(() => OblivionMobileLevel2DSource.ForMap(null!, atlas, _ => null));
+        Assert.Throws<ArgumentNullException>(() => OblivionMobileLevel2DSource.ForMap(map, null!, _ => null));
+        Assert.Throws<ArgumentNullException>(() => OblivionMobileLevel2DSource.ForMap(map, atlas, null!));
     }
 }

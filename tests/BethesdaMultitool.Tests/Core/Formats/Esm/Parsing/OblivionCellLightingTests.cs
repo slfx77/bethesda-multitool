@@ -53,7 +53,7 @@ public sealed class OblivionCellLightingTests
 
         var view = SubrecordSchemaView.TryRead("XCLL", "CELL", BuildXcll(false), false);
         Assert.NotNull(view);
-        var raw = view!.Raw;
+        var raw = view.Raw;
         // The nine TES4 fields must all decode…
         Assert.Equal(0x00201510u, Assert.IsType<uint>(raw["AmbientColor"]));
         Assert.Equal(0x00403020u, Assert.IsType<uint>(raw["DirectionalColor"]));
@@ -71,7 +71,7 @@ public sealed class OblivionCellLightingTests
         // change FO3/FNV.
         var view = SubrecordSchemaView.TryRead("XCLL", "CELL", BuildXcll(true), false);
         Assert.NotNull(view);
-        Assert.Equal(1.5f, Assert.IsType<float>(view!.Raw["FogPow"]));
+        Assert.Equal(1.5f, Assert.IsType<float>(view.Raw["FogPow"]));
         Assert.Equal(12000f, Assert.IsType<float>(view.Raw["FogClipDistance"]));
     }
 

@@ -39,12 +39,16 @@ internal static class StarfieldPlanetDataFormIdRebaser
 
     private static StarfieldPlanetWorldspaceEntry Rebase(
         StarfieldPlanetWorldspaceEntry entry,
-        Func<uint, uint> rebaseFormId) =>
-        entry with
+        Func<uint, uint> rebaseFormId)
+    {
+        return entry with
         {
             WorldspaceFormId = RebaseNonzero(entry.WorldspaceFormId, rebaseFormId)
         };
+    }
 
-    private static uint RebaseNonzero(uint value, Func<uint, uint> rebaseFormId) =>
-        value == 0 ? 0 : rebaseFormId(value);
+    private static uint RebaseNonzero(uint value, Func<uint, uint> rebaseFormId)
+    {
+        return value == 0 ? 0 : rebaseFormId(value);
+    }
 }

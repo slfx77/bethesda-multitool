@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using Xunit;
@@ -34,8 +31,9 @@ public sealed class TravelsActorListBuilderTests
     private static readonly string[] FixtureNames = ["Skelos", "Gryphon"];
 
     private static GenericEsmRecord Monster(
-        uint id, string name, string? stats = "7, 8, 9", string signature = Signature) =>
-        new()
+        uint id, string name, string? stats = "7, 8, 9", string signature = Signature)
+    {
+        return new GenericEsmRecord
         {
             FormId = 0x52000000 | id,
             RecordType = signature,
@@ -51,6 +49,7 @@ public sealed class TravelsActorListBuilderTests
                 ["Stats"] = stats
             }
         };
+    }
 
     [Fact]
     public void MonsterRecordsBecomeActorsInSourceOrder()
@@ -73,7 +72,7 @@ public sealed class TravelsActorListBuilderTests
     public void UnnamedStatColumnsKeepOrdinalLabelsAndAreFlagged()
     {
         var actor = Assert.Single(
-            TravelsActorListBuilder.Build([Monster(1, "Skelos", "7, 8, 9")], Signature, "Stormhold").Actors);
+            TravelsActorListBuilder.Build([Monster(1, "Skelos")], Signature, "Stormhold").Actors);
 
         var named = actor.Stats.Where(s => s.IsNamed).Select(s => s.Name).ToArray();
         Assert.Equal(NamedColumns, named);
@@ -149,11 +148,8 @@ public sealed class TravelsActorListBuilderTests
     [Fact]
     public void Build_RejectsNullOrBlankInputs()
     {
-        Assert.Throws<ArgumentNullException>(
-            () => TravelsActorListBuilder.Build(null!, Signature, "Stormhold"));
-        Assert.Throws<ArgumentException>(
-            () => TravelsActorListBuilder.Build([], " ", "Stormhold"));
-        Assert.Throws<ArgumentException>(
-            () => TravelsActorListBuilder.Build([], Signature, " "));
+        Assert.Throws<ArgumentNullException>(() => TravelsActorListBuilder.Build(null!, Signature, "Stormhold"));
+        Assert.Throws<ArgumentException>(() => TravelsActorListBuilder.Build([], " ", "Stormhold"));
+        Assert.Throws<ArgumentException>(() => TravelsActorListBuilder.Build([], Signature, " "));
     }
 }

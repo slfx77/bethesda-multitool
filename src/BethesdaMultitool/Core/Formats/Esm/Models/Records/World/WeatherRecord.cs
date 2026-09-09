@@ -329,6 +329,7 @@ public enum WeatherColorType
     Stars = 6,
     SkyLower = 7,
     Horizon = 8,
+
     /// <summary>Skyrim+ effect-lighting color consumed by externally-emissive shader properties.</summary>
     EffectLighting = 9,
 

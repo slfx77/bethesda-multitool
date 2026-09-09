@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 
 /// <summary>
@@ -40,7 +42,7 @@ internal static class TerrainBlendWeightPacking
     public const int BytesPerQuad = SlotsPerQuad * sizeof(ushort);
 
     /// <summary>Quads needed for all <see cref="Textures.CellTerrainTextureSet.MaxSlots" /> slots.</summary>
-    public const int MaxQuadCount = Textures.CellTerrainTextureSet.MaxSlots / SlotsPerQuad;
+    public const int MaxQuadCount = CellTerrainTextureSet.MaxSlots / SlotsPerQuad;
 
     /// <summary>
     ///     Bytes one vertex's full 16-slot weight set occupies on the wire — the <b>worst case</b>,
@@ -48,7 +50,7 @@ internal static class TerrainBlendWeightPacking
     ///     <see cref="BytesPerVertexFor" /> for a specific cell; this constant is the right number
     ///     wherever an upper bound is what is wanted (a scratch buffer, a residency floor).
     /// </summary>
-    public const int BytesPerVertex = Textures.CellTerrainTextureSet.MaxSlots * sizeof(ushort);
+    public const int BytesPerVertex = CellTerrainTextureSet.MaxSlots * sizeof(ushort);
 
     /// <summary>
     ///     Quads a cell with <paramref name="activeSlotCount" /> populated slots needs:
@@ -73,13 +75,15 @@ internal static class TerrainBlendWeightPacking
         // Clamp the SLOT count, not the quad count. Rounding up first overflows for a slot count
         // near int.MaxValue, and the wrapped negative then clamps to one quad — the one direction
         // that is not safe, since it would drop every layer past the fourth.
-        var slots = Math.Clamp(activeSlotCount, 1, Textures.CellTerrainTextureSet.MaxSlots);
+        var slots = Math.Clamp(activeSlotCount, 1, CellTerrainTextureSet.MaxSlots);
         return (slots + SlotsPerQuad - 1) / SlotsPerQuad;
     }
 
     /// <summary>Wire bytes per vertex for a cell sized to <paramref name="quadCount" /> quads.</summary>
-    public static int BytesPerVertexFor(int quadCount) =>
-        Math.Clamp(quadCount, 0, MaxQuadCount) * BytesPerQuad;
+    public static int BytesPerVertexFor(int quadCount)
+    {
+        return Math.Clamp(quadCount, 0, MaxQuadCount) * BytesPerQuad;
+    }
 
     /// <summary>
     ///     Packs a weight in [0, 1]. Out-of-range inputs clamp rather than wrap, and a non-finite
@@ -98,7 +102,10 @@ internal static class TerrainBlendWeightPacking
     }
 
     /// <summary>Unpacks exactly as the input assembler does, so a CPU check means what the GPU sees.</summary>
-    public static float Unpack(ushort packed) => packed / UnormScale;
+    public static float Unpack(ushort packed)
+    {
+        return packed / UnormScale;
+    }
 
     /// <summary>Round-trip error for a finite <paramref name="weight" />. Diagnostics and tests.</summary>
     public static float RoundTripError(float weight)

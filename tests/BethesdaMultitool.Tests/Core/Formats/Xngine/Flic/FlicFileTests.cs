@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Xngine.Flic;
 using BethesdaMultitool.Core.Imaging;
 using Xunit;
@@ -219,7 +217,7 @@ public class FlicFileTests
             BuildFlic(
             [
                 FrameBlock(PaletteChunk(), ByteRunChunk()),
-                FrameBlock(PaletteChunk(uniform: 9)),
+                FrameBlock(PaletteChunk(9)),
                 FrameBlock(ByteRunChunk())
             ], 2),
             "T.FLC");
@@ -277,7 +275,7 @@ public class FlicFileTests
     public void IsFlic_RecognizesBothMagics()
     {
         Assert.True(FlicFile.IsFlic(BuildFlic([FrameBlock(PaletteChunk(), ByteRunChunk())], 1)));
-        Assert.True(FlicFile.IsFlic(BuildFlic([FrameBlock(PaletteChunk(), ByteRunChunk())], 1, magic: 0xAF11)));
+        Assert.True(FlicFile.IsFlic(BuildFlic([FrameBlock(PaletteChunk(), ByteRunChunk())], 1, 0xAF11)));
         Assert.False(FlicFile.IsFlic("not a flic at all"u8.ToArray()));
     }
 
@@ -285,7 +283,7 @@ public class FlicFileTests
     public void Parse_FliVariant_IsRejectedExplicitly()
     {
         var ex = Assert.Throws<NotSupportedException>(() => FlicFile.Parse(
-            BuildFlic([FrameBlock(PaletteChunk(), ByteRunChunk())], 1, magic: 0xAF11), "OLD.FLI"));
+            BuildFlic([FrameBlock(PaletteChunk(), ByteRunChunk())], 1, 0xAF11), "OLD.FLI"));
 
         Assert.Contains("FLI", ex.Message, StringComparison.Ordinal);
     }
@@ -294,7 +292,7 @@ public class FlicFileTests
     public void Parse_UnknownMagic_Throws()
     {
         Assert.Throws<InvalidDataException>(() => FlicFile.Parse(
-            BuildFlic([FrameBlock(PaletteChunk(), ByteRunChunk())], 1, magic: 0x1234), "T.FLC"));
+            BuildFlic([FrameBlock(PaletteChunk(), ByteRunChunk())], 1, 0x1234), "T.FLC"));
     }
 
     [Fact]

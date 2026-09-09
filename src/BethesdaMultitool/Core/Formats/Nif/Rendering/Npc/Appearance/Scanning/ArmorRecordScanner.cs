@@ -78,7 +78,7 @@ internal static class ArmorRecordScanner
                         bigEndian);
                     break;
                 case "DATA" when game == BethesdaGame.Oblivion && !isClothing &&
-                                      subrecord.Data.Length >= OblivionArmorDataSize:
+                                 subrecord.Data.Length >= OblivionArmorDataSize:
                     baseArmorRating = BinaryUtils.ReadUInt16(
                         subrecord.Data,
                         0,
@@ -89,7 +89,7 @@ internal static class ArmorRecordScanner
                         bigEndian);
                     break;
                 case "DATA" when game == BethesdaGame.Oblivion && isClothing &&
-                                      subrecord.Data.Length >= 8:
+                                 subrecord.Data.Length >= 8:
                     baseValue = BinaryUtils.ReadUInt32(
                         subrecord.Data,
                         0,

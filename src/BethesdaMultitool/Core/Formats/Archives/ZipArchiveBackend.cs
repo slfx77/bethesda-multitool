@@ -17,7 +17,7 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 internal sealed class ZipArchiveBackend : IArchiveBackend
 {
     private readonly PkZipArchive _archive;
-    private readonly IReadOnlyList<PkZipEntry> _files;
+    private readonly List<PkZipEntry> _files;
 
     public ZipArchiveBackend(PkZipArchive archive)
     {

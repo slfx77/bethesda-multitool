@@ -45,22 +45,22 @@ public class OblivionHavokCollisionIntegrationTests
         Assert.SkipUnless(dataDir is not null,
             "Oblivion Data folder not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
 
-        using var service = NifBrowserService.CreateFromBsa(Path.Combine(dataDir!, "Oblivion - Meshes.bsa"));
+        using var service = NifBrowserService.CreateFromBsa(Path.Combine(dataDir, "Oblivion - Meshes.bsa"));
         var nifData = service.ReadNifData(RingWallPath);
         Assert.SkipUnless(nifData is not null, $"{RingWallPath} not found in Oblivion - Meshes.bsa.");
 
-        var nif = NifParser.Parse(nifData!);
+        var nif = NifParser.Parse(nifData);
         Assert.NotNull(nif);
 
-        var soup = HavokCollisionExtractor.Extract(nifData!, nif!).Soup;
+        var soup = HavokCollisionExtractor.Extract(nifData, nif).Soup;
         Assert.True(soup.HasValue, "TES4 packed collision must decode (no visual-mesh fallback).");
-        Assert.True(soup!.Value.Triangles.Length >= 3);
+        Assert.True(soup.Value.Triangles.Length >= 3);
 
         // Rigid export parts carry world-baked positions in the same treatRootsAsIdentity frame as
         // the collision soup, so the two AABBs are directly comparable.
-        var scene = NifExportSceneBuilder.Build(nifData!, nif!, RingWallPath);
+        var scene = NifExportSceneBuilder.Build(nifData, nif, RingWallPath);
         Assert.NotNull(scene);
-        var (visualMin, visualMax) = Bounds(scene!.MeshParts.SelectMany(ExtractPositions));
+        var (visualMin, visualMax) = Bounds(scene.MeshParts.SelectMany(ExtractPositions));
         var (collisionMin, collisionMax) = Bounds(soup.Value.Positions);
 
         var visualSize = visualMax - visualMin;

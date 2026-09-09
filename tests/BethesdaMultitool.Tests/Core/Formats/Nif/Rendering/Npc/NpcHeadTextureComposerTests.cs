@@ -20,7 +20,7 @@ public sealed class NpcHeadTextureComposerTests
         var textures = CreateBaseAndAuthoredTextures();
         using var resolver = CreateResolver(textures);
         var egtRequested = false;
-        var npc = CreateNpc(faceGenTextureCoeffs: null);
+        var npc = CreateNpc(null);
 
         var result = NpcHeadTextureComposer.Resolve(
             npc,
@@ -60,7 +60,7 @@ public sealed class NpcHeadTextureComposerTests
                 (127, 127, 0, 0), (128, 129, 255, 255))
         };
         using var resolver = CreateResolver(textures);
-        var npc = CreateNpc(faceGenTextureCoeffs: null, game: game);
+        var npc = CreateNpc(null, game: game);
 
         var result = NpcHeadTextureComposer.Resolve(
             npc, resolver, BaseTexturePath, true,
@@ -147,7 +147,7 @@ public sealed class NpcHeadTextureComposerTests
         textures[BaseTexturePath] = TestTextures.Single(128, 192, 254, 23);
         textures[AuthoredMap0Path] = TestTextures.Single(128, 128, 128, 255);
         using var resolver = CreateResolver(textures);
-        var npc = CreateNpc(faceGenTextureCoeffs: null, game: game);
+        var npc = CreateNpc(null, game: game);
 
         var result = NpcHeadTextureComposer.Resolve(
             npc, resolver, BaseTexturePath, applyEgt,

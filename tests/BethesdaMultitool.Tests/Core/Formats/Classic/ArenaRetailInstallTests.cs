@@ -1,4 +1,4 @@
-using System.Linq;
+using System.Text;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Arena;
@@ -37,7 +37,7 @@ public sealed class ArenaRetailInstallTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Classics.Arena();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("The Elder Scrolls: Arena"));
-        return root!;
+        return root;
     }
 
     [Fact]
@@ -92,7 +92,7 @@ public sealed class ArenaRetailInstallTests
             Assert.True(ArenaInfFile.IsProbablyEncrypted(raw), $"{entry.Name} should be encrypted in the BSA.");
 
             // ...and decrypting must yield parsable text every time.
-            var inf = ArenaInfFile.Parse(raw, entry.Name, encrypted: true);
+            var inf = ArenaInfFile.Parse(raw, entry.Name, true);
             Assert.NotEmpty(inf.Walls);
         }
 
@@ -295,7 +295,8 @@ public sealed class ArenaRetailInstallTests
 
         // The format's whole point is variable bit depth; a corpus that only exercised one depth
         // would leave most of the unpacker untested.
-        Assert.True(depths.Count > 1, $"Expected several bit depths across the corpus, saw: {string.Join(", ", depths.Order())}.");
+        Assert.True(depths.Count > 1,
+            $"Expected several bit depths across the corpus, saw: {string.Join(", ", depths.Order())}.");
         Assert.All(depths, d => Assert.InRange(d, 1, 8));
     }
 
@@ -385,7 +386,8 @@ public sealed class ArenaRetailInstallTests
         var root = RequireArenaRoot();
         var exePath = Path.Combine(root, "A.EXE");
         var cityPath = Path.Combine(root, "CITYDATA.00");
-        Assert.SkipWhen(!File.Exists(exePath) || !File.Exists(cityPath), RealAssetPaths.SkipMessage("Arena A.EXE + CITYDATA"));
+        Assert.SkipWhen(!File.Exists(exePath) || !File.Exists(cityPath),
+            RealAssetPaths.SkipMessage("Arena A.EXE + CITYDATA"));
 
         var unpacked = ArenaExeUnpacker.Unpack(File.ReadAllBytes(exePath), "A.EXE");
         var fromExe = ArenaExeData.TryReadProvinces(unpacked);
@@ -435,7 +437,7 @@ public sealed class ArenaRetailInstallTests
         // Size alone could be satisfied by garbage, so check that the recovered image really is
         // Arena: the game keeps its province names, race names and message templates in here, and
         // these are the tables the executable is worth unpacking for.
-        var text = System.Text.Encoding.Latin1.GetString(unpacked);
+        var text = Encoding.Latin1.GetString(unpacked);
         foreach (var probe in new[]
                  {
                      "Daggerfall", "Sentinel", "Wayrest", "Hammerfell", "High Rock",
@@ -465,9 +467,9 @@ public sealed class ArenaRetailInstallTests
             for (var i = 0; i < Palette.EntryCount; i++)
             {
                 var (r, g, b, _) = palette.GetEntry(i);
-                Assert.Equal(bytes[8 + (i * 3)], r);
-                Assert.Equal(bytes[8 + (i * 3) + 1], g);
-                Assert.Equal(bytes[8 + (i * 3) + 2], b);
+                Assert.Equal(bytes[8 + i * 3], r);
+                Assert.Equal(bytes[8 + i * 3 + 1], g);
+                Assert.Equal(bytes[8 + i * 3 + 2], b);
 
                 if (r > 63 || g > 63 || b > 63)
                 {
@@ -525,7 +527,8 @@ public sealed class ArenaRetailInstallTests
 
         // The strings carry the engine's substitution tokens; if the ampersand split were wrong the
         // values would be one giant blob instead.
-        var withTokens = template.Entries.SelectMany(e => e.Values).Count(v => v.Contains("%cn", StringComparison.Ordinal));
+        var withTokens = template.Entries.SelectMany(e => e.Values)
+            .Count(v => v.Contains("%cn", StringComparison.Ordinal));
         Assert.True(withTokens > 10, $"Expected many '%cn' substitution strings, found {withTokens}.");
     }
 }

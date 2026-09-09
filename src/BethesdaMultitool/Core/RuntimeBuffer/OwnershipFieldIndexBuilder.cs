@@ -9,6 +9,12 @@ namespace BethesdaMultitool.Core.RuntimeBuffer;
 internal static class OwnershipFieldIndexBuilder
 {
     /// <summary>
+    ///     The EditorID field is excluded from the offset indices on purpose: it has its own
+    ///     dedicated resolution path, and letting it match here would shadow that.
+    /// </summary>
+    private const string CFormEditorId = "cFormEditorID";
+
+    /// <summary>
     ///     Build all three PDB-based field indices in a single pass over the layout database.
     ///     Returns: (bsStringTFieldIndex, classNameFieldIndex, charPointerFieldIndex).
     ///     <para>
@@ -61,12 +67,6 @@ internal static class OwnershipFieldIndexBuilder
 
         return (bsIndex, classIndex, charIndex);
     }
-
-    /// <summary>
-    ///     The EditorID field is excluded from the offset indices on purpose: it has its own
-    ///     dedicated resolution path, and letting it match here would shadow that.
-    /// </summary>
-    private const string CFormEditorId = "cFormEditorID";
 
     private static string Label(PdbFieldLayout field)
     {

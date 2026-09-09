@@ -12,13 +12,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Script;
 /// </summary>
 public class DecompiledSourceFallbackTests
 {
-    private static readonly IReadOnlyList<ScriptVariableInfo> Variables =
-    [
-        new(1, "rTarget", 0),
-        new(2, "fRange", 0),
-        new(3, "bDoOnce", 1)
-    ];
-
     private const string Decompiled = """
                                       ScriptName MyTestSCRIPT
                                       Begin GameMode
@@ -26,6 +19,13 @@ public class DecompiledSourceFallbackTests
                                         rTarget.Activate Player
                                       End
                                       """;
+
+    private static readonly IReadOnlyList<ScriptVariableInfo> Variables =
+    [
+        new(1, "rTarget", 0),
+        new(2, "fRange", 0),
+        new(3, "bDoOnce", 1)
+    ];
 
     [Fact]
     public void SynthesizedSource_DeclaresEveryLocalFromTheSlsdTable()

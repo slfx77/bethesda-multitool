@@ -15,13 +15,6 @@ internal static class StarfieldPlanetDataDecoder
     private const int MasterTupleSize = 20;
     private const int OverrideTupleSize = 21;
 
-    private enum BodyState
-    {
-        BeforeBody,
-        InBody,
-        AfterBody
-    }
-
     internal static bool TryDecode(
         ReadOnlySpan<byte> data,
         bool isBigEndian,
@@ -292,7 +285,7 @@ internal static class StarfieldPlanetDataDecoder
                         return Fail("PNDT INAM is valid only inside BDST/BDED.", out record, out error);
                     }
 
-                    if (payload.Length != sizeof(uint) + (3 * sizeof(float)) || atmosphere is not null)
+                    if (payload.Length != sizeof(uint) + 3 * sizeof(float) || atmosphere is not null)
                     {
                         return Fail(
                             "PNDT body INAM must occur once with length 16.",
@@ -478,4 +471,10 @@ internal static class StarfieldPlanetDataDecoder
         return !string.IsNullOrWhiteSpace(editorId);
     }
 
+    private enum BodyState
+    {
+        BeforeBody,
+        InBody,
+        AfterBody
+    }
 }

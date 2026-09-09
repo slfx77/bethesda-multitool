@@ -1,12 +1,12 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Collision;
+using BethesdaMultitool.Core.Formats.Nif.Materials;
+using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
-using BethesdaMultitool.Core.Formats.Nif.Parser;
-using BethesdaMultitool.Core.Formats.Nif.Collision;
-using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.SpeedTree;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;

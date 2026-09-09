@@ -110,7 +110,15 @@
               AutomationProperties.Name="Record types"
               SelectionMode="Single"
               Visibility="Collapsed"
-              VerticalAlignment="Stretch" />
+              VerticalAlignment="Stretch">
+              <!--  Group and record nodes both carry a DisplayName (RecordTypeGroup / RecordBrowserItem);
+                    without a template the node shows its content's ToString().  -->
+              <TreeView.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock FontSize="12" Text="{Binding Content.DisplayName}" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </TreeView.ItemTemplate>
+            </TreeView>
 
             <ListView
               x:Name="RecordFieldsList"
@@ -174,7 +182,15 @@
               Grid.Column="0"
               AutomationProperties.Name="Asset tree"
               SelectionMode="Single"
-              VerticalAlignment="Stretch" />
+              VerticalAlignment="Stretch">
+              <!--  Without a template a TreeViewNode presents Content.ToString(), which for an
+                    AssetNode is its type name; the label a person needs is the node's Name.  -->
+              <TreeView.ItemTemplate>
+                <DataTemplate>
+                  <TextBlock FontSize="12" Text="{Binding Content.Name}" TextTrimming="CharacterEllipsis" />
+                </DataTemplate>
+              </TreeView.ItemTemplate>
+            </TreeView>
 
             <TextBlock
               x:Name="AssetTreeStatusText"

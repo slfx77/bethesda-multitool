@@ -29,7 +29,7 @@ public sealed class DumpRttiIndexTests
         var index = BuildIndex();
 
         Assert.NotNull(index);
-        Assert.Equal(2, index!.TypeDescriptorCount);
+        Assert.Equal(2, index.TypeDescriptorCount);
         Assert.Equal(2, index.CompleteObjectLocatorCount);
         Assert.Equal(2, index.VtableCount);
         Assert.Equal(1, index.PrimaryVtableCount);
@@ -97,12 +97,12 @@ public sealed class DumpRttiIndexTests
     [Fact]
     public void Build_RejectsLocatorWithNonZeroSignature()
     {
-        var index = BuildIndex(corrupt: data =>
+        var index = BuildIndex(data =>
             WriteBe(data, (int)ColBase, 1)); // signature must be 0
 
         // The primary locator is gone, so only the secondary class survives.
         Assert.NotNull(index);
-        Assert.Equal(1, index!.CompleteObjectLocatorCount);
+        Assert.Equal(1, index.CompleteObjectLocatorCount);
         Assert.DoesNotContain("TESForm", index.ClassesByName.Keys);
     }
 
@@ -113,12 +113,12 @@ public sealed class DumpRttiIndexTests
     [Fact]
     public void Build_IgnoresUnalignedTypeDescriptorCandidates()
     {
-        var index = BuildIndex(corrupt: data =>
+        var index = BuildIndex(data =>
             // A ".?AV" tag whose implied descriptor address (name - 8) is not 4-aligned.
             WriteCString(data, 0x0A1 + 8, ".?AVBogusUnaligned@@"));
 
         Assert.NotNull(index);
-        Assert.Equal(2, index!.TypeDescriptorCount);
+        Assert.Equal(2, index.TypeDescriptorCount);
         Assert.DoesNotContain("BogusUnaligned", index.ClassesByName.Keys);
     }
 
@@ -140,7 +140,7 @@ public sealed class DumpRttiIndexTests
         var index = DumpRttiIndex.Build(info, new ByteArrayMemoryAccessor(data), truncated);
 
         Assert.NotNull(index);
-        Assert.Equal(2, index!.TypeDescriptorCount);
+        Assert.Equal(2, index.TypeDescriptorCount);
         Assert.Equal(0, index.VtableCount);
         Assert.Empty(index.Classes);
         Assert.Equal(truncated, index.ModuleBytesCaptured);

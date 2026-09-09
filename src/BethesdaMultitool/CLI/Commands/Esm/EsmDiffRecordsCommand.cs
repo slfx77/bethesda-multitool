@@ -403,15 +403,7 @@ internal static class EsmDiffRecordsCommand
             FileBOffsetDisplay = $"0x{fileBOffset:X}",
             StatusMarkup = status,
             ShowDetails = showDetails,
-            DetailsMarkup = details,
-            XboxData = xbox.Data,
-            PcData = pc.Data,
-            FirstDiffOffset = firstDiff,
-            SchemaHint = schemaHint,
-            PatternSummary = patterns?.Summary,
-            SwapRanges = patterns?.SwapRanges,
-            ContextStart = ctxStart,
-            ContextLength = ctxLen
+            DetailsMarkup = details
         };
     }
 
@@ -426,14 +418,5 @@ internal static class EsmDiffRecordsCommand
         public required string StatusMarkup { get; init; }
         public required bool ShowDetails { get; init; }
         public required string? DetailsMarkup { get; init; }
-
-        public byte[]? XboxData { get; init; }
-        public byte[]? PcData { get; init; }
-        public int FirstDiffOffset { get; init; }
-        public string? SchemaHint { get; init; }
-        public string? PatternSummary { get; init; }
-        public List<SwapRange>? SwapRanges { get; init; }
-        public int ContextStart { get; init; }
-        public int ContextLength { get; init; }
     }
 }

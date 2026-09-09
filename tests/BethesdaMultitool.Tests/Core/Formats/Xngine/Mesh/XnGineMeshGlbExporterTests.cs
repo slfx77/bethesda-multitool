@@ -1,6 +1,4 @@
-using System;
-using System.IO;
-using System.Linq;
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
 using SharpGLTF.Schema2;
@@ -17,8 +15,10 @@ public class XnGineMeshGlbExporterTests
         var bytes = XnGineMeshFixture.Build("v2.7",
             [(0, 0, 0), (256, 0, 0), (256, 0, 256), (0, 0, 256)],
             [
-                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(24, 0), [(0, 0, 0), (1, 0, 0), (2, 0, 0)], (0, -256, 0)),
-                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(321, 4), [(0, 0, 0), (2, 0, 0), (3, 0, 0)], (0, -256, 0))
+                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(24, 0), [(0, 0, 0), (1, 0, 0), (2, 0, 0)],
+                    (0, -256, 0)),
+                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(321, 4), [(0, 0, 0), (2, 0, 0), (3, 0, 0)],
+                    (0, -256, 0))
             ]);
         var mesh = XnGineMeshDecomposer.Decompose(XnGineMesh.Parse(bytes, 44005));
 
@@ -53,13 +53,13 @@ public class XnGineMeshGlbExporterTests
 
         // The native quad lies at Y = 0 with its normal pointing "up" in Y-down space (0, -1, 0);
         // after the flip the normal is +Y and the corner (256, 0, 256) native is (1, 0, 1).
-        Assert.Contains(positions, p => p == new System.Numerics.Vector3(1, 0, 1));
+        Assert.Contains(positions, p => p == new Vector3(1, 0, 1));
         var normals = primitive.GetVertexAccessor("NORMAL").AsVector3Array();
-        Assert.All(normals, n => Assert.Equal(new System.Numerics.Vector3(0, 1, 0), n));
+        Assert.All(normals, n => Assert.Equal(new Vector3(0, 1, 0), n));
 
         // 64 texels over a 32-pixel texture is UV 2.0.
-        Assert.Contains(uvs, uv => uv == new System.Numerics.Vector2(2, 2));
-        Assert.Contains(uvs, uv => uv == new System.Numerics.Vector2(0, 0));
+        Assert.Contains(uvs, uv => uv == new Vector2(2, 2));
+        Assert.Contains(uvs, uv => uv == new Vector2(0, 0));
     }
 
     [Fact]
@@ -76,7 +76,7 @@ public class XnGineMeshGlbExporterTests
         }
         finally
         {
-            Directory.Delete(Path.GetDirectoryName(directory)!, recursive: true);
+            Directory.Delete(Path.GetDirectoryName(directory)!, true);
         }
     }
 }

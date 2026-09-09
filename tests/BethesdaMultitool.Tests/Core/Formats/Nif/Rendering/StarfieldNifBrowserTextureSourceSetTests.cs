@@ -60,7 +60,7 @@ public sealed class StarfieldNifBrowserTextureSourceSetTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -94,7 +94,7 @@ public sealed class StarfieldNifBrowserTextureSourceSetTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -118,7 +118,7 @@ public sealed class StarfieldNifBrowserTextureSourceSetTests
     private static byte[] BuildDx10Ba2()
     {
         using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
         writer.Write("BTDX"u8.ToArray());
         writer.Write(1u);
         writer.Write("DX10"u8.ToArray());

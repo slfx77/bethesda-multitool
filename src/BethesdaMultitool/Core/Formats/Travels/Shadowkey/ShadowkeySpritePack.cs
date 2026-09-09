@@ -144,7 +144,7 @@ internal sealed record ShadowkeySprite(
                 continue;
             }
 
-            row.Indices.Span.CopyTo(indices.AsSpan((y * Width) + row.X0));
+            row.Indices.Span.CopyTo(indices.AsSpan(y * Width + row.X0));
         }
 
         return new IndexedBitmap(Width, Height, indices);
@@ -170,8 +170,8 @@ internal sealed record ShadowkeySprite(
         {
             var entry = PaletteEntries[i];
             rgb[i * 3] = (byte)(((entry >> 8) & 0xF) * 17);
-            rgb[(i * 3) + 1] = (byte)(((entry >> 4) & 0xF) * 17);
-            rgb[(i * 3) + 2] = (byte)((entry & 0xF) * 17);
+            rgb[i * 3 + 1] = (byte)(((entry >> 4) & 0xF) * 17);
+            rgb[i * 3 + 2] = (byte)((entry & 0xF) * 17);
         }
 
         var palette = Palette.FromRgb8(rgb).WithTransparentIndex(transparentIndex);
@@ -224,7 +224,7 @@ internal sealed record ShadowkeySprite(
     public ShadowkeySpriteImage ToImage(bool magentaIsTransparent = true)
     {
         var unused = FindUnusedIndex();
-        var transparentIndex = unused ?? (byte)(Palette.EntryCount - 1);
+        var transparentIndex = unused ?? Palette.EntryCount - 1;
         return new ShadowkeySpriteImage(
             ToIndexedBitmap(transparentIndex),
             BuildPalette(transparentIndex, magentaIsTransparent),
@@ -263,12 +263,12 @@ internal sealed class ShadowkeySpritePack
     public const int SizeEntryLength = 4;
 
     /// <summary>Bytes of a sprite blob before its first row: width, height and the 256-entry palette.</summary>
-    public const int SpriteHeaderLength = 4 + (Palette.EntryCount * 2);
+    public const int SpriteHeaderLength = 4 + Palette.EntryCount * 2;
 
     private readonly byte[] _bytes;
-    private readonly ShadowkeySprite?[] _sprites;
-    private readonly bool[] _parsed;
     private readonly uint[] _offsets;
+    private readonly bool[] _parsed;
+    private readonly ShadowkeySprite?[] _sprites;
 
     private ShadowkeySpritePack(string name, byte[] bytes, uint[] sizes, uint[] offsets)
     {
@@ -361,7 +361,7 @@ internal sealed class ShadowkeySpritePack
         var palette = new ushort[Palette.EntryCount];
         for (var i = 0; i < palette.Length; i++)
         {
-            palette[i] = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(4 + (i * 2))..]);
+            palette[i] = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(4 + i * 2)..]);
         }
 
         var rows = new ShadowkeySpriteRow[height];
@@ -429,7 +429,7 @@ internal sealed class ShadowkeySpritePack
         for (var count = 1; count <= maximum; count++)
         {
             total += BinaryPrimitives.ReadUInt32LittleEndian(bytes[((count - 1) * SizeEntryLength)..]);
-            var tiled = ((long)count * SizeEntryLength) + total;
+            var tiled = (long)count * SizeEntryLength + total;
             if (tiled == bytes.Length)
             {
                 if (solution >= 0)

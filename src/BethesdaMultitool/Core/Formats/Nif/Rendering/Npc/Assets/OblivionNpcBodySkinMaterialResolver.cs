@@ -32,7 +32,8 @@ internal static class OblivionNpcBodySkinMaterialResolver
         submesh.DiffuseTexturePath = textureOverride;
         if (appearance.Game != BethesdaGame.Oblivion ||
             string.IsNullOrWhiteSpace(textureOverride) ||
-            NifTexturePathUtility.Normalize(textureOverride).StartsWith("textures\\body_skin\\", StringComparison.Ordinal) ||
+            NifTexturePathUtility.Normalize(textureOverride)
+                .StartsWith("textures\\body_skin\\", StringComparison.Ordinal) ||
             string.IsNullOrWhiteSpace(originalDiffuse) ||
             !submesh.HasAuthoredOblivionBodySkinInputs ||
             HasUnsupportedMaterial(submesh) || !HasUsableBasis(submesh) ||

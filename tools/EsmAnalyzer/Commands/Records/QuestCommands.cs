@@ -139,13 +139,13 @@ public static class QuestCommands
 
             _ = table.AddRow(
                 $"0x{formId:X8}",
-                leftQuest!.Edid ?? rightQuest!.Edid ?? "—",
-                leftQuest!.ScriDisplay,
+                leftQuest.Edid ?? rightQuest!.Edid ?? "—",
+                leftQuest.ScriDisplay,
                 rightQuest!.ScriDisplay,
-                leftQuest!.QobjDisplay,
-                rightQuest!.QobjDisplay,
-                leftQuest!.QstaDisplay,
-                rightQuest!.QstaDisplay,
+                leftQuest.QobjDisplay,
+                rightQuest.QobjDisplay,
+                leftQuest.QstaDisplay,
+                rightQuest.QstaDisplay,
                 matches ? "MATCH" : $"DIFF ({string.Join(",", diffFields)})");
 
             shown++;

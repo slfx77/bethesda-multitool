@@ -48,7 +48,7 @@ public sealed class OblivionOrdinarySpecularDecodeTests
     public void NativeSceneCopyAndPoseKeepEligibility(bool skinned)
     {
         var source = CreateSource(true);
-        var scene = new BethesdaViewerScene("ordinary", BethesdaViewerScenePurpose.NpcAppearance, null);
+        var scene = new BethesdaViewerScene("ordinary", BethesdaViewerScenePurpose.NpcAppearance);
         var node = scene.AddNode("part", BethesdaViewerScene.RootNodeIndex,
             Matrix4x4.Identity, Matrix4x4.CreateTranslation(2f, 3f, 4f), BethesdaViewerNodeRole.Attachment);
         scene.MeshParts.Add(new BethesdaViewerMeshPart
@@ -56,12 +56,14 @@ public sealed class OblivionOrdinarySpecularDecodeTests
             Name = "part",
             NodeIndex = node,
             Submesh = source,
-            Skin = skinned ? new BethesdaViewerSkinBinding
-            {
-                JointNodeIndices = [node],
-                InverseBindMatrices = [Matrix4x4.Identity],
-                PerVertexInfluences = [[(0, 1f)], [(0, 1f)], [(0, 1f)]]
-            } : null
+            Skin = skinned
+                ? new BethesdaViewerSkinBinding
+                {
+                    JointNodeIndices = [node],
+                    InverseBindMatrices = [Matrix4x4.Identity],
+                    PerVertexInfluences = [[(0, 1f)], [(0, 1f)], [(0, 1f)]]
+                }
+                : null
         });
 
         var decoded = BethesdaViewerSceneDecoder12.Decode(scene);
@@ -75,22 +77,25 @@ public sealed class OblivionOrdinarySpecularDecodeTests
         Assert.Equal(new Vector3(0.2f, 0.4f, 0.8f), part.SpecularColor);
     }
 
-    private static RenderableSubmesh CreateSource(bool eligible) => new()
+    private static RenderableSubmesh CreateSource(bool eligible)
     {
-        ShapeName = "part",
-        LegacyMaterialName = "foot",
-        Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
-        Triangles = [0, 1, 2],
-        Normals = [0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f],
-        Tangents = [1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f],
-        Bitangents = [0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f],
-        UVs = [0f, 0f, 1f, 0f, 0f, 1f],
-        DiffuseTexturePath = "textures/test.dds",
-        NormalMapTexturePath = "textures/test_n.dds",
-        HasAuthoredOblivionOrdinaryInputs = eligible,
-        AuthoredOblivionOrdinaryDiffusePath = "textures/test.dds",
-        MaterialAlpha = 1f,
-        MaterialGlossiness = 10f,
-        SpecularColor = (0.2f, 0.4f, 0.8f)
-    };
+        return new RenderableSubmesh
+        {
+            ShapeName = "part",
+            LegacyMaterialName = "foot",
+            Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
+            Triangles = [0, 1, 2],
+            Normals = [0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f],
+            Tangents = [1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f],
+            Bitangents = [0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f],
+            UVs = [0f, 0f, 1f, 0f, 0f, 1f],
+            DiffuseTexturePath = "textures/test.dds",
+            NormalMapTexturePath = "textures/test_n.dds",
+            HasAuthoredOblivionOrdinaryInputs = eligible,
+            AuthoredOblivionOrdinaryDiffusePath = "textures/test.dds",
+            MaterialAlpha = 1f,
+            MaterialGlossiness = 10f,
+            SpecularColor = (0.2f, 0.4f, 0.8f)
+        };
+    }
 }

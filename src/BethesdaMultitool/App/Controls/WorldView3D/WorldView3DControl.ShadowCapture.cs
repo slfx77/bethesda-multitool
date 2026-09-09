@@ -45,9 +45,10 @@ public sealed partial class WorldView3DControl
             ["shadowSubmittedSplineInstancesByCascade"] = _lastShadowSubmittedSplineInstancesByCascade.ToArray(),
             ["terrainContentVersion"] = _terrain?.ContentVersion ?? 0,
             ["referenceVisibility"] = _references.VisibilityKey.ToString(),
-            ["cascadeGenerations"] = _shadowCascadeGenerations.ToArray(),
+            ["cascadeGenerations"] = _shadowCascadeGenerations.ToArray()
         });
-        Log.Info("[Capture] shadow prime policy={0} attempt={1} phase={2} completed=0x{3:X} defer={4} span={5:R}->{6:R}",
+        Log.Info(
+            "[Capture] shadow prime policy={0} attempt={1} phase={2} completed=0x{3:X} defer={4} span={5:R}->{6:R}",
             coherent ? "coherent" : "legacy", attempt, isPrime ? "prime" : "real-end",
             _lastShadowCompletedCascadeMask, _lastShadowDeferredReason,
             _shadowFrameSceneZSpan, _lastShadowPostCullSceneZSpan);
@@ -74,7 +75,7 @@ public sealed partial class WorldView3DControl
             ["completedCascadeMask"] = _lastShadowCompletedCascadeMask,
             ["depthSha256"] = fingerprints,
             ["depthHashDomain"] = "R32_FLOAT little-endian pixel bytes in row order; excludes row padding",
-            ["lastSubmittedFence"] = _commandRecorder12!.LastSubmittedFenceValue,
+            ["lastSubmittedFence"] = _commandRecorder12!.LastSubmittedFenceValue
         });
     }
 
@@ -120,6 +121,6 @@ public sealed partial class WorldView3DControl
         value.M11, value.M12, value.M13, value.M14,
         value.M21, value.M22, value.M23, value.M24,
         value.M31, value.M32, value.M33, value.M34,
-        value.M41, value.M42, value.M43, value.M44,
+        value.M41, value.M42, value.M43, value.M44
     ];
 }

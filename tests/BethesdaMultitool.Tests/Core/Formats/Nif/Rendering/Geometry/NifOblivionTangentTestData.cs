@@ -7,6 +7,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Geometry;
 internal sealed class NifOblivionTangentTestData
 {
     internal const string ExtraName = "Tangent space (binormal & tangent vectors)";
+    internal const int ShapeCountOffset = 10; // SizedString("Target")
+    internal const int ShapeFirstLinkOffset = 14;
     internal static readonly Vector3[] Tangents = [new(2, 0, 0), new(-3, 0, 0), new(1, 1, 0)];
     internal static readonly Vector3[] Bitangents = [new(0, 4, 0), new(0, 5, 0), new(-2, 2, 0)];
     internal static readonly Vector3[] Positions = [Vector3.Zero, Vector3.UnitX, Vector3.UnitY];
@@ -24,7 +26,7 @@ internal sealed class NifOblivionTangentTestData
             BlockCount = 3
         };
         using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
         var attachedLinks = links ?? [1];
         AddBlock(strips ? "NiTriStrips" : "NiTriShape", () =>
         {
@@ -63,8 +65,6 @@ internal sealed class NifOblivionTangentTestData
     internal byte[] Data { get; }
     internal NifInfo Info { get; }
     internal int ExtraPayloadOffset => Info.Blocks[1].DataOffset + 8 + ExtraName.Length;
-    internal const int ShapeCountOffset = 10; // SizedString("Target")
-    internal const int ShapeFirstLinkOffset = 14;
 
     internal static Vector3 VectorAt(float[] values, int vertex)
     {
@@ -99,6 +99,7 @@ internal sealed class NifOblivionTangentTestData
             writer.Write(position.X);
             writer.Write(position.Y);
         }
+
         writer.Write((ushort)0); // Consistency Flags
         writer.Write(-1); // Additional Data ref
         writer.Write((ushort)1); // triangle count

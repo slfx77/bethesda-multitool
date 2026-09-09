@@ -142,7 +142,8 @@ internal sealed class DaggerfallMapsFile
     {
         if (regionIndex < 0 || regionIndex >= RegionCount)
         {
-            throw new ArgumentOutOfRangeException(nameof(regionIndex), regionIndex, $"Region index must be below {RegionCount}.");
+            throw new ArgumentOutOfRangeException(nameof(regionIndex), regionIndex,
+                $"Region index must be below {RegionCount}.");
         }
 
         var regionName = RegionNames[regionIndex];
@@ -159,7 +160,8 @@ internal sealed class DaggerfallMapsFile
 
         if (names.Length < 4)
         {
-            throw new InvalidDataException($"Region {regionIndex} ({regionName}) MAPNAMES is {names.Length} bytes; a count needs 4.");
+            throw new InvalidDataException(
+                $"Region {regionIndex} ({regionName}) MAPNAMES is {names.Length} bytes; a count needs 4.");
         }
 
         var count = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(names));
@@ -239,7 +241,8 @@ internal sealed class DaggerfallMapsFile
         var start = (long)count * 4 + offset;
         if (start > exteriors.Length)
         {
-            throw new InvalidDataException($"Region {regionIndex} location {index}: exterior offset {offset} lies past the entry.");
+            throw new InvalidDataException(
+                $"Region {regionIndex} location {index}: exterior offset {offset} lies past the entry.");
         }
 
         var record = exteriors[(int)start..];
@@ -249,7 +252,8 @@ internal sealed class DaggerfallMapsFile
 
         if (record.Length < position + 7)
         {
-            throw new InvalidDataException($"Region {regionIndex} location {index}: exterior record ends before its building count.");
+            throw new InvalidDataException(
+                $"Region {regionIndex} location {index}: exterior record ends before its building count.");
         }
 
         var buildingCount = BinaryPrimitives.ReadUInt16LittleEndian(record[position..]);
@@ -306,14 +310,16 @@ internal sealed class DaggerfallMapsFile
 
         if (dungeons.Length < 4)
         {
-            throw new InvalidDataException($"Region {regionIndex} MAPDITEM is {dungeons.Length} bytes; a count needs 4.");
+            throw new InvalidDataException(
+                $"Region {regionIndex} MAPDITEM is {dungeons.Length} bytes; a count needs 4.");
         }
 
         var count = checked((int)BinaryPrimitives.ReadUInt32LittleEndian(dungeons));
         var tableLength = 4 + count * DungeonOffsetEntryLength;
         if (dungeons.Length < tableLength)
         {
-            throw new InvalidDataException($"Region {regionIndex} MAPDITEM declares {count} dungeons but is {dungeons.Length} bytes; the offset table alone needs {tableLength}.");
+            throw new InvalidDataException(
+                $"Region {regionIndex} MAPDITEM declares {count} dungeons but is {dungeons.Length} bytes; the offset table alone needs {tableLength}.");
         }
 
         for (var i = 0; i < count; i++)
@@ -321,10 +327,11 @@ internal sealed class DaggerfallMapsFile
             var tableEntry = dungeons.Slice(4 + i * DungeonOffsetEntryLength, DungeonOffsetEntryLength);
             var offset = BinaryPrimitives.ReadUInt32LittleEndian(tableEntry);
             var exteriorLocationId = BinaryPrimitives.ReadUInt16LittleEndian(tableEntry[6..]);
-            var start = (long)tableLength + offset;
+            var start = tableLength + offset;
             if (start > dungeons.Length)
             {
-                throw new InvalidDataException($"Region {regionIndex} dungeon {i}: offset {offset} lies past the entry.");
+                throw new InvalidDataException(
+                    $"Region {regionIndex} dungeon {i}: offset {offset} lies past the entry.");
             }
 
             var record = dungeons[(int)start..];
@@ -340,7 +347,8 @@ internal sealed class DaggerfallMapsFile
             var blockCount = BinaryPrimitives.ReadUInt16LittleEndian(record[(headerStart + RecordHeaderLength + 10)..]);
             if (blockCount > DungeonBlockSlots)
             {
-                throw new InvalidDataException($"Region {regionIndex} dungeon {i}: block count {blockCount} exceeds the {DungeonBlockSlots} slots.");
+                throw new InvalidDataException(
+                    $"Region {regionIndex} dungeon {i}: block count {blockCount} exceeds the {DungeonBlockSlots} slots.");
             }
 
             var blocks = new DaggerfallDungeonBlock[blockCount];
@@ -454,7 +462,7 @@ internal sealed class DaggerfallLocation
     public int MapPixelX => Longitude / DaggerfallMapsFile.UnitsPerMapPixel;
 
     /// <summary>Map pixel row, top-down.</summary>
-    public int MapPixelY => DaggerfallMapsFile.MapHeight - 1 - (Latitude / DaggerfallMapsFile.UnitsPerMapPixel);
+    public int MapPixelY => DaggerfallMapsFile.MapHeight - 1 - Latitude / DaggerfallMapsFile.UnitsPerMapPixel;
 
     /// <summary>Location category.</summary>
     public required DaggerfallLocationType LocationType { get; init; }
@@ -521,7 +529,8 @@ internal readonly record struct DaggerfallBuilding(
 /// <summary>A dungeon record: its own header id and name plus the used block slots.</summary>
 internal sealed class DaggerfallDungeon
 {
-    public DaggerfallDungeon(ushort locationId, string name, int doorCount, IReadOnlyList<DaggerfallDungeonBlock> blocks)
+    public DaggerfallDungeon(ushort locationId, string name, int doorCount,
+        IReadOnlyList<DaggerfallDungeonBlock> blocks)
     {
         LocationId = locationId;
         Name = name;
@@ -543,7 +552,12 @@ internal sealed class DaggerfallDungeon
 }
 
 /// <summary>One RDB block placement: grid position plus the packed block number/index/start bit.</summary>
-internal readonly record struct DaggerfallDungeonBlock(sbyte X, sbyte Z, ushort BlockNumber, byte BlockIndex, bool IsStartingBlock);
+internal readonly record struct DaggerfallDungeonBlock(
+    sbyte X,
+    sbyte Z,
+    ushort BlockNumber,
+    byte BlockIndex,
+    bool IsStartingBlock);
 
 /// <summary>Location categories (bits 25-29 of the packed map-table entry).</summary>
 internal enum DaggerfallLocationType : byte

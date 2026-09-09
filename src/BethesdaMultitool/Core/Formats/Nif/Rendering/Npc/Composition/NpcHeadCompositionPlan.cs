@@ -45,6 +45,8 @@ internal sealed class NpcHeadCompositionPlan
 
     public NpcHeadTextureSource EffectiveHeadTextureSource { get; init; }
 
+    public ClassicSkinAuthoredAlbedo? AuthoredSkinAlbedo { get; init; }
+
     public string? EffectiveEarTexturePath { get; init; }
 
     public string? HairFilter { get; init; }

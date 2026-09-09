@@ -171,7 +171,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
         bool LeafAtlasMips,
         bool StarfieldNormalMap,
         bool StarfieldOpacityMap) SplitVariantKey(
-        string texturePath)
+            string texturePath)
     {
         var sourcePath = texturePath;
         var leafAtlasMips = false;
@@ -317,7 +317,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     public void Release(string texturePath)
     {
-        _cache.Release(NormalizeKey(texturePath), true);
+        _cache.Release(NormalizeKey(texturePath));
     }
 
     private ConcurrentLazyCache<string, GpuTexturePayload> CreateCache()
@@ -327,12 +327,18 @@ internal sealed class NifGpuTextureResolver : IDisposable
             ResourceCategory.CpuCache,
             LoadTexture,
             static payload => payload.ByteSize,
-            StringComparer.OrdinalIgnoreCase,
-            10);
+            StringComparer.OrdinalIgnoreCase);
     }
 
     private GpuTexturePayload? LoadTexture(string path)
     {
+        if (string.Equals(path, OblivionEyeCubePayload.RequestPath, StringComparison.OrdinalIgnoreCase))
+        {
+            // Resolve the original through the usual archive/cache path, but keep the cube under
+            // a separate in-memory key. This avoids changing ordinary 2D users or stale disk entries.
+            return OblivionEyeCubePayload.Create(LoadTexture(OblivionEyeCubePayload.SourcePath));
+        }
+
         // Variant markers are part of the cache key (distinct resolver/disk/GPU entries) but not of
         // the archive/material path. The Starfield marker also selects CDB slot 1 rather than slot 0.
         var variants = SplitVariantKey(path);
@@ -405,7 +411,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
                !MaterialTexturePathResolver.ResolveStarfieldSlot(
                    materialPath,
                    _sources,
-                   normalMap: true).IsResolved;
+                   true).IsResolved;
     }
 
     /// <summary>
@@ -453,7 +459,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
                 : MaterialTexturePathResolver.ResolveStarfieldSlot(
                     path,
                     _sources,
-                    normalMap: starfieldNormalMap);
+                    starfieldNormalMap);
             if (slot.TexturePath is { Length: > 0 } starfieldTexture)
             {
                 return TryLoadFromSources(starfieldTexture, leafAtlasMips);

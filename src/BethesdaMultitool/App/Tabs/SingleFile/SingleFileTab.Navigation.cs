@@ -313,7 +313,7 @@ public sealed partial class SingleFileTab
         // Ensure Records tree is populated before FormID lookup.
         // The tree lazily initializes on first tab visit via SelectionChanged,
         // but that handler is fire-and-forget — we must await it here.
-        if (_esmBrowserTree == null && _session.HasEsmRecords)
+        if (_esmBrowserTree == null && _session.HasBrowsableRecords)
         {
             await EnsureSemanticParseAsync();
             if (_session.SemanticResult != null)

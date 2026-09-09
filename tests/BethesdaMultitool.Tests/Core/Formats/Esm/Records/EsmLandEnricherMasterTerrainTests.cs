@@ -137,7 +137,7 @@ public class EsmLandEnricherMasterTerrainTests
     public void InteriorsAndUnmatchedGrids_ComeBackIdentical()
     {
         var interior = new CellRecord { FormId = 0x3001, Flags = 0x01 };
-        var unmatched = ExteriorCell(0x3002, gridX: 40, gridY: 40);
+        var unmatched = ExteriorCell(0x3002, 40, 40);
         var masterCell = ExteriorCell(0x999) with { Heightmap = Heightmap() };
 
         var result = EsmLandEnricher.EnrichCellsWithMasterEsmLandFallback(

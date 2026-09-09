@@ -46,7 +46,6 @@ internal sealed class PerformanceSampler
 
     private readonly double[] _samples;
     private readonly double[] _sorted;
-    private int _count;
     private int _next;
 
     public PerformanceSampler(int capacity = DefaultCapacity)
@@ -61,7 +60,7 @@ internal sealed class PerformanceSampler
     }
 
     /// <summary>Frames currently retained (saturates at the capacity).</summary>
-    public int Count => _count;
+    public int Count { get; private set; }
 
     /// <summary>
     ///     Records one frame's wall-clock duration. Non-finite and non-positive values are ignored:
@@ -76,28 +75,28 @@ internal sealed class PerformanceSampler
 
         _samples[_next] = frameMilliseconds;
         _next = (_next + 1) % _samples.Length;
-        if (_count < _samples.Length)
+        if (Count < _samples.Length)
         {
-            _count++;
+            Count++;
         }
     }
 
     public void Reset()
     {
-        _count = 0;
+        Count = 0;
         _next = 0;
     }
 
     /// <summary>Computes the current window's statistics. O(n log n); call once per display update.</summary>
     public PerformanceSnapshot Snapshot()
     {
-        if (_count == 0)
+        if (Count == 0)
         {
             return PerformanceSnapshot.Empty;
         }
 
-        Array.Copy(_samples, _sorted, _count);
-        var window = _sorted.AsSpan(0, _count);
+        Array.Copy(_samples, _sorted, Count);
+        var window = _sorted.AsSpan(0, Count);
         window.Sort();
 
         double total = 0;
@@ -106,16 +105,16 @@ internal sealed class PerformanceSampler
             total += value;
         }
 
-        var average = total / _count;
+        var average = total / Count;
         var median = Median(window);
         var p99 = NearestRank(window, 0.99);
         var max = window[^1];
 
         // Slowest 1% of frames, at least one, averaged then converted — see the type docs for why
         // this convention rather than the single 1st-percentile frame.
-        var tailCount = Math.Max(1, (int)Math.Ceiling(_count * 0.01));
+        var tailCount = Math.Max(1, (int)Math.Ceiling(Count * 0.01));
         double tailTotal = 0;
-        for (var i = _count - tailCount; i < _count; i++)
+        for (var i = Count - tailCount; i < Count; i++)
         {
             tailTotal += window[i];
         }
@@ -123,7 +122,7 @@ internal sealed class PerformanceSampler
         var tailAverage = tailTotal / tailCount;
 
         return new PerformanceSnapshot(
-            _count,
+            Count,
             average,
             median,
             p99,

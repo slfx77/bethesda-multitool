@@ -163,7 +163,7 @@ internal sealed class ArenaTemplateDat
                 return (ArenaTemplateDatEntry.NoKey, ArenaTemplateDatEntry.NoLetter);
             }
 
-            key = (key * 10) + (line[i] - '0');
+            key = key * 10 + (line[i] - '0');
         }
 
         var letter = line.Length > letterIndex && char.IsAsciiLetter(line[letterIndex])

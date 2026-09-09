@@ -15,7 +15,9 @@ internal static class BethesdaViewerPresentationPolicy
 {
     private const float DefaultAssetAzimuthDegrees = 315f;
     private const float DefaultAssetElevationDegrees = 30f;
+
     private const float RawSkyElevationDegrees = -30f;
+
     // Bethesda actors face world +Y. The native camera measures compass bearing clockwise from +Y,
     // so its frontal eye is 0 degrees. Do not copy the sprite renderer's numeric 90-degree preset:
     // that renderer measures azimuth counter-clockwise from +X, making the same +Y eye read as 90.
@@ -38,10 +40,12 @@ internal static class BethesdaViewerPresentationPolicy
     ///     Keeps the actor viewer's established purple/navy presentation without changing the raw
     ///     mesh viewer's existing neutral inspection backdrop.
     /// </summary>
-    internal static Vector4 ResolveSceneClearColor(BethesdaViewerScenePurpose purpose) =>
-        IsActorAppearance(purpose)
+    internal static Vector4 ResolveSceneClearColor(BethesdaViewerScenePurpose purpose)
+    {
+        return IsActorAppearance(purpose)
             ? ActorGammaAcesSceneClearColor
             : DefaultAssetSceneClearColor;
+    }
 
     /// <summary>Resolves the initial orbit without inferring actor identity from asset names.</summary>
     internal static BethesdaViewerOrbitPreset ResolveInitialOrbit(
@@ -86,7 +90,9 @@ internal static class BethesdaViewerPresentationPolicy
             pixelDelta.Y * OrbitDegreesPerPixel);
     }
 
-    private static bool IsActorAppearance(BethesdaViewerScenePurpose purpose) =>
-        purpose is BethesdaViewerScenePurpose.NpcAppearance or
+    private static bool IsActorAppearance(BethesdaViewerScenePurpose purpose)
+    {
+        return purpose is BethesdaViewerScenePurpose.NpcAppearance or
             BethesdaViewerScenePurpose.CreatureAppearance;
+    }
 }

@@ -17,13 +17,13 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class SkyrimWindowGlowRenderingTests
 {
-    private static readonly string? ArchivePath = RealAssetPaths.SteamGameFile("Skyrim", @"Data\Skyrim - Meshes.bsa");
-
     private const string AssetPath =
         @"meshes\architecture\whiterun\wrbuildings\wrlodwindowglow01.nif";
 
     private const string DustBeamAssetPath =
         @"meshes\effects\ambient\fxambbeamxbdustbig02.nif";
+
+    private static readonly string? ArchivePath = RealAssetPaths.SteamGameFile("Skyrim", @"Data\Skyrim - Meshes.bsa");
 
     public SkyrimWindowGlowRenderingTests()
     {
@@ -41,8 +41,8 @@ public sealed class SkyrimWindowGlowRenderingTests
         var data = archive.ReadFile(AssetPath);
         Assert.NotNull(data);
 
-        var nif = Assert.IsType<NifInfo>(NifParser.Parse(data!));
-        var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(data!, nif));
+        var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
+        var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(data, nif));
         var glow = Assert.Single(model.Submeshes);
 
         Assert.Equal("BSEffectShaderProperty", glow.ShaderMetadata?.PropertyType);
@@ -66,7 +66,7 @@ public sealed class SkyrimWindowGlowRenderingTests
 
         var externalColor = new Vector3(0.75f, 0.5f, 0.25f);
         var externallyTinted = Assert.IsType<NifRenderableModel>(
-            NifGeometryExtractor.Extract(data!, nif, externalEmittanceColor: externalColor));
+            NifGeometryExtractor.Extract(data, nif, externalEmittanceColor: externalColor));
         var tintedGlow = Assert.Single(externallyTinted.Submeshes);
         Assert.Equal(1.5f, tintedGlow.EffectTint.R, 3);
         Assert.Equal(1f, tintedGlow.EffectTint.G, 3);
@@ -84,8 +84,8 @@ public sealed class SkyrimWindowGlowRenderingTests
         var data = archive.ReadFile(DustBeamAssetPath);
         Assert.NotNull(data);
 
-        var nif = Assert.IsType<NifInfo>(NifParser.Parse(data!));
-        var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(data!, nif));
+        var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
+        var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(data, nif));
         var beam = Assert.Single(model.Submeshes);
 
         Assert.Equal("BSEffectShaderProperty", beam.ShaderMetadata?.PropertyType);

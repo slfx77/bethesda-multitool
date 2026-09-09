@@ -21,7 +21,8 @@ public sealed class OblivionHairLayerPolicyTests
         var colors = (byte[])source.VertexColors!.Clone();
         var model = new NifRenderableModel { Submeshes = { source } };
 
-        NpcHairSubmeshPolicy.Apply(model, BethesdaGame.Oblivion, source.TintColor, textures, OblivionHairLayerTestData.Diffuse);
+        NpcHairSubmeshPolicy.Apply(model, BethesdaGame.Oblivion, source.TintColor, textures,
+            OblivionHairLayerTestData.Diffuse);
 
         Assert.Equal(OblivionHairLayerTestData.Layer,
             OblivionHairLayerPolicy.ResolveTexturePath(source, OblivionHairLayerTestData.Diffuse));
@@ -123,9 +124,12 @@ public sealed class OblivionHairLayerPolicyTests
     public void Residency_RequiresKnownResidentColorPayload(int format, bool supported)
     {
         var payloadFormat = (GpuTexturePayloadFormat)format;
-        Assert.False(OblivionHairLayerPolicy.IsResidentLayer(OblivionHairLayerTestData.Layer, false, false, payloadFormat));
-        Assert.Equal(supported, OblivionHairLayerPolicy.IsResidentLayer(OblivionHairLayerTestData.Layer, true, false, payloadFormat));
-        Assert.False(OblivionHairLayerPolicy.IsResidentLayer(OblivionHairLayerTestData.Layer, true, true, payloadFormat));
+        Assert.False(
+            OblivionHairLayerPolicy.IsResidentLayer(OblivionHairLayerTestData.Layer, false, false, payloadFormat));
+        Assert.Equal(supported,
+            OblivionHairLayerPolicy.IsResidentLayer(OblivionHairLayerTestData.Layer, true, false, payloadFormat));
+        Assert.False(
+            OblivionHairLayerPolicy.IsResidentLayer(OblivionHairLayerTestData.Layer, true, true, payloadFormat));
         Assert.False(OblivionHairLayerPolicy.IsResidentLayer(null, true, false, payloadFormat));
         Assert.False(OblivionHairLayerPolicy.IsResidentLayer(" ", true, false, payloadFormat));
     }

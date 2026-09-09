@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -36,7 +31,8 @@ public class DaggerfallRecordSourceTests
     public void BuildLocationRecord_CarriesIdentityCoordinatesAndSummaries()
     {
         var region = Region(17,
-            DaggerfallMapsFixture.Make("Daggerfall", 26504, 36664, locationId: 50026, width: 8, height: 8, portByte: 0x10, doors: 424,
+            DaggerfallMapsFixture.Make("Daggerfall", 26504, 36664, locationId: 50026, width: 8, height: 8,
+                portByte: 0x10, doors: 424,
                 dungeonType: 2, key: 31981328,
                 buildings:
                 [
@@ -82,7 +78,7 @@ public class DaggerfallRecordSourceTests
     [Fact]
     public void BuildLocationRecord_OmitsWhatTheLocationDoesNotHave()
     {
-        var region = Region(19, DaggerfallMapsFixture.Make("Lonely Hovel", 5000, 6000, locationType: 11, locationId: 3));
+        var region = Region(19, DaggerfallMapsFixture.Make("Lonely Hovel", 5000, 6000, 11, 3));
 
         var record = DaggerfallRecordSource.BuildLocationRecord(region, region.Locations[0]);
 
@@ -98,7 +94,8 @@ public class DaggerfallRecordSourceTests
     public void BuildLocationRecord_FormId_IsRegionAndTableIndexOnly()
     {
         var first = Region(5, DaggerfallMapsFixture.Make("A", 1280, 1280), DaggerfallMapsFixture.Make("B", 2560, 2560));
-        var second = Region(5, DaggerfallMapsFixture.Make("Renamed", 9000, 9000, width: 4), DaggerfallMapsFixture.Make("B", 2560, 2560));
+        var second = Region(5, DaggerfallMapsFixture.Make("Renamed", 9000, 9000, width: 4),
+            DaggerfallMapsFixture.Make("B", 2560, 2560));
         var other = Region(6, DaggerfallMapsFixture.Make("A", 1280, 1280));
 
         var a1 = DaggerfallRecordSource.BuildLocationRecord(first, first.Locations[0]);
@@ -125,12 +122,12 @@ public class DaggerfallRecordSourceTests
     public void BuildRegionRecord_CountsLocationsByTypeAndDungeons()
     {
         var region = Region(16,
-            DaggerfallMapsFixture.Make("Farm", 1280, 1280, locationType: 3, locationId: 1),
-            DaggerfallMapsFixture.Make("Keep", 2560, 2560, locationType: 7, locationId: 2, dungeonType: 2,
+            DaggerfallMapsFixture.Make("Farm", 1280, 1280, 3, 1),
+            DaggerfallMapsFixture.Make("Keep", 2560, 2560, 7, 2, dungeonType: 2,
                 dungeon: [new DaggerfallMapsFixture.DungeonBlock(0, 0, 1, 0, true)]),
-            DaggerfallMapsFixture.Make("Ruin", 3840, 3840, locationType: 10, locationId: 3, dungeonType: 11,
+            DaggerfallMapsFixture.Make("Ruin", 3840, 3840, 10, 3, dungeonType: 11,
                 dungeon: [new DaggerfallMapsFixture.DungeonBlock(0, 0, 1, 0, true)]),
-            DaggerfallMapsFixture.Make("Another Farm", 5120, 5120, locationType: 3, locationId: 4));
+            DaggerfallMapsFixture.Make("Another Farm", 5120, 5120, 3, 4));
 
         var record = DaggerfallRecordSource.BuildRegionRecord(region);
 
@@ -156,7 +153,7 @@ public class DaggerfallRecordSourceTests
             [17] =
             [
                 DaggerfallMapsFixture.Make("Daggerfall", 26504, 36664, locationId: 50026),
-                DaggerfallMapsFixture.Make("Betony Farm", 26600, 36000, locationType: 3, locationId: 7)
+                DaggerfallMapsFixture.Make("Betony Farm", 26600, 36000, 3, 7)
             ]
         };
 
@@ -166,13 +163,18 @@ public class DaggerfallRecordSourceTests
         Directory.CreateDirectory(arena2);
         try
         {
-            await File.WriteAllBytesAsync(Path.Combine(arena2, "MAPS.BSA"), DaggerfallMapsFixture.Archive(regions), TestContext.Current.CancellationToken);
+            await File.WriteAllBytesAsync(Path.Combine(arena2, "MAPS.BSA"), DaggerfallMapsFixture.Archive(regions),
+                TestContext.Current.CancellationToken);
 
             // The second install marker: a one-record number-record XnGine BSA (an empty one is not
             // a valid archive — the probe needs a directory to tile) holding the fixture quad.
             var quad = XnGineMeshFixture.Quad();
-            byte[] arch3d = [0x01, 0x00, 0x00, 0x02, .. quad, .. BitConverter.GetBytes(5000u), .. BitConverter.GetBytes(quad.Length)];
-            await File.WriteAllBytesAsync(Path.Combine(arena2, "ARCH3D.BSA"), arch3d, TestContext.Current.CancellationToken);
+            byte[] arch3d =
+            [
+                0x01, 0x00, 0x00, 0x02, .. quad, .. BitConverter.GetBytes(5000u), .. BitConverter.GetBytes(quad.Length)
+            ];
+            await File.WriteAllBytesAsync(Path.Combine(arena2, "ARCH3D.BSA"), arch3d,
+                TestContext.Current.CancellationToken);
 
             var records = new RecordCollection { Game = BethesdaGame.Daggerfall };
             DaggerfallRecordSource.Populate(arena2, records, TestContext.Current.CancellationToken);
@@ -189,12 +191,13 @@ public class DaggerfallRecordSourceTests
             Assert.Equal(66, result.Records.GenericRecords.Count);
 
             // ...and from a file inside the data directory too.
-            var fromFile = await ClassicGameAnalyzer.LoadAsync(Path.Combine(arena2, "MAPS.BSA"), TestContext.Current.CancellationToken);
+            var fromFile = await ClassicGameAnalyzer.LoadAsync(Path.Combine(arena2, "MAPS.BSA"),
+                TestContext.Current.CancellationToken);
             Assert.Equal(66, fromFile.Records.GenericRecords.Count);
         }
         finally
         {
-            Directory.Delete(root, recursive: true);
+            Directory.Delete(root, true);
         }
     }
 
@@ -271,7 +274,7 @@ public class DaggerfallRecordSourceTests
         }
         finally
         {
-            Directory.Delete(dataRoot, recursive: true);
+            Directory.Delete(dataRoot, true);
         }
     }
 
@@ -306,13 +309,19 @@ public class DaggerfallRecordSourceTests
                     [new DaggerfallBlockFixture.Model(310, 6, 3, 0, 0, 0, 0)],
                     [new DaggerfallBlockFixture.Flat(0, 0, 0, 0, 0, 0)],
                     Doors: [new DaggerfallBlockFixture.Door(0, 0, 0, 0, 0, 0)]),
-                new DaggerfallBlockFixture.BlockData([], [], People: [new DaggerfallBlockFixture.Flat(0, 0, 0, 0, 0, 0)])),
-            new DaggerfallBlockFixture.SubRecord(0, 0, 0, 0x0F, 5, new DaggerfallBlockFixture.BlockData([], []), new DaggerfallBlockFixture.BlockData([], []))
-        ], misc3d: [new DaggerfallBlockFixture.Model(4, 1, 0, 0, 0, 0, 0)]);
+                new DaggerfallBlockFixture.BlockData([], [],
+                    People: [new DaggerfallBlockFixture.Flat(0, 0, 0, 0, 0, 0)])),
+            new DaggerfallBlockFixture.SubRecord(0, 0, 0, 0x0F, 5, new DaggerfallBlockFixture.BlockData([], []),
+                new DaggerfallBlockFixture.BlockData([], []))
+        ], [new DaggerfallBlockFixture.Model(4, 1, 0, 0, 0, 0, 0)]);
         var rdb = DaggerfallBlockFixture.Rdb(1, 1, [("72100", "DOR")],
             new Dictionary<int, IReadOnlyList<DaggerfallBlockFixture.RdbObject>>
             {
-                [0] = [new DaggerfallBlockFixture.RdbObject(1, 0, 0, 0, ActionNextObject: 1), new DaggerfallBlockFixture.RdbObject(2, 0, 0, 0)]
+                [0] =
+                [
+                    new DaggerfallBlockFixture.RdbObject(1, 0, 0, 0, ActionNextObject: 1),
+                    new DaggerfallBlockFixture.RdbObject(2, 0, 0, 0)
+                ]
             });
 
         var directory = Path.Combine(Path.GetTempPath(), "bmt-dblk-" + Guid.NewGuid().ToString("N"));
@@ -320,7 +329,8 @@ public class DaggerfallRecordSourceTests
         try
         {
             File.WriteAllBytes(Path.Combine(directory, "BLOCKS.BSA"),
-                DaggerfallBlockFixture.Archive(("TVRNAS00.RMB", rmb), ("B0000000.RDB", rdb), ("B0000000.RDI", new byte[512]), ("FOO", [1, 2, 3])));
+                DaggerfallBlockFixture.Archive(("TVRNAS00.RMB", rmb), ("B0000000.RDB", rdb),
+                    ("B0000000.RDI", new byte[512]), ("FOO", [1, 2, 3])));
 
             var records = new RecordCollection { Game = BethesdaGame.Daggerfall };
             DaggerfallRecordSource.Populate(directory, records, TestContext.Current.CancellationToken);
@@ -356,7 +366,7 @@ public class DaggerfallRecordSourceTests
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            Directory.Delete(directory, true);
         }
     }
 
@@ -379,11 +389,13 @@ public class DaggerfallRecordSourceTests
         Assert.Equal(114, record.Fields["CompiledBytes"]);
         Assert.Equal("You must find the vampire.", record.Fields["Message1000"]);
         Assert.Equal("Well done.", record.Fields["Message1002"]);
-        Assert.StartsWith("0000 0000 0000 0000 0002", (string)record.Fields["CompiledHeader"]!, StringComparison.Ordinal);
+        Assert.StartsWith("0000 0000 0000 0000 0002", (string)record.Fields["CompiledHeader"]!,
+            StringComparison.Ordinal);
 
         // Identity is the base name, not the content.
         var renamedContent = DaggerfallRecordSource.BuildQuestRecord(
-            DaggerfallQuestFile.Create("S0000002", DaggerfallTextFixture.TextRsc((9, DaggerfallTextFixture.Bytes("different"))), null));
+            DaggerfallQuestFile.Create("S0000002",
+                DaggerfallTextFixture.TextRsc((9, DaggerfallTextFixture.Bytes("different"))), null));
         Assert.Equal(record.FormId, renamedContent.FormId);
         Assert.NotEqual(record.FormId,
             DaggerfallRecordSource.BuildQuestRecord(DaggerfallQuestFile.Create("S0000003", null, null)).FormId);
@@ -396,7 +408,8 @@ public class DaggerfallRecordSourceTests
         Directory.CreateDirectory(dataRoot);
         try
         {
-            File.WriteAllBytes(Path.Combine(dataRoot, "S0000002.QRC"), DaggerfallTextFixture.TextRsc((1000, DaggerfallTextFixture.Bytes("quest text"))));
+            File.WriteAllBytes(Path.Combine(dataRoot, "S0000002.QRC"),
+                DaggerfallTextFixture.TextRsc((1000, DaggerfallTextFixture.Bytes("quest text"))));
             File.WriteAllBytes(Path.Combine(dataRoot, "S0000002.QBN"), new byte[64]);
             File.WriteAllBytes(Path.Combine(dataRoot, "$CUREVAM.QBN"), new byte[64]);
 
@@ -412,7 +425,7 @@ public class DaggerfallRecordSourceTests
         }
         finally
         {
-            Directory.Delete(dataRoot, recursive: true);
+            Directory.Delete(dataRoot, true);
         }
     }
 
@@ -452,7 +465,7 @@ public class DaggerfallRecordSourceTests
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            Directory.Delete(directory, true);
         }
     }
 
@@ -469,7 +482,7 @@ public class DaggerfallRecordSourceTests
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            Directory.Delete(directory, true);
         }
     }
 }

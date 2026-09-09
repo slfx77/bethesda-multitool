@@ -28,9 +28,7 @@ internal static class RenderNifProcessor
         // prints the CPU message itself when --cpu, and the GPU/fallback messages otherwise.
         var selection = SpriteRenderBackendSelector.Create(
             s.ForceCpu,
-            s.ForceGpu,
-            null,
-            fallbackCpuMessage: "GPU not available -- using [yellow]CPU software renderer[/]");
+            s.ForceGpu);
         return (selection.Device, selection.Renderer);
     }
 

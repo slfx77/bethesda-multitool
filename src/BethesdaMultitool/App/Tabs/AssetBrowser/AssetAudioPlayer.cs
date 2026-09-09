@@ -3,11 +3,10 @@
 // copied deliberately rather than re-derived; both were arrived at by fixing real file-locking bugs.
 
 using System.Security.Cryptography;
+using BethesdaMultitool.Core.Formats.Audio;
 using System.Text;
-
 using Windows.Media.Core;
 using Windows.Media.Playback;
-
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 
@@ -17,8 +16,12 @@ namespace BethesdaMultitool;
 ///     Plays one classic sound at a time from a temporary file, and reports where it has got to.
 ///     <para>
 ///         Playback goes through the platform player, which wants a URI rather than a stream, so
-///         decoded RIFF bytes are written to a per-session cache directory first. The cache is keyed
+///         the bytes are written to a per-session cache directory first. The cache is keyed
 ///         by a hash of the asset's identity, which makes re-selecting a sound instant.
+///     </para>
+///     <para>
+///         ⚠ The cache file's EXTENSION is load-bearing rather than cosmetic — see
+///         <see cref="AudioContainerFormat.ExtensionFor" />.
 ///     </para>
 ///     <para>
 ///         ⚠ Teardown order is load-bearing: detach the handlers, pause, clear the source, and only
@@ -29,9 +32,9 @@ namespace BethesdaMultitool;
 internal sealed class AssetAudioPlayer : IDisposable
 {
     private static readonly TimeSpan Tick = TimeSpan.FromMilliseconds(100);
+    private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
 
     private readonly string _cacheDirectory;
-    private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
     private readonly DispatcherQueue _dispatcher;
 
     private bool _disposed;
@@ -47,12 +50,6 @@ internal sealed class AssetAudioPlayer : IDisposable
         _cacheDirectory = Path.Combine(Path.GetTempPath(), "BethesdaMultitool", "audio-preview");
         Directory.CreateDirectory(_cacheDirectory);
     }
-
-    /// <summary>Raised on the UI thread whenever position, duration or playing state may have moved.</summary>
-    public event EventHandler? Progressed;
-
-    /// <summary>Raised on the UI thread when playback could not start.</summary>
-    public event EventHandler<string>? Failed;
 
     public bool IsPlaying => _player?.PlaybackSession.PlaybackState == MediaPlaybackState.Playing;
 
@@ -81,6 +78,12 @@ internal sealed class AssetAudioPlayer : IDisposable
             }
         }
     }
+
+    /// <summary>Raised on the UI thread whenever position, duration or playing state may have moved.</summary>
+    public event EventHandler? Progressed;
+
+    /// <summary>Raised on the UI thread when playback could not start.</summary>
+    public event EventHandler<string>? Failed;
 
     public void Dispose()
     {
@@ -210,7 +213,7 @@ internal sealed class AssetAudioPlayer : IDisposable
         // The key is a container path plus an entry path, so hash it rather than trying to make it
         // a legal file name.
         var stamp = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)))[..16];
-        var path = Path.Combine(_cacheDirectory, stamp + ".wav");
+        var path = Path.Combine(_cacheDirectory, stamp + AudioContainerFormat.ExtensionFor(riff));
         File.WriteAllBytes(path, riff);
         _cache[key] = path;
         return path;

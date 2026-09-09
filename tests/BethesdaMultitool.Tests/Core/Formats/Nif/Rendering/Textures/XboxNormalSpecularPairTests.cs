@@ -1,7 +1,7 @@
+using System.Text;
 using BCnEncoder.Encoder;
 using BCnEncoder.ImageSharp;
 using BCnEncoder.Shared;
-using BCnEncoder.Shared.ImageFiles;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Ddx;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -38,7 +38,7 @@ public sealed class XboxNormalSpecularPairTests
             });
 
         Assert.Equal(@"textures\clutter\billboards\fancylads_s.ddx", requestedCompanion);
-        Assert.Equal("DXT5", System.Text.Encoding.ASCII.GetString(merged, 84, 4));
+        Assert.Equal("DXT5", Encoding.ASCII.GetString(merged, 84, 4));
         var decoded = Assert.IsType<DecodedTexture>(DdsTextureDecoder.Decode(merged));
         var meanAlpha = decoded.Pixels.Where((_, index) => index % 4 == 3).Average(static value => value);
         Assert.InRange(meanAlpha, 40, 56);

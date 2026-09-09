@@ -29,8 +29,7 @@ public class IndexedBitmapTests
     [InlineData(1, 1, 0)]
     public void Ctor_RejectsIndicesLengthMismatch(int width, int height, int indicesLength)
     {
-        Assert.Throws<ArgumentException>(
-            () => new IndexedBitmap(width, height, new byte[indicesLength]));
+        Assert.Throws<ArgumentException>(() => new IndexedBitmap(width, height, new byte[indicesLength]));
     }
 
     [Fact]
@@ -43,7 +42,7 @@ public class IndexedBitmapTests
     [Fact]
     public void Ctor_StoresDimensionsAndOffsets()
     {
-        var bitmap = new IndexedBitmap(3, 2, new byte[6], xOffset: -4, yOffset: 7);
+        var bitmap = new IndexedBitmap(3, 2, new byte[6], -4, 7);
 
         Assert.Equal(3, bitmap.Width);
         Assert.Equal(2, bitmap.Height);

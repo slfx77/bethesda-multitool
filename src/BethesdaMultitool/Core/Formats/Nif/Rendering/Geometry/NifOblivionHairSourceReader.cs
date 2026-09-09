@@ -35,6 +35,7 @@ internal static class NifOblivionHairSourceReader
                 {
                     return false;
                 }
+
                 counts.TryGetValue(type, out var count);
                 counts[type] = count + 1;
                 if (type == "NiNode")
@@ -42,6 +43,7 @@ internal static class NifOblivionHairSourceReader
                     root = index;
                 }
             }
+
             return counts.Count == 10 && counts.All(pair =>
                        pair.Value == (pair.Key == "NiDirectionalLight" ? 2 : 1)) &&
                    ReadRoot(data, nif, root, shapeIndex) && ReadShape(data, nif, shapeIndex);
@@ -61,11 +63,13 @@ internal static class NifOblivionHairSourceReader
         {
             return false;
         }
+
         var children = new HashSet<int> { root.ReadInt32(), root.ReadInt32(), root.ReadInt32() };
         if (children.Count != 3 || !children.Remove(shapeIndex) || root.ReadUInt32() != 2)
         {
             return false;
         }
+
         var firstLight = root.ReadInt32();
         var secondLight = root.ReadInt32();
         return firstLight != secondLight && children.SetEquals([firstLight, secondLight]) &&
@@ -96,6 +100,7 @@ internal static class NifOblivionHairSourceReader
         {
             return false;
         }
+
         var properties = new HashSet<int>();
         for (var property = 0; property < 4; property++)
         {
@@ -105,10 +110,12 @@ internal static class NifOblivionHairSourceReader
                 return false;
             }
         }
+
         if (shape.ReadInt32() != -1 || !ReadGeometry(data, nif, shape.ReadInt32()))
         {
             return false;
         }
+
         return shape.ReadInt32() == -1 && shape.ReadByte() == 0 && Remaining(shape) == 0;
     }
 
@@ -118,6 +125,7 @@ internal static class NifOblivionHairSourceReader
         {
             return false;
         }
+
         return nif.Blocks[index].TypeName switch
         {
             "NiMaterialProperty" => ReadMaterial(data, nif, index),
@@ -131,7 +139,8 @@ internal static class NifOblivionHairSourceReader
     private static bool ReadMaterial(byte[] data, NifInfo nif, int index)
     {
         using var material = OpenBlock(data, nif, index, "NiMaterialProperty");
-        return material is not null && string.Equals(ReadString(material), "Hair", StringComparison.OrdinalIgnoreCase) &&
+        return material is not null &&
+               string.Equals(ReadString(material), "Hair", StringComparison.OrdinalIgnoreCase) &&
                ReadStaticObjectTail(material) && ReadConstantFloats(material, 6, 1f) &&
                ReadFiniteFloats(material, 3) && ReadConstantFloats(material, 3, 0f) &&
                float.IsFinite(material.ReadSingle()) && material.ReadSingle().Equals(1f) && Remaining(material) == 0;
@@ -159,12 +168,14 @@ internal static class NifOblivionHairSourceReader
         {
             return false;
         }
+
         var source = texture.ReadInt32();
         if (texture.ReadUInt32() != 3 || texture.ReadUInt32() != 2 || texture.ReadUInt32() != 0 ||
             texture.ReadInt16() != 0 || texture.ReadInt16() != -100 || texture.ReadByte() != 0)
         {
             return false;
         }
+
         // The PS2 L/K shorts above are present even in this PC legacy descriptor.
         for (var slot = 0; slot < 6; slot++)
         {
@@ -173,6 +184,7 @@ internal static class NifOblivionHairSourceReader
                 return false;
             }
         }
+
         return texture.ReadUInt32() == 0 && Remaining(texture) == 0 && ReadSource(data, nif, source);
     }
 
@@ -183,6 +195,7 @@ internal static class NifOblivionHairSourceReader
         {
             return false;
         }
+
         var path = ReadString(source);
         return !string.IsNullOrWhiteSpace(path) && path.EndsWith(".dds", StringComparison.OrdinalIgnoreCase) &&
                source.ReadInt32() == -1 && source.ReadUInt32() == 6 && source.ReadUInt32() == 1 &&
@@ -196,6 +209,7 @@ internal static class NifOblivionHairSourceReader
         {
             return false;
         }
+
         var count = geometry.ReadUInt16();
         if (count < 3 || geometry.ReadUInt16() != 0 || geometry.ReadByte() != 1 ||
             !ReadFiniteFloats(geometry, count * 3) || geometry.ReadUInt16() != 1 ||
@@ -204,6 +218,7 @@ internal static class NifOblivionHairSourceReader
         {
             return false;
         }
+
         for (var vertex = 0; vertex < count; vertex++)
         {
             // Do not use quantized RGBA8: e.g. raw1.001 clamps to255 but does not meet this proof.
@@ -213,11 +228,13 @@ internal static class NifOblivionHairSourceReader
                 return false;
             }
         }
+
         // This version has no additional-data reference between consistency and topology.
         if (!ReadFiniteFloats(geometry, count * 2) || geometry.ReadUInt16() != 0)
         {
             return false;
         }
+
         return ReadTopology(geometry, count);
     }
 
@@ -229,6 +246,7 @@ internal static class NifOblivionHairSourceReader
         {
             return false;
         }
+
         for (var triangleIndex = 0; triangleIndex < triangles * 3; triangleIndex++)
         {
             if (geometry.ReadUInt16() >= count)
@@ -236,14 +254,20 @@ internal static class NifOblivionHairSourceReader
                 return false;
             }
         }
+
         return geometry.ReadUInt16() == 0 && Remaining(geometry) == 0;
     }
 
-    private static bool ReadStaticAvTail(BinaryReader reader) =>
-        reader.ReadUInt16() == 0x10 && ReadFiniteFloats(reader, 13) &&
-        reader.ReadUInt32() == 0 && reader.ReadInt32() == -1;
+    private static bool ReadStaticAvTail(BinaryReader reader)
+    {
+        return reader.ReadUInt16() == 0x10 && ReadFiniteFloats(reader, 13) &&
+               reader.ReadUInt32() == 0 && reader.ReadInt32() == -1;
+    }
 
-    private static bool ReadStaticObjectTail(BinaryReader reader) => reader.ReadUInt32() == 0 && reader.ReadInt32() == -1;
+    private static bool ReadStaticObjectTail(BinaryReader reader)
+    {
+        return reader.ReadUInt32() == 0 && reader.ReadInt32() == -1;
+    }
 
     private static bool ReadFiniteFloats(BinaryReader reader, int count)
     {
@@ -251,6 +275,7 @@ internal static class NifOblivionHairSourceReader
         {
             return false;
         }
+
         for (var component = 0; component < count; component++)
         {
             if (!float.IsFinite(reader.ReadSingle()))
@@ -258,6 +283,7 @@ internal static class NifOblivionHairSourceReader
                 return false;
             }
         }
+
         return true;
     }
 
@@ -270,6 +296,7 @@ internal static class NifOblivionHairSourceReader
                 return false;
             }
         }
+
         return true;
     }
 
@@ -280,15 +307,20 @@ internal static class NifOblivionHairSourceReader
         {
             throw new InvalidDataException("The inline name exceeds its owning NIF block.");
         }
+
         var bytes = reader.ReadBytes(checked((int)count));
         if (bytes.Contains((byte)0))
         {
             throw new InvalidDataException("An inline name contains a null byte.");
         }
+
         return Encoding.ASCII.GetString(bytes);
     }
 
-    private static long Remaining(BinaryReader reader) => reader.BaseStream.Length - reader.BaseStream.Position;
+    private static long Remaining(BinaryReader reader)
+    {
+        return reader.BaseStream.Length - reader.BaseStream.Position;
+    }
 
     private static BinaryReader? OpenBlock(byte[] data, NifInfo nif, int index, string type)
     {
@@ -296,11 +328,14 @@ internal static class NifOblivionHairSourceReader
         {
             return null;
         }
+
         var block = nif.Blocks[index];
-        if (block.DataOffset < 0 || block.Size < 0 || block.Size > data.Length || block.DataOffset > data.Length - block.Size)
+        if (block.DataOffset < 0 || block.Size < 0 || block.Size > data.Length ||
+            block.DataOffset > data.Length - block.Size)
         {
             return null;
         }
-        return new BinaryReader(new MemoryStream(data, block.DataOffset, block.Size, writable: false), Encoding.ASCII);
+
+        return new BinaryReader(new MemoryStream(data, block.DataOffset, block.Size, false), Encoding.ASCII);
     }
 }

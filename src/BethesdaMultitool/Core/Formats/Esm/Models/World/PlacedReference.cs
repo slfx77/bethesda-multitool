@@ -96,14 +96,20 @@ public record PlacedReference
     public float? Radius
     {
         get => _extras?.Radius;
-        init { if (value is not null || _extras is not null) _extras = Seed with { Radius = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { Radius = value };
+        }
     }
 
     /// <summary>Item stack count from XCNT subrecord / ExtraCount.</summary>
     public short? Count
     {
         get => _extras?.Count;
-        init { if (value is not null || _extras is not null) _extras = Seed with { Count = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { Count = value };
+        }
     }
 
     /// <summary>
@@ -114,21 +120,30 @@ public record PlacedReference
     public RadioData? RadioData
     {
         get => _extras?.RadioData;
-        init { if (value is not null || _extras is not null) _extras = Seed with { RadioData = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { RadioData = value };
+        }
     }
 
     /// <summary>Owner FormID (XOWN subrecord).</summary>
     public uint? OwnerFormId
     {
         get => _extras?.OwnerFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { OwnerFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { OwnerFormId = value };
+        }
     }
 
     /// <summary>Encounter zone FormID (XEZN subrecord / ExtraEncounterZone).</summary>
     public uint? EncounterZoneFormId
     {
         get => _extras?.EncounterZoneFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { EncounterZoneFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { EncounterZoneFormId = value };
+        }
     }
 
     /// <summary>
@@ -139,7 +154,10 @@ public record PlacedReference
     public uint? MaterialSwapFormId
     {
         get => _extras?.MaterialSwapFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { MaterialSwapFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { MaterialSwapFormId = value };
+        }
     }
 
     /// <summary>
@@ -150,91 +168,130 @@ public record PlacedReference
     public uint? EmittanceFormId
     {
         get => _extras?.EmittanceFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { EmittanceFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { EmittanceFormId = value };
+        }
     }
 
     /// <summary>Lock level from XLOC/ExtraLock.</summary>
     public byte? LockLevel
     {
         get => _extras?.LockLevel;
-        init { if (value is not null || _extras is not null) _extras = Seed with { LockLevel = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { LockLevel = value };
+        }
     }
 
     /// <summary>Lock key FormID from XLOC/ExtraLock.</summary>
     public uint? LockKeyFormId
     {
         get => _extras?.LockKeyFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { LockKeyFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { LockKeyFormId = value };
+        }
     }
 
     /// <summary>Lock flags from XLOC/ExtraLock.</summary>
     public byte? LockFlags
     {
         get => _extras?.LockFlags;
-        init { if (value is not null || _extras is not null) _extras = Seed with { LockFlags = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { LockFlags = value };
+        }
     }
 
     /// <summary>Lock try count from XLOC/ExtraLock.</summary>
     public uint? LockNumTries
     {
         get => _extras?.LockNumTries;
-        init { if (value is not null || _extras is not null) _extras = Seed with { LockNumTries = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { LockNumTries = value };
+        }
     }
 
     /// <summary>Unlock count from XLOC/ExtraLock.</summary>
     public uint? LockTimesUnlocked
     {
         get => _extras?.LockTimesUnlocked;
-        init { if (value is not null || _extras is not null) _extras = Seed with { LockTimesUnlocked = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { LockTimesUnlocked = value };
+        }
     }
 
     /// <summary>Enable parent FormID (XESP subrecord).</summary>
     public uint? EnableParentFormId
     {
         get => _extras?.EnableParentFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { EnableParentFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { EnableParentFormId = value };
+        }
     }
 
     /// <summary>Enable parent flags byte from XESP subrecord (bit 0 = opposite state).</summary>
     public byte? EnableParentFlags
     {
         get => _extras?.EnableParentFlags;
-        init { if (value is not null || _extras is not null) _extras = Seed with { EnableParentFlags = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { EnableParentFlags = value };
+        }
     }
 
     /// <summary>Persistent cell FormID from runtime ExtraPersistentCell when available.</summary>
     public uint? PersistentCellFormId
     {
         get => _extras?.PersistentCellFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { PersistentCellFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { PersistentCellFormId = value };
+        }
     }
 
     /// <summary>Runtime start transform from ExtraStartingPosition when available.</summary>
     public PositionSubrecord? StartingPosition
     {
         get => _extras?.StartingPosition;
-        init { if (value is not null || _extras is not null) _extras = Seed with { StartingPosition = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { StartingPosition = value };
+        }
     }
 
     /// <summary>Runtime starting world/cell FormID from ExtraStartingWorldOrCell when available.</summary>
     public uint? StartingWorldOrCellFormId
     {
         get => _extras?.StartingWorldOrCellFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { StartingWorldOrCellFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { StartingWorldOrCellFormId = value };
+        }
     }
 
     /// <summary>Runtime package start location from ExtraPackageStartLocation when available.</summary>
     public RuntimePackageStartLocation? PackageStartLocation
     {
         get => _extras?.PackageStartLocation;
-        init { if (value is not null || _extras is not null) _extras = Seed with { PackageStartLocation = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { PackageStartLocation = value };
+        }
     }
 
     /// <summary>Runtime merchant container reference FormID from ExtraMerchantContainer when available.</summary>
     public uint? MerchantContainerFormId
     {
         get => _extras?.MerchantContainerFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { MerchantContainerFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { MerchantContainerFormId = value };
+        }
     }
 
     /// <summary>Runtime original spawn base FormID from ExtraLeveledCreature when available.</summary>
@@ -254,21 +311,30 @@ public record PlacedReference
     public uint? LeveledCreatureTemplateFormId
     {
         get => _extras?.LeveledCreatureTemplateFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { LeveledCreatureTemplateFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { LeveledCreatureTemplateFormId = value };
+        }
     }
 
     /// <summary>Destination door FormID from XTEL (for door references).</summary>
     public uint? DestinationDoorFormId
     {
         get => _extras?.DestinationDoorFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { DestinationDoorFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { DestinationDoorFormId = value };
+        }
     }
 
     /// <summary>Destination cell FormID resolved from door teleport (XTEL → cell lookup).</summary>
     public uint? DestinationCellFormId
     {
         get => _extras?.DestinationCellFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { DestinationCellFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { DestinationCellFormId = value };
+        }
     }
 
     /// <summary>
@@ -281,28 +347,40 @@ public record PlacedReference
     public PositionSubrecord? TeleportPosRot
     {
         get => _extras?.TeleportPosRot;
-        init { if (value is not null || _extras is not null) _extras = Seed with { TeleportPosRot = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { TeleportPosRot = value };
+        }
     }
 
     /// <summary>XTEL flags byte (offset 28). Bit 0 = unknown; rest reserved.</summary>
     public byte? TeleportFlags
     {
         get => _extras?.TeleportFlags;
-        init { if (value is not null || _extras is not null) _extras = Seed with { TeleportFlags = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { TeleportFlags = value };
+        }
     }
 
     /// <summary>Map marker type (0=None..14=Vault).</summary>
     public MapMarkerType? MarkerType
     {
         get => _extras?.MarkerType;
-        init { if (value is not null || _extras is not null) _extras = Seed with { MarkerType = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { MarkerType = value };
+        }
     }
 
     /// <summary>Map marker display name (FULL subrecord).</summary>
     public string? MarkerName
     {
         get => _extras?.MarkerName;
-        init { if (value is not null || _extras is not null) _extras = Seed with { MarkerName = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { MarkerName = value };
+        }
     }
 
     /// <summary>
@@ -314,7 +392,10 @@ public record PlacedReference
     public uint? OriginCellFormId
     {
         get => _extras?.OriginCellFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { OriginCellFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { OriginCellFormId = value };
+        }
     }
 
     /// <summary>
@@ -326,21 +407,30 @@ public record PlacedReference
     public uint? SpecialRenderingFlags
     {
         get => _extras?.SpecialRenderingFlags;
-        init { if (value is not null || _extras is not null) _extras = Seed with { SpecialRenderingFlags = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { SpecialRenderingFlags = value };
+        }
     }
 
     /// <summary>XLKR keyword FormID when the 8-byte linked-ref variant is present.</summary>
     public uint? LinkedRefKeywordFormId
     {
         get => _extras?.LinkedRefKeywordFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { LinkedRefKeywordFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { LinkedRefKeywordFormId = value };
+        }
     }
 
     /// <summary>XLKR - Linked reference FormID for spawn resolution (PLDT type 12).</summary>
     public uint? LinkedRefFormId
     {
         get => _extras?.LinkedRefFormId;
-        init { if (value is not null || _extras is not null) _extras = Seed with { LinkedRefFormId = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { LinkedRefFormId = value };
+        }
     }
 
     /// <summary>
@@ -369,21 +459,30 @@ public record PlacedReference
     public BendableSplinePlacementData? BendableSpline
     {
         get => _extras?.BendableSpline;
-        init { if (value is not null || _extras is not null) _extras = Seed with { BendableSpline = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { BendableSpline = value };
+        }
     }
 
     /// <summary>Room/portal/occlusion structural subrecords carried by this placed marker reference.</summary>
     public PlacedReferenceStructuralData? StructuralData
     {
         get => _extras?.StructuralData;
-        init { if (value is not null || _extras is not null) _extras = Seed with { StructuralData = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { StructuralData = value };
+        }
     }
 
     /// <summary>How this ref was assigned to its cell during DMP linkage (ParentCell, GridMap, or Virtual).</summary>
     public string? AssignmentSource
     {
         get => _extras?.AssignmentSource;
-        init { if (value is not null || _extras is not null) _extras = Seed with { AssignmentSource = value }; }
+        init
+        {
+            if (value is not null || _extras is not null) _extras = Seed with { AssignmentSource = value };
+        }
     }
 
     /// <summary>

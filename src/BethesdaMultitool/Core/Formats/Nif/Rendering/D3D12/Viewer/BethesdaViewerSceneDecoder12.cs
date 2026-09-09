@@ -1,11 +1,10 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Dds;
-using BethesdaMultitool.Core.Formats.Nif;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Games;
 
@@ -55,7 +54,10 @@ internal sealed record DecodedBethesdaViewerSubmeshSemantics12(
     string? SourceNifPath,
     SkyObjectType? SkyType,
     byte[]? AuthoredSkyVertexColors,
-    bool IsFarLodFallback);
+    bool IsFarLodFallback,
+    ClassicSkinAuthoredAlbedo? AuthoredSkinAlbedo = null,
+    bool HasReviewedOblivionEyeSource = false,
+    NifLocalBounds? OblivionEyeBounds = null);
 
 /// <summary>One stable scene mesh-part index and its GPU-ready/reference-native payloads.</summary>
 internal sealed record DecodedBethesdaViewerMeshPart12(
@@ -210,15 +212,17 @@ internal static class BethesdaViewerSceneDecoder12
                         !BethesdaViewerGeometryMorphPolicy.MatchesBase(
                             track.Morph, parts[track.MeshPartIndex].Submesh.Vertices))))
                 {
-                    Log.Warn("BethesdaViewerSceneDecoder12: geometry morph in '{0}' has an invalid decoded vertex binding.", sourceLabel);
+                    Log.Warn(
+                        "BethesdaViewerSceneDecoder12: geometry morph in '{0}' has an invalid decoded vertex binding.",
+                        sourceLabel);
                     continue;
                 }
 
                 snapshots.Add(SnapshotAnimationClip(source));
             }
             catch (Exception ex) when (ex is not OutOfMemoryException and
-                                       not StackOverflowException and
-                                       not OperationCanceledException)
+                                           not StackOverflowException and
+                                           not OperationCanceledException)
             {
                 Log.Warn(
                     "BethesdaViewerSceneDecoder12: malformed optional animation in '{0}' was ignored: {1}.",
@@ -307,7 +311,7 @@ internal static class BethesdaViewerSceneDecoder12
             source.ShaderMetadata,
             source.UseVertexColors,
             source.UseVertexAlphaForOpacity,
-            NifAlphaClassifier.Classify(source, diffuseTexture: null).RenderMode,
+            NifAlphaClassifier.Classify(source, null).RenderMode,
             source.MaterialDiffuse,
             source.IsEyeEnvmap,
             source.EnvMapScale,
@@ -324,7 +328,10 @@ internal static class BethesdaViewerSceneDecoder12
             source.VertexColors is { } skyVertexColors
                 ? (byte[])skyVertexColors.Clone()
                 : null,
-            source.IsFarLodFallback);
+            source.IsFarLodFallback,
+            source.AuthoredSkinAlbedo,
+            source.HasReviewedOblivionEyeSource,
+            source.OblivionEyeBounds);
     }
 
     private static DecodedBethesdaViewerSkinBinding12? SnapshotSkin(BethesdaViewerSkinBinding? source)

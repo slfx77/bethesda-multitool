@@ -174,7 +174,7 @@ public class CrossDumpSourceProjectorTests
         var projection = Project(BuildSource(dialogues: [dialogue]));
 
         Assert.True(projection.DialogueObservations.TryGetValue(0x00070001u, out var observation));
-        Assert.Equal(0x00080001u, observation!.TopicFormId);
+        Assert.Equal(0x00080001u, observation.TopicFormId);
         Assert.Equal(0x00090001u, observation.QuestFormId);
         Assert.Equal(0x000A0001u, observation.SpeakerFormId);
         Assert.Equal("First prompt", observation.FirstPromptText);
@@ -208,7 +208,7 @@ public class CrossDumpSourceProjectorTests
         var projection = Project(BuildSource(dialogTopics: [topic], dialogues: [dialogue1, dialogue2]));
 
         Assert.True(projection.DialogTopicObservations.TryGetValue(0x00080001u, out var observation));
-        Assert.Equal("Test Topic", observation!.FullName);
+        Assert.Equal("Test Topic", observation.FullName);
         Assert.Equal("fallback prompt", observation.DummyPrompt);
         Assert.NotNull(observation.SearchText);
         Assert.Contains("Greeting prompt", observation.SearchText);
@@ -229,7 +229,7 @@ public class CrossDumpSourceProjectorTests
         var projection = Project(BuildSource(weapons: [weapon]));
 
         Assert.True(projection.ReportsByType.TryGetValue("Weapon", out var weaponReports));
-        Assert.True(weaponReports!.ContainsKey(0x000B0001u));
+        Assert.True(weaponReports.ContainsKey(0x000B0001u));
     }
 
     [Fact]

@@ -21,7 +21,7 @@ public sealed class NpcWeaponLeveledListResolverTests
         uint expectedWeaponFormId,
         ushort expectedTier)
     {
-        var resolver = CreateResolver(BethesdaGame.Oblivion, flags: 0x02);
+        var resolver = CreateResolver(BethesdaGame.Oblivion, 0x02);
 
         var visual = resolver.Resolve(
             new NpcScanEntry { EditorId = "MazogatheOrc" },
@@ -42,7 +42,7 @@ public sealed class NpcWeaponLeveledListResolverTests
     [Fact]
     public void OblivionLeveledWeaponWithoutPreviewLevel_FailsClosedWithTrace()
     {
-        var resolver = CreateResolver(BethesdaGame.Oblivion, flags: 0x02);
+        var resolver = CreateResolver(BethesdaGame.Oblivion, 0x02);
 
         var visual = resolver.Resolve(
             new NpcScanEntry { EditorId = "MazogatheOrc" },
@@ -62,7 +62,7 @@ public sealed class NpcWeaponLeveledListResolverTests
     {
         var resolver = CreateResolver(
             BethesdaGame.Oblivion,
-            flags: 0x02,
+            0x02,
             includeEarlierClothingList: true);
 
         var visual = resolver.Resolve(
@@ -80,7 +80,7 @@ public sealed class NpcWeaponLeveledListResolverTests
     [Fact]
     public void OblivionNoContext_DoesNotPretendDirectWeaponWinsOverUnresolvedList()
     {
-        var resolver = CreateResolver(BethesdaGame.Oblivion, flags: 0x02);
+        var resolver = CreateResolver(BethesdaGame.Oblivion, 0x02);
 
         var visual = resolver.Resolve(
             new NpcScanEntry { EditorId = "MixedInventoryNpc" },
@@ -99,8 +99,8 @@ public sealed class NpcWeaponLeveledListResolverTests
     {
         var resolver = CreateResolver(
             BethesdaGame.Oblivion,
-            flags: 0x03,
-            weaponDamageOverrides: new Dictionary<uint, short>
+            0x03,
+            new Dictionary<uint, short>
             {
                 [0x00000C0C] = 100,
                 [0x000229B3] = 1
@@ -118,7 +118,7 @@ public sealed class NpcWeaponLeveledListResolverTests
     [Fact]
     public void FalloutNewVegasWithoutPreviewLevel_PreservesLegacyStaticExpansion()
     {
-        var resolver = CreateResolver(BethesdaGame.FalloutNewVegas, flags: 0x02);
+        var resolver = CreateResolver(BethesdaGame.FalloutNewVegas, 0x02);
 
         var visual = resolver.Resolve(
             new NpcScanEntry(),

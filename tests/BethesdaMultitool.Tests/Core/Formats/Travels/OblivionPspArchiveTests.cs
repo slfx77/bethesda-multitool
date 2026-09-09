@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
@@ -20,14 +16,6 @@ public sealed class OblivionPspArchiveTests : IDisposable
 {
     private readonly List<string> _tempFiles = [];
 
-    private string WriteTemp(byte[] bytes)
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"psp-arc-{Guid.NewGuid():N}.arc");
-        File.WriteAllBytes(path, bytes);
-        _tempFiles.Add(path);
-        return path;
-    }
-
     public void Dispose()
     {
         foreach (var path in _tempFiles)
@@ -43,6 +31,14 @@ public sealed class OblivionPspArchiveTests : IDisposable
         }
     }
 
+    private string WriteTemp(byte[] bytes)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"psp-arc-{Guid.NewGuid():N}.arc");
+        File.WriteAllBytes(path, bytes);
+        _tempFiles.Add(path);
+        return path;
+    }
+
     /// <summary>
     ///     Builds a pack the way the game's own packer did: header, 16-byte records, 32-byte
     ///     aligned payloads in record order, then the NUL-terminated name table ending at EOF.
@@ -53,7 +49,7 @@ public sealed class OblivionPspArchiveTests : IDisposable
     private static byte[] Build(bool tagged, params (string Name, byte[] Data)[] entries)
     {
         var headerLength = tagged ? OblivionPspArchive.TaggedHeaderLength : OblivionPspArchive.UntaggedHeaderLength;
-        var tableEnd = headerLength + (OblivionPspArchive.RecordLength * entries.Length);
+        var tableEnd = headerLength + OblivionPspArchive.RecordLength * entries.Length;
         var dataStart = tagged ? (int)OblivionPspArchive.Align(tableEnd) : tableEnd;
 
         // Lay the payloads out in record space, aligning between them.
@@ -65,7 +61,7 @@ public sealed class OblivionPspArchiveTests : IDisposable
             cursor = (int)OblivionPspArchive.Align(cursor + entries[i].Data.Length);
         }
 
-        var payloadEnd = (tagged ? cursor : dataStart + cursor);
+        var payloadEnd = tagged ? cursor : dataStart + cursor;
 
         var names = new List<byte>();
         var nameOffsets = new int[entries.Length];
@@ -93,7 +89,8 @@ public sealed class OblivionPspArchiveTests : IDisposable
 
         for (var i = 0; i < entries.Length; i++)
         {
-            var record = span.Slice(headerLength + (i * OblivionPspArchive.RecordLength), OblivionPspArchive.RecordLength);
+            var record = span.Slice(headerLength + i * OblivionPspArchive.RecordLength,
+                OblivionPspArchive.RecordLength);
             BinaryPrimitives.WriteUInt32LittleEndian(record, (uint)nameOffsets[i]);
             BinaryPrimitives.WriteUInt32LittleEndian(record[4..], (uint)offsets[i]);
             BinaryPrimitives.WriteUInt32LittleEndian(record[8..], (uint)entries[i].Data.Length);
@@ -107,7 +104,10 @@ public sealed class OblivionPspArchiveTests : IDisposable
         return file;
     }
 
-    private static byte[] Payload(string text) => Encoding.ASCII.GetBytes(text);
+    private static byte[] Payload(string text)
+    {
+        return Encoding.ASCII.GetBytes(text);
+    }
 
     [Theory]
     [InlineData(true)]

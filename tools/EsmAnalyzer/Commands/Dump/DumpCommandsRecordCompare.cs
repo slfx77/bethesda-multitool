@@ -170,12 +170,11 @@ internal static class DumpCommandsRecordCompare
             var matchIcon = fullMatch ? "[green]✓[/]" : GetPartialMatchIcon(sigMatch, sizeMatch);
 
             var diffDisplay = "-";
-            string? diffSummary = null;
             string? previewRow = null;
             if (sigMatch && sizeMatch && pSub != null && cSub != null && !contentMatch)
             {
                 diffDisplay = BuildDiffDisplay(pSub.Signature,
-                    pSub.Data, cSub.Data, primaryEsm.IsBigEndian, compareEsm.IsBigEndian, out diffSummary);
+                    pSub.Data, cSub.Data, primaryEsm.IsBigEndian, compareEsm.IsBigEndian, out var diffSummary);
                 previewRow = BuildPreviewRowText(pSub.Data, cSub.Data, 16);
 
                 var hasPrimaryDetails = EsmDisplayHelpers.TryFormatSubrecordDetails(pSub.Signature, pSub.Data,

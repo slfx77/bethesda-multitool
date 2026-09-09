@@ -154,26 +154,32 @@ public sealed class OblivionNpcCombinedHandNormalMapTests
         });
     }
 
-    private static NpcAppearance CreateAppearance() => new()
+    private static NpcAppearance CreateAppearance()
     {
-        Game = BethesdaGame.Oblivion,
-        HandNifPath = HandMesh,
-        HandTexturePath = OrcDiffuse
-    };
+        return new NpcAppearance
+        {
+            Game = BethesdaGame.Oblivion,
+            HandNifPath = HandMesh,
+            HandTexturePath = OrcDiffuse
+        };
+    }
 
-    private static RenderableSubmesh CreateHand(NifShaderTextureMetadata? metadata = null) => new()
+    private static RenderableSubmesh CreateHand(NifShaderTextureMetadata? metadata = null)
     {
-        Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
-        Triangles = [0, 1, 2],
-        Normals = [0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f],
-        UVs = [0f, 0f, 1f, 0f, 0f, 1f],
-        Tangents = [1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f],
-        Bitangents = [0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f],
-        DiffuseTexturePath = ImperialDiffuse,
-        SpecularColor = (1f, 1f, 1f),
-        MaterialDiffuse = (1f, 1f, 1f),
-        MaterialGlossiness = 10f,
-        MaterialAlpha = 1f,
-        ShaderMetadata = metadata
-    };
+        return new RenderableSubmesh
+        {
+            Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
+            Triangles = [0, 1, 2],
+            Normals = [0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f],
+            UVs = [0f, 0f, 1f, 0f, 0f, 1f],
+            Tangents = [1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f],
+            Bitangents = [0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f],
+            DiffuseTexturePath = ImperialDiffuse,
+            SpecularColor = (1f, 1f, 1f),
+            MaterialDiffuse = (1f, 1f, 1f),
+            MaterialGlossiness = 10f,
+            MaterialAlpha = 1f,
+            ShaderMetadata = metadata
+        };
+    }
 }

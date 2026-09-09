@@ -82,13 +82,15 @@
   </Target>
 
   <!-- Reuse BethesdaMultitool's explicit producer target rather than guessing its configuration /
-       platform output path. The ordinary ProjectReference build has completed before this hook. -->
+       platform output path. The ordinary ProjectReference build has completed before this hook.
+       Match ResolveProjectReferences property metadata so solution configuration/platform mappings
+       are retained when the profiler and producer use different platforms. -->
   <Target Name="CopyShaderBytecodePackFromBethesdaMultitool"
           AfterTargets="Build"
           Condition="'$(_ShaderBytecodePackPropagationEnabled)' == 'true'">
     <ItemGroup>
-      <_ShaderBytecodePackProducerProject Include="@(ProjectReference)"
-          Condition="'%(ProjectReference.ShaderBytecodePackProducer)' == 'true'" />
+      <_ShaderBytecodePackProducerProject Include="@(_MSBuildProjectReferenceExistent)"
+          Condition="'%(_MSBuildProjectReferenceExistent.ShaderBytecodePackProducer)' == 'true'" />
     </ItemGroup>
     <Error Condition="'@(_ShaderBytecodePackProducerProject)' == ''"
            Text="No ProjectReference is marked as the shader-bytecode-pack producer." />
@@ -96,7 +98,8 @@
            Text="Exactly one ProjectReference must be marked as the shader-bytecode-pack producer." />
     <MSBuild Projects="@(_ShaderBytecodePackProducerProject)"
              Targets="GetShaderBytecodePackOutput"
-             Properties="Configuration=$(Configuration);Platform=$(Platform);TargetFramework=$(TargetFramework);RuntimeIdentifier=$(RuntimeIdentifier)"
+             Properties="%(_ShaderBytecodePackProducerProject.SetConfiguration); %(_ShaderBytecodePackProducerProject.SetPlatform); %(_ShaderBytecodePackProducerProject.SetTargetFramework)"
+             RemoveProperties="%(_ShaderBytecodePackProducerProject.GlobalPropertiesToRemove)$(_GlobalPropertiesToRemoveFromProjectReferences)"
              BuildInParallel="false"
              RebaseOutputs="false">
       <Output TaskParameter="TargetOutputs" ItemName="_Map2DShaderBytecodePackSource" />

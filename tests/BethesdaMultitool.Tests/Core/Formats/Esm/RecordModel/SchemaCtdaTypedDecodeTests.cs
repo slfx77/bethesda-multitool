@@ -123,14 +123,14 @@ public class SchemaCtdaTypedDecodeTests
     {
         var schema = EsmSchemas.IndexForGame(BethesdaGame.Oblivion);
         Assert.NotNull(schema);
-        Assert.True(schema!.TryGetValue("INFO", out var infoDef), "Oblivion schema must define INFO");
+        Assert.True(schema.TryGetValue("INFO", out var infoDef), "Oblivion schema must define INFO");
 
         var tree = SchemaRecordDecoder.Decode(
-            infoDef!, [new RawSubrecord("CTDA", ctda)], game: BethesdaGame.Oblivion);
+            infoDef, [new RawSubrecord("CTDA", ctda)], game: BethesdaGame.Oblivion);
 
         var condition = FindNode(tree, "Condition");
         Assert.NotNull(condition);
-        return condition!;
+        return condition;
     }
 
     private static DecodedNode DecodeFallout4Condition(byte[] ctda, bool bigEndian = false)
@@ -146,14 +146,14 @@ public class SchemaCtdaTypedDecodeTests
     {
         var schema = EsmSchemas.IndexForGame(schemaGame);
         Assert.NotNull(schema);
-        Assert.True(schema!.TryGetValue("INFO", out var infoDef), $"{schemaGame} schema must define INFO");
+        Assert.True(schema.TryGetValue("INFO", out var infoDef), $"{schemaGame} schema must define INFO");
 
         var tree = SchemaRecordDecoder.Decode(
-            infoDef!, [new RawSubrecord("CTDA", ctda)], bigEndian, game: contextGame);
+            infoDef, [new RawSubrecord("CTDA", ctda)], bigEndian, game: contextGame);
 
         var condition = FindNode(tree, "Condition");
         Assert.NotNull(condition);
-        return condition!;
+        return condition;
     }
 
     private static DecodedNode? FindNode(IEnumerable<DecodedNode> nodes, string label)
@@ -178,7 +178,7 @@ public class SchemaCtdaTypedDecodeTests
     {
         var node = FindNode(condition.Children ?? [], label);
         Assert.NotNull(node);
-        return node!;
+        return node;
     }
 
     [Fact]
@@ -254,7 +254,7 @@ public class SchemaCtdaTypedDecodeTests
         Assert.NotNull(condition);
 
         // Historical behavior: Variants[0] (an opaque 4-byte value surfaced as u32) — NOT a FormID.
-        var param1 = Param(condition!, "Parameter #1");
+        var param1 = Param(condition, "Parameter #1");
         Assert.Null(param1.FormId);
     }
 
@@ -345,7 +345,7 @@ public class SchemaCtdaTypedDecodeTests
         Assert.Equal(0x00123456u, Param(exception, "Parameter #1").FormId);
 
         var ordinary = DecodeFallout4Condition(
-            BuildFallout4Ctda(0x02, 1f, 0x0A1, 42, 0, 0));
+            BuildFallout4Ctda(0x02, 1f, 0x0A1, 42, 0));
         Assert.Null(Param(ordinary, "Parameter #1").FormId);
         Assert.Equal("42", Param(ordinary, "Parameter #1").Value);
 
@@ -556,7 +556,7 @@ public class SchemaCtdaTypedDecodeTests
         if (hasReference)
         {
             Assert.NotNull(referenceNode);
-            Assert.Equal(reference, referenceNode!.FormId);
+            Assert.Equal(reference, referenceNode.FormId);
         }
         else
         {

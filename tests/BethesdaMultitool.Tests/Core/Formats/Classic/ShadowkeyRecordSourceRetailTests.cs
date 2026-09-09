@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
@@ -99,7 +95,7 @@ public sealed class ShadowkeyRecordSourceRetailTests
 
         // Palettes: RGB888 in 21/21 — the repo's 6-bit range sniff must leave these unpromoted —
         // and the magenta colour key sits at entry 6 in 13 of them and is absent in the other 8.
-        Assert.All(zones.Values, z => Assert.Equal(true, z.Fields["PaletteIs8Bit"]));
+        Assert.All(zones.Values, z => Assert.True(Assert.IsType<bool>(z.Fields["PaletteIs8Bit"])));
         Assert.Equal(13, zones.Values.Count(z => (bool)z.Fields["PaletteHasColourKey"]!));
         Assert.All(
             zones.Values.Where(z => (bool)z.Fields["PaletteHasColourKey"]!),
@@ -123,8 +119,8 @@ public sealed class ShadowkeyRecordSourceRetailTests
 
         // 8,258 of 8,258 ids exist in entities.txt, and every one of the model slots they name is
         // non-NULL in that zone's residency list. Both are what make the chain worth trusting.
-        Assert.All(placements, p => Assert.Equal(true, p.Fields["EntityResolved"]));
-        Assert.All(placements, p => Assert.Equal(true, p.Fields["ModelResident"]));
+        Assert.All(placements, p => Assert.True(Assert.IsType<bool>(p.Fields["EntityResolved"])));
+        Assert.All(placements, p => Assert.True(Assert.IsType<bool>(p.Fields["ModelResident"])));
 
         // 1,012 placements override the entity's shared script with a per-instance one.
         Assert.Equal(1012, placements.Count(p => (bool)p.Fields["ScriptOverride"]!));
@@ -147,7 +143,7 @@ public sealed class ShadowkeyRecordSourceRetailTests
         // The cross-file identity that fixed the record's field order: the LAST byte is the index,
         // and it is bounded by the zone's inflated .ztx count in 21/21.
         Assert.Equal(351, surfaces.Count);
-        Assert.All(surfaces, s => Assert.Equal(true, s.Fields["TextureIndexInRange"]));
+        Assert.All(surfaces, s => Assert.True(Assert.IsType<bool>(s.Fields["TextureIndexInRange"])));
 
         var zones = records
             .Where(r => r.RecordType == ShadowkeyRecordSource.ZoneRecordType)
@@ -201,7 +197,7 @@ public sealed class ShadowkeyRecordSourceRetailTests
         Assert.Equal(21, meshes.Max(m => (int)m.Fields["ZonesLoading"]!));
 
         // The largest record in the pack: 19 alternative skins over a 144-frame animated body.
-        var tunic = meshes.Single(m => (string?)m.FullName == "male_long_tunic.bin");
+        var tunic = meshes.Single(m => m.FullName == "male_long_tunic.bin");
         Assert.Equal(144, tunic.Fields["Frames"]);
         Assert.Equal(19, tunic.Fields["Skins"]);
 
@@ -225,11 +221,11 @@ public sealed class ShadowkeyRecordSourceRetailTests
         var root = RealAssetPaths.Travels.ShadowkeyRoot();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Shadowkey (N-Gage) application directory"));
         Assert.SkipWhen(
-            !File.Exists(Path.Combine(root!, "azra.zon")),
+            !File.Exists(Path.Combine(root, "azra.zon")),
             RealAssetPaths.SkipMessage("Shadowkey zone files"));
 
         var records = new RecordCollection();
-        using var install = new LooseFileSystem(root!);
+        using var install = new LooseFileSystem(root);
         ShadowkeyRecordSource.Populate(install, records);
         return records.GenericRecords;
     }

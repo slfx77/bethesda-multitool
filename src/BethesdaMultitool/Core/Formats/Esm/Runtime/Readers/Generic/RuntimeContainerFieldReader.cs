@@ -100,6 +100,14 @@ internal static class RuntimeContainerFieldReader
     private const string TextureClassName = "TESTexture";
 
     /// <summary>
+    ///     Upper bound on a counted array: the count field's own u8 range. NOT the BSSimpleList node
+    ///     budget — that is a linked-list walk's patience limit with no bearing on a counted array
+    ///     (R5 ruling; the same borrowed cap silently dropped whole MODT lists at counts 51-53
+    ///     before ReadTextureHashes shed it). An IDLM with more than 50 idles is real data.
+    /// </summary>
+    private const int MaxCountedArrayItems = byte.MaxValue;
+
+    /// <summary>
     ///     Counted pointer arrays: a <c>T **</c> field paired with a separate count field in the same
     ///     struct. The pairing cannot be inferred from the layout — it is a C++ convention, not a
     ///     type — so each one is declared here, keyed by owner class and array field name.
@@ -110,14 +118,6 @@ internal static class RuntimeContainerFieldReader
         // count straight off IDLC, so without this the record can only ever emit IDLC=0.
         [("BGSIdleCollection", "pIdleArray")] = "cIdleCount"
     };
-
-    /// <summary>
-    ///     Upper bound on a counted array: the count field's own u8 range. NOT the BSSimpleList node
-    ///     budget — that is a linked-list walk's patience limit with no bearing on a counted array
-    ///     (R5 ruling; the same borrowed cap silently dropped whole MODT lists at counts 51-53
-    ///     before ReadTextureHashes shed it). An IDLM with more than 50 idles is real data.
-    /// </summary>
-    private const int MaxCountedArrayItems = byte.MaxValue;
 
 
     /// <summary>

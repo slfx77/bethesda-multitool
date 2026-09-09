@@ -175,8 +175,10 @@ internal static class StarfieldStarDataResolver
     }
 
     private static ReadOnlyCollection<uint> CandidateFormIds(
-        IEnumerable<StarfieldStarDataRecord> records) =>
-        Array.AsReadOnly(records.Select(record => record.FormId).ToArray());
+        IEnumerable<StarfieldStarDataRecord> records)
+    {
+        return Array.AsReadOnly(records.Select(record => record.FormId).ToArray());
+    }
 }
 
 /// <summary>
@@ -210,9 +212,13 @@ internal static class StarfieldStarDataFormIdRebaser
         };
     }
 
-    private static uint? RebaseOptional(uint? value, Func<uint, uint> rebaseFormId) =>
-        value is null ? null : RebaseNonzero(value.Value, rebaseFormId);
+    private static uint? RebaseOptional(uint? value, Func<uint, uint> rebaseFormId)
+    {
+        return value is null ? null : RebaseNonzero(value.Value, rebaseFormId);
+    }
 
-    private static uint RebaseNonzero(uint value, Func<uint, uint> rebaseFormId) =>
-        value == 0 ? 0 : rebaseFormId(value);
+    private static uint RebaseNonzero(uint value, Func<uint, uint> rebaseFormId)
+    {
+        return value == 0 ? 0 : rebaseFormId(value);
+    }
 }

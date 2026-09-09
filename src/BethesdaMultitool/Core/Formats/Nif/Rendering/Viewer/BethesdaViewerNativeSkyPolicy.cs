@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.Formats.Nif;
-
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 
 /// <summary>
@@ -12,9 +10,11 @@ internal static class BethesdaViewerNativeSkyPolicy
 {
     internal static bool IsDedicatedRawNifLayer(
         BethesdaViewerScenePurpose purpose,
-        SkyObjectType? type) =>
-        purpose == BethesdaViewerScenePurpose.RawNif &&
-        type is SkyObjectType.Sky or SkyObjectType.Stars or SkyObjectType.Clouds;
+        SkyObjectType? type)
+    {
+        return purpose == BethesdaViewerScenePurpose.RawNif &&
+               type is SkyObjectType.Sky or SkyObjectType.Stars or SkyObjectType.Clouds;
+    }
 
     /// <summary>
     ///     True only when every drawable part belongs to the dedicated camera-centred raw-NIF sky

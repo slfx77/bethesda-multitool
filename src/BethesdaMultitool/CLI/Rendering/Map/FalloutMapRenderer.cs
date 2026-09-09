@@ -29,8 +29,8 @@ internal static class FalloutMapRenderer
 
         foreach (var elevation in map.Elevations)
         {
-            results.Add(Render(map, elevation, outputDir, stem, scale, roof: false));
-            results.Add(Render(map, elevation, outputDir, stem, scale, roof: true));
+            results.Add(Render(map, elevation, outputDir, stem, scale, false));
+            results.Add(Render(map, elevation, outputDir, stem, scale, true));
         }
 
         return results;
@@ -44,7 +44,7 @@ internal static class FalloutMapRenderer
             FalloutMapFile.GridWidth, FalloutMapFile.GridHeight, scale,
             (x, y) =>
             {
-                var tile = elevation.Tiles[(y * FalloutMapFile.GridWidth) + x];
+                var tile = elevation.Tiles[y * FalloutMapFile.GridWidth + x];
                 var id = roof ? tile.Roof : tile.Floor;
                 distinct.Add(id);
 

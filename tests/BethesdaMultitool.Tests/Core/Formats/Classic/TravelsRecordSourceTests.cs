@@ -1,15 +1,9 @@
-using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.Linq;
 using System.Text;
-using System.Threading;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Vfs;
-using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Classic;
@@ -263,8 +257,7 @@ public sealed class TravelsRecordSourceTests : IDisposable
         // The dungeon graph is a fixed 37 x 6 grid; one byte short is not a shorter graph.
         File.WriteAllBytes(Path.Combine(install, "geomin.dat"), DungeonGraph()[..^1]);
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => Populate(install, StormholdRecordSource.Populate));
+        var error = Assert.Throws<InvalidDataException>(() => Populate(install, StormholdRecordSource.Populate));
         Assert.Contains("geomin.dat", error.Message, StringComparison.Ordinal);
     }
 
@@ -284,8 +277,7 @@ public sealed class TravelsRecordSourceTests : IDisposable
 
         File.WriteAllBytes(Path.Combine(install, "npcstrings.dat"), [.. bytes]);
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => Populate(install, StormholdRecordSource.Populate));
+        var error = Assert.Throws<InvalidDataException>(() => Populate(install, StormholdRecordSource.Populate));
         Assert.Contains("npcstrings.dat", error.Message, StringComparison.Ordinal);
         Assert.Contains("257", error.Message, StringComparison.Ordinal);
     }
@@ -305,8 +297,8 @@ public sealed class TravelsRecordSourceTests : IDisposable
         string recordType,
         string editorId)
     {
-        return Assert.Single(records.Where(
-            r => r.RecordType == recordType && string.Equals(r.EditorId, editorId, StringComparison.Ordinal)));
+        return Assert.Single(records, r =>
+            r.RecordType == recordType && string.Equals(r.EditorId, editorId, StringComparison.Ordinal));
     }
 
     /// <summary>The seven tables both games ship, in the shapes their readers require.</summary>
@@ -541,9 +533,9 @@ public sealed class TravelsRecordSourceTests : IDisposable
         return [.. lump];
     }
 
-    private static void WriteList(List<byte> bytes, IReadOnlyList<string> values)
+    private static void WriteList(List<byte> bytes, string[] values)
     {
-        WriteInt16(bytes, values.Count);
+        WriteInt16(bytes, values.Length);
         foreach (var value in values)
         {
             WriteUtf(bytes, value);

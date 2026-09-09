@@ -22,7 +22,7 @@ public sealed class CliHelpersDiscoverDumpsTests : IDisposable
     {
         try
         {
-            Directory.Delete(_root, recursive: true);
+            Directory.Delete(_root, true);
         }
         catch (IOException)
         {
@@ -101,7 +101,7 @@ public sealed class CliHelpersDiscoverDumpsTests : IDisposable
         File.SetLastWriteTimeUtc(newer, DateTime.UtcNow.AddDays(-1));
 
         var result = CliHelpers.DiscoverDumps(
-            _root, SearchOption.TopDirectoryOnly, orderByLastWriteTime: true);
+            _root, SearchOption.TopDirectoryOnly, true);
 
         Assert.NotNull(result);
         Assert.Equal(2, result.Count);

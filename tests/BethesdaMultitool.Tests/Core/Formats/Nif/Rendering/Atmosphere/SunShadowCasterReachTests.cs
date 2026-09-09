@@ -109,7 +109,7 @@ public sealed class SunShadowCasterReachTests
         var a = SunShadowMath.BuildLightFrustum(
             MorningSun, center, Vector3.Zero, Cascade0Radius, Resolution);
         var b = SunShadowMath.BuildLightFrustum(
-            MorningSun, center, Vector3.Zero, Cascade0Radius, Resolution, 0f);
+            MorningSun, center, Vector3.Zero, Cascade0Radius, Resolution);
 
         Assert.Equal(a.ViewProj, b.ViewProj);
         Assert.Equal(a.TexelWorldSize, b.TexelWorldSize);

@@ -357,9 +357,9 @@ internal readonly record struct RenderableReference(
             boundsRadius,
             ComputeMeshId(mesh.CacheKey),
             placement.IsInitiallyDisabled || xespDisabled,
-            IsMarker: false,
-            IsImposter: false,
-            Category: category,
+            false,
+            false,
+            category,
             BendableSplineMesh: mesh,
             BaseFormId: placement.BaseFormId);
     }

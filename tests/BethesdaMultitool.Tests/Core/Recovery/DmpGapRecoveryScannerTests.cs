@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Recovery;
+using BethesdaMultitool.Core.Utils;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.BinaryTestWriter;
 
@@ -164,7 +165,7 @@ public sealed class DmpGapRecoveryScannerTests
         // Debug-era corpus dumps have Memory64 BaseRva ≡ 2 (mod 4), so every captured byte sits at
         // file offset ≡ VA+2 (mod 4). The vtable-probe stride must anchor on the VA, not the file
         // offset — pre-fix this fixture yields zero candidates.
-        var result = ScanRuntimeFixture(heapFileOffset: 0x302);
+        var result = ScanRuntimeFixture(0x302);
 
         var candidate = Assert.Single(result.Candidates);
         Assert.Equal(DmpGapRecoveryCandidateKind.RuntimeTesForm, candidate.Kind);
@@ -177,7 +178,7 @@ public sealed class DmpGapRecoveryScannerTests
     public void Scan_FindsRuntimeTesFormAtMatchedParity()
     {
         // Control: file offset ≡ VA (mod 4) — the Release-dump shape the old stride already handled.
-        var result = ScanRuntimeFixture(heapFileOffset: 0x300);
+        var result = ScanRuntimeFixture(0x300);
 
         var candidate = Assert.Single(result.Candidates);
         Assert.Equal("PBEA", candidate.RecordType);
@@ -211,7 +212,7 @@ public sealed class DmpGapRecoveryScannerTests
                 // Module-space VAs (bit 31 set) are stored sign-extended in minidumps.
                 new MinidumpMemoryRegion
                 {
-                    VirtualAddress = BethesdaMultitool.Core.Utils.Xbox360MemoryUtils.VaToLong(moduleVa),
+                    VirtualAddress = Xbox360MemoryUtils.VaToLong(moduleVa),
                     FileOffset = rttiFileOffset,
                     Size = 0x200
                 },

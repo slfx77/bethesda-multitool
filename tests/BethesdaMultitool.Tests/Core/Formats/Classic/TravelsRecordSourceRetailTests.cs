@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Games;
@@ -28,7 +24,7 @@ public sealed class TravelsRecordSourceRetailTests
     private static string Require(string? path, string what)
     {
         Assert.SkipWhen(path is null, RealAssetPaths.SkipMessage(what));
-        return path!;
+        return path;
     }
 
     private static async Task<List<GenericEsmRecord>> LoadAsync(string jar, BethesdaGame game)
@@ -47,7 +43,7 @@ public sealed class TravelsRecordSourceRetailTests
 
     private static GenericEsmRecord Row(IEnumerable<GenericEsmRecord> records, string recordType, uint formId)
     {
-        return Assert.Single(records.Where(r => r.RecordType == recordType && r.FormId == formId));
+        return Assert.Single(records, r => r.RecordType == recordType && r.FormId == formId);
     }
 
     [Fact]

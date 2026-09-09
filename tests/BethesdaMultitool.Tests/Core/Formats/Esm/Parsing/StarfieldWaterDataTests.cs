@@ -90,7 +90,7 @@ public sealed class StarfieldWaterDataTests
     {
         var encoded = EncodeSubrecords(BuildCompleteSubrecords());
 
-        var water = ParseStarfieldWaterData(encoded, isBigEndian: true);
+        var water = ParseStarfieldWaterData(encoded, true);
 
         Assert.True(water.IsBigEndian);
         Assert.Null(water.VisualProperties);
@@ -186,7 +186,7 @@ public sealed class StarfieldWaterDataTests
     public void ParseWater_WrongSizedFlagsFailClosedForTypedEnvelope()
     {
         var subrecords = BuildCompleteSubrecords();
-        subrecords[1] = ("FNAM", [(byte)0x1D, (byte)0x80]);
+        subrecords[1] = ("FNAM", [0x1D, 0x80]);
 
         var water = ParseStarfieldWater(subrecords);
 
@@ -248,8 +248,8 @@ public sealed class StarfieldWaterDataTests
     {
         return
         [
-            ("ANAM", [(byte)80]),
-            ("FNAM", [(byte)0x1D]),
+            ("ANAM", [80]),
+            ("FNAM", [0x1D]),
             ("DNAM", BuildDnam()),
             ("GNAM", Gnam(0x7FC0_0000u, 0xFFFF_FFFFu, 0x0123_4567u)),
             ("NAM0", Vector(4f, 5f, 6f)),
@@ -280,7 +280,10 @@ public sealed class StarfieldWaterDataTests
         return dnam;
     }
 
-    private static float ValueAt(int offset) => offset + 0.25f;
+    private static float ValueAt(int offset)
+    {
+        return offset + 0.25f;
+    }
 
     private static byte[] Vector(float x, float y, float z)
     {

@@ -26,9 +26,13 @@ internal static class SkyrimWaterSchema
         // A regenerated layout that no longer matches keeps its own authoritative definition.
         if (dnam.Members.Count != 37 ||
             dnam.Members[7] is not RawMemberDef
-                { Builder: "wbFloat", Signature: null, MinFormVersion: null, MaxFormVersionExclusive: null } ||
+            {
+                Builder: "wbFloat", Signature: null, MinFormVersion: null, MaxFormVersionExclusive: null
+            } ||
             dnam.Members[22] is not RawMemberDef
-                { Builder: "wbFloat", Signature: null, MinFormVersion: null, MaxFormVersionExclusive: null } ||
+            {
+                Builder: "wbFloat", Signature: null, MinFormVersion: null, MaxFormVersionExclusive: null
+            } ||
             !HasKnownFraming(dnam)) return dnam;
 
         var members = dnam.Members.ToArray();
@@ -74,8 +78,10 @@ internal static class SkyrimWaterSchema
         return offset == 228;
     }
 
-    private static bool IsNamedFloat(MemberDef member, string name) =>
-        member is FieldDef { Type: PrimType.Float } field && field.Name == name;
+    private static bool IsNamedFloat(MemberDef member, string name)
+    {
+        return member is FieldDef { Type: PrimType.Float } field && field.Name == name;
+    }
 
     private static int KnownInlineWidth(MemberDef member)
     {

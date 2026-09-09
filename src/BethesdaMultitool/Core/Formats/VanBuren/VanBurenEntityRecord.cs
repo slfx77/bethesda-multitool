@@ -162,7 +162,7 @@ internal sealed class VanBurenEntityRecord
     {
         foreach (var b in slice)
         {
-            if (b is not ((>= (byte)'A' and <= (byte)'Z') or (>= (byte)'0' and <= (byte)'9')))
+            if (b is not (>= (byte)'A' and <= (byte)'Z' or >= (byte)'0' and <= (byte)'9'))
             {
                 return false;
             }

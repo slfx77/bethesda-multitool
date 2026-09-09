@@ -21,9 +21,6 @@ namespace BethesdaMultitool.Core.Formats.Audio;
 /// </summary>
 internal sealed class VocFile
 {
-    /// <summary>The 20-byte signature, including its terminating EOF character.</summary>
-    private static ReadOnlySpan<byte> Signature => "Creative Voice File\u001A"u8;
-
     /// <summary>
     ///     The DOS end-of-file byte that closes the signature. It is what let <c>TYPE file.voc</c>
     ///     stop cleanly at the header instead of spraying binary at the terminal.
@@ -50,6 +47,9 @@ internal sealed class VocFile
         Texts = texts;
         RepeatCount = repeatCount;
     }
+
+    /// <summary>The 20-byte signature, including its terminating EOF character.</summary>
+    private static ReadOnlySpan<byte> Signature => "Creative Voice File\u001A"u8;
 
     /// <summary>Logical file name this was parsed from.</summary>
     public string Name { get; }

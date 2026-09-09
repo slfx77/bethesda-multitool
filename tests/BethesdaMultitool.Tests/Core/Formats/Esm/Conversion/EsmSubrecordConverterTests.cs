@@ -20,7 +20,7 @@ public class EsmSubrecordConverterTests
         Assert.NotNull(schema);
 
         // The field should be FormIdLittleEndian
-        Assert.True(schema!.Fields.Length > 0);
+        Assert.True(schema.Fields.Length > 0);
     }
 
     #endregion

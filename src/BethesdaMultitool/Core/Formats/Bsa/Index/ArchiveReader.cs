@@ -17,18 +17,17 @@ namespace BethesdaMultitool.Core.Formats.Bsa.Index;
 /// </summary>
 public sealed class ArchiveReader : IDisposable
 {
-    private readonly IArchiveBackend _backend;
+    private readonly Lazy<IReadOnlyDictionary<string, Ba2FileRecord>> _ba2FileIndex;
+    private readonly Lazy<IReadOnlyDictionary<string, BsaFileRecord>> _bsaFileIndex;
 
     // Lazy<T> (ExecutionAndPublication) so racing first lookups build the index exactly once —
     // the old `_byPath ??= BuildIndex()` let concurrent first calls each build a full private
     // index (wasted work; last assignment won).
     private readonly Lazy<Dictionary<string, ArchiveEntry>> _byPath;
-    private readonly Lazy<IReadOnlyDictionary<string, BsaFileRecord>> _bsaFileIndex;
-    private readonly Lazy<IReadOnlyDictionary<string, Ba2FileRecord>> _ba2FileIndex;
 
     private ArchiveReader(IArchiveBackend backend)
     {
-        _backend = backend;
+        Backend = backend;
         _byPath = new Lazy<Dictionary<string, ArchiveEntry>>(BuildIndex);
         // Texture resolvers use the format records directly so extraction stays allocation-free.
         // Keep those immutable path maps on the shared reader: CPU decode, native D3D12 upload,
@@ -42,19 +41,25 @@ public sealed class ArchiveReader : IDisposable
     }
 
     /// <summary>The format backend — the seam <c>ArchiveHandleRegistry</c> shares handles through.</summary>
-    internal IArchiveBackend Backend => _backend;
+    internal IArchiveBackend Backend { get; }
 
     /// <summary>True when the underlying container is a BA2 (vs a classic BSA).</summary>
-    public bool IsBa2 => _backend is Ba2Backend;
+    public bool IsBa2 => Backend is Ba2Backend;
 
     /// <summary>Short format label for display: <c>"BSA"</c> or <c>"BA2"</c> (more as families land).</summary>
-    public string FormatName => _backend.FormatName;
+    public string FormatName => Backend.FormatName;
 
     /// <summary>Platform label: a BSA may be Xbox 360 or PC; a BA2 is always PC.</summary>
-    public string PlatformLabel => _backend.PlatformLabel;
+    public string PlatformLabel => Backend.PlatformLabel;
 
     /// <summary>Total entry count across the container.</summary>
-    public int TotalFiles => _backend.TotalFiles;
+    public int TotalFiles => Backend.TotalFiles;
+
+    /// <summary>
+    ///     Bytes the container occupies, for the families spread over several files (the Arena
+    ///     floppy installer's volumes). Null means the opened file's own length is the answer.
+    /// </summary>
+    public long? ContainerSizeBytes => Backend.ContainerSizeBytes;
 
     /// <summary>The parsed BSA archive, or null when this is not a BSA (for format-specific display).</summary>
     public BsaArchive? Bsa => AsBsaExtractor?.Archive;
@@ -67,18 +72,18 @@ public sealed class ArchiveReader : IDisposable
     ///     BSA/Xbox-360 conversion path (DDX→DDS, XMA→WAV, NIF endian swap), which has no analogue in
     ///     any other family because they are already PC formats.
     /// </summary>
-    public BsaExtractor? AsBsaExtractor => (_backend as BsaBackend)?.Extractor;
+    public BsaExtractor? AsBsaExtractor => (Backend as BsaBackend)?.Extractor;
 
     /// <summary>
     ///     The underlying BA2 extractor, non-null only for a BA2. Counterpart of
     ///     <see cref="AsBsaExtractor" /> for callers that need record-typed extraction
     ///     (e.g. texture sources built over a shared <see cref="ArchiveReader" /> handle).
     /// </summary>
-    public Ba2Extractor? AsBa2Extractor => (_backend as Ba2Backend)?.Extractor;
+    public Ba2Extractor? AsBa2Extractor => (Backend as Ba2Backend)?.Extractor;
 
     public void Dispose()
     {
-        _backend.Dispose();
+        Backend.Dispose();
     }
 
     /// <summary>Opens <paramref name="path" /> with the format chosen by <see cref="ArchiveProbe" />.</summary>
@@ -90,7 +95,7 @@ public sealed class ArchiveReader : IDisposable
     /// <summary>All entries in the archive (folder trees flattened; flat containers are already lists).</summary>
     public IReadOnlyList<ArchiveEntry> ListFiles()
     {
-        return _backend.ListFiles();
+        return Backend.ListFiles();
     }
 
     /// <summary>
@@ -100,13 +105,13 @@ public sealed class ArchiveReader : IDisposable
     /// </summary>
     public IEnumerable<string> EnumerateFilePaths()
     {
-        return _backend.EnumerateFilePaths();
+        return Backend.EnumerateFilePaths();
     }
 
     /// <summary>Extracts an entry returned by <see cref="ListFiles" /> to bytes. Thread-safe.</summary>
     public byte[] Extract(ArchiveEntry entry)
     {
-        return _backend.Extract(entry);
+        return Backend.Extract(entry);
     }
 
     /// <summary>
@@ -129,7 +134,7 @@ public sealed class ArchiveReader : IDisposable
         }
 
         byte[] data;
-        if (_backend is BsaBackend bsa && entry.Record is BsaFileRecord bsaRecord)
+        if (Backend is BsaBackend bsa && entry.Record is BsaFileRecord bsaRecord)
         {
             data = bsa.Extractor.ExtractFileBounded(bsaRecord, maximumBytes);
         }
@@ -143,7 +148,7 @@ public sealed class ArchiveReader : IDisposable
                     $"exceeding the {maximumBytes}-byte caller limit.");
             }
 
-            data = _backend.Extract(entry);
+            data = Backend.Extract(entry);
         }
 
         if (data.LongLength > maximumBytes)
@@ -162,13 +167,13 @@ public sealed class ArchiveReader : IDisposable
     /// </summary>
     public Task<bool> ExtractToDiskAsync(ArchiveEntry entry, string outputDir, bool overwrite = false)
     {
-        return _backend.ExtractToDiskAsync(entry, outputDir, overwrite);
+        return Backend.ExtractToDiskAsync(entry, outputDir, overwrite);
     }
 
     /// <summary>File-extension histogram, delegated to the backing extractor.</summary>
     public Dictionary<string, int> GetExtensionStats()
     {
-        return _backend.GetExtensionStats();
+        return Backend.GetExtensionStats();
     }
 
     /// <summary>
@@ -177,7 +182,7 @@ public sealed class ArchiveReader : IDisposable
     /// </summary>
     public Dictionary<string, int> GetFolderStats()
     {
-        return _backend.GetFolderStats();
+        return Backend.GetFolderStats();
     }
 
     /// <summary>
@@ -187,14 +192,14 @@ public sealed class ArchiveReader : IDisposable
     public byte[]? ReadFile(string fullPath)
     {
         var normalized = Normalize(fullPath);
-        if (_backend is BsaBackend bsa)
+        if (Backend is BsaBackend bsa)
         {
             return GetBsaFileIndex().TryGetValue(normalized, out var record)
                 ? bsa.Extractor.ExtractFile(record)
                 : null;
         }
 
-        if (_backend is Ba2Backend ba2)
+        if (Backend is Ba2Backend ba2)
         {
             return GetBa2FileIndex().TryGetValue(normalized, out var record)
                 ? ba2.Extractor.ExtractFile(record)
@@ -255,7 +260,7 @@ public sealed class ArchiveReader : IDisposable
     private Dictionary<string, BsaFileRecord> BuildBsaFileIndex()
     {
         var extractor = AsBsaExtractor
-            ?? throw new InvalidOperationException("The archive is not a BSA.");
+                        ?? throw new InvalidOperationException("The archive is not a BSA.");
         var map = new Dictionary<string, BsaFileRecord>(
             extractor.Archive.TotalFiles,
             StringComparer.OrdinalIgnoreCase);
@@ -273,7 +278,7 @@ public sealed class ArchiveReader : IDisposable
     private Dictionary<string, Ba2FileRecord> BuildBa2FileIndex()
     {
         var extractor = AsBa2Extractor
-            ?? throw new InvalidOperationException("The archive is not a BA2.");
+                        ?? throw new InvalidOperationException("The archive is not a BA2.");
         var map = new Dictionary<string, Ba2FileRecord>(
             extractor.Archive.TotalFiles,
             StringComparer.OrdinalIgnoreCase);

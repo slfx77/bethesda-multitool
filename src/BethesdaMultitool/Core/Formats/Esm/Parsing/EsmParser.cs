@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Records;

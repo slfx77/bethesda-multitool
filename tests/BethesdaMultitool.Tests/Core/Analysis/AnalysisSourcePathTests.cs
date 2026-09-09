@@ -27,7 +27,7 @@ public sealed class AnalysisSourcePathTests : IDisposable
         GC.SuppressFinalize(this);
         try
         {
-            Directory.Delete(_dir, recursive: true);
+            Directory.Delete(_dir, true);
         }
         catch (IOException)
         {
@@ -36,22 +36,35 @@ public sealed class AnalysisSourcePathTests : IDisposable
     }
 
     [Fact]
-    public void IsMappable_File_IsTrue() => Assert.True(AnalysisSourcePath.IsMappable(_file));
+    public void IsMappable_File_IsTrue()
+    {
+        Assert.True(AnalysisSourcePath.IsMappable(_file));
+    }
 
     [Fact]
-    public void IsMappable_Directory_IsFalse() => Assert.False(AnalysisSourcePath.IsMappable(_dir));
+    public void IsMappable_Directory_IsFalse()
+    {
+        Assert.False(AnalysisSourcePath.IsMappable(_dir));
+    }
 
     [Fact]
-    public void IsInstallDirectory_Directory_IsTrue() =>
+    public void IsInstallDirectory_Directory_IsTrue()
+    {
         Assert.True(AnalysisSourcePath.IsInstallDirectory(_dir));
+    }
 
     [Fact]
-    public void IsInstallDirectory_File_IsFalse() =>
+    public void IsInstallDirectory_File_IsFalse()
+    {
         Assert.False(AnalysisSourcePath.IsInstallDirectory(_file));
+    }
 
     /// <summary>The independently known length is the fixture's five written bytes.</summary>
     [Fact]
-    public void SizeOf_File_IsTheByteCount() => Assert.Equal(5L, AnalysisSourcePath.SizeOf(_file));
+    public void SizeOf_File_IsTheByteCount()
+    {
+        Assert.Equal(5L, AnalysisSourcePath.SizeOf(_file));
+    }
 
     /// <summary>
     ///     A directory reports zero rather than throwing. <c>new FileInfo(dir).Length</c> raises
@@ -65,12 +78,16 @@ public sealed class AnalysisSourcePathTests : IDisposable
     }
 
     [Fact]
-    public void DisplayName_File_IsTheFileName() =>
+    public void DisplayName_File_IsTheFileName()
+    {
         Assert.Equal("install.jar", AnalysisSourcePath.DisplayName(_file));
+    }
 
     [Fact]
-    public void DisplayName_Directory_IsTheLeafName() =>
+    public void DisplayName_Directory_IsTheLeafName()
+    {
         Assert.Equal(Path.GetFileName(_dir), AnalysisSourcePath.DisplayName(_dir));
+    }
 
     /// <summary>
     ///     Install roots often arrive with a trailing separator, where

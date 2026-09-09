@@ -223,7 +223,7 @@ internal static class OrthoViewProjBuilder
     /// </summary>
     public static Vector3 EyePosition(Vector3 focus, float azimuthDeg, float elevationDeg)
     {
-        return focus + (ToEyeDirection(azimuthDeg, elevationDeg) * EyeDistance);
+        return focus + ToEyeDirection(azimuthDeg, elevationDeg) * EyeDistance;
     }
 
     /// <summary>

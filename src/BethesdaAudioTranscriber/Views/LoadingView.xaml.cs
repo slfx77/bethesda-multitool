@@ -38,35 +38,49 @@ public sealed partial class LoadingView : UserControl
     // appeared. The new pickers take the window handle directly in the constructor.
     private async void BrowseButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FolderPicker(GetWindowId())
+        try
         {
-            SuggestedStartLocation = PickerLocationId.ComputerFolder
-        };
+            var picker = new FolderPicker(GetWindowId())
+            {
+                SuggestedStartLocation = PickerLocationId.ComputerFolder
+            };
 
-        var result = await picker.PickSingleFolderAsync();
-        if (result != null)
+            var result = await picker.PickSingleFolderAsync();
+            if (result != null)
+            {
+                DataDirectory = result.Path;
+                FolderPathBox.Text = result.Path;
+                LoadButton.IsEnabled = true;
+                ResultsPanel.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (Exception ex)
         {
-            DataDirectory = result.Path;
-            FolderPathBox.Text = result.Path;
-            LoadButton.IsEnabled = true;
-            ResultsPanel.Visibility = Visibility.Collapsed;
+            MainWindow.Instance?.SetStatus($"Could not select data folder: {ex.Message}");
         }
     }
 
     private async void EsmBrowseButton_Click(object sender, RoutedEventArgs e)
     {
-        var picker = new FileOpenPicker(GetWindowId())
+        try
         {
-            SuggestedStartLocation = PickerLocationId.ComputerFolder
-        };
-        picker.FileTypeFilter.Add(".esm");
+            var picker = new FileOpenPicker(GetWindowId())
+            {
+                SuggestedStartLocation = PickerLocationId.ComputerFolder
+            };
+            picker.FileTypeFilter.Add(".esm");
 
-        var result = await picker.PickSingleFileAsync();
-        if (result != null)
+            var result = await picker.PickSingleFileAsync();
+            if (result != null)
+            {
+                EsmOverridePath = result.Path;
+                EsmPathBox.Text = result.Path;
+                EsmClearButton.Visibility = Visibility.Visible;
+            }
+        }
+        catch (Exception ex)
         {
-            EsmOverridePath = result.Path;
-            EsmPathBox.Text = result.Path;
-            EsmClearButton.Visibility = Visibility.Visible;
+            MainWindow.Instance?.SetStatus($"Could not select ESM file: {ex.Message}");
         }
     }
 

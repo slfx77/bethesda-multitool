@@ -112,7 +112,7 @@ internal static class CompressedRecordCheckCommand
         stats.Compressed = compressed.Count;
         stats.CompressedBe = compressed.Count(r => r.IsBigEndian);
 
-        var context = new RecordParserContext(scan, null, accessor, fileSize, null);
+        var context = new RecordParserContext(scan, null, accessor, fileSize);
         var buffer = ArrayPool<byte>.Shared.Rent(1 << 20);
         try
         {

@@ -84,7 +84,7 @@ public class CellLayerWeightTableBlendGridTests
         var table = CellLayerWeightTable.Build(gridSize, layers);
 
         Assert.NotNull(table);
-        AssertQuadrantIsAlpha(table!, 0);
+        AssertQuadrantIsAlpha(table, 0);
     }
 
     /// <summary>Native-resolution (65-edge) entries — the Starfield injector's emission — decode 1:1 at 129.</summary>
@@ -96,7 +96,7 @@ public class CellLayerWeightTableBlendGridTests
         var table = CellLayerWeightTable.Build(129, layers);
 
         Assert.NotNull(table);
-        AssertQuadrantIsAlpha(table!, 1);
+        AssertQuadrantIsAlpha(table, 1);
     }
 
     /// <summary>65-edge entries downsample cleanly onto the classic 33 grid (the 2D map path).</summary>
@@ -108,7 +108,7 @@ public class CellLayerWeightTableBlendGridTests
         var table = CellLayerWeightTable.Build(33, layers);
 
         Assert.NotNull(table);
-        AssertQuadrantIsAlpha(table!, 2);
+        AssertQuadrantIsAlpha(table, 2);
     }
 
     /// <summary>
@@ -145,7 +145,7 @@ public class CellLayerWeightTableBlendGridTests
 
         // SW quadrant on the 129 grid: vx 0..64, vy 64..128 (vy 64 = its north edge). qy=9..16 of 17
         // maps to the quadrant's northern ~44%: alpha near the quadrant's north, base near its south.
-        ref var northVertex = ref table!.At(30, 70);
+        ref var northVertex = ref table.At(30, 70);
         Assert.Equal(AlphaId, northVertex.E0.FormId);
 
         ref var southVertex = ref table.At(30, 124);

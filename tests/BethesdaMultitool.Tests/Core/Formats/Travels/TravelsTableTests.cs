@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Travels;
 using Xunit;
@@ -146,12 +142,12 @@ public sealed class TravelsTableTests
         return buf;
     }
 
-    private static Buf CharacterRow(Buf buf, int index)
+    private static void CharacterRow(Buf buf, int index)
     {
         buf.I16(index).I16(index % 3);
         for (var a = 0; a < TravelsCharacterTable.AttributeCount; a++)
         {
-            buf.I16(30 + (10 * a));
+            buf.I16(30 + 10 * a);
         }
 
         buf.I16(4).I16(11).I16(12);
@@ -159,8 +155,6 @@ public sealed class TravelsTableTests
         {
             buf.I16(s % 5).I16(35 + s);
         }
-
-        return buf;
     }
 
     [Fact]
@@ -281,8 +275,8 @@ public sealed class TravelsTableTests
     [Fact]
     public void ItemTable_TypeIndexOutsideTheTypeList_Throws()
     {
-        var ex = Assert.Throws<InvalidDataException>(
-            () => TravelsItemTable.Parse(ItemBytes(new sbyte[] { 1, 3 }, new sbyte[] { 0, 0 }), Name));
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            TravelsItemTable.Parse(ItemBytes(new sbyte[] { 1, 3 }, new sbyte[] { 0, 0 }), Name));
 
         Assert.Contains("type index 3", ex.Message, StringComparison.Ordinal);
         Assert.Contains("outside 1..2", ex.Message, StringComparison.Ordinal);
@@ -291,8 +285,8 @@ public sealed class TravelsTableTests
     [Fact]
     public void ItemTable_SlotOutsideTheEquipmentRange_Throws()
     {
-        var ex = Assert.Throws<InvalidDataException>(
-            () => TravelsItemTable.Parse(ItemBytes(new sbyte[] { 1, 1 }, new sbyte[] { 0, 7 }), Name));
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            TravelsItemTable.Parse(ItemBytes(new sbyte[] { 1, 1 }, new sbyte[] { 0, 7 }), Name));
 
         Assert.Contains("equipment slot 7", ex.Message, StringComparison.Ordinal);
     }
@@ -407,7 +401,7 @@ public sealed class TravelsTableTests
     public void MonsterTable_ShortStatRow_Throws()
     {
         var bytes = MonsterBytes(1).Done();
-        Assert.Throws<InvalidDataException>(() => TravelsMonsterTable.Parse(bytes[..^1], Name));
+        Assert.Throws<InvalidDataException>(() => TravelsMonsterTable.Parse(bytes.AsSpan(0, bytes.Length - 1), Name));
     }
 
     // ---------------------------------------------------------------- monsterfilenamesin.dat
@@ -439,16 +433,16 @@ public sealed class TravelsTableTests
     [Fact]
     public void MonsterSpriteTable_FewerThan35Strings_Throws()
     {
-        var ex = Assert.Throws<InvalidDataException>(
-            () => TravelsMonsterSpriteTable.Parse(SpriteBytes(TravelsMonsterSpriteTable.EntryCount - 1), Name));
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            TravelsMonsterSpriteTable.Parse(SpriteBytes(TravelsMonsterSpriteTable.EntryCount - 1), Name));
         Assert.Contains(Name, ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
     public void MonsterSpriteTable_MoreThan35Strings_Throws()
     {
-        var ex = Assert.Throws<InvalidDataException>(
-            () => TravelsMonsterSpriteTable.Parse(SpriteBytes(TravelsMonsterSpriteTable.EntryCount + 1), Name));
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            TravelsMonsterSpriteTable.Parse(SpriteBytes(TravelsMonsterSpriteTable.EntryCount + 1), Name));
         Assert.Contains("trailing", ex.Message, StringComparison.Ordinal);
     }
 
@@ -520,8 +514,8 @@ public sealed class TravelsTableTests
     [Fact]
     public void GeometryTable_WrongLength_Throws()
     {
-        var ex = Assert.Throws<InvalidDataException>(
-            () => TravelsGeometryTable.Parse(GeometryBytes(TravelsGeometryTable.RowCount - 1), Name));
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            TravelsGeometryTable.Parse(GeometryBytes(TravelsGeometryTable.RowCount - 1), Name));
 
         Assert.Contains("216 bytes", ex.Message, StringComparison.Ordinal);
     }
@@ -552,8 +546,8 @@ public sealed class TravelsTableTests
     [Fact]
     public void DungeonNameTable_WrongPairCount_Throws()
     {
-        Assert.Throws<InvalidDataException>(
-            () => TravelsDungeonNameTable.Parse(DungeonNameBytes(TravelsDungeonNameTable.PairCount - 1), Name));
+        Assert.Throws<InvalidDataException>(() =>
+            TravelsDungeonNameTable.Parse(DungeonNameBytes(TravelsDungeonNameTable.PairCount - 1), Name));
     }
 
     // ---------------------------------------------------------------- helptext.dat
@@ -570,8 +564,7 @@ public sealed class TravelsTableTests
     [Fact]
     public void HelpTextTable_NegativeCount_Throws()
     {
-        var ex = Assert.Throws<InvalidDataException>(
-            () => TravelsHelpTextTable.Parse(new Buf().I32(-1).Done(), Name));
+        var ex = Assert.Throws<InvalidDataException>(() => TravelsHelpTextTable.Parse(new Buf().I32(-1).Done(), Name));
 
         Assert.Contains("negative", ex.Message, StringComparison.Ordinal);
     }
@@ -635,7 +628,10 @@ public sealed class TravelsTableTests
             return this;
         }
 
-        public Buf I16(int value) => U16(value);
+        public Buf I16(int value)
+        {
+            return U16(value);
+        }
 
         public Buf I32(int value)
         {
@@ -664,6 +660,9 @@ public sealed class TravelsTableTests
             return this;
         }
 
-        public byte[] Done() => [.. _bytes];
+        public byte[] Done()
+        {
+            return [.. _bytes];
+        }
     }
 }

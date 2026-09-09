@@ -199,7 +199,7 @@ public static class AnalyzeCommand
         // Create the semantic parser with memory-mapped access for full data extraction
         // This enables runtime C++ struct reading for types with poor ESM coverage (NPC, WEAP, etc.)
         RecordCollection semanticResult;
-        StringPoolSummary? stringPool = null;
+        StringPoolSummary? stringPool;
         using (var mmf = MemoryMappedFile.CreateFromFile(result.FilePath, FileMode.Open, null, 0,
                    MemoryMappedFileAccess.Read))
         using (var accessor = mmf.CreateViewAccessor(0, result.FileSize, MemoryMappedFileAccess.Read))
@@ -778,7 +778,7 @@ public static class AnalyzeCommand
 
     private static string? GetWorldspaceEditorId(uint? worldspaceFormId, IReadOnlyDictionary<uint, string>? formIdMap)
     {
-        if (worldspaceFormId is not uint id || formIdMap == null)
+        if (worldspaceFormId is not { } id || formIdMap == null)
         {
             return null;
         }

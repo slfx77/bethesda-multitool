@@ -38,7 +38,7 @@ public sealed class MaterialSwapTests
             Swaps(("materials\\architecture\\a.bgsm", "materials\\architecture\\b.bgsm")));
 
         Assert.NotNull(set);
-        Assert.Empty(set!.Overrides);
+        Assert.Empty(set.Overrides);
         Assert.NotNull(set.MaterialSwaps);
         Assert.Equal("materials\\architecture\\b.bgsm", set.MaterialSwaps!["materials\\architecture\\a.bgsm"]);
     }

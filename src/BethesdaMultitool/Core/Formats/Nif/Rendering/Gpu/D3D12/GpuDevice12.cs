@@ -32,10 +32,10 @@ internal sealed class GpuDevice12 : IDisposable
     private static readonly Logger Log = Logger.Instance;
 
     private readonly ID3D12InfoQueue? _infoQueue;
+    private bool _disposed;
+    private GpuVideoMemoryMonitor12? _videoMemory;
     private IDXGIAdapter3? _videoMemoryAdapter;
     private bool _videoMemoryAdapterResolved;
-    private GpuVideoMemoryMonitor12? _videoMemory;
-    private bool _disposed;
 
     private GpuDevice12(
         ID3D12Device device,
@@ -122,6 +122,25 @@ internal sealed class GpuDevice12 : IDisposable
     /// </summary>
     public GpuVideoMemoryMonitor12 VideoMemory => _videoMemory ??= new GpuVideoMemoryMonitor12(this);
 
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        // Before the adapter: the monitor's watcher unregisters its notification through it.
+        DisposeNoThrow(_videoMemory, "video-memory monitor");
+        _videoMemory = null;
+        DisposeNoThrow(_videoMemoryAdapter, "video-memory adapter");
+        _videoMemoryAdapter = null;
+        DisposeNoThrow(_infoQueue, "D3D12 info queue");
+        DisposeNoThrow(FrameFence, "frame fence");
+        DisposeNoThrow(DirectQueue, "direct queue");
+        DisposeNoThrow(Device, "D3D12 device");
+    }
+
     /// <summary>
     ///     Explicitly removes the D3D12 device after a command list reached the queue without a
     ///     usable completion fence. ID3D12Device5::RemoveDevice is the terminal boundary that makes
@@ -164,25 +183,6 @@ internal sealed class GpuDevice12 : IDisposable
             Log.Warn("GpuDevice12: forced device removal failed ({0}): {1}", context, ex.Message);
             return false;
         }
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        // Before the adapter: the monitor's watcher unregisters its notification through it.
-        DisposeNoThrow(_videoMemory, "video-memory monitor");
-        _videoMemory = null;
-        DisposeNoThrow(_videoMemoryAdapter, "video-memory adapter");
-        _videoMemoryAdapter = null;
-        DisposeNoThrow(_infoQueue, "D3D12 info queue");
-        DisposeNoThrow(FrameFence, "frame fence");
-        DisposeNoThrow(DirectQueue, "direct queue");
-        DisposeNoThrow(Device, "D3D12 device");
     }
 
     private static void DisposeNoThrow(IDisposable? resource, string resourceName)
@@ -387,8 +387,11 @@ internal sealed class GpuDevice12 : IDisposable
     /// <summary>
     ///     Byte-precision video-memory reading for one segment.
     ///     <para>
-    ///         <b>The return value and <see cref="GpuVideoMemoryInfo.IsUsable" /> answer different
-    ///         questions.</b> This returns whether the API call succeeded; <c>IsUsable</c> says
+    ///         <b>
+    ///             The return value and <see cref="GpuVideoMemoryInfo.IsUsable" /> answer different
+    ///             questions.
+    ///         </b>
+    ///         This returns whether the API call succeeded; <c>IsUsable</c> says
     ///         whether the numbers mean anything. A UMA part can succeed and report a budget of zero,
     ///         and a caller that conflated the two would read that as "budget zero, therefore full".
     ///     </para>
@@ -512,7 +515,10 @@ internal sealed class GpuDevice12 : IDisposable
     }
 
     /// <summary>Saturating <c>ulong</c> → <c>long</c>. DXGI never reports 8 EiB; the clamp costs nothing.</summary>
-    private static long ToSignedBytes(ulong value) => value > long.MaxValue ? long.MaxValue : (long)value;
+    private static long ToSignedBytes(ulong value)
+    {
+        return value > long.MaxValue ? long.MaxValue : (long)value;
+    }
 
     private IDXGIAdapter3? ResolveVideoMemoryAdapter()
     {
@@ -684,8 +690,8 @@ internal sealed class GpuDevice12 : IDisposable
                 if (adapterPolicy != GpuAdapterPolicy.WarpOnly)
                 {
                     var created = TryCreateOnAdapter(
-                        null, adapterName: null, featureLevels, enableDebugLayer, enableDred,
-                        isSoftwareAdapter: false, probed);
+                        null, null, featureLevels, enableDebugLayer, enableDred,
+                        false, probed);
                     if (created is not null) return created;
                 }
             }
@@ -703,7 +709,7 @@ internal sealed class GpuDevice12 : IDisposable
                         {
                             var created = TryCreateOnAdapter(
                                 adapter, adapter.Description1.Description, featureLevels, enableDebugLayer,
-                                enableDred, isSoftwareAdapter: false, probed);
+                                enableDred, false, probed);
                             if (created is not null) return created;
                         }
                     }
@@ -724,7 +730,7 @@ internal sealed class GpuDevice12 : IDisposable
                         using var warpAdapter = dxgiFactory.EnumWarpAdapter<IDXGIAdapter1>();
                         var created = TryCreateOnAdapter(
                             warpAdapter, warpAdapter.Description1.Description, featureLevels, enableDebugLayer,
-                            enableDred, isSoftwareAdapter: true, probed);
+                            enableDred, true, probed);
                         if (created is not null) return created;
                     }
                     catch (SharpGenException ex)

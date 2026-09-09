@@ -20,7 +20,7 @@ public sealed class StarfieldCurve3DProductionParsingTests
             0x100,
             ("EDID", NullTermString("WaterCurve")),
             ("REFL", StarfieldCurve3DTestStreamBuilder.Build(
-                serializedControlListMarker: 0xA1B2C3D4))));
+                0xA1B2C3D4))));
 
         var record = Assert.Single(parsed.Curves3D);
         Assert.Equal(0x100u, record.FormId);
@@ -200,13 +200,17 @@ public sealed class StarfieldCurve3DProductionParsingTests
         uint formId,
         byte[] bytes,
         long offset,
-        bool isBigEndian) =>
-        new(recordType, checked((uint)(bytes.Length - 24)), 0, formId, offset, isBigEndian);
+        bool isBigEndian)
+    {
+        return new DetectedMainRecord(recordType, checked((uint)(bytes.Length - 24)), 0, formId, offset, isBigEndian);
+    }
 
     private static Fixture Cur3(
         uint formId,
-        params (string Signature, byte[] Data)[] fields) =>
-        new("CUR3", formId, BuildRecordBytes(formId, "CUR3", false, fields));
+        params (string Signature, byte[] Data)[] fields)
+    {
+        return new Fixture("CUR3", formId, BuildRecordBytes(formId, "CUR3", false, fields));
+    }
 
     private readonly record struct Fixture(
         string RecordType,

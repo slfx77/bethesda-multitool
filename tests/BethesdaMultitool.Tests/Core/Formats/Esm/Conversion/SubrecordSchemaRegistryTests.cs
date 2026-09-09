@@ -173,7 +173,7 @@ public class SubrecordSchemaRegistryTests
         var schema = SubrecordSchemaRegistry.GetSchema("DATA", recordType, dataLength);
         Assert.NotNull(schema);
         Assert.NotSame(SubrecordSchema.FloatArray, schema);
-        Assert.Equal(expectedFieldCount, schema!.Fields.Length);
+        Assert.Equal(expectedFieldCount, schema.Fields.Length);
     }
 
     #endregion

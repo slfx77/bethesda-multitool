@@ -9,6 +9,12 @@ public sealed class TerrainCellDrawCullingTests
 {
     private static readonly TerrainCellHeightBounds UnitHeightBounds = new(0f, 1f);
 
+    private static readonly Matrix4x4 ReverseZ = new(
+        1f, 0f, 0f, 0f,
+        0f, 1f, 0f, 0f,
+        0f, 0f, -1f, 0f,
+        0f, 0f, 1f, 1f);
+
     [Fact]
     public void HeightBounds_FromVertices_TracksExactUploadedExtrema()
     {
@@ -17,7 +23,7 @@ public sealed class TerrainCellDrawCullingTests
             new(17.25f, Vector3.UnitZ, 0xFFFFFFFF),
             new(-123.5f, Vector3.UnitZ, 0xFFFFFFFF),
             new(987.75f, Vector3.UnitZ, 0xFFFFFFFF),
-            new(-0f, Vector3.UnitZ, 0xFFFFFFFF),
+            new(-0f, Vector3.UnitZ, 0xFFFFFFFF)
         ];
 
         var bounds = TerrainCellHeightBounds.FromVertices(vertices);
@@ -36,7 +42,7 @@ public sealed class TerrainCellDrawCullingTests
         [
             new(-20f, Vector3.UnitZ, 0xFFFFFFFF),
             new(malformedHeight, Vector3.UnitZ, 0xFFFFFFFF),
-            new(30f, Vector3.UnitZ, 0xFFFFFFFF),
+            new(30f, Vector3.UnitZ, 0xFFFFFFFF)
         ];
 
         var bounds = TerrainCellHeightBounds.FromVertices(vertices);
@@ -175,10 +181,4 @@ public sealed class TerrainCellDrawCullingTests
         Assert.Null(TerrainCellDrawCulling.CreateFrustum(Matrix4x4.Identity,
             new Vector3(float.PositiveInfinity, 0f, 0f)));
     }
-
-    private static readonly Matrix4x4 ReverseZ = new(
-        1f, 0f, 0f, 0f,
-        0f, 1f, 0f, 0f,
-        0f, 0f, -1f, 0f,
-        0f, 0f, 1f, 1f);
 }

@@ -113,7 +113,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
         Assert.Equal("REFR", emitted.Signature);
         Assert.Equal(9, emitted.GroupType); // Routed to master's original bucket.
 
-        var data = FindSubrecord(section!, emitted.RecordOffset, "DATA");
+        var data = FindSubrecord(section, emitted.RecordOffset, "DATA");
         Assert.NotNull(data);
         Assert.Equal(123.5f, BinaryPrimitives.ReadSingleLittleEndian(data.AsSpan(0, 4)));
     }
@@ -295,7 +295,7 @@ public sealed class PlanCellSectionBuilderCarryForwardTests
         Assert.NotNull(section);
 
         // Walk to the interior block (type 2) and sub-block (type 3) GRUP labels.
-        var (block, sub) = FindInteriorBlockSubLabels(section!);
+        var (block, sub) = FindInteriorBlockSubLabels(section);
         Assert.Equal(expectedBlock, block);
         Assert.Equal(expectedSub, sub);
     }

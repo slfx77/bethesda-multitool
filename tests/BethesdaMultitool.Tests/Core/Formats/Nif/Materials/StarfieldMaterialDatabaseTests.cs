@@ -69,7 +69,7 @@ public class StarfieldMaterialDatabaseTests
         var db = StarfieldMaterialDatabase.Parse(BuildDatabase());
 
         Assert.NotNull(db);
-        Assert.Equal(2, db!.ObjectCount);
+        Assert.Equal(2, db.ObjectCount);
         Assert.Equal(@"Data\Textures\Ground\Dirt_color.dds", db.ResolveDiffuse(@"materials\test\mat.mat"));
         Assert.Equal(@"Data\Textures\Ground\Dirt_normal.dds", db.ResolveNormal(@"materials\test\mat.mat"));
         Assert.Null(db.ResolveDiffuse(@"materials\test\absent.mat"));
@@ -87,7 +87,7 @@ public class StarfieldMaterialDatabaseTests
         var db = StarfieldMaterialDatabase.Parse(BuildDatabase(true));
 
         Assert.NotNull(db);
-        Assert.Equal(@"Data\Textures\Ground\Dirt_color.dds", db!.ResolveDiffuse(@"materials\test\mat.mat"));
+        Assert.Equal(@"Data\Textures\Ground\Dirt_color.dds", db.ResolveDiffuse(@"materials\test\mat.mat"));
     }
 
     /// <summary>
@@ -102,7 +102,7 @@ public class StarfieldMaterialDatabaseTests
         var db = StarfieldMaterialDatabase.Parse(BuildDatabase(wideObjectInfo: true));
 
         Assert.NotNull(db);
-        Assert.Equal(2, db!.ObjectCount);
+        Assert.Equal(2, db.ObjectCount);
         Assert.Equal(@"Data\Textures\Ground\Dirt_color.dds", db.ResolveDiffuse(@"materials\test\mat.mat"));
     }
 
@@ -120,7 +120,7 @@ public class StarfieldMaterialDatabaseTests
         var db = StarfieldMaterialDatabase.Parse(BuildLayeredDatabase());
 
         Assert.NotNull(db);
-        Assert.Equal(@"Data\Textures\Base_color.dds", db!.ResolveDiffuse(@"materials\test\layered.mat"));
+        Assert.Equal(@"Data\Textures\Base_color.dds", db.ResolveDiffuse(@"materials\test\layered.mat"));
     }
 
     /// <summary>
@@ -132,7 +132,7 @@ public class StarfieldMaterialDatabaseTests
         var db = StarfieldMaterialDatabase.Parse(BuildLayeredDatabase(true));
 
         Assert.NotNull(db);
-        Assert.Equal(@"Data\Textures\Base_color.dds", db!.ResolveDiffuse(@"materials\test\layered.mat"));
+        Assert.Equal(@"Data\Textures\Base_color.dds", db.ResolveDiffuse(@"materials\test\layered.mat"));
     }
 
     /// <summary>
@@ -146,7 +146,7 @@ public class StarfieldMaterialDatabaseTests
         var db = StarfieldMaterialDatabase.Parse(BuildLayeredDatabase(replacementInsteadOfTexture: true));
 
         Assert.NotNull(db);
-        var slot = db!.ResolveDiffuseSlot(@"materials\test\layered.mat");
+        var slot = db.ResolveDiffuseSlot(@"materials\test\layered.mat");
 
         Assert.Null(slot.TexturePath);
         // 0.8, 0.8, 0.8, 1.0 packed R8G8B8A8 with R in the low byte.
@@ -167,7 +167,7 @@ public class StarfieldMaterialDatabaseTests
         var db = StarfieldMaterialDatabase.Parse(BuildInheritedLayerDatabase());
 
         Assert.NotNull(db);
-        Assert.Equal(@"Data\Textures\Base_color.dds", db!.ResolveDiffuse(@"materials\test\derived.mat"));
+        Assert.Equal(@"Data\Textures\Base_color.dds", db.ResolveDiffuse(@"materials\test\derived.mat"));
     }
 
     /// <summary>
@@ -182,7 +182,7 @@ public class StarfieldMaterialDatabaseTests
             BuildLayeredDatabase(replacementInsteadOfTexture: true, replacementEnabled: false));
 
         Assert.NotNull(db);
-        Assert.True(db!.Contains(@"materials\test\layered.mat"));
+        Assert.True(db.Contains(@"materials\test\layered.mat"));
         Assert.False(db.ResolveDiffuseSlot(@"materials\test\layered.mat").IsResolved);
         Assert.False(db.Contains(@"materials\test\absent.mat"));
     }
@@ -195,7 +195,7 @@ public class StarfieldMaterialDatabaseTests
             BuildLayeredDatabase(replacementInsteadOfTexture: true, replacementEnabled: false));
 
         Assert.NotNull(db);
-        var slot = db!.ResolveDiffuseSlot(@"materials\test\layered.mat");
+        var slot = db.ResolveDiffuseSlot(@"materials\test\layered.mat");
 
         Assert.False(slot.IsResolved);
     }

@@ -28,8 +28,12 @@ internal enum RwPspPixelFormat
 /// <summary>
 ///     The PSP raster inside a RenderWare <c>TEXTURENATIVE</c> chunk.
 ///     <para>
-///         ⚑ <b>Layout settled by measurement 2026-09-06 and it predicts the exact body length of
-///         5,067 of 5,067 textures.</b> This is the "genuinely new decode" the porting plan
+///         ⚑
+///         <b>
+///             Layout settled by measurement 2026-09-06 and it predicts the exact body length of
+///             5,067 of 5,067 textures.
+///         </b>
+///         This is the "genuinely new decode" the porting plan
 ///         identified: the sibling tool's <c>TEXTURENATIVE</c> path is PS2 from the first byte of
 ///         the raster header — PSMT4/8, CSM1 CLUT swizzle, GS block unswizzle — and none of it
 ///         applies here. Only the chunk envelope was reusable.
@@ -101,21 +105,27 @@ internal sealed class RwPspTexture
     public byte[] Rgba { get; }
 
     /// <summary>Bits per pixel for a format.</summary>
-    public static int BitsPerPixel(RwPspPixelFormat format) => format switch
+    public static int BitsPerPixel(RwPspPixelFormat format)
     {
-        RwPspPixelFormat.Indexed4 => 4,
-        RwPspPixelFormat.Indexed8 => 8,
-        RwPspPixelFormat.Rgba8888 => 32,
-        _ => 16
-    };
+        return format switch
+        {
+            RwPspPixelFormat.Indexed4 => 4,
+            RwPspPixelFormat.Indexed8 => 8,
+            RwPspPixelFormat.Rgba8888 => 32,
+            _ => 16
+        };
+    }
 
     /// <summary>CLUT entries a format uses, or 0 when it is not indexed.</summary>
-    public static int ClutEntries(RwPspPixelFormat format) => format switch
+    public static int ClutEntries(RwPspPixelFormat format)
     {
-        RwPspPixelFormat.Indexed4 => 16,
-        RwPspPixelFormat.Indexed8 => 256,
-        _ => 0
-    };
+        return format switch
+        {
+            RwPspPixelFormat.Indexed4 => 16,
+            RwPspPixelFormat.Indexed8 => 256,
+            _ => 0
+        };
+    }
 
     /// <summary>
     ///     Bytes per row: the width's bit length rounded up to <see cref="PitchAlignment" />, with
@@ -203,7 +213,7 @@ internal sealed class RwPspTexture
             var row = pixels[(y * pitch)..];
             for (var x = 0; x < width; x++)
             {
-                var target = ((y * width) + x) * 4;
+                var target = (y * width + x) * 4;
                 switch (format)
                 {
                     case RwPspPixelFormat.Indexed4:
@@ -270,9 +280,14 @@ internal sealed class RwPspTexture
     }
 
     /// <summary>Replicates the high bits into the low ones so full-scale values reach 255.</summary>
-    private static byte Expand(int value, int bits) => (byte)(value | (value >> bits));
+    private static byte Expand(int value, int bits)
+    {
+        return (byte)(value | (value >> bits));
+    }
 
     /// <summary>The base level as a <see cref="DecodedTexture" /> for the viewer and browser.</summary>
-    public DecodedTexture ToDecodedTexture() =>
-        DecodedTexture.FromBaseLevel(Rgba, Width, Height, generateMipChain: false);
+    public DecodedTexture ToDecodedTexture()
+    {
+        return DecodedTexture.FromBaseLevel(Rgba, Width, Height, false);
+    }
 }

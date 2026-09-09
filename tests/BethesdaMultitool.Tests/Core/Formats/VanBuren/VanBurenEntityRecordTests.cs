@@ -1,6 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
 using System.Text;
 using BethesdaMultitool.Core.Formats.VanBuren;
 using Xunit;
@@ -17,8 +15,8 @@ public sealed class VanBurenEntityRecordTests
     {
         var body = new List<byte>();
         body.AddRange("EEN2"u8);
-        body.AddRange(new byte[4]);                       // the zero dword at +4
-        body.AddRange(BitConverter.GetBytes(0x72u));      // +8: meaning NOT established
+        body.AddRange(new byte[4]); // the zero dword at +4
+        body.AddRange(BitConverter.GetBytes(0x72u)); // +8: meaning NOT established
         foreach (var s in new[] { name, asset })
         {
             body.AddRange(BitConverter.GetBytes((ushort)s.Length));

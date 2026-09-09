@@ -60,7 +60,7 @@ internal static class ClassicSkySource
             }
 
             var sky = DaggerfallSkyFile.Parse(bytes, node.Name);
-            var frameIndex = (Math.Clamp(half, 0, 1) * FramesPerHalf) + Math.Clamp(step, 0, FramesPerHalf - 1);
+            var frameIndex = Math.Clamp(half, 0, 1) * FramesPerHalf + Math.Clamp(step, 0, FramesPerHalf - 1);
 
             // Each frame carries its OWN palette — the set is a day cycle, so sharing one palette
             // across frames would flatten dawn and dusk into the same colours.
@@ -68,7 +68,7 @@ internal static class ClassicSkySource
                 .ToDecodedTexture(sky.PaletteFor(frameIndex));
         }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException
-                                     or IOException or ArgumentException or ArgumentOutOfRangeException)
+                                      or IOException or ArgumentException or ArgumentOutOfRangeException)
         {
             return null;
         }

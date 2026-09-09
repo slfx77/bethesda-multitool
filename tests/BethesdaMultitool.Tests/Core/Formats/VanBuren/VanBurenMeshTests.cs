@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Text;
 using BethesdaMultitool.Core.Formats.VanBuren;
 using Xunit;
@@ -17,7 +14,7 @@ public sealed class VanBurenMeshTests
     {
         var b = new List<byte>(Encoding.ASCII.GetBytes(VanBurenMesh.Signature));
         b.Add(firstOpcode);
-        b.AddRange([0x03, 0x00, 0x00, 0x80, 0x3F]);   // an opcode-03 float, as retail carries
+        b.AddRange([0x03, 0x00, 0x00, 0x80, 0x3F]); // an opcode-03 float, as retail carries
         foreach (var node in nodes)
         {
             b.AddRange([0x0A, 0x0C]);
@@ -62,7 +59,7 @@ public sealed class VanBurenMeshTests
         // 0A 0C occurs in binary payload data too; a length that does not lead to printable ASCII
         // must be skipped rather than taken as a node.
         var b = new List<byte>(Encoding.ASCII.GetBytes(VanBurenMesh.Signature)) { 28 };
-        b.AddRange([0x0A, 0x0C, 0x04, 0x00, 0xFF, 0xFE, 0x01, 0x02]);   // marker, but binary payload
+        b.AddRange([0x0A, 0x0C, 0x04, 0x00, 0xFF, 0xFE, 0x01, 0x02]); // marker, but binary payload
         b.AddRange([0x0A, 0x0C]);
         b.AddRange(BitConverter.GetBytes((ushort)VanBurenMesh.SceneRoot.Length));
         b.AddRange(Encoding.ASCII.GetBytes(VanBurenMesh.SceneRoot));

@@ -25,14 +25,14 @@ public sealed class RecordParserContextVaContiguityTests
     {
         // Region A (0xAA) at file 0..127 / VA 0x40000000; region B (0xBB) at file 128..255 /
         // VA 0x50000000 — file-adjacent, VA-disjoint, exactly how a partial capture packs them.
-        var context = BuildContext(RegionBVa: 0x50000000, out var buffer);
+        var context = BuildContext(0x50000000, out var buffer);
 
         // Header at region-A offset 64; a 96-byte body would run 32 bytes past A's end into B.
         var record = new DetectedMainRecord("NPC_", 96, 0, 0x00012345, 64, true);
         var result = context.ReadRecordData(record, buffer);
 
         Assert.NotNull(result);
-        Assert.Equal(RegionSize - 64 - HeaderSize, result!.Value.Size); // 40 bytes of A remain
+        Assert.Equal(RegionSize - 64 - HeaderSize, result.Value.Size); // 40 bytes of A remain
         Assert.All(
             result.Value.Data.AsSpan(0, result.Value.Size).ToArray(),
             b => Assert.Equal((byte)0xAA, b));
@@ -42,13 +42,13 @@ public sealed class RecordParserContextVaContiguityTests
     [Fact]
     public void RecordBodyWithinOneRegion_ReadsInFullAndIsNotFlagged()
     {
-        var context = BuildContext(RegionBVa: 0x50000000, out var buffer);
+        var context = BuildContext(0x50000000, out var buffer);
 
         var record = new DetectedMainRecord("NPC_", 32, 0, 0x00012346, 0, true);
         var result = context.ReadRecordData(record, buffer);
 
         Assert.NotNull(result);
-        Assert.Equal(32, result!.Value.Size);
+        Assert.Equal(32, result.Value.Size);
         Assert.Empty(context.NonContiguousRecordFormIds);
     }
 
@@ -57,13 +57,13 @@ public sealed class RecordParserContextVaContiguityTests
     {
         // Same file layout, but now region B is VA-adjacent to A. The body legitimately spans both
         // and must come back whole — the fix must not turn every boundary crossing into a truncation.
-        var context = BuildContext(RegionBVa: RegionAVa + RegionSize, out var buffer);
+        var context = BuildContext(RegionAVa + RegionSize, out var buffer);
 
         var record = new DetectedMainRecord("NPC_", 96, 0, 0x00012347, 64, true);
         var result = context.ReadRecordData(record, buffer);
 
         Assert.NotNull(result);
-        Assert.Equal(96, result!.Value.Size);
+        Assert.Equal(96, result.Value.Size);
         Assert.Empty(context.NonContiguousRecordFormIds);
 
         var data = result.Value.Data.AsSpan(0, 96).ToArray();

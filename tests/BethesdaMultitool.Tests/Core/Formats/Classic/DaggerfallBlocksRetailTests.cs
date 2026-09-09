@@ -1,7 +1,4 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Tests.Helpers;
@@ -22,7 +19,7 @@ public sealed class DaggerfallBlocksRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Classics.Daggerfall();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Daggerfall (ARENA2)"));
-        return root!;
+        return root;
     }
 
     private static DaggerfallBlocksFile OpenArchive()
@@ -69,7 +66,7 @@ public sealed class DaggerfallBlocksRetailTests
                 {
                     var at = DaggerfallBlockSceneAssembler.TransformFor(sub, model).Translation;
                     if (at.Z is < -DaggerfallBlockSceneAssembler.BlockSideUnits
-                        or > (2 * DaggerfallBlockSceneAssembler.BlockSideUnits))
+                        or > 2 * DaggerfallBlockSceneAssembler.BlockSideUnits)
                     {
                         outside.Add($"{block.Name}: z={at.Z:F0}");
                     }
@@ -98,7 +95,8 @@ public sealed class DaggerfallBlocksRetailTests
         var stray = blocks.IndexOf("FOO");
         Assert.Equal(669, stray);
         Assert.Equal(52_350, blocks.RecordBytes(stray).Length);
-        Assert.StartsWith("\r\n Volume in dri", System.Text.Encoding.ASCII.GetString(blocks.RecordBytes(stray).Span[..16]), System.StringComparison.Ordinal);
+        Assert.StartsWith("\r\n Volume in dri", Encoding.ASCII.GetString(blocks.RecordBytes(stray).Span[..16]),
+            StringComparison.Ordinal);
 
         for (var i = 0; i < blocks.Count; i++)
         {
@@ -174,7 +172,8 @@ public sealed class DaggerfallBlocksRetailTests
         Assert.Equal(20, alchemist.MiscFlats.Count);
         Assert.Equal(DaggerfallBuildingType.Alchemist, alchemist.Buildings[0].BuildingType);
         Assert.Equal(5, alchemist.Buildings[0].Quality);
-        Assert.Equal((1728, 1792, 0), (alchemist.SubRecords[0].XPos, alchemist.SubRecords[0].ZPos, alchemist.SubRecords[0].YRotation));
+        Assert.Equal((1728, 1792, 0),
+            (alchemist.SubRecords[0].XPos, alchemist.SubRecords[0].ZPos, alchemist.SubRecords[0].YRotation));
         Assert.Equal(DaggerfallBuildingType.House2, alchemist.Buildings[1].BuildingType);
         Assert.Equal(512, alchemist.SubRecords[1].YRotation);
         Assert.Equal(90f, alchemist.SubRecords[1].YRotation / DaggerfallRmbBlock.RotationDivisor, 3);
@@ -205,7 +204,7 @@ public sealed class DaggerfallBlocksRetailTests
             grids[(block.Width, block.Height)] = grids.GetValueOrDefault((block.Width, block.Height)) + 1;
             cells += block.ObjectRoots.Count;
             cellsUsed += block.ObjectRoots.Count(r => r.Objects.Count > 0);
-            longest = System.Math.Max(longest, block.ObjectRoots.Max(r => r.Objects.Count));
+            longest = Math.Max(longest, block.ObjectRoots.Max(r => r.Objects.Count));
             if (block.ObjectHeader.Dagr == "DAGR")
             {
                 dagr++;
@@ -260,5 +259,125 @@ public sealed class DaggerfallBlocksRetailTests
         // invariant that no two synthesized records collide on a FormID.
         Assert.Equal(1_295, records.Count(r => r.RecordType == DaggerfallRecordSource.BlockRecordType));
         Assert.Equal(records.Count, records.Select(r => r.FormId).Distinct().Count());
+    }
+
+    [Fact]
+    public void RotationUnits_AreTwoThousandAndFortyEightPerTurnAcrossEveryPlacementPopulation()
+    {
+        // The measurement that settles the angle scale (2026-09-06), and the reason the assembler
+        // stopped multiplying by 5.68889. Three populations, each independently decisive:
+        //   * every RMB sub-block rotation is one of exactly four values, 0/512/1024/1536;
+        //   * the overwhelming majority of per-model rotations lie inside a single turn, [0, 2048);
+        //   * RDB model rotations are multiples of 512, and their X/Z are zero (models stand up).
+        // ⚠ Asserted as STRUCTURE, not exact counts — the retail corpus is fixed here, but the
+        // shape is what carries the meaning and it survives a different BLOCKS.BSA.
+        var blocks = OpenArchive();
+
+        var subRotations = new HashSet<int>();
+        var modelRotations = new List<int>();
+        var rdbYs = new List<int>();
+        var rdbUpright = 0;
+        var rdbTotal = 0;
+
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            switch (blocks.TypeAt(i))
+            {
+                case DaggerfallBlockType.Rmb:
+                    var rmb = blocks.ParseRmb(i);
+                    foreach (var sub in rmb.SubRecords)
+                    {
+                        subRotations.Add(sub.YRotation);
+                        foreach (var model in sub.Exterior.Models.Concat(sub.Interior.Models))
+                        {
+                            modelRotations.Add(model.YRotation);
+                        }
+                    }
+
+                    break;
+
+                case DaggerfallBlockType.Rdb:
+                    foreach (var placed in blocks.ParseRdb(i).AllObjects)
+                    {
+                        if (placed.Model is not { } model)
+                        {
+                            continue;
+                        }
+
+                        rdbTotal++;
+                        rdbYs.Add(model.YRotation);
+                        if (model.XRotation == 0 && model.ZRotation == 0)
+                        {
+                            rdbUpright++;
+                        }
+                    }
+
+                    break;
+            }
+        }
+
+        // ⚑ THE oracle: a city block takes one of four cardinal orientations and nothing else.
+        // 512 units is therefore a right angle, so a full turn is 2,048 units.
+        Assert.Equal<int[]>([0, 512, 1024, 1536], [.. subRotations.Order()]);
+
+        var withinOneTurn = modelRotations.Count(r => r is >= 0 and < 2048);
+        Assert.True(
+            withinOneTurn > 0.9 * modelRotations.Count,
+            $"only {withinOneTurn} of {modelRotations.Count} model rotations lie in [0, 2048)");
+
+        var quarters = rdbYs.Count(r => r % DaggerfallBlockSceneAssembler.QuarterTurnUnits == 0);
+        Assert.True(
+            quarters > 0.9 * rdbYs.Count,
+            $"only {quarters} of {rdbYs.Count} RDB Y rotations are multiples of 512");
+        Assert.True(
+            rdbUpright > 0.9 * rdbTotal,
+            $"only {rdbUpright} of {rdbTotal} RDB models are upright (X and Z rotation zero)");
+    }
+
+    [Fact]
+    public void ContentProbes_ClaimEveryBlockOfTheirOwnFamilyAndNothingElse()
+    {
+        // The GUI's 3D level pane routes on these, and it must route on CONTENT: the same pane was
+        // once gated on Battlespire's file extension and claimed 2,115 meshes as levels while
+        // rejecting the only archive holding any. Neither block format has a magic number, so both
+        // probes are pure arithmetic — an RDB states its object-root offset exactly, an RMB's
+        // sub-block sizes must tile inside the payload and its own name must read as text.
+        var blocks = OpenArchive();
+
+        var claims = new Dictionary<DaggerfallBlockType, (int Rmb, int Rdb, int Total)>();
+        for (var i = 0; i < blocks.Count; i++)
+        {
+            var bytes = blocks.RecordBytes(i).Span;
+            var type = blocks.TypeAt(i);
+            claims.TryGetValue(type, out var tally);
+            claims[type] = (
+                tally.Rmb + (DaggerfallRmbBlock.IsRmb(bytes) ? 1 : 0),
+                tally.Rdb + (DaggerfallRdbBlock.IsRdb(bytes) ? 1 : 0),
+                tally.Total + 1);
+        }
+
+        // Every city block is claimed by the RMB probe and by nothing else. ⚠ Includes the 113 that
+        // declare ZERO sub-blocks — the witch covens, carnivals and ruins.
+        var rmb = claims[DaggerfallBlockType.Rmb];
+        Assert.Equal(rmb.Total, rmb.Rmb);
+        Assert.Equal(0, rmb.Rdb);
+
+        // Every dungeon block, likewise.
+        var rdb = claims[DaggerfallBlockType.Rdb];
+        Assert.Equal(rdb.Total, rdb.Rdb);
+        Assert.Equal(0, rdb.Rmb);
+
+        // And the families that are neither — the 187 RDI records and the stray FOO listing — are
+        // claimed by neither probe.
+        foreach (var (type, tally) in claims)
+        {
+            if (type is DaggerfallBlockType.Rmb or DaggerfallBlockType.Rdb)
+            {
+                continue;
+            }
+
+            Assert.Equal(0, tally.Rmb);
+            Assert.Equal(0, tally.Rdb);
+        }
     }
 }

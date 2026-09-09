@@ -36,7 +36,7 @@ public sealed class OblivionHairLayerDecodeTests
     public void NativeSceneCopyAndRepeatedPose_KeepLayerAndExactGreenOneTint()
     {
         var source = CreateSource();
-        var scene = new BethesdaViewerScene("hair", BethesdaViewerScenePurpose.NpcAppearance, null);
+        var scene = new BethesdaViewerScene("hair", BethesdaViewerScenePurpose.NpcAppearance);
         var node = scene.AddNode("hair", BethesdaViewerScene.RootNodeIndex, Matrix4x4.Identity,
             Matrix4x4.CreateTranslation(2f, 3f, 4f), BethesdaViewerNodeRole.Attachment);
         scene.MeshParts.Add(new BethesdaViewerMeshPart { Name = "hair", NodeIndex = node, Submesh = source });

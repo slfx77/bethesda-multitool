@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 using BethesdaMultitool.Core.Rendering.Level2D;
 using Xunit;
@@ -26,14 +22,14 @@ public sealed class ShadowkeyZoneLevel2DSourceTests
 
     private static ShadowkeyZoneMap Map(int width, int height, Func<int, bool> blocked, Func<int, int> prototypeOf)
     {
-        var payload = new byte[ShadowkeyZoneMap.HeaderLength + (width * height * ShadowkeyZoneMap.CellLength)];
+        var payload = new byte[ShadowkeyZoneMap.HeaderLength + width * height * ShadowkeyZoneMap.CellLength];
         "testzone"u8.CopyTo(payload);
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(128), (ushort)width);
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(130), (ushort)height);
         for (var i = 0; i < width * height; i++)
         {
             var cell = payload.AsSpan(
-                ShadowkeyZoneMap.HeaderLength + (i * ShadowkeyZoneMap.CellLength),
+                ShadowkeyZoneMap.HeaderLength + i * ShadowkeyZoneMap.CellLength,
                 ShadowkeyZoneMap.CellLength);
             cell[0] = blocked(i) ? ShadowkeyMapCell.BlockedFlag : (byte)0;
             BinaryPrimitives.WriteUInt16LittleEndian(cell[4..], (ushort)prototypeOf(i));
@@ -45,17 +41,17 @@ public sealed class ShadowkeyZoneLevel2DSourceTests
     private static ShadowkeyCellPrototypes Prototypes(params (short[] Floor, short[] Ceiling)[] records)
     {
         var payload = new byte[
-            ShadowkeyCellPrototypes.HeaderLength + (records.Length * ShadowkeyCellPrototype.RecordLength)];
+            ShadowkeyCellPrototypes.HeaderLength + records.Length * ShadowkeyCellPrototype.RecordLength];
         BinaryPrimitives.WriteUInt32LittleEndian(payload, (uint)records.Length);
         for (var i = 0; i < records.Length; i++)
         {
             var record = payload.AsSpan(
-                ShadowkeyCellPrototypes.HeaderLength + (i * ShadowkeyCellPrototype.RecordLength),
+                ShadowkeyCellPrototypes.HeaderLength + i * ShadowkeyCellPrototype.RecordLength,
                 ShadowkeyCellPrototype.RecordLength);
             for (var c = 0; c < ShadowkeyCellPrototype.CornerCount; c++)
             {
-                BinaryPrimitives.WriteInt16LittleEndian(record[(6 + (c * 2))..], records[i].Floor[c]);
-                BinaryPrimitives.WriteInt16LittleEndian(record[(14 + (c * 2))..], records[i].Ceiling[c]);
+                BinaryPrimitives.WriteInt16LittleEndian(record[(6 + c * 2)..], records[i].Floor[c]);
+                BinaryPrimitives.WriteInt16LittleEndian(record[(14 + c * 2)..], records[i].Ceiling[c]);
             }
 
             record.Slice(22, ShadowkeyCellPrototype.SurfaceSlotCount).Fill(ShadowkeyCellPrototype.NoSurface);
@@ -64,13 +60,15 @@ public sealed class ShadowkeyZoneLevel2DSourceTests
         return ShadowkeyCellPrototypes.Parse(payload, "testzone.zcp");
     }
 
-    private static ShadowkeyCellPrototypes FlatRoom() =>
-        Prototypes((new short[] { 0, 0, 0, 0 }, [OneTile * 4, OneTile * 4, OneTile * 4, OneTile * 4]));
+    private static ShadowkeyCellPrototypes FlatRoom()
+    {
+        return Prototypes((new short[] { 0, 0, 0, 0 }, [OneTile * 4, OneTile * 4, OneTile * 4, OneTile * 4]));
+    }
 
     /// <summary>The RGB at a pixel of a render.</summary>
     private static (byte R, byte G, byte B) Pixel(Level2DRender render, int x, int y)
     {
-        var offset = ((y * render.Width) + x) * 4;
+        var offset = (y * render.Width + x) * 4;
         return (render.Rgba[offset], render.Rgba[offset + 1], render.Rgba[offset + 2]);
     }
 
@@ -93,7 +91,7 @@ public sealed class ShadowkeyZoneLevel2DSourceTests
         Assert.NotNull(render);
 
         var distinct = new HashSet<(byte, byte, byte)>();
-        for (var y = 0; y < render!.Value.Height; y++)
+        for (var y = 0; y < render.Value.Height; y++)
         {
             for (var x = 0; x < render.Value.Width; x++)
             {
@@ -169,7 +167,7 @@ public sealed class ShadowkeyZoneLevel2DSourceTests
         Assert.Equal(30, render.Width);
         Assert.Equal(15, render.Height);
         Assert.Equal(30 * 15 * 4, render.Rgba.Length);
-        Assert.All(Enumerable.Range(0, 30 * 15), i => Assert.Equal((byte)255, render.Rgba[(i * 4) + 3]));
+        Assert.All(Enumerable.Range(0, 30 * 15), i => Assert.Equal((byte)255, render.Rgba[i * 4 + 3]));
     }
 
     // ---------------------------------------------------------------- clamping and ranging
@@ -200,7 +198,8 @@ public sealed class ShadowkeyZoneLevel2DSourceTests
     [Fact]
     public void BlockedCellsDoNotFlattenTheHeightRamp()
     {
-        var open = (new short[] { 0, 0, OneTile, OneTile }, new short[] { OneTile * 4, OneTile * 4, OneTile * 4, OneTile * 4 });
+        var open = (new short[] { 0, 0, OneTile, OneTile },
+            new short[] { OneTile * 4, OneTile * 4, OneTile * 4, OneTile * 4 });
         var filler = (new short[] { 30000, 30000, 30000, 30000 }, new short[] { 30000, 30000, 30000, 30000 });
 
         var withoutFiller = ShadowkeyZoneLevel2DSource.ForZone(
@@ -231,11 +230,11 @@ public sealed class ShadowkeyZoneLevel2DSourceTests
     public void TheOverlayMarksPlacementsAtTheirOwnTiles()
     {
         var placement = new ShadowkeyEntity(
-            RawX: 3 * 256, RawY: 1 * 256, RawZ: 0, Angle0: 0, Angle1: 0, Angle2: 0,
-            RawScale: 256, EntityId: 7, Name: "crate", Script: "crate");
+            3 * 256, 1 * 256, 0, 0, 0, 0,
+            256, 7, "crate", "crate");
         var source = ShadowkeyZoneLevel2DSource.ForZone(
             Map(6, 3, static _ => false, static _ => 0), FlatRoom(),
-            new ShadowkeyEntityList([placement], HasNames: true), scale: 6);
+            new ShadowkeyEntityList([placement], true), 6);
 
         Assert.Contains(Level2DLayer.Overlay, source.Layers);
         var render = source.Render(Level2DLayer.Overlay)!.Value;
@@ -247,12 +246,11 @@ public sealed class ShadowkeyZoneLevel2DSourceTests
     [Fact]
     public void ForZone_RejectsNullInputsAndBadPrototypeIndices()
     {
-        Assert.Throws<ArgumentNullException>(
-            () => ShadowkeyZoneLevel2DSource.ForZone(null!, FlatRoom()));
-        Assert.Throws<ArgumentNullException>(
-            () => ShadowkeyZoneLevel2DSource.ForZone(Map(1, 1, static _ => false, static _ => 0), null!));
-        Assert.Throws<InvalidDataException>(
-            () => ShadowkeyZoneLevel2DSource.ForZone(Map(1, 1, static _ => false, static _ => 9), FlatRoom()));
+        Assert.Throws<ArgumentNullException>(() => ShadowkeyZoneLevel2DSource.ForZone(null!, FlatRoom()));
+        Assert.Throws<ArgumentNullException>(() =>
+            ShadowkeyZoneLevel2DSource.ForZone(Map(1, 1, static _ => false, static _ => 0), null!));
+        Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyZoneLevel2DSource.ForZone(Map(1, 1, static _ => false, static _ => 9), FlatRoom()));
     }
 
     /// <summary>A Shadowkey zone grid opens in the 2D view by default.</summary>

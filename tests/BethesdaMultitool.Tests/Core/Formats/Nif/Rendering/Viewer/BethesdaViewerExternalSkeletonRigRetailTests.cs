@@ -39,13 +39,13 @@ public sealed class BethesdaViewerExternalSkeletonRigRetailTests
         var archivePath = RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion - Meshes.bsa");
         Assert.SkipWhen(archivePath is null, RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
 
-        using var service = NifBrowserService.CreateFromBsa(archivePath!);
+        using var service = NifBrowserService.CreateFromBsa(archivePath);
         var bodyData = Assert.IsType<byte[]>(service.ReadNifData(BodyPath));
         var build = service.BuildViewerSceneWithDiagnostics(bodyData, "bearbody.nif", BodyPath);
         var scene = Assert.IsType<BethesdaViewerScene>(build.Scene);
         var catalog = Assert.IsType<NifModelFamilyAnimationCatalog>(scene.ModelFamilyAnimations);
         Assert.Equal(NifModelFamilyAnimationResolutionStatus.Resolved, catalog.Status);
-        Assert.Equal(SkeletonPath, catalog.Skeleton?.VirtualPath, ignoreCase: true);
+        Assert.Equal(SkeletonPath, catalog.Skeleton?.VirtualPath, true);
         var idle = Assert.Single(catalog.Animations, static asset =>
             string.Equals(asset.VirtualPath, IdlePath, StringComparison.OrdinalIgnoreCase));
         Assert.True(scene.TryGetNodeIndex("Bip01 Neck", out var neckIndex));
@@ -70,7 +70,7 @@ public sealed class BethesdaViewerExternalSkeletonRigRetailTests
         });
 
         var binding = BethesdaViewerKfAnimationBinder.ParseAndBind(
-            service.ReadModelFamilyAnimationData(idle),
+            service.ReadModelFamilyAnimationData(idle, TestContext.Current.CancellationToken),
             scene,
             idle.RelativePath);
         Assert.True(binding.HasAcceptedClips, binding.Summary);
@@ -84,8 +84,8 @@ public sealed class BethesdaViewerExternalSkeletonRigRetailTests
         var archivePath = RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion - Meshes.bsa");
         Assert.SkipWhen(archivePath is null, RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
 
-        using var extractor = new BsaExtractor(archivePath!);
-        var archive = BsaParser.Parse(archivePath!);
+        using var extractor = new BsaExtractor(archivePath);
+        var archive = BsaParser.Parse(archivePath);
         var bodyData = Extract(extractor, archive, BodyPath);
         var skeletonData = Extract(extractor, archive, SkeletonPath);
         var idleData = Extract(extractor, archive, IdlePath);
@@ -147,7 +147,7 @@ public sealed class BethesdaViewerExternalSkeletonRigRetailTests
         var archivePath = RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion - Meshes.bsa");
         Assert.SkipWhen(archivePath is null, RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
 
-        using var service = NifBrowserService.CreateFromBsa(archivePath!);
+        using var service = NifBrowserService.CreateFromBsa(archivePath);
         var bodyData = Assert.IsType<byte[]>(service.ReadNifData(MinotaurBodyPath));
         var build = service.BuildViewerSceneWithDiagnostics(
             bodyData,
@@ -156,7 +156,7 @@ public sealed class BethesdaViewerExternalSkeletonRigRetailTests
         var scene = Assert.IsType<BethesdaViewerScene>(build.Scene);
         var catalog = Assert.IsType<NifModelFamilyAnimationCatalog>(scene.ModelFamilyAnimations);
         Assert.Equal(NifModelFamilyAnimationResolutionStatus.Resolved, catalog.Status);
-        Assert.Equal(MinotaurSkeletonPath, catalog.Skeleton?.VirtualPath, ignoreCase: true);
+        Assert.Equal(MinotaurSkeletonPath, catalog.Skeleton?.VirtualPath, true);
         var idle = Assert.Single(catalog.Animations, static asset =>
             string.Equals(
                 asset.VirtualPath,
@@ -183,7 +183,7 @@ public sealed class BethesdaViewerExternalSkeletonRigRetailTests
         });
 
         var binding = BethesdaViewerKfAnimationBinder.ParseAndBind(
-            service.ReadModelFamilyAnimationData(idle),
+            service.ReadModelFamilyAnimationData(idle, TestContext.Current.CancellationToken),
             scene,
             idle.RelativePath);
         Assert.True(binding.HasAcceptedClips, binding.Summary);

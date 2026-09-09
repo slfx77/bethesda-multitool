@@ -1,4 +1,5 @@
 ﻿using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 
 namespace BethesdaMultitool.Core.Formats.Xngine.Bsa;
@@ -159,7 +160,7 @@ internal static class XnGineBsaParser
             {
                 var number = BinaryPrimitives.ReadUInt32LittleEndian(record);
                 id = number;
-                name = number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                name = number.ToString(CultureInfo.InvariantCulture);
                 size = BinaryPrimitives.ReadInt32LittleEndian(record[4..]);
             }
 

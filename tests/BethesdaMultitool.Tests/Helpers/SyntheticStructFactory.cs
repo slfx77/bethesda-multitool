@@ -233,7 +233,7 @@ internal static class SyntheticStructFactory
 
         for (var i = 0; timings != null && i < 4 && i < timings.Count; i++)
         {
-            WriteFloatBE(buf, 188 + (i * 4), timings[i]);
+            WriteFloatBE(buf, 188 + i * 4, timings[i]);
         }
 
         WriteUInt32BE(buf, 204, soundOnePtr);

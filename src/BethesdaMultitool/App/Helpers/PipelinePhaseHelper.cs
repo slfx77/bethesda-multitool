@@ -140,10 +140,22 @@ internal static class PipelinePhaseHelper
     ///     Builds the record totals header text for the record breakdown panel.
     /// </summary>
     internal static string BuildRecordTotalsText(
-        Core.Formats.Esm.Models.RecordCollection r, bool isEsmFile)
+        Core.Formats.Esm.Models.RecordCollection r, AnalysisFileType fileType)
     {
-        var detailLabel = isEsmFile ? "Parsed" : "Reconstructed";
-        return $"Total Records Processed: {r.TotalRecordsProcessed:N0}    {detailLabel}: {r.TotalRecordsParsed:N0}";
+        // The verb has to name what actually happened to the records. "Reconstructed" is the
+        // DMP story — records rebuilt from a memory image — and it used to be applied to every
+        // non-ESM source, so a classic install read "Total Records Processed: 0    Reconstructed:
+        // 1,186" for records that were SYNTHESIZED from game tables and never processed as a
+        // stream at all. That line also has no meaningful "processed" count, so it does not show one.
+        return fileType switch
+        {
+            AnalysisFileType.ClassicGameData =>
+                $"Synthesized: {r.TotalRecordsParsed:N0} records from the install",
+            AnalysisFileType.EsmFile =>
+                $"Total Records Processed: {r.TotalRecordsProcessed:N0}    Parsed: {r.TotalRecordsParsed:N0}",
+            _ =>
+                $"Total Records Processed: {r.TotalRecordsProcessed:N0}    Reconstructed: {r.TotalRecordsParsed:N0}"
+        };
     }
 
     /// <summary>

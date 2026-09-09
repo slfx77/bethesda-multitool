@@ -21,7 +21,7 @@ public sealed class EsmEditorIdExtractorTests
         var layout = PdbStructLayouts.Get(formType);
 
         Assert.NotNull(layout);
-        Assert.Equal(expected, PdbStructLayouts.GetTesFormInteriorOffset(layout!));
+        Assert.Equal(expected, PdbStructLayouts.GetTesFormInteriorOffset(layout));
     }
 
     [Fact]

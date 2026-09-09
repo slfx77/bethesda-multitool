@@ -1,4 +1,3 @@
-using System;
 using BethesdaMultitool.Core.Rendering.Level2D;
 using Xunit;
 
@@ -57,7 +56,7 @@ public sealed class VoxelLayerRasterizerTests
         ushort[] grid = [0, 1, 2, 3];
 
         var (pixels, width, height, distinct) =
-            VoxelLayerRasterizer.Rasterize(2, 2, 1, (x, z) => grid[(z * 2) + x]);
+            VoxelLayerRasterizer.Rasterize(2, 2, 1, (x, z) => grid[z * 2 + x]);
 
         Assert.Equal(2, width);
         Assert.Equal(2, height);
@@ -86,7 +85,7 @@ public sealed class VoxelLayerRasterizerTests
         {
             for (var x = 0; x < 6; x++)
             {
-                var i = ((y * 6) + x) * 4;
+                var i = (y * 6 + x) * 4;
                 var expected = x < 3 ? left : right;
                 Assert.Equal(expected.R, pixels[i]);
                 Assert.Equal(expected.G, pixels[i + 1]);
@@ -99,7 +98,7 @@ public sealed class VoxelLayerRasterizerTests
     public void DistinctCountReportsWhetherALayerIsAuthored()
     {
         // A layer of nothing but id 0 is a blank plane — the count is what tells a caller so.
-        var (_, _, _, distinct) = VoxelLayerRasterizer.Rasterize(4, 4, 1, (_, _) => (ushort)0);
+        var (_, _, _, distinct) = VoxelLayerRasterizer.Rasterize(4, 4, 1, (_, _) => 0);
 
         Assert.Equal(1, distinct);
     }
@@ -107,7 +106,7 @@ public sealed class VoxelLayerRasterizerTests
     [Fact]
     public void ScaleBelowOneIsTreatedAsOne()
     {
-        var (_, width, height, _) = VoxelLayerRasterizer.Rasterize(3, 2, 0, (_, _) => (ushort)1);
+        var (_, width, height, _) = VoxelLayerRasterizer.Rasterize(3, 2, 0, (_, _) => 1);
 
         Assert.Equal(3, width);
         Assert.Equal(2, height);
@@ -119,7 +118,6 @@ public sealed class VoxelLayerRasterizerTests
     [InlineData(-1, 4)]
     public void ANonPositiveGridIsRejected(int width, int depth)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => VoxelLayerRasterizer.Rasterize(width, depth, 1, (_, _) => (ushort)0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => VoxelLayerRasterizer.Rasterize(width, depth, 1, (_, _) => 0));
     }
 }

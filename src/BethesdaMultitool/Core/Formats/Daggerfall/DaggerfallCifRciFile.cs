@@ -73,7 +73,7 @@ internal sealed class DaggerfallCifRciFile
     ///     The first frame always starts here (offset 76 on every retail animation).
     /// </summary>
     private const int WeaponAnimationHeaderLength =
-        WeaponAnimationFixedFieldsLength + (WeaponFrameOffsetSlots * 2) + 2;
+        WeaponAnimationFixedFieldsLength + WeaponFrameOffsetSlots * 2 + 2;
 
     /// <summary>Compression word of a raw record (data is width*height indices).</summary>
     private const ushort CompressionUncompressed = 0x0000;
@@ -104,7 +104,7 @@ internal sealed class DaggerfallCifRciFile
     public static bool IsCifRciFileName(string fileName)
     {
         return fileName.EndsWith(".CIF", StringComparison.OrdinalIgnoreCase)
-            || fileName.EndsWith(".RCI", StringComparison.OrdinalIgnoreCase);
+               || fileName.EndsWith(".RCI", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Parses and decodes every record and frame, routing the layout by file name.</summary>
@@ -151,9 +151,9 @@ internal sealed class DaggerfallCifRciFile
     private static List<DaggerfallCifRciRecord> ParseRci(ReadOnlySpan<byte> bytes, string name, string upperName)
     {
         var dimensions = RciDimensions(upperName)
-            ?? throw new NotSupportedException(
-                $"'{name}' is not in the RCI dimension table; RCI files are headerless and " +
-                "cannot be decoded without a known size.");
+                         ?? throw new NotSupportedException(
+                             $"'{name}' is not in the RCI dimension table; RCI files are headerless and " +
+                             "cannot be decoded without a known size.");
 
         var (width, height) = dimensions;
         var frameLength = width * height;
@@ -224,7 +224,8 @@ internal sealed class DaggerfallCifRciFile
     ///     12 + pixel-data length regardless of compression, which is what keeps consecutive
     ///     records aligned (an RLE record's data length is its COMPRESSED size).
     /// </summary>
-    private static DaggerfallCifRciRecord ReadImgRecord(ReadOnlySpan<byte> bytes, string name, int index, ref int position)
+    private static DaggerfallCifRciRecord ReadImgRecord(ReadOnlySpan<byte> bytes, string name, int index,
+        ref int position)
     {
         if (position + ImgHeaderLength > bytes.Length)
         {
@@ -314,7 +315,7 @@ internal sealed class DaggerfallCifRciFile
         for (var slot = 0; slot < WeaponFrameOffsetSlots; slot++)
         {
             int frameOffset = BinaryPrimitives.ReadUInt16LittleEndian(
-                header[(WeaponAnimationFixedFieldsLength + (slot * 2))..]);
+                header[(WeaponAnimationFixedFieldsLength + slot * 2)..]);
             if (frameOffset == 0)
             {
                 continue;
@@ -332,7 +333,7 @@ internal sealed class DaggerfallCifRciFile
         }
 
         int totalSize = BinaryPrimitives.ReadUInt16LittleEndian(
-            header[(WeaponAnimationFixedFieldsLength + (WeaponFrameOffsetSlots * 2))..]);
+            header[(WeaponAnimationFixedFieldsLength + WeaponFrameOffsetSlots * 2)..]);
         if (totalSize < WeaponAnimationHeaderLength)
         {
             throw new InvalidDataException(
@@ -342,7 +343,7 @@ internal sealed class DaggerfallCifRciFile
 
         position = start + totalSize;
         return new DaggerfallCifRciRecord(
-            index, 0, 0, CompressionRleCompressed, frames, IsWeaponAnimation: true);
+            index, 0, 0, CompressionRleCompressed, frames, true);
     }
 
     /// <summary>
@@ -351,7 +352,8 @@ internal sealed class DaggerfallCifRciFile
     ///     bytes. Decoding stops when the frame is full; a run that would overflow it is an
     ///     error (retail streams land exactly, verified across all 577 RLE images).
     /// </summary>
-    private static void DecodeRle(ReadOnlySpan<byte> bytes, string name, string context, int source, Span<byte> destination)
+    private static void DecodeRle(ReadOnlySpan<byte> bytes, string name, string context, int source,
+        Span<byte> destination)
     {
         var written = 0;
         while (written < destination.Length)

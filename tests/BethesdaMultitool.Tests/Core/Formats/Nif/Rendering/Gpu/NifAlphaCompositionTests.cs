@@ -210,7 +210,7 @@ public sealed class NifAlphaCompositionTests
         using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
 
-        using var renderer = new GpuSpriteRenderer12(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu);
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
@@ -251,7 +251,7 @@ public sealed class NifAlphaCompositionTests
         using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
 
-        using var renderer = new GpuSpriteRenderer12(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu);
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
@@ -263,7 +263,7 @@ public sealed class NifAlphaCompositionTests
             64);
 
         Assert.NotNull(gpuSprite);
-        AssertVisiblePixelsRemainOpaque(gpuSprite!);
+        AssertVisiblePixelsRemainOpaque(gpuSprite);
     }
 
     [Theory]
@@ -296,7 +296,7 @@ public sealed class NifAlphaCompositionTests
         using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
 
-        using var renderer = new GpuSpriteRenderer12(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu);
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
@@ -367,12 +367,12 @@ public sealed class NifAlphaCompositionTests
 
         var cpuSprite = RenderCpu(model, textureResolver);
         Assert.NotNull(cpuSprite);
-        AssertPixelIsNearNeutralWhite(ReadPixel(cpuSprite!, cpuSprite.Width / 2, cpuSprite.Height / 2));
+        AssertPixelIsNearNeutralWhite(ReadPixel(cpuSprite, cpuSprite.Width / 2, cpuSprite.Height / 2));
 
         using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
 
-        using var renderer = new GpuSpriteRenderer12(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu);
         var gpuSprite = renderer.Render(
             model,
             textureResolver,
@@ -384,7 +384,7 @@ public sealed class NifAlphaCompositionTests
             64);
 
         Assert.NotNull(gpuSprite);
-        AssertPixelIsNearNeutralWhite(ReadPixel(gpuSprite!, gpuSprite.Width / 2, gpuSprite.Height / 2));
+        AssertPixelIsNearNeutralWhite(ReadPixel(gpuSprite, gpuSprite.Width / 2, gpuSprite.Height / 2));
     }
 
     private static SpriteResult? RenderCpu(NifRenderableModel model, NifTextureResolver textureResolver)
@@ -457,7 +457,7 @@ public sealed class NifAlphaCompositionTests
     {
         Assert.NotNull(sprite);
 
-        var rowPixels = Enumerable.Range(sprite!.Width / 5, sprite.Width * 3 / 5)
+        var rowPixels = Enumerable.Range(sprite.Width / 5, sprite.Width * 3 / 5)
             .Select(x => ReadPixel(sprite, x, sprite.Height / 2))
             .ToArray();
 

@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Arena;
 using Xunit;
@@ -20,6 +18,7 @@ public sealed class ArenaExeDataTests
     private static byte[] Record(int x, int y, int w, int h, string name)
     {
         var record = new byte[ArenaExeData.ProvinceRecordLength];
+
         void Put(int at, int v)
         {
             record[at] = (byte)v;
@@ -41,16 +40,19 @@ public sealed class ArenaExeDataTests
         return [.. filler, .. records.SelectMany(r => r)];
     }
 
-    private static byte[] RetailShaped() => Image(
-        Record(37, 32, 86, 57, "High Rock"),
-        Record(47, 53, 90, 62, "Hammerfell"),
-        Record(113, 29, 88, 53, "Skyrim"),
-        Record(190, 31, 102, 93, "Morrowind"),
-        Record(31, 131, 65, 52, "Summerset Isle"),
-        Record(100, 118, 61, 55, "Valenwood"),
-        Record(144, 119, 50, 57, "Elsweyr"),
-        Record(204, 116, 67, 67, "Black Marsh"),
-        Record(103, 72, 131, 84, "Imperial Province"));
+    private static byte[] RetailShaped()
+    {
+        return Image(
+            Record(37, 32, 86, 57, "High Rock"),
+            Record(47, 53, 90, 62, "Hammerfell"),
+            Record(113, 29, 88, 53, "Skyrim"),
+            Record(190, 31, 102, 93, "Morrowind"),
+            Record(31, 131, 65, 52, "Summerset Isle"),
+            Record(100, 118, 61, 55, "Valenwood"),
+            Record(144, 119, 50, 57, "Elsweyr"),
+            Record(204, 116, 67, 67, "Black Marsh"),
+            Record(103, 72, 131, 84, "Imperial Province"));
+    }
 
     [Fact]
     public void TryReadProvinces_ReadsAllNineInOrder()
@@ -60,7 +62,10 @@ public sealed class ArenaExeDataTests
         Assert.NotNull(provinces);
         Assert.Equal(ArenaExeData.ProvinceCount, provinces.Count);
         Assert.Equal(
-            ["High Rock", "Hammerfell", "Skyrim", "Morrowind", "Summerset Isle", "Valenwood", "Elsweyr", "Black Marsh", "Imperial Province"],
+            [
+                "High Rock", "Hammerfell", "Skyrim", "Morrowind", "Summerset Isle", "Valenwood", "Elsweyr",
+                "Black Marsh", "Imperial Province"
+            ],
             provinces.Select(p => p.Name));
     }
 

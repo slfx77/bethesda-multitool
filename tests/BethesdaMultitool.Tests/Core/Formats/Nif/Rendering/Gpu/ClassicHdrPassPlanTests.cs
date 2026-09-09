@@ -146,7 +146,7 @@ public sealed class ClassicHdrPassPlanTests
     public void SkyrimFirstFrame_UsesExactCeilingQuarterChainThroughOneByOne()
     {
         var plan = ClassicHdrPassPlan.CreateSkyrim(
-            1920, 1080, historyAvailable: false, bloomEnabled: true);
+            1920, 1080, false, true);
 
         var expected = new[]
         {
@@ -173,7 +173,7 @@ public sealed class ClassicHdrPassPlanTests
     public void SkyrimPrimedFrame_FusesFinalReductionIntoAdapt()
     {
         var plan = ClassicHdrPassPlan.CreateSkyrim(
-            1920, 1080, historyAvailable: true, bloomEnabled: true);
+            1920, 1080, true, true);
 
         Assert.Equal(5, plan.DownsampleDrawCount);
         Assert.Equal(new ClassicHdrReductionLevel(8, 5, 2, 2), plan.GetReductionLevel(4));
@@ -185,7 +185,7 @@ public sealed class ClassicHdrPassPlanTests
     public void SkyrimTinyTarget_StillRunsMandatorySlot4Reduction()
     {
         var plan = ClassicHdrPassPlan.CreateSkyrim(
-            3, 2, historyAvailable: true, bloomEnabled: false);
+            3, 2, true, false);
 
         Assert.Equal(1, plan.DownsampleDrawCount);
         Assert.Equal(new ClassicHdrReductionLevel(3, 2, 1, 1), plan.GetReductionLevel(0));
@@ -195,9 +195,9 @@ public sealed class ClassicHdrPassPlanTests
     public void SkyrimBloomKillSwitch_OmitsOnlyTheRecoveredBlurPair()
     {
         var enabled = ClassicHdrPassPlan.CreateSkyrim(
-            1920, 1080, historyAvailable: true, bloomEnabled: true);
+            1920, 1080, true, true);
         var disabled = ClassicHdrPassPlan.CreateSkyrim(
-            1920, 1080, historyAvailable: true, bloomEnabled: false);
+            1920, 1080, true, false);
 
         Assert.Equal(enabled.DownsampleDrawCount, disabled.DownsampleDrawCount);
         Assert.Equal(2, enabled.TotalDrawCount - disabled.TotalDrawCount);

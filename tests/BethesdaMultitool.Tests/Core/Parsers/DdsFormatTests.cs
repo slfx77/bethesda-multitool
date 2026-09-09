@@ -252,7 +252,7 @@ public class DdsFormatTests
     {
         // A 512x512 16-bpp atlas (no FOURCC) was measured carved at exactly HALF its true size by
         // the block-compression default — rgbBitCount must win for uncompressed pixel formats.
-        var data = CreateUncompressedDdsHeader(512, 512, rgbBitCount: 16);
+        var data = CreateUncompressedDdsHeader(512, 512, 16);
 
         var result = _parser.Parse(data);
 
@@ -263,7 +263,7 @@ public class DdsFormatTests
     [Fact]
     public void ParseHeader_Uncompressed32BppWithMips_SumsMipChain()
     {
-        var data = CreateUncompressedDdsHeader(256, 256, rgbBitCount: 32, mipCount: 3);
+        var data = CreateUncompressedDdsHeader(256, 256, 32, 3);
 
         var result = _parser.Parse(data);
 

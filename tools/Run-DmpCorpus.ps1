@@ -3,7 +3,7 @@
 Builds and validates the complete DMP-to-ESM corpus sequentially.
 
 .DESCRIPTION
-Converts every selected .dmp under Sample/MemoryDump with converter validation
+Converts every selected .dmp under Sample/MemoryDumps with converter validation
 enabled and the July then April dialogue CSVs. Each
 successful output is subsequently deep-validated, parsed for dialogue stats,
 and analyzed for ESM coverage. Every input also receives a same-dump script
@@ -987,7 +987,7 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
 $RepositoryRoot = Resolve-RequiredDirectory $RepositoryRoot 'Repository root'
 
 if ([string]::IsNullOrWhiteSpace($DumpDirectory)) {
-    $DumpDirectory = Join-Path $RepositoryRoot 'Sample\MemoryDump'
+    $DumpDirectory = Join-Path $RepositoryRoot 'Sample\MemoryDumps'
 }
 if ([string]::IsNullOrWhiteSpace($JulyDialogueCsv)) {
     $JulyDialogueCsv = Join-Path $RepositoryRoot 'TestOutput\all_dialogue_july.csv'

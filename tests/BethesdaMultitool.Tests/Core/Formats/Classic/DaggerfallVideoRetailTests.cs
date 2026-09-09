@@ -1,7 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Tests.Helpers;
@@ -26,7 +22,7 @@ public sealed class DaggerfallVideoRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Classics.Daggerfall();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Daggerfall (ARENA2)"));
-        return root!;
+        return root;
     }
 
     [Fact]

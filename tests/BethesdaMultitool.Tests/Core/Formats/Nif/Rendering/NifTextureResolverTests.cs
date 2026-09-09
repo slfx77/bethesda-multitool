@@ -42,7 +42,7 @@ public sealed class NifTextureResolverTests
         const string materialPath = @"Data/Materials/Test/Thing.MAT";
 
         var diffuse = GpuTextureCache12.NormalizeCacheKey(materialPath);
-        var normal = GpuTextureCache12.NormalizeCacheKey(materialPath, isNormalMap: true);
+        var normal = GpuTextureCache12.NormalizeCacheKey(materialPath, true);
 
         Assert.Equal(@"materials\test\thing.mat", diffuse);
         Assert.Equal(diffuse + MaterialTexturePathResolver.StarfieldNormalMapSuffix, normal);
@@ -51,7 +51,7 @@ public sealed class NifTextureResolverTests
 
         var whitespaceNormal = GpuTextureCache12.NormalizeCacheKey(
             "  Data/Materials/Test/Thing.MAT  ",
-            isNormalMap: true);
+            true);
         Assert.Equal(normal, whitespaceNormal);
     }
 
@@ -567,7 +567,7 @@ public sealed class NifTextureResolverTests
             @"Sample\Unpacked_Builds\360_July_Unpacked\FalloutNV\Data\meshes\architecture\barracks\barracks01.nif");
         Assert.SkipWhen(nifPath is null, "Unpacked July NIF sample not available");
 
-        Assert.True(NifExportPathResolver.TryDetectDataRoot(nifPath!, out var dataRoot));
+        Assert.True(NifExportPathResolver.TryDetectDataRoot(nifPath, out var dataRoot));
 
         using var resolver = new NifTextureResolver(dataRoot);
         var texture = resolver.GetTexture(@"textures\architecture\barracks\barracks01.dds");

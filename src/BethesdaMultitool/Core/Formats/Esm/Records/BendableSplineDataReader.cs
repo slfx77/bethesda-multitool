@@ -63,13 +63,17 @@ internal static class BendableSplineDataReader
         };
     }
 
-    private static float ReadFloat(ReadOnlySpan<byte> data, int offset, bool bigEndian) =>
-        bigEndian
+    private static float ReadFloat(ReadOnlySpan<byte> data, int offset, bool bigEndian)
+    {
+        return bigEndian
             ? BinaryPrimitives.ReadSingleBigEndian(data[offset..])
             : BinaryPrimitives.ReadSingleLittleEndian(data[offset..]);
+    }
 
-    private static ushort ReadUInt16(ReadOnlySpan<byte> data, int offset, bool bigEndian) =>
-        bigEndian
+    private static ushort ReadUInt16(ReadOnlySpan<byte> data, int offset, bool bigEndian)
+    {
+        return bigEndian
             ? BinaryPrimitives.ReadUInt16BigEndian(data[offset..])
             : BinaryPrimitives.ReadUInt16LittleEndian(data[offset..]);
+    }
 }

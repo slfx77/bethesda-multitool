@@ -79,7 +79,7 @@ public sealed class PlacedLightTileCullerTests
     [Fact]
     public void Build_RandomVisiblePointsInsideLightSpheres_NeverLoseTheirLightBit()
     {
-        const int width = 319;  // odd sizes exercise partial edge tiles
+        const int width = 319; // odd sizes exercise partial edge tiles
         const int height = 181;
         var origin = new Vector3(49_152f, -40_960f, 8_192f);
         var eye = new Vector3(50_123f, -39_777f, 8_511f);
@@ -195,11 +195,11 @@ public sealed class PlacedLightTileCullerTests
         var up = Vector3.Normalize(Vector3.Cross(
             Vector3.Normalize(Vector3.Cross(forward, Vector3.UnitZ)), forward));
         var projection = Matrix4x4.CreatePerspectiveFieldOfView(
-                             FovY, width / (float)height, Near, Far) * CameraState.ReverseZ;
+            FovY, width / (float)height, Near, Far) * CameraState.ReverseZ;
         var absoluteViewProjection = Matrix4x4.CreateLookAt(eye, eye + forward, up) * projection;
         var relativeEye = eye - origin;
         var relativeViewProjection = Matrix4x4.CreateLookAt(
-                                         relativeEye, relativeEye + forward, up) * projection;
+            relativeEye, relativeEye + forward, up) * projection;
         var lights = new[]
         {
             MakeLight(0, eye + forward * 100f, 40f),

@@ -69,13 +69,22 @@ public enum BethesdaGame
     /// <summary>TES Travels: Stormhold (2003, J2ME / N-Gage, Vir2L): loose big-endian .dat tables, .cus sprites, PNG art.</summary>
     Stormhold,
 
-    /// <summary>TES Travels: Dawnstar (2004, J2ME, Vir2L): datfiles.lmp / imgfiles.lmp lump containers over the Stormhold table family.</summary>
+    /// <summary>
+    ///     TES Travels: Dawnstar (2004, J2ME, Vir2L): datfiles.lmp / imgfiles.lmp lump containers over the Stormhold
+    ///     table family.
+    /// </summary>
     Dawnstar,
 
-    /// <summary>TES Travels: Shadowkey (2004, N-Gage / Symbian ARM): little-endian per-zone .zon/.ent/.zmp/.ztx families under system\apps\6R51.</summary>
+    /// <summary>
+    ///     TES Travels: Shadowkey (2004, N-Gage / Symbian ARM): little-endian per-zone .zon/.ent/.zmp/.ztx families under
+    ///     system\apps\6R51.
+    /// </summary>
     Shadowkey,
 
-    /// <summary>TES Travels: Oblivion mobile (2006, J2ME, Vir2L): .jtm tile maps, .cml composites, .scr scripts, lang_N.txt strings.</summary>
+    /// <summary>
+    ///     TES Travels: Oblivion mobile (2006, J2ME, Vir2L): .jtm tile maps, .cml composites, .scr scripts, lang_N.txt
+    ///     strings.
+    /// </summary>
     OblivionMobile,
 
     /// <summary>TES Travels: Oblivion PSP (cancelled, 2006-2007 UMD betas): PSP_GAME disc trees staged from the dated ISOs.</summary>

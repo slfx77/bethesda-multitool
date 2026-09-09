@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Travels.OblivionMobile;
 using BethesdaMultitool.Tests.Helpers;
@@ -38,7 +35,7 @@ public sealed class OblivionMobileScriptRetailTests
         [49] = 40, [50] = 105, [51] = 44, [52] = 15, [53] = 162, [56] = 20, [58] = 47,
         [59] = 8, [60] = 1, [61] = 1, [64] = 18, [66] = 1, [67] = 44, [68] = 6, [69] = 25,
         [70] = 17, [71] = 39, [72] = 684, [73] = 30, [74] = 30, [75] = 17, [76] = 89,
-        [77] = 1, [78] = 12,
+        [77] = 1, [78] = 12
     };
 
     /// <summary>Definition blocks by kind. Kind 3 is absent because the engine has no reader for it.</summary>
@@ -53,7 +50,7 @@ public sealed class OblivionMobileScriptRetailTests
         [OblivionMobileBlockKind.RawByteList] = 13,
         [OblivionMobileBlockKind.Spell] = 9,
         [OblivionMobileBlockKind.LevelParameters] = 13,
-        [OblivionMobileBlockKind.LootEntry] = 172,
+        [OblivionMobileBlockKind.LootEntry] = 172
     };
 
     /// <summary>
@@ -64,7 +61,7 @@ public sealed class OblivionMobileScriptRetailTests
     private static readonly Dictionary<int, int> ExpectedSubCommandCensus = new()
     {
         [3] = 18, [4] = 3, [7] = 32, [8] = 10, [10] = 24, [13] = 9,
-        [14] = 69, [15] = 29, [18] = 24, [19] = 10, [20] = 12,
+        [14] = 69, [15] = 29, [18] = 24, [19] = 10, [20] = 12
     };
 
     /// <summary>Per lang file: record count, lowest id, highest id.</summary>
@@ -73,14 +70,18 @@ public sealed class OblivionMobileScriptRetailTests
         (0, 305, 1, 574), (1, 34, 43, 550), (2, 46, 57, 399), (3, 9, 98, 345),
         (4, 16, 106, 362), (5, 6, 217, 565), (6, 42, 220, 494), (7, 20, 235, 546),
         (8, 16, 245, 495), (9, 30, 255, 495), (10, 9, 264, 495), (11, 7, 270, 409),
-        (12, 6, 275, 547),
+        (12, 6, 275, 547)
     ];
 
     /// <summary>
     ///     The overlay in force for each script once the LOADSCR chain is walked. The 20 scripts
     ///     that call LOADLANG themselves come from the spec's table of which file loads which
-    ///     overlay; the other 12 inherit along the chain <c>l01_1 -> l01_1r -> {l01_1b, l01_1c} ->
-    ///     l02_2_1 -> l02_2 -> ... -> l12_12 -> end_15</c> and <c>startup -> startup2</c>.
+    ///     overlay; the other 12 inherit along the chain
+    ///     <c>
+    ///         l01_1 -> l01_1r -> {l01_1b, l01_1c} ->
+    ///         l02_2_1 -> l02_2 -> ... -> l12_12 -> end_15
+    ///     </c>
+    ///     and <c>startup -> startup2</c>.
     ///     <c>startup.scr</c> is the one script with no overlay at all: it resolves out of lang_0.
     /// </summary>
     private static readonly Dictionary<string, int?> ExpectedOverlayInForce = new(StringComparer.OrdinalIgnoreCase)
@@ -116,7 +117,7 @@ public sealed class OblivionMobileScriptRetailTests
         ["l11_11_cr.scr"] = 11,
         ["l11_11.scr"] = 11,
         ["l12_12.scr"] = 12,
-        ["end_15.scr"] = 7,
+        ["end_15.scr"] = 7
     };
 
     /// <summary>Every <c>.scr</c> in the JAR, paired with the bytes it was decoded from.</summary>
@@ -126,7 +127,7 @@ public sealed class OblivionMobileScriptRetailTests
         var jar = RealAssetPaths.Travels.OblivionMobileJar();
         Assert.SkipWhen(jar is null, RealAssetPaths.SkipMessage("the Oblivion mobile JAR"));
 
-        using var reader = ArchiveReader.Open(jar!);
+        using var reader = ArchiveReader.Open(jar);
         var loaded = new List<(string Name, byte[] Bytes, OblivionMobileScript Script)>();
         foreach (var entry in reader.ListFiles()
                      .Where(e => e.FullPath.EndsWith(".scr", StringComparison.OrdinalIgnoreCase))
@@ -145,14 +146,14 @@ public sealed class OblivionMobileScriptRetailTests
         var jar = RealAssetPaths.Travels.OblivionMobileJar();
         Assert.SkipWhen(jar is null, RealAssetPaths.SkipMessage("the Oblivion mobile JAR"));
 
-        using var reader = ArchiveReader.Open(jar!);
+        using var reader = ArchiveReader.Open(jar);
         var tables = new List<OblivionMobileLang>();
         foreach (var (index, _, _, _) in ExpectedLangTables)
         {
             var name = $"lang_{index}.txt";
             var bytes = reader.ReadFile(name);
             Assert.SkipWhen(bytes is null, $"{name} is missing from the Oblivion mobile JAR.");
-            tables.Add(OblivionMobileLang.Parse(bytes!, name));
+            tables.Add(OblivionMobileLang.Parse(bytes, name));
         }
 
         return tables;
@@ -173,9 +174,9 @@ public sealed class OblivionMobileScriptRetailTests
         foreach (var (name, bytes, script) in loaded)
         {
             var covered = 1
-                + (OblivionMobileScript.LabelEntryLength * script.Labels.Count)
-                + script.Blocks.Sum(b => b.Length)
-                + script.Chunks.Sum(c => OblivionMobileScript.MarkerLength + c.Length);
+                          + OblivionMobileScript.LabelEntryLength * script.Labels.Count
+                          + script.Blocks.Sum(b => b.Length)
+                          + script.Chunks.Sum(c => OblivionMobileScript.MarkerLength + c.Length);
             Assert.Equal(bytes.Length, covered);
             Assert.Equal(bytes.Length, script.Size);
             Assert.Equal(script.Labels.Count, script.Chunks.Count);
@@ -227,7 +228,7 @@ public sealed class OblivionMobileScriptRetailTests
 
         var dead = loaded.Where(l => l.Script.DeadByteCount > 0).ToList();
         var only = Assert.Single(dead);
-        Assert.Equal("l04_4b.scr", only.Name, ignoreCase: true);
+        Assert.Equal("l04_4b.scr", only.Name, true);
         Assert.Equal(5, only.Script.DeadByteCount);
         Assert.Equal(5, only.Script.FindChunk(6)!.DeadByteCount);
 
@@ -402,11 +403,11 @@ public sealed class OblivionMobileScriptRetailTests
         var jar = RealAssetPaths.Travels.OblivionMobileJar();
         Assert.SkipWhen(jar is null, RealAssetPaths.SkipMessage("the Oblivion mobile JAR"));
 
-        using var reader = ArchiveReader.Open(jar!);
+        using var reader = ArchiveReader.Open(jar);
         var bytes = reader.ReadFile("start.txt");
         Assert.SkipWhen(bytes is null, "start.txt is missing from the Oblivion mobile JAR.");
 
-        var entries = OblivionMobileLang.ParseStartText(bytes!, "start.txt");
+        var entries = OblivionMobileLang.ParseStartText(bytes, "start.txt");
 
         Assert.Equal(new[] { "Loading", "Press any key", "Resume game?", "Yes", "Exit" }, entries);
     }

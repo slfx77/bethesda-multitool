@@ -9,7 +9,7 @@ public sealed class ShadowMapFingerprintTests
     [Fact]
     public void Compute_ReturnsUppercaseSha256OfDepthBytes()
     {
-        var hash = ShadowMapFingerprint.Compute([0, 1, 2, 3], resolution: 1, rowPitch: 4);
+        var hash = ShadowMapFingerprint.Compute([0, 1, 2, 3], 1, 4);
 
         Assert.Equal("054EDEC1D0211F624FED0CBCA9D4F9400B0E491C43742AF2C5B0ABEBF0C990D8", hash);
     }
@@ -27,14 +27,14 @@ public sealed class ShadowMapFingerprintTests
         packed.AsSpan(8, 8).CopyTo(readback.AsSpan(rowPitch));
         var expected = Convert.ToHexString(SHA256.HashData(packed));
 
-        Assert.Equal(expected, ShadowMapFingerprint.Compute(readback, resolution: 2, rowPitch));
+        Assert.Equal(expected, ShadowMapFingerprint.Compute(readback, 2, rowPitch));
         // Omitting unused padding after the last row must also be valid.
         Assert.Equal(expected, ShadowMapFingerprint.Compute(readback.AsSpan(0, rowPitch + 8), 2, rowPitch));
 
         readback.AsSpan(8, rowPitch - 8).Fill(0x52);
         readback.AsSpan(rowPitch + 8).Fill(0x93);
 
-        Assert.Equal(expected, ShadowMapFingerprint.Compute(readback, resolution: 2, rowPitch));
+        Assert.Equal(expected, ShadowMapFingerprint.Compute(readback, 2, rowPitch));
     }
 
     [Theory]
@@ -45,11 +45,11 @@ public sealed class ShadowMapFingerprintTests
     public void Compute_ChangesForOneDepthBitInEitherRow(int changedByte)
     {
         var readback = new byte[24];
-        var first = ShadowMapFingerprint.Compute(readback, resolution: 2, rowPitch: 16);
+        var first = ShadowMapFingerprint.Compute(readback, 2, 16);
 
         readback[changedByte] ^= 1;
 
-        Assert.NotEqual(first, ShadowMapFingerprint.Compute(readback, resolution: 2, rowPitch: 16));
+        Assert.NotEqual(first, ShadowMapFingerprint.Compute(readback, 2, 16));
     }
 
     [Theory]
@@ -59,7 +59,7 @@ public sealed class ShadowMapFingerprintTests
     public void Compute_RejectsInvalidResolution(int resolution)
     {
         Assert.Throws<ArgumentOutOfRangeException>(nameof(resolution), () =>
-            ShadowMapFingerprint.Compute([], resolution, rowPitch: 4));
+            ShadowMapFingerprint.Compute([], resolution, 4));
     }
 
     [Theory]
@@ -69,7 +69,7 @@ public sealed class ShadowMapFingerprintTests
     public void Compute_RejectsPitchThatCannotHoldOneRow(int rowPitch)
     {
         Assert.Throws<ArgumentOutOfRangeException>(nameof(rowPitch), () =>
-            ShadowMapFingerprint.Compute(new byte[16], resolution: 2, rowPitch));
+            ShadowMapFingerprint.Compute(new byte[16], 2, rowPitch));
     }
 
     [Theory]

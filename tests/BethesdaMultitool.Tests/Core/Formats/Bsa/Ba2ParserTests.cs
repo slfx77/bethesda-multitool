@@ -223,7 +223,7 @@ public class Ba2ParserTests
     {
         // Guard against keying the codec off the FIRST extra dword: that is Unknown1, and it reads 1
         // in every retail archive including all the v2 ones, so a v2 archive must stay Zip regardless.
-        var path = WriteHeaderOnlyBa2(2u, "DX10", 0u, 1u);
+        var path = WriteHeaderOnlyBa2(2u, "DX10", 0u);
         try
         {
             Assert.Equal(Ba2CompressionFormat.Zip, Ba2Parser.Parse(path).Header.CompressionFormat);

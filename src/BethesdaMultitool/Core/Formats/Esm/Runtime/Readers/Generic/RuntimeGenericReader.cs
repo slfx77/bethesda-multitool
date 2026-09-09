@@ -136,7 +136,7 @@ internal sealed class RuntimeGenericReader(
         var textureHashes = ReadNestedField(
             layout, structData, shift, "TESModel", "TextureList") as RuntimeTextureHashList;
         var alternateTextures = ReadNestedField(
-            layout, structData, shift, "TESModelTextureSwap", "TextureSwapList")
+                layout, structData, shift, "TESModelTextureSwap", "TextureSwapList")
             as IReadOnlyList<AlternateTextureEntry>;
         var destruction = ReadNestedField(
             layout, structData, shift, "BGSDestructibleObjectForm", "pData") as DestructionData;

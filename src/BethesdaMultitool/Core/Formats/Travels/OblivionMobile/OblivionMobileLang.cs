@@ -228,9 +228,10 @@ internal sealed class OblivionMobileLang
         var fileName = Path.GetFileNameWithoutExtension(name);
         const string prefix = "lang_";
         return fileName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)
-            && int.TryParse(fileName.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var index)
-                ? index
-                : -1;
+               && int.TryParse(fileName.AsSpan(prefix.Length), NumberStyles.None, CultureInfo.InvariantCulture,
+                   out var index)
+            ? index
+            : -1;
     }
 }
 

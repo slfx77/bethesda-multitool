@@ -116,7 +116,10 @@ internal sealed class ResourceRegistry
     ///     throws yields a row whose <see cref="ResourceStats.LastError" /> carries the message
     ///     instead of poisoning the whole snapshot.
     /// </summary>
-    public IReadOnlyList<ResourceSnapshotRecord> GetSnapshot() => Snapshot().Rows;
+    public IReadOnlyList<ResourceSnapshotRecord> GetSnapshot()
+    {
+        return Snapshot().Rows;
+    }
 
     /// <summary>
     ///     One walk of the registry producing both the rows and the per-category byte totals.
@@ -159,7 +162,10 @@ internal sealed class ResourceRegistry
     }
 
     /// <summary>Sum of <see cref="ResourceStats.EstimatedBytes" /> across resources in <paramref name="category" />.</summary>
-    public long TotalTrackedBytes(ResourceCategory category) => Snapshot().TotalBytes(category);
+    public long TotalTrackedBytes(ResourceCategory category)
+    {
+        return Snapshot().TotalBytes(category);
+    }
 
     /// <summary>Logs a one-line-per-resource snapshot via <see cref="Logger.Instance" />.</summary>
     public void LogSnapshot()

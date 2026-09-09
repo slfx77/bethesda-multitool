@@ -7,11 +7,19 @@ namespace BethesdaMultitool.Core.Formats.Fallout;
 ///     Fallout 2's <c>.dat</c> container — "DAT2", little-endian and indexed from the END: the
 ///     last eight bytes are <c>u32 treeSize</c> and <c>u32 dataSize</c>, where dataSize is the
 ///     whole file's length and the tree sits immediately before the footer. Tree: <c>u32 count</c>,
-///     then entries of <c>u32 nameLength + name + u8 type (0 stored, 1 zlib) + u32 unpackedSize
-///     + u32 packedSize + u32 offset</c>. Names are backslash paths from the root.
+///     then entries of
+///     <c>
+///         u32 nameLength + name + u8 type (0 stored, 1 zlib) + u32 unpackedSize
+///         + u32 packedSize + u32 offset
+///     </c>
+///     . Names are backslash paths from the root.
 ///     <para>
-///         Exact-tiling proof, measured 2026-09-05 on the retail Steam install: <c>dataSize ==
-///         fileLength</c> and the declared count walks the tree to precisely its last byte on all
+///         Exact-tiling proof, measured 2026-09-05 on the retail Steam install:
+///         <c>
+///             dataSize ==
+///             fileLength
+///         </c>
+///         and the declared count walks the tree to precisely its last byte on all
 ///         four archives — master.dat (23,140 files), critter.dat (7,120), patch000.dat (489) and
 ///         f2_res.dat (177). The footer is the whole probe; there is no magic.
 ///     </para>
@@ -55,7 +63,8 @@ internal static class Dat2Archive
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         return TryRead(stream, path) ??
-               throw new InvalidDataException($"'{Path.GetFileName(path)}' is not a Fallout 2 DAT2 archive: its footer and tree do not account for the file.");
+               throw new InvalidDataException(
+                   $"'{Path.GetFileName(path)}' is not a Fallout 2 DAT2 archive: its footer and tree do not account for the file.");
     }
 
     private static Dat2Directory? TryRead(FileStream stream, string path)

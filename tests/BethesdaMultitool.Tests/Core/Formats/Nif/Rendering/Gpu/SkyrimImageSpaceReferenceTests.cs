@@ -20,14 +20,14 @@ public sealed class SkyrimImageSpaceReferenceTests
     [Fact]
     public void EngineSkyrimTraits_UseDedicatedReductionAdaptAndRecoveredOldrimBloom()
     {
-        var traits = GpuTonemapModeTraits.For(GpuTonemapMode.EngineSkyrim, enabled: true);
+        var traits = GpuTonemapModeTraits.For(GpuTonemapMode.EngineSkyrim, true);
 
         Assert.True(traits.IsHdrDisplayOperator);
         Assert.True(traits.UsesClassicReduction);
         Assert.True(traits.UsesAdaptation);
         Assert.True(traits.AllowsClassicBloom);
         Assert.True(GpuTonemapModeTraits.IsBloomActive(
-            GpuTonemapMode.EngineSkyrim, enabled: true, bloomEnabled: true, brightScale: 1f));
+            GpuTonemapMode.EngineSkyrim, true, true, 1f));
     }
 
     [Fact]
@@ -72,9 +72,9 @@ public sealed class SkyrimImageSpaceReferenceTests
     public void ResolveAdaptationFactors_WhiteRunIntIs_MatchesRecoveredCpuEquations()
     {
         var factors = SkyrimImageSpaceReference.ResolveAdaptationFactors(
-            eyeAdaptSpeed: 10f,
-            eyeAdaptStrength: 3f,
-            deltaSeconds: 1f / 60f);
+            10f,
+            3f,
+            1f / 60f);
 
         AssertClose(0.051316702f, factors.Fast);
         AssertClose(0.016807920f, factors.Slow);
@@ -117,8 +117,8 @@ public sealed class SkyrimImageSpaceReferenceTests
         var actual = SkyrimImageSpaceReference.ApplyTonemapBlendCinematic(
             new Vector3(0.25f, 0.5f, 1f),
             new Vector3(0.1f, 0.2f, 0.3f),
-            adaptedSlow: 0.4f,
-            adaptedFast: 0.4f,
+            0.4f,
+            0.4f,
             settings);
 
         AssertClose(0.24148833f, actual.X);
@@ -142,8 +142,8 @@ public sealed class SkyrimImageSpaceReferenceTests
         var actual = SkyrimImageSpaceReference.ApplyTonemapBlendCinematic(
             new Vector3(0.25f, 0.5f, 1f),
             new Vector3(0.1f, 0.2f, 0.3f),
-            adaptedSlow: 0.4f,
-            adaptedFast: 0.6f,
+            0.4f,
+            0.6f,
             settings);
 
         AssertClose(0.3668720f, actual.X);

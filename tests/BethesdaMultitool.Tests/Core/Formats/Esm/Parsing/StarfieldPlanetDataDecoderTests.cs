@@ -357,6 +357,8 @@ public sealed class StarfieldPlanetDataDecoderTests
 
     [Theory]
     [MemberData(nameof(MarkerFailures))]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "S4144",
+        Justification = "Distinct data providers and test names identify separate malformed-marker and malformed-field cases.")]
     public void TryDecode_RejectsMalformedMarkerState(byte[] data, string expectedError)
     {
         Assert.False(StarfieldPlanetDataDecoder.TryDecode(
@@ -395,6 +397,8 @@ public sealed class StarfieldPlanetDataDecoderTests
 
     [Theory]
     [MemberData(nameof(MissingBodyFailures))]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "S4144",
+        Justification = "Distinct data providers and test names identify missing required members separately from duplicate fields.")]
     public void TryDecode_RejectsMissingRequiredBodyMembers(byte[] data, string expectedError)
     {
         Assert.False(StarfieldPlanetDataDecoder.TryDecode(

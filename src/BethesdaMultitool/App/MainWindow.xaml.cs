@@ -49,6 +49,7 @@ public sealed partial class MainWindow : Window
 
             Console.WriteLine("[MainWindow] Constructor starting...");
             InitializeComponent();
+            Closed += MainWindow_Closed;
             Console.WriteLine("[MainWindow] InitializeComponent complete");
 
             // Memory budget hygiene: periodic CPU-cache budget checks (FALLOUT_MEMORY_BUDGET_MB,
@@ -86,6 +87,14 @@ public sealed partial class MainWindow : Window
                 NavigationView.IsPaneOpenProperty, OnNavPaneOpenChanged);
             ApplyAppTitleBarZIndex();
 
+            // --asset-source: land on the Asset Browser with the given source open, through the
+            // same funnel the Open flyout uses and with no picker involved. Hooked on Loaded so
+            // the NavigationView has realised its items before one is selected.
+            if (!string.IsNullOrWhiteSpace(Program.AutoAssetSource))
+            {
+                NavView.Loaded += OnNavViewLoadedForAutoAssetSource;
+            }
+
             Console.WriteLine("[MainWindow] Constructor complete");
         }
         catch (Exception ex)
@@ -97,6 +106,31 @@ public sealed partial class MainWindow : Window
     }
 
     public static MainWindow? Instance { get; private set; }
+
+    private void MainWindow_Closed(object sender, WindowEventArgs args)
+    {
+        Closed -= MainWindow_Closed;
+        AssetBrowserTabContent.Dispose();
+    }
+
+    private async void OnNavViewLoadedForAutoAssetSource(object sender, RoutedEventArgs e)
+    {
+        NavView.Loaded -= OnNavViewLoadedForAutoAssetSource;
+        var source = Program.AutoAssetSource;
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return;
+        }
+
+        var item = NavView.MenuItems.OfType<NavigationViewItem>()
+            .FirstOrDefault(i => string.Equals(i.Tag?.ToString(), "AssetBrowser", StringComparison.Ordinal));
+        if (item is not null)
+        {
+            NavView.SelectedItem = item;
+        }
+
+        await AssetBrowserTabContent.OpenFromLaunchArgumentAsync(source);
+    }
 
     private void TrySetMicaBackdrop()
     {

@@ -363,7 +363,7 @@ public class LandAndXclrEncoderTests
         // The null-texture BTXT emits, and its quadrant now sets a DATA "quad has data" bit.
         var btxt = Assert.Single(subs, s => s.Signature == "BTXT").Bytes;
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(btxt.AsSpan(0, 4)));
-        Assert.Equal(0x11, subs![0].Bytes[0]); // DATA: 0x10 exterior flag | quadrant 0 bit
+        Assert.Equal(0x11, subs[0].Bytes[0]); // DATA: 0x10 exterior flag | quadrant 0 bit
 
         var atxts = subs.Where(s => s.Signature == "ATXT").Select(s => s.Bytes).ToList();
         Assert.Equal(2, atxts.Count);

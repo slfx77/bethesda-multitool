@@ -132,11 +132,11 @@ public sealed class ParticleColorModifierTests
         var path = SampleFileFixture.FindSamplePath(RetailSandDust02);
         Assert.SkipUnless(path is not null,
             "Extracted FNV SandDust02 NIF not present (dev-machine-only asset).");
-        var data = File.ReadAllBytes(path!);
+        var data = File.ReadAllBytes(path);
         var nif = NifParser.Parse(data);
         Assert.NotNull(nif);
 
-        var definition = Assert.Single(nif!.Blocks.Select((block, index) => (block, index))
+        var definition = Assert.Single(nif.Blocks.Select((block, index) => (block, index))
             .Where(x => NifParticleSystemParser.IsParticleSystem(x.block.TypeName))
             .Select(x => NifParticleSystemParser.Parse(data, nif, x.index))
             .OfType<ParticleSystemDefinition>());

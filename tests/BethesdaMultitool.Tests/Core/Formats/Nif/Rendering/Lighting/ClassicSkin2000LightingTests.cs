@@ -10,10 +10,10 @@ public sealed class ClassicSkin2000LightingTests
     public void BackFacingLightHasNoWrappedDiffuseContribution()
     {
         var shade = ClassicSkin2000Lighting.Compute(
-            normalDotLight: -0.1f,
-            normalDotView: 1f,
-            lightIntensity: 0.8f,
-            ambient: 0.2f);
+            -0.1f,
+            1f,
+            0.8f,
+            0.2f);
 
         Assert.Equal(0.2f, shade, 6);
     }
@@ -22,10 +22,10 @@ public sealed class ClassicSkin2000LightingTests
     public void ViewRimUsesTheRetailCubicFalloffAndHalfLightScale()
     {
         var shade = ClassicSkin2000Lighting.Compute(
-            normalDotLight: 0f,
-            normalDotView: 0.5f,
-            lightIntensity: 0.8f,
-            ambient: 0.2f);
+            0f,
+            0.5f,
+            0.8f,
+            0.2f);
 
         // 0.2 + 0.5 * 0.8 * (1 - 0.5)^3 = 0.25.
         Assert.Equal(0.25f, shade, 6);
@@ -35,10 +35,10 @@ public sealed class ClassicSkin2000LightingTests
     public void ViewDotIsClampedBeforeTheCubicRim()
     {
         var shade = ClassicSkin2000Lighting.Compute(
-            normalDotLight: 0f,
-            normalDotView: -0.25f,
-            lightIntensity: 0.8f,
-            ambient: 0.2f);
+            0f,
+            -0.25f,
+            0.8f,
+            0.2f);
 
         Assert.Equal(0.6f, shade, 6);
     }
@@ -47,10 +47,10 @@ public sealed class ClassicSkin2000LightingTests
     public void LightingAggregateIsNotClampedAtOne()
     {
         var shade = ClassicSkin2000Lighting.Compute(
-            normalDotLight: 1f,
-            normalDotView: 1f,
-            lightIntensity: 0.8f,
-            ambient: 0.4f);
+            1f,
+            1f,
+            0.8f,
+            0.4f);
 
         Assert.Equal(1.2f, shade, 6);
     }

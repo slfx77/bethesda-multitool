@@ -238,11 +238,11 @@ public sealed class StarfieldWeatherSettingsResolverTests
         uint? reflectedParentFormId)
     {
         var record = Full(
-            RootFormId,
-            new StarfieldWeatherSettingsPatch { ParentFormId = reflectedParentFormId }) with
-        {
-            ParentFormId = outerParentFormId
-        };
+                RootFormId,
+                new StarfieldWeatherSettingsPatch { ParentFormId = reflectedParentFormId }) with
+            {
+                ParentFormId = outerParentFormId
+            };
 
         var result = Resolve(RootFormId, record);
 
@@ -336,7 +336,7 @@ public sealed class StarfieldWeatherSettingsResolverTests
         var grandchild = Diff(GrandchildFormId, ChildFormId, new StarfieldWeatherSettingsPatch());
         var records = Index(root, parent, child, grandchild);
 
-        var result = StarfieldWeatherSettingsResolver.Resolve(GrandchildFormId, records, maxDepth: 3);
+        var result = StarfieldWeatherSettingsResolver.Resolve(GrandchildFormId, records, 3);
 
         AssertFailure(
             result,
@@ -353,7 +353,7 @@ public sealed class StarfieldWeatherSettingsResolverTests
         var grandchild = Diff(GrandchildFormId, ChildFormId, new StarfieldWeatherSettingsPatch());
         var records = Index(root, child, grandchild);
 
-        var result = StarfieldWeatherSettingsResolver.Resolve(GrandchildFormId, records, maxDepth: 3);
+        var result = StarfieldWeatherSettingsResolver.Resolve(GrandchildFormId, records, 3);
 
         Assert.True(result.IsResolved);
         Assert.Equal(4f, result.EffectivePatch?.TransDelta);
@@ -366,7 +366,7 @@ public sealed class StarfieldWeatherSettingsResolverTests
         return StarfieldWeatherSettingsResolver.Resolve(targetFormId, Index(records));
     }
 
-    private static IReadOnlyDictionary<uint, StarfieldWeatherSettingsRecord> Index(
+    private static Dictionary<uint, StarfieldWeatherSettingsRecord> Index(
         params StarfieldWeatherSettingsRecord[] records)
     {
         return records.ToDictionary(record => record.FormId);

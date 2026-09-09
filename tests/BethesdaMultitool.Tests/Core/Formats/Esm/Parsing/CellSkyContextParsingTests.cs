@@ -141,7 +141,7 @@ public sealed class CellSkyContextParsingTests
 
         var cell = Assert.Single(new CellRecordHandler(context).ParseCells());
 
-        Assert.Equal((uint)flags, cell.Flags);
+        Assert.Equal(flags, cell.Flags);
         Assert.Equal(CellDataFlagSemantics.Creation, cell.DataFlagSemantics);
         Assert.True(cell.IsInterior);
         Assert.False(cell.BehavesLikeExterior);

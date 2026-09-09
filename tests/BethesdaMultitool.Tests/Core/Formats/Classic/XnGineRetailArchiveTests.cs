@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Xngine.Bsa;
 using BethesdaMultitool.Tests.Helpers;
@@ -22,7 +20,7 @@ public sealed class XnGineRetailArchiveTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Classics.Daggerfall();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Daggerfall (ARENA2)"));
-        return root!;
+        return root;
     }
 
     private static string RequireBattlespireRoot()
@@ -30,7 +28,7 @@ public sealed class XnGineRetailArchiveTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Classics.Battlespire();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Battlespire (GAMEDATA)"));
-        return root!;
+        return root;
     }
 
     [Fact]

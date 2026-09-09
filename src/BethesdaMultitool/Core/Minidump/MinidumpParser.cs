@@ -131,6 +131,7 @@ public static class MinidumpParser
                 numberOfModules);
             return;
         }
+
         var modulesBuffer = ArrayPool<byte>.Shared.Rent((int)(numberOfModules * moduleEntrySize));
 
         try
@@ -187,6 +188,7 @@ public static class MinidumpParser
                 numberOfRanges);
             return;
         }
+
         var descriptorsSize = (int)(numberOfRanges * descriptorSize);
         var descriptorsBuffer = ArrayPool<byte>.Shared.Rent(descriptorsSize);
 

@@ -55,8 +55,9 @@ internal sealed class DawnstarLumpArchive
     /// </summary>
     public const int MaxDirectoryScanBytes = 65536;
 
-    private readonly byte[] _bytes;
     private readonly Dictionary<string, DawnstarLumpEntry> _byName;
+
+    private readonly byte[] _bytes;
 
     private DawnstarLumpArchive(string name, byte[] bytes, ImmutableArray<DawnstarLumpEntry> entries)
     {
@@ -245,14 +246,14 @@ internal sealed class DawnstarLumpArchive
                 return false;
             }
 
-            if (offset + (long)length > fileLength)
+            if (offset + length > fileLength)
             {
-                error = $"payload {index} ends at {offset + (long)length}, past the {fileLength}-byte file";
+                error = $"payload {index} ends at {offset + length}, past the {fileLength}-byte file";
                 position = recordStart;
                 return false;
             }
 
-            expectedOffset = offset + (long)length;
+            expectedOffset = offset + length;
             position = recordStart + RecordLength;
 
             if (position > firstOffset)

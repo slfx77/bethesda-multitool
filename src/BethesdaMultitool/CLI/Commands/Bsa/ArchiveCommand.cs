@@ -163,7 +163,10 @@ public static class ArchiveCommand
         table.AddRow("Format", reader.FormatName);
         table.AddRow("Platform", reader.PlatformLabel);
         table.AddRow("Files", reader.TotalFiles.ToString("N0"));
-        table.AddRow("Size", new FileInfo(input).Length.ToString("N0") + " bytes");
+        // A multi-file family (the Arena floppy installer's ARENA.Hn + ARENA.n volumes) reports its
+        // own total; everything else is one file and the file system has the answer.
+        var size = reader.ContainerSizeBytes ?? new FileInfo(input).Length;
+        table.AddRow("Size", size.ToString("N0") + " bytes");
 
         AnsiConsole.Write(table);
     }

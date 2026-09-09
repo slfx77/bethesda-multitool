@@ -10,8 +10,12 @@ internal static class ClassicSkin2000Lighting
     internal const float RimScale = 0.5f;
 
     /// <summary>
-    ///     Computes <c>Ambient + Light * max(N.L, 0) + 0.5 * Light *
-    ///     (1 - max(N.V, 0))^3</c>. Inputs are dot products because each renderer already owns the
+    ///     Computes
+    ///     <c>
+    ///         Ambient + Light * max(N.L, 0) + 0.5 * Light *
+    ///         (1 - max(N.V, 0))^3
+    ///     </c>
+    ///     . Inputs are dot products because each renderer already owns the
     ///     coordinate-space transforms and normalization that produce them.
     /// </summary>
     internal static float Compute(

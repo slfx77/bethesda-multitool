@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 using BethesdaMultitool.Core.Imaging;
@@ -44,17 +40,21 @@ public sealed class ShadowkeySkySceneRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Travels.ShadowkeyRoot();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Shadowkey (system/apps/6R51)"));
-        return root!;
+        return root;
     }
 
-    private static ShadowkeySkybox Sky(string root, string zone) =>
-        ShadowkeySkybox.Parse(
+    private static ShadowkeySkybox Sky(string root, string zone)
+    {
+        return ShadowkeySkybox.Parse(
             ShadowkeyCompressedFile.Inflate(
                 File.ReadAllBytes(Path.Combine(root, zone + ".zsk")), zone + ".zsk"),
             zone + ".zsk");
+    }
 
-    private static Palette ZonePalette(string root, string zone) =>
-        Palette.FromRgb8(File.ReadAllBytes(Path.Combine(root, zone + ".pal")));
+    private static Palette ZonePalette(string root, string zone)
+    {
+        return Palette.FromRgb8(File.ReadAllBytes(Path.Combine(root, zone + ".pal")));
+    }
 
     /// <summary>The normalised UVs every face corner referencing <paramref name="vertex" /> carries.</summary>
     private static List<(float U, float V)> UvsOf(ShadowkeySkybox sky, int vertex)
@@ -78,8 +78,10 @@ public sealed class ShadowkeySkySceneRetailTests
         return uvs;
     }
 
-    private static float Radius(ShadowkeySkyVertex v) =>
-        MathF.Sqrt((v.X * (float)v.X) + (v.Z * (float)v.Z));
+    private static float Radius(ShadowkeySkyVertex v)
+    {
+        return MathF.Sqrt((v.X * (float)v.X) + (v.Z * (float)v.Z));
+    }
 
     /// <summary>
     ///     ⚑ The reading that decides which way up the sky goes. The texture is a polar projection
@@ -170,7 +172,7 @@ public sealed class ShadowkeySkySceneRetailTests
                 for (var column = 0; column < ShadowkeySkybox.TextureWidth / 2; column++)
                 {
                     if (indices[offset + column] !=
-                        indices[offset + column + (ShadowkeySkybox.TextureWidth / 2)])
+                        indices[offset + column + ShadowkeySkybox.TextureWidth / 2])
                     {
                         different = true;
                         break;
@@ -207,13 +209,13 @@ public sealed class ShadowkeySkySceneRetailTests
 
             // The horizon ring must fall outside the zone's own diagonal, or the sky would cut
             // through the terrain it is meant to surround.
-            var half = MathF.Sqrt((128f * 128f) + (128f * 128f)) * 0.5f;
+            var half = MathF.Sqrt(128f * 128f + 128f * 128f) * 0.5f;
             var reach = 0f;
             for (var i = 0; i + 2 < submesh.Positions.Length; i += 3)
             {
                 var dx = submesh.Positions[i] - 64f;
                 var dy = submesh.Positions[i + 1] - 64f;
-                reach = MathF.Max(reach, MathF.Sqrt((dx * dx) + (dy * dy)));
+                reach = MathF.Max(reach, MathF.Sqrt(dx * dx + dy * dy));
             }
 
             Assert.True(reach > half, $"{zone}: the sky reaches {reach:F1}, inside the {half:F1} diagonal.");

@@ -64,11 +64,13 @@ internal readonly record struct CaptureSceneCensus(
     ///     after settlement and must remain visible in the raw census counter without invalidating
     ///     an otherwise settled measurement window.
     /// </summary>
-    public bool IsCleanOrFrameCeilingMaintenance(int referenceBatchBuildTrigger) =>
-        IsClean
-        || (ReferenceBatchBuildInProgress
-            && referenceBatchBuildTrigger == FrameCeilingBatchBuildTriggerCode
-            && (this with { ReferenceBatchBuildInProgress = false }).IsClean);
+    public bool IsCleanOrFrameCeilingMaintenance(int referenceBatchBuildTrigger)
+    {
+        return IsClean
+               || (ReferenceBatchBuildInProgress
+                   && referenceBatchBuildTrigger == FrameCeilingBatchBuildTriggerCode
+                   && (this with { ReferenceBatchBuildInProgress = false }).IsClean);
+    }
 
     /// <summary>
     ///     Builds the census from the layers rendered this frame. A null stats parameter means that
@@ -115,6 +117,7 @@ internal readonly record struct CaptureSceneCensus(
         {
             parts.Add($"{nameof(ReferenceBatchBuildInProgress)}=true");
         }
+
         if (ReferenceCullRefreshPending)
         {
             parts.Add($"{nameof(ReferenceCullRefreshPending)}=true");

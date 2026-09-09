@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Travels.OblivionMobile;
 using BethesdaMultitool.Tests.Helpers;
@@ -30,25 +26,25 @@ public sealed class OblivionMobileLevelRetailTests
     /// </summary>
     private static readonly (string Stem, int Width, int Height, int Layers, int Blocked, int Ids, int Placed)[]
         Census =
-    [
-        ("l01_1", 44, 59, 5, 420, 26, 2435),
-        ("l01_r", 1, 1, 2, 0, 1, 1),
-        ("l02_1", 33, 27, 5, 210, 18, 612),
-        ("l03_1", 51, 53, 5, 375, 31, 2174),
-        ("l04_1", 40, 39, 5, 280, 23, 1629),
-        ("l05_1", 35, 35, 5, 414, 17, 1290),
-        ("l06_1", 52, 53, 5, 350, 29, 2180),
-        ("l06_a", 1, 1, 2, 0, 1, 1),
-        ("l06_b", 1, 1, 2, 0, 1, 1),
-        ("l07_1", 48, 34, 5, 399, 17, 1216),
-        ("l08_1", 53, 50, 4, 1040, 12, 2077),
-        ("l09_1", 57, 52, 5, 986, 26, 3132),
-        ("l10_1", 42, 32, 4, 318, 17, 712),
-        ("l11_1", 46, 40, 5, 705, 24, 2397),
-        ("l12_1", 43, 52, 5, 873, 17, 2367),
-        ("l13_clrl", 17, 22, 4, 61, 6, 402),
-        ("l14_1", 15, 15, 3, 55, 6, 202),
-    ];
+        [
+            ("l01_1", 44, 59, 5, 420, 26, 2435),
+            ("l01_r", 1, 1, 2, 0, 1, 1),
+            ("l02_1", 33, 27, 5, 210, 18, 612),
+            ("l03_1", 51, 53, 5, 375, 31, 2174),
+            ("l04_1", 40, 39, 5, 280, 23, 1629),
+            ("l05_1", 35, 35, 5, 414, 17, 1290),
+            ("l06_1", 52, 53, 5, 350, 29, 2180),
+            ("l06_a", 1, 1, 2, 0, 1, 1),
+            ("l06_b", 1, 1, 2, 0, 1, 1),
+            ("l07_1", 48, 34, 5, 399, 17, 1216),
+            ("l08_1", 53, 50, 4, 1040, 12, 2077),
+            ("l09_1", 57, 52, 5, 986, 26, 3132),
+            ("l10_1", 42, 32, 4, 318, 17, 712),
+            ("l11_1", 46, 40, 5, 705, 24, 2397),
+            ("l12_1", 43, 52, 5, 873, 17, 2367),
+            ("l13_clrl", 17, 22, 4, 61, 6, 402),
+            ("l14_1", 15, 15, 3, 55, 6, 202)
+        ];
 
     /// <summary>
     ///     Map to atlas. This is <b>not</b> derivable from either file — it was recovered from the
@@ -74,7 +70,7 @@ public sealed class OblivionMobileLevelRetailTests
         ("l11_1", "l11_l11.cml"),
         ("l12_1", "l12_l12.cml"),
         ("l13_clrl", "l13_clrl.cml"),
-        ("l14_1", "l14_l14.cml"),
+        ("l14_1", "l14_l14.cml")
     ];
 
     private static ArchiveReader OpenJar()
@@ -82,15 +78,15 @@ public sealed class OblivionMobileLevelRetailTests
         var jar = RealAssetPaths.Travels.OblivionMobileJar();
         Assert.SkipWhen(
             jar is null,
-            "The Oblivion Mobile JAR is not staged (Sample/Full_Builds/oblivion-repaired.jar).");
-        return ArchiveReader.Open(jar!);
+            "The Oblivion Mobile JAR is not staged (Sample/Builds/The Elder Scrolls Travels - Oblivion (J2ME - Final)/oblivion-repaired.jar).");
+        return ArchiveReader.Open(jar);
     }
 
     private static byte[] Read(ArchiveReader reader, string name)
     {
         var bytes = reader.ReadFile(name);
         Assert.SkipWhen(bytes is null, $"'{name}' is absent from the staged JAR.");
-        return bytes!;
+        return bytes;
     }
 
     private static IReadOnlyList<string> NamesWithExtension(ArchiveReader reader, string extension)
@@ -99,7 +95,7 @@ public sealed class OblivionMobileLevelRetailTests
         [
             .. reader.EnumerateFilePaths()
                 .Where(p => p.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase),
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
         ];
     }
 

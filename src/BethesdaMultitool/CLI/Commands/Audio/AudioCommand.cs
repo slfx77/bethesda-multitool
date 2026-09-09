@@ -1,7 +1,11 @@
 using System.CommandLine;
+using System.Globalization;
+using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Audio;
+using BethesdaMultitool.Core.Formats.BrotherhoodOfSteel;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Daggerfall;
+using BethesdaMultitool.Core.Formats.Interplay;
 using BethesdaMultitool.Core.Formats.Redguard;
 using Spectre.Console;
 
@@ -28,11 +32,13 @@ public static class AudioCommand
         var command = new Command("decode", "Decode an audio file (or a whole archive) to WAV");
         var inputArg = new Argument<string>("input")
         {
-            Description = "A .VOC file, DAGGER.SND, MAIN.SFX, ENGLISH.RTX, or an archive when --entry or --all is given"
+            Description =
+                "A .VOC or .ACM file, DAGGER.SND, MAIN.SFX, ENGLISH.RTX, or an archive (BSA, Fallout DAT, ...) when --entry or --all is given"
         };
         var entryOption = new Option<string?>("--entry", "-e")
         {
-            Description = "Virtual path of one entry inside the archive input (a sound id for DAGGER.SND, a 0-based index for MAIN.SFX, a 4-char tag for ENGLISH.RTX)"
+            Description =
+                "Virtual path of one entry inside the archive input (a sound id for DAGGER.SND, a 0-based index for MAIN.SFX, a 4-char tag for ENGLISH.RTX, e.g. SOUND/MUSIC/01HUB.ACM in a Fallout DAT)"
         };
         var allOption = new Option<bool>("--all")
         {
@@ -59,10 +65,12 @@ public static class AudioCommand
     private static Command CreateInfoCommand()
     {
         var command = new Command("info", "Show sample rate, depth and duration without writing files");
-        var inputArg = new Argument<string>("input") { Description = "A .VOC file, DAGGER.SND, MAIN.SFX, ENGLISH.RTX, or an archive with --entry" };
+        var inputArg = new Argument<string>("input")
+            { Description = "A .VOC or .ACM file, DAGGER.SND, MAIN.SFX, ENGLISH.RTX, or an archive with --entry" };
         var entryOption = new Option<string?>("--entry", "-e")
         {
-            Description = "Virtual path of the entry inside the archive input (a sound id for DAGGER.SND, a 0-based index for MAIN.SFX)"
+            Description =
+                "Virtual path of the entry inside the archive input (a sound id for DAGGER.SND, a 0-based index for MAIN.SFX)"
         };
         command.Arguments.Add(inputArg);
         command.Options.Add(entryOption);
@@ -91,9 +99,10 @@ public static class AudioCommand
     /// <summary>Resolves a <c>--entry</c> value, which names a sound id, to an archive index.</summary>
     private static int ResolveSoundIndex(DaggerfallSoundFile sounds, string entryName)
     {
-        if (!uint.TryParse(entryName, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var soundId))
+        if (!uint.TryParse(entryName, NumberStyles.None, CultureInfo.InvariantCulture, out var soundId))
         {
-            throw new InvalidOperationException($"'{entryName}' is not a sound id; {DaggerfallSoundFile.FileName} records are numbered.");
+            throw new InvalidOperationException(
+                $"'{entryName}' is not a sound id; {DaggerfallSoundFile.FileName} records are numbered.");
         }
 
         var index = sounds.IndexOf(soundId);
@@ -122,7 +131,8 @@ public static class AudioCommand
     /// <summary>True for Redguard's text database, whose voiced lines carry the same PCM records as the effect bank.</summary>
     private static bool IsRedguardRtx(string input)
     {
-        return Path.GetExtension(input).Equals(".rtx", StringComparison.OrdinalIgnoreCase) && RedguardRtxFile.IsRtxFile(input);
+        return Path.GetExtension(input).Equals(".rtx", StringComparison.OrdinalIgnoreCase) &&
+               RedguardRtxFile.IsRtxFile(input);
     }
 
     /// <summary>A tag as a file-name stem: retail tags use '#', '?' and '$', which Windows will not take.</summary>
@@ -135,7 +145,7 @@ public static class AudioCommand
     /// <summary>Resolves a <c>--entry</c> value, which is a 0-based index, for a bank that stores no names.</summary>
     private static int ResolveSfxIndex(RedguardSfxFile bank, string entryName)
     {
-        if (!int.TryParse(entryName, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var index)
+        if (!int.TryParse(entryName, NumberStyles.None, CultureInfo.InvariantCulture, out var index)
             || index >= bank.Sounds.Count)
         {
             throw new InvalidOperationException(
@@ -187,6 +197,12 @@ public static class AudioCommand
                 return;
             }
 
+            if (InterplayAcmFile.IsAcm(bytes))
+            {
+                WriteAcm(InterplayAcmFile.Parse(bytes, Path.GetFileName(input)), outputDir);
+                return;
+            }
+
             WriteWav(VocFile.Parse(bytes, Path.GetFileName(input)), outputDir);
             return;
         }
@@ -211,6 +227,19 @@ public static class AudioCommand
                 return;
             }
 
+            if (InterplayAcmFile.IsAcm(bytes))
+            {
+                WriteAcm(InterplayAcmFile.Parse(bytes, logicalName), outputDir);
+                return;
+            }
+
+            // A Brotherhood of Steel _S.CLP sound bank: every section a VAGp file at its own rate.
+            if (TryOpenBosBank(bytes, logicalName, out var bosBank))
+            {
+                WriteBosBank(bosBank, bytes, outputDir);
+                return;
+            }
+
             WriteWav(VocFile.Parse(bytes, logicalName), outputDir);
             return;
         }
@@ -221,13 +250,14 @@ public static class AudioCommand
         {
             var isVoc = entry.Name.EndsWith(".VOC", StringComparison.OrdinalIgnoreCase);
             var isXmidi = XmidiFile.IsXmidiFileName(entry.Name);
+            var isAcm = entry.Name.EndsWith(".ACM", StringComparison.OrdinalIgnoreCase);
 
             // Battlespire's SPIRE.SND names every entry by NUMBER, so extension routing cannot see
             // its 370 RIFF/WAVE sounds — content has to decide.
             var bytes = archive.ReadFile(entry.FullPath);
             if (bytes is null)
             {
-                if (isVoc || isXmidi)
+                if (isVoc || isXmidi || isAcm)
                 {
                     skipped++;
                 }
@@ -236,7 +266,7 @@ public static class AudioCommand
             }
 
             var isRiff = RiffWaveFile.IsRiffWave(bytes);
-            if (!isVoc && !isXmidi && !isRiff)
+            if (!isVoc && !isXmidi && !isRiff && !isAcm)
             {
                 continue;
             }
@@ -245,15 +275,25 @@ public static class AudioCommand
             {
                 if (isVoc)
                 {
-                    WriteWav(VocFile.Parse(bytes, entry.Name), outputDir, quiet: true);
+                    WriteWav(VocFile.Parse(bytes, entry.Name), outputDir, true);
+                }
+                else if (isAcm)
+                {
+                    // A Fallout DAT repeats an ACM name across folders (MASTER.DAT: 2,511 entries,
+                    // 2,510 distinct names), so the entry's folder is kept under the output root.
+                    var acmDir = string.IsNullOrEmpty(entry.FolderPath)
+                        ? outputDir
+                        : Path.Combine(outputDir, entry.FolderPath.Replace('/', Path.DirectorySeparatorChar));
+                    Directory.CreateDirectory(acmDir);
+                    WriteAcm(InterplayAcmFile.Parse(bytes, entry.Name), acmDir, true);
                 }
                 else if (isRiff)
                 {
-                    WriteRiff(RiffWaveFile.Parse(bytes, entry.Name), outputDir, quiet: true);
+                    WriteRiff(RiffWaveFile.Parse(bytes, entry.Name), outputDir, true);
                 }
                 else
                 {
-                    WriteMidi(XmidiFile.Parse(bytes, entry.Name), outputDir, quiet: true);
+                    WriteMidi(XmidiFile.Parse(bytes, entry.Name), outputDir, true);
                 }
 
                 written++;
@@ -405,13 +445,15 @@ public static class AudioCommand
             if (entries.Count == 1)
             {
                 AnsiConsole.MarkupLine("[green]Wrote[/] {0}  [grey]{1} Hz, {2}, mono, {3:F2}s[/]  {4}",
-                    Markup.Escape(path), sound.SampleRate, sound.DepthDescription, sound.DurationSeconds, Markup.Escape(entry.Text));
+                    Markup.Escape(path), sound.SampleRate, sound.DepthDescription, sound.DurationSeconds,
+                    Markup.Escape(entry.Text));
             }
         }
 
         if (entries.Count > 1)
         {
-            AnsiConsole.MarkupLine("[green]Decoded {0} voiced line(s)[/] to {1}", entries.Count, Markup.Escape(outputDir));
+            AnsiConsole.MarkupLine("[green]Decoded {0} voiced line(s)[/] to {1}", entries.Count,
+                Markup.Escape(outputDir));
         }
     }
 
@@ -462,6 +504,143 @@ public static class AudioCommand
                 AnsiConsole.MarkupLine("[green]Wrote[/] {0}", Markup.Escape(path));
             }
         }
+    }
+
+    /// <summary>
+    ///     A <c>.CLP</c> entry is a Brotherhood of Steel clump and nothing else, so one that is not a
+    ///     sound bank is reported with the parser's reason rather than handed on to the VOC reader.
+    /// </summary>
+    private static bool TryOpenBosBank(byte[] bytes, string name, out BosSoundBank bank)
+    {
+        if (BosSoundBank.TryParse(bytes, name, out bank, out var error))
+        {
+            return true;
+        }
+
+        if (name.EndsWith(".clp", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException(error);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    ///     Writes every sound of a Brotherhood of Steel <c>_S.CLP</c> bank as 16-bit mono WAV at the
+    ///     rate its own <c>VAGp</c> header declares (the banks mix 16, 18 and 22.05 kHz freely).
+    ///     Files are <c>NNN_name.wav</c>: the header's 16-byte name field truncates at 15
+    ///     characters, so the bank index keeps every file distinct.
+    /// </summary>
+    private static void WriteBosBank(BosSoundBank bank, byte[] bytes, string outputDir)
+    {
+        var culture = CultureInfo.InvariantCulture;
+        var rates = new SortedDictionary<int, int>();
+        foreach (var sound in bank.Sounds)
+        {
+            var pcm = BosSoundBank.Decode(bytes, sound);
+            var safe = string.Concat(sound.Name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c));
+            var path = Path.Combine(outputDir, $"{sound.Index:D3}_{(safe.Length == 0 ? "sound" : safe)}.wav");
+            WavWriter.SavePcm(MemoryMarshal.AsBytes(pcm.AsSpan()), sound.SampleRate, 16, 1, path);
+            rates[sound.SampleRate] = rates.GetValueOrDefault(sound.SampleRate) + 1;
+        }
+
+        AnsiConsole.MarkupLine(
+            "[green]Wrote {0} sound(s)[/] from {1} to {2}  [grey]rates: {3}[/]",
+            bank.Sounds.Count,
+            Markup.Escape(bank.Name),
+            Markup.Escape(outputDir),
+            string.Join(", ", rates.Select(r => $"{r.Key.ToString(culture)} Hz x{r.Value.ToString(culture)}")));
+    }
+
+    private static void ShowBosBank(BosSoundBank bank)
+    {
+        var culture = CultureInfo.InvariantCulture;
+        AnsiConsole.MarkupLine(
+            "[bold cyan]{0}[/] — {1} VAGp sound(s), 256-byte pages, table CRC 0x{2:X8} [grey](rate per sound from its header +0x10)[/]",
+            Markup.Escape(bank.Name), bank.Sounds.Count, bank.Clump.Crc);
+
+        var table = new Table { Border = TableBorder.Rounded };
+        table.AddColumn("#");
+        table.AddColumn("Name");
+        table.AddColumn("Rate");
+        table.AddColumn("Pitch");
+        table.AddColumn("Blocks");
+        table.AddColumn("Duration");
+        table.AddColumn("Tag");
+        foreach (var sound in bank.Sounds)
+        {
+            table.AddRow(
+                sound.Index.ToString(culture),
+                Markup.Escape(sound.Name),
+                $"{sound.SampleRate.ToString(culture)} Hz",
+                sound.Pitch.ToString(culture),
+                sound.BlockCount.ToString(culture),
+                $"{sound.DurationSeconds.ToString("F3", culture)} s",
+                $"0x{sound.Hash:X8}");
+        }
+
+        AnsiConsole.Write(table);
+    }
+
+    /// <summary>
+    ///     Decodes one Interplay ACM to a 16-bit WAV at the header's rate and the channel count the
+    ///     VALUES support (<see cref="InterplayAcmChannelProbe" />) — the header says 2 on every
+    ///     Fallout speech line and they are mono; written at the header's count they play at double
+    ///     speed. The header total counts values over all channels; an odd total read as stereo
+    ///     cannot make a final frame, so the stray value would be dropped (libacm drops it the same
+    ///     way) — read as mono, which is what an odd total infers, nothing is.
+    /// </summary>
+    private static void WriteAcm(InterplayAcmFile acm, string outputDir, bool quiet = false)
+    {
+        var pcm = acm.Decode().AsInferred();
+        var wholeFrames = pcm.FrameCount * pcm.Channels;
+        var bytes = MemoryMarshal.AsBytes(pcm.Samples.AsSpan(0, wholeFrames));
+        var path = Path.Combine(outputDir, Path.ChangeExtension(acm.Name, ".wav"));
+        WavWriter.SavePcm(bytes, pcm.SampleRate, 16, pcm.Channels, path);
+
+        if (!quiet)
+        {
+            AnsiConsole.MarkupLine(
+                "[green]Wrote[/] {0}  [grey]{1} Hz, 16-bit, {2} channel(s) (header says {3}: {4}), {5:F2}s, {6} values in {7} block(s) of {8}; " +
+                "last block used {9} padding bit(s), {10} bit(s) of file unread[/]",
+                Markup.Escape(path), pcm.SampleRate, pcm.Channels, acm.DeclaredChannels,
+                Markup.Escape(pcm.Probe.Reason), pcm.DurationSeconds,
+                acm.TotalValues, acm.BlockCount, acm.BlockLength, pcm.PaddingBitsUsed, pcm.TrailingBits);
+        }
+    }
+
+    private static void ShowAcm(InterplayAcmFile acm)
+    {
+        var culture = CultureInfo.InvariantCulture;
+        AnsiConsole.MarkupLine("[bold cyan]{0}[/]", Markup.Escape(acm.Name));
+
+        // The channel question is answered by the values, so info decodes too (a 4-minute track is
+        // sub-second); the header's own figures are shown beside the inferred ones.
+        var pcm = acm.Decode().AsInferred();
+        var table = new Table { Border = TableBorder.Rounded };
+        table.AddColumn("Property");
+        table.AddColumn("Value");
+        table.AddRow("Format", acm.IsWavc ? "Interplay ACM (WAVC wrapped)" : "Interplay ACM");
+        table.AddRow("Sample rate", $"{acm.SampleRate} Hz");
+        table.AddRow("Channels (header)", acm.DeclaredChannels.ToString(culture));
+        table.AddRow("Channels (inferred)", $"{pcm.Channels} — {pcm.Probe.Reason}");
+        table.AddRow("Channel probe",
+            $"lag-1/lag-2 step {pcm.Probe.Lag1ToLag2Step:F3}, within/across frame step {pcm.Probe.WithinToBetweenStep:F3}, equal pairs {pcm.Probe.EqualPairFraction:P1}");
+        table.AddRow("Total values", acm.TotalValues.ToString("N0", culture));
+        table.AddRow("Frames (inferred)", pcm.FrameCount.ToString("N0", culture));
+        table.AddRow("Duration (inferred)",
+            $"{pcm.DurationSeconds:F3} s (header's count would give {acm.DurationSeconds:F3} s)");
+        table.AddRow("Packing",
+            $"level {acm.Level}: {acm.Rows} rows x {acm.Columns} cols = {acm.BlockLength} values per block");
+        table.AddRow("Blocks",
+            $"{acm.BlockCount} (last carries {acm.LastBlockValues}; used {pcm.PaddingBitsUsed} padding bit(s), {pcm.TrailingBits} bit(s) of file unread)");
+        if (acm.DeclaredChannels == 2 && acm.TotalValues % 2 != 0)
+        {
+            table.AddRow("Note",
+                "odd value total on a file declared stereo — a real stereo stream cannot do that; the header channel count is wrong");
+        }
+
+        AnsiConsole.Write(table);
     }
 
     private static void WriteWav(VocFile voc, string outputDir, bool quiet = false)
@@ -527,6 +706,18 @@ public static class AudioCommand
             return;
         }
 
+        if (InterplayAcmFile.IsAcm(bytes))
+        {
+            ShowAcm(InterplayAcmFile.Parse(bytes, name));
+            return;
+        }
+
+        if (TryOpenBosBank(bytes, name, out var bosBank))
+        {
+            ShowBosBank(bosBank);
+            return;
+        }
+
         var voc = VocFile.Parse(bytes, name);
         AnsiConsole.MarkupLine("[bold cyan]{0}[/]", Markup.Escape(voc.Name));
 
@@ -559,7 +750,7 @@ public static class AudioCommand
     private static void ShowRedguardSfx(string input, string? entryName)
     {
         var bank = RedguardSfxFile.Parse(File.ReadAllBytes(input), Path.GetFileName(input));
-        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        var culture = CultureInfo.InvariantCulture;
         if (entryName is not null)
         {
             var sound = bank.Sounds[ResolveSfxIndex(bank, entryName)];
@@ -598,7 +789,7 @@ public static class AudioCommand
     private static void ShowRedguardRtx(string input, string? entryName)
     {
         using var database = RedguardRtxFile.Open(input);
-        var culture = System.Globalization.CultureInfo.InvariantCulture;
+        var culture = CultureInfo.InvariantCulture;
         if (entryName is not null)
         {
             var entry = database.Find(entryName)
@@ -626,8 +817,10 @@ public static class AudioCommand
         }
 
         var voiced = database.Entries.Where(e => e.IsVoiced).ToList();
-        var rates = voiced.GroupBy(e => e.Sound!.Value.SampleRate).OrderBy(g => g.Key).Select(g => $"{g.Key} Hz x{g.Count()}");
-        var depths = voiced.GroupBy(e => e.Sound!.Value.BitsPerSample).OrderBy(g => g.Key).Select(g => $"{g.Key}-bit x{g.Count()}");
+        var rates = voiced.GroupBy(e => e.Sound!.Value.SampleRate).OrderBy(g => g.Key)
+            .Select(g => $"{g.Key} Hz x{g.Count()}");
+        var depths = voiced.GroupBy(e => e.Sound!.Value.BitsPerSample).OrderBy(g => g.Key)
+            .Select(g => $"{g.Key}-bit x{g.Count()}");
         var table = new Table { Border = TableBorder.Rounded };
         table.AddColumn("Property");
         table.AddColumn("Value");
@@ -650,11 +843,12 @@ public static class AudioCommand
             var single = new Table { Border = TableBorder.Rounded };
             single.AddColumn("Property");
             single.AddColumn("Value");
-            single.AddRow("Sound id", sounds.SoundId(index).ToString(System.Globalization.CultureInfo.InvariantCulture));
-            single.AddRow("Archive index", index.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            single.AddRow("Samples", sounds.Samples(index).Length.ToString("N0", System.Globalization.CultureInfo.InvariantCulture));
+            single.AddRow("Sound id", sounds.SoundId(index).ToString(CultureInfo.InvariantCulture));
+            single.AddRow("Archive index", index.ToString(CultureInfo.InvariantCulture));
+            single.AddRow("Samples", sounds.Samples(index).Length.ToString("N0", CultureInfo.InvariantCulture));
             single.AddRow("Duration", $"{sounds.DurationSeconds(index):F3} s");
-            single.AddRow("Format", $"{DaggerfallSoundFile.SampleRate} Hz, {DaggerfallSoundFile.BitsPerSample}-bit unsigned, mono");
+            single.AddRow("Format",
+                $"{DaggerfallSoundFile.SampleRate} Hz, {DaggerfallSoundFile.BitsPerSample}-bit unsigned, mono");
             AnsiConsole.Write(single);
             return;
         }
@@ -664,12 +858,15 @@ public static class AudioCommand
         var table = new Table { Border = TableBorder.Rounded };
         table.AddColumn("Property");
         table.AddColumn("Value");
-        table.AddRow("Records", sounds.Count.ToString("N0", System.Globalization.CultureInfo.InvariantCulture));
-        table.AddRow("Distinct ids", ids.Distinct().Count().ToString("N0", System.Globalization.CultureInfo.InvariantCulture));
+        table.AddRow("Records", sounds.Count.ToString("N0", CultureInfo.InvariantCulture));
+        table.AddRow("Distinct ids", ids.Distinct().Count().ToString("N0", CultureInfo.InvariantCulture));
         table.AddRow("Id range", $"{ids.Min()}-{ids.Max()}");
-        table.AddRow("Empty records", Enumerable.Range(0, sounds.Count).Count(i => sounds.Samples(i).Length == 0).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        table.AddRow("Empty records",
+            Enumerable.Range(0, sounds.Count).Count(i => sounds.Samples(i).Length == 0)
+                .ToString(CultureInfo.InvariantCulture));
         table.AddRow("Total audio", $"{totalSamples / (double)DaggerfallSoundFile.SampleRate:F1} s");
-        table.AddRow("Format", $"{DaggerfallSoundFile.SampleRate} Hz, {DaggerfallSoundFile.BitsPerSample}-bit unsigned, mono");
+        table.AddRow("Format",
+            $"{DaggerfallSoundFile.SampleRate} Hz, {DaggerfallSoundFile.BitsPerSample}-bit unsigned, mono");
         AnsiConsole.MarkupLine("[bold cyan]{0}[/]", Markup.Escape(Path.GetFileName(input)));
         AnsiConsole.Write(table);
     }
@@ -684,9 +881,9 @@ public static class AudioCommand
         for (var i = 0; i < song.Tracks.Count; i++)
         {
             table.AddRow(
-                i.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                song.TrackOffsets[i].ToString("N0", System.Globalization.CultureInfo.InvariantCulture),
-                song.Tracks[i].Length.ToString("N0", System.Globalization.CultureInfo.InvariantCulture));
+                i.ToString(CultureInfo.InvariantCulture),
+                song.TrackOffsets[i].ToString("N0", CultureInfo.InvariantCulture),
+                song.Tracks[i].Length.ToString("N0", CultureInfo.InvariantCulture));
         }
 
         AnsiConsole.Write(table);

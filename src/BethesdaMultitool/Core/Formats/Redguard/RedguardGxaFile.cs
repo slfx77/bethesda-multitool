@@ -14,13 +14,19 @@ namespace BethesdaMultitool.Core.Formats.Redguard;
 ///         retail file is exactly <c>BMHD</c>, <c>BPAL</c>, <c>BBMP</c> in that order.
 ///     </para>
 ///     <list type="bullet">
-///         <item><c>BMHD</c> (34 bytes): a 32-character ASCII banner — always "GXlib image
-///         conversion" — then a little-endian u16 <b>image count</b>.</item>
-///         <item><c>BPAL</c> (768 bytes): 256 x RGB. Components top out at 63 on every retail file,
-///         so it is 6-bit VGA and goes through <see cref="Palette.FromVga6Bit" />.</item>
-///         <item><c>BBMP</c>: that many frame records back to back, each an 18-byte header
-///         (u16 form, u16 width, u16 height, then 12 bytes that are zero except a form byte at
-///         +10) followed by width x height 8-bit palette indices.</item>
+///         <item>
+///             <c>BMHD</c> (34 bytes): a 32-character ASCII banner — always "GXlib image
+///             conversion" — then a little-endian u16 <b>image count</b>.
+///         </item>
+///         <item>
+///             <c>BPAL</c> (768 bytes): 256 x RGB. Components top out at 63 on every retail file,
+///             so it is 6-bit VGA and goes through <see cref="Imaging.Palette.FromVga6Bit" />.
+///         </item>
+///         <item>
+///             <c>BBMP</c>: that many frame records back to back, each an 18-byte header
+///             (u16 form, u16 width, u16 height, then 12 bytes that are zero except a form byte at
+///             +10) followed by width x height 8-bit palette indices.
+///         </item>
 ///     </list>
 ///     <para>
 ///         Verified 2026-09-05 across all 65 retail files: <b>60 tile exactly</b> under that walk,
@@ -92,7 +98,8 @@ internal sealed class RedguardGxaFile
         var (headerOffset, headerLength) = RequireChunk(bytes, 0, "BMHD", name);
         if (headerLength < ImageHeaderLength)
         {
-            throw new InvalidDataException($"{name}: BMHD is {headerLength} bytes, expected at least {ImageHeaderLength}.");
+            throw new InvalidDataException(
+                $"{name}: BMHD is {headerLength} bytes, expected at least {ImageHeaderLength}.");
         }
 
         int count = BinaryPrimitives.ReadUInt16LittleEndian(bytes.Slice(headerOffset + BannerLength, 2));
@@ -140,7 +147,8 @@ internal sealed class RedguardGxaFile
         return new RedguardGxaFile(name, palette, frames, compressed);
     }
 
-    private static (int Offset, int Length) RequireChunk(ReadOnlySpan<byte> bytes, int position, string expected, string name)
+    private static (int Offset, int Length) RequireChunk(ReadOnlySpan<byte> bytes, int position, string expected,
+        string name)
     {
         if (!TryReadChunk(bytes, position, out var tag, out var offset, out var length) || tag != expected)
         {
@@ -151,7 +159,8 @@ internal sealed class RedguardGxaFile
         return (offset, length);
     }
 
-    private static bool TryReadChunk(ReadOnlySpan<byte> bytes, int position, out string? tag, out int offset, out int length)
+    private static bool TryReadChunk(ReadOnlySpan<byte> bytes, int position, out string? tag, out int offset,
+        out int length)
     {
         tag = null;
         offset = 0;
@@ -177,7 +186,7 @@ internal sealed class RedguardGxaFile
         }
 
         offset = position + ChunkHeaderLength;
-        if (offset + (long)declared > bytes.Length)
+        if (offset + declared > bytes.Length)
         {
             // Two retail files (GXICONS, gui) write BBMP's length as the ABSOLUTE offset of the
             // "END " terminator rather than a payload length — a quirk of whichever tool wrote the

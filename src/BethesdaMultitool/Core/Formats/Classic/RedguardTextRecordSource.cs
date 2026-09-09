@@ -19,7 +19,8 @@ internal static class RedguardTextRecordSource
     public const string TextRecordType = "RTXT";
 
     /// <summary>Reads <c>ENGLISH.RTX</c> under <paramref name="dataRoot" /> and appends its records.</summary>
-    public static void Populate(string dataRoot, RecordCollection records, CancellationToken cancellationToken = default)
+    public static void Populate(string dataRoot, RecordCollection records,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dataRoot);
         ArgumentNullException.ThrowIfNull(records);

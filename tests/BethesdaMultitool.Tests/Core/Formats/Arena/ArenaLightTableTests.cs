@@ -1,4 +1,3 @@
-using System;
 using BethesdaMultitool.Core.Formats.Arena;
 using BethesdaMultitool.Core.Imaging;
 using Xunit;
@@ -19,7 +18,7 @@ public class ArenaLightTableTests
         {
             for (var i = 0; i < ArenaLightTable.EntriesPerLevel; i++)
             {
-                bytes[(level * ArenaLightTable.EntriesPerLevel) + i] = (byte)((i + level) & 0xFF);
+                bytes[level * ArenaLightTable.EntriesPerLevel + i] = (byte)((i + level) & 0xFF);
             }
         }
 
@@ -74,7 +73,7 @@ public class ArenaLightTableTests
     public void Apply_RemapsEveryPixelAndKeepsOffsets()
     {
         var table = ArenaLightTable.Parse(BuildTable());
-        var source = new IndexedBitmap(2, 1, [10, 20], xOffset: 7, yOffset: 9);
+        var source = new IndexedBitmap(2, 1, [10, 20], 7, 9);
 
         var shaded = table.Apply(source, 5);
 

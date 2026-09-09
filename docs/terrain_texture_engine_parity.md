@@ -7,7 +7,7 @@ names, pass IDs, structure offsets, and material-binding control flow that are
 harder to recover from the stripped PC executable.
 
 The most reliable symbol-rich control-flow evidence is from
-`Sample/PDB/Proto/Fallout_Release_MemDebug`; its `.text` image maps cleanly at
+`Sample/DebugSymbols/Fallout - New Vegas (X360)/Proto/Fallout_Release_MemDebug`; its `.text` image maps cleanly at
 `0x82250000`. The final-build Xbox PDB symbols are useful for names, but a
 simple section-base mapping does not align all functions cleanly, so final-build
 addresses should not be trusted until OMAP/section translation is handled.
@@ -36,7 +36,7 @@ tools/GhidraProject/pc_basic_sls_shader_disassembly.txt
 
 ## Parity Strategy
 
-- Use the PC final build under `Sample/Full_Builds/Fallout New Vegas (PC Final)`
+- Use the PC final build under `Sample/Builds/Fallout - New Vegas (2022-5-24, Steam - Final)`
   as the visual target.
 - Use PC `shaderpackage*.sdp` disassembly for exact shader-side math whenever a
   same-name record exists. `tools/disasm_shader.py` handles these D3D9 records.

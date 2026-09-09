@@ -86,14 +86,14 @@ public record CellRecord
     /// </summary>
     public bool BehavesLikeExterior =>
         IsInterior &&
-        (DataFlagSemantics switch
+        DataFlagSemantics switch
         {
             CellDataFlagSemantics.Creation => false,
             CellDataFlagSemantics.Fallout3 => (Flags & 0x40u) != 0,
             // Unknown retains the historical bit-7 behavior for compatibility with synthetic records
             // and partial recoveries whose source game could not be classified.
             _ => (Flags & 0x80u) != 0
-        });
+        };
 
     /// <summary>Whether a Creation-family interior exposes the sky (DATA bit 7).</summary>
     public bool ShowsSky =>

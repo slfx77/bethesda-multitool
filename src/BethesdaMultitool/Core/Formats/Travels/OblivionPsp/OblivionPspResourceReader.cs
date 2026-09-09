@@ -226,9 +226,11 @@ internal static class OblivionPspResourceReader
         return string.Empty;
     }
 
-    private static bool IsTypeNameByte(byte value) =>
-        value is (>= (byte)'A' and <= (byte)'Z') or (>= (byte)'a' and <= (byte)'z')
-            or (>= (byte)'0' and <= (byte)'9') or (byte)'_';
+    private static bool IsTypeNameByte(byte value)
+    {
+        return value is >= (byte)'A' and <= (byte)'Z' or >= (byte)'a' and <= (byte)'z'
+            or >= (byte)'0' and <= (byte)'9' or (byte)'_';
+    }
 
     /// <summary>
     ///     Finds the authoring path — the last NUL-terminated run of printable ASCII in the header

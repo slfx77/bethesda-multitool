@@ -1,10 +1,5 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
-using System.Threading.Tasks;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Daggerfall;
@@ -32,7 +27,7 @@ public sealed class RedguardRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Classics.Redguard();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Redguard"));
-        return root!;
+        return root;
     }
 
     [Fact]
@@ -185,7 +180,7 @@ public sealed class RedguardRetailTests
             {
                 var bytes = reader.ReadFile(entry.FullPath);
                 Assert.NotNull(bytes);
-                Assert.Equal(entry.Size, bytes!.Length);
+                Assert.Equal(entry.Size, bytes.Length);
 
                 if (bytes.Length == 0)
                 {
@@ -271,14 +266,30 @@ public sealed class RedguardRetailTests
         foreach (var file in files)
         {
             var name = Path.GetFileName(file);
-            if (!Redguard3dcFile.TryParse(File.ReadAllBytes(file), name, out var mesh, out var error))
+            if (!Redguard3DcFile.TryParse(File.ReadAllBytes(file), name, out var mesh, out var error))
             {
                 failures.Add(error);
                 continue;
             }
 
-            if (mesh.WideFrames) { wide++; } else { narrow++; }
-            if (mesh.FrameRecordDwords == 3) { threeDword++; } else { fourDword++; }
+            if (mesh.WideFrames)
+            {
+                wide++;
+            }
+            else
+            {
+                narrow++;
+            }
+
+            if (mesh.FrameRecordDwords == 3)
+            {
+                threeDword++;
+            }
+            else
+            {
+                fourDword++;
+            }
+
             frames += mesh.FrameCount;
 
             // ⚑ The frame RECORD width predicts the frame width on every retail file: four dwords
@@ -307,8 +318,8 @@ public sealed class RedguardRetailTests
         Assert.SkipWhen(!File.Exists(path), RealAssetPaths.SkipMessage("Redguard BMANA001.3DC"));
 
         var bytes = File.ReadAllBytes(path);
-        var animated = Redguard3dcFile.Parse(bytes, "BMANA001.3DC");
-        var asPlain3d = XnGineMesh.Parse(bytes, 0, XnGineMeshLayout.Daggerfall);
+        var animated = Redguard3DcFile.Parse(bytes, "BMANA001.3DC");
+        var asPlain3d = XnGineMesh.Parse(bytes, 0);
 
         Assert.Equal(asPlain3d.Points.Count, animated.KeyframeMesh.Points.Count);
         Assert.NotEqual(asPlain3d.Points[0], animated.KeyframeMesh.Points[0]);
@@ -447,9 +458,12 @@ public sealed class RedguardRetailTests
 
             var rob = RedguardRobParser.Parse(Path.Combine(root, "3dart", stem + ".ROB"));
             var segments = rob.Entries.Select(e => e.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            unresolved.AddRange(map.Placements.Where(p => p.HasMesh && !segments.Contains(p.MeshStem)).Select(p => $"{stem} MPOB {p.MeshName}"));
-            unresolved.AddRange(map.StaticMeshes.Where(s => !segments.Contains(s.MeshName)).Select(s => $"{stem} MPSO {s.MeshName}"));
-            unresolved.AddRange(map.Ropes.Where(r => !segments.Contains(r.LinkMeshName)).Select(r => $"{stem} MPRP {r.LinkMeshName}"));
+            unresolved.AddRange(map.Placements.Where(p => p.HasMesh && !segments.Contains(p.MeshStem))
+                .Select(p => $"{stem} MPOB {p.MeshName}"));
+            unresolved.AddRange(map.StaticMeshes.Where(s => !segments.Contains(s.MeshName))
+                .Select(s => $"{stem} MPSO {s.MeshName}"));
+            unresolved.AddRange(map.Ropes.Where(r => !segments.Contains(r.LinkMeshName))
+                .Select(r => $"{stem} MPRP {r.LinkMeshName}"));
 
             // WDNM's route field is exactly the floor of the 3-D distance between its nodes.
             foreach (var graph in map.NavigationMaps)
@@ -491,12 +505,15 @@ public sealed class RedguardRetailTests
 
         Assert.Equal(4866, database.Entries.Count);
         Assert.Equal(3933, database.Entries.Count(e => e.IsVoiced));
-        Assert.All(database.Entries.Where(e => e.IsVoiced), e => Assert.Contains(e.Sound!.Value.SampleRate, RetailSampleRates));
-        Assert.Equal(database.Entries.Count, database.Entries.Select(e => e.Tag).Distinct(StringComparer.Ordinal).Count());
+        Assert.All(database.Entries.Where(e => e.IsVoiced),
+            e => Assert.Contains(e.Sound!.Value.SampleRate, RetailSampleRates));
+        Assert.Equal(database.Entries.Count,
+            database.Entries.Select(e => e.Tag).Distinct(StringComparer.Ordinal).Count());
 
         // The first record is an effect description; the dialogue lines are the on-screen text.
         var bone = database.Find("#bon")!;
-        Assert.Equal(("BOATMAN BONE SOUND", 22050, 96548), (bone.Text, bone.Sound!.Value.SampleRate, bone.Sound.Value.ByteLength));
+        Assert.Equal(("BOATMAN BONE SOUND", 22050, 96548),
+            (bone.Text, bone.Sound!.Value.SampleRate, bone.Sound.Value.ByteLength));
         Assert.Equal(96548, database.ReadSamples(bone).Length);
         Assert.Equal("GET BACK IN YOUR JAR, YOU FILTHY LITTLE THING.", database.Find("zbza")!.Text);
 
@@ -505,37 +522,44 @@ public sealed class RedguardRetailTests
     }
 
     [Fact]
-    public void EveryWldIsTheFixedEightLayerShape()
+    public void EveryWldIsFourTilesOfFourLayersAndOnlyTwoLayersCarryData()
     {
+        // The layout is what RG.EXE's scape loader reads (2026-09-08): a 144-byte header, a
+        // four-entry tile table, a 1,024-byte level table, then four tile records (22-byte header +
+        // four 128 x 128 quarters) and the TULO trailer. The semantic pins — nav nodes on the height
+        // layer, surface.ini classes on the texture layer — live in RedguardWldRetailTests.
         var root = RequireDataRoot();
         var maps = Path.Combine(root, "maps");
         Assert.SkipWhen(!Directory.Exists(maps), RealAssetPaths.SkipMessage("Redguard maps"));
 
         var files = Directory.GetFiles(maps, "*.WLD").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
-        Assert.Equal(["EXTPALAC", "HIDEOUT", "ISLAND", "NECRISLE"], files.Select(f => Path.GetFileNameWithoutExtension(f).ToUpperInvariant()));
+        Assert.Equal(["EXTPALAC", "HIDEOUT", "ISLAND", "NECRISLE"],
+            files.Select(f => Path.GetFileNameWithoutExtension(f).ToUpperInvariant()));
 
         var trailers = new List<string>();
         foreach (var file in files)
         {
             var wld = RedguardWldFile.Parse(File.ReadAllBytes(file), Path.GetFileName(file));
             Assert.Equal([16u, 2u, 2u, 0u, 160u, 1u, 22u, 263416u], wld.Header);
+            Assert.Equal(4, wld.Tiles.Count);
+            Assert.Equal(4, wld.Layers.Count);
+            Assert.All(wld.Tiles, tile => Assert.Equal(302, tile.TextureSet));
             trailers.Add(string.Join(",", wld.Trailer));
+
+            // Only the height and surface layers are ever populated; scatter and the fourth quarter
+            // are zero in every shipped world.
+            Assert.All(wld.ScatterLayer.Indices, b => Assert.Equal(0, b));
+            Assert.All(wld.UnusedLayer.Indices, b => Assert.Equal(0, b));
         }
 
         // The same 16-byte trailer closes all four files.
         Assert.Single(trailers.Distinct());
 
-        // ISLAND uses every layer; layers 1, 5 and 7 are the smooth (height-like) ones, the rest
-        // categorical. NECRISLE populates only the first two — the split that showed the layers
-        // are attributes of one map rather than tiles of a larger one.
+        // ISLAND's height indices span the table; NECRISLE is a small island in a sea of index 0.
         var island = RedguardWldFile.Parse(File.ReadAllBytes(files[2]), "ISLAND.WLD");
-        Assert.All(island.Layers, layer => Assert.Contains(layer.Indices, b => b != 0));
-        var smooth = island.Layers.Select((layer, i) => (i, Step: RedguardWldFile.MeanStep(layer)))
-            .Where(t => t.Step < RedguardWldFile.SmoothStepThreshold).Select(t => t.i).ToList();
-        Assert.Equal([1, 5, 7], smooth);
-
         var necrisle = RedguardWldFile.Parse(File.ReadAllBytes(files[3]), "NECRISLE.WLD");
-        Assert.All(necrisle.Layers.Skip(2), layer => Assert.True(layer.Indices.Count(b => b != 0) < 400));
+        Assert.True(island.HeightLayer.Indices.Count(b => (b & RedguardWldFile.HeightIndexMask) != 0) > 10000);
+        Assert.True(necrisle.HeightLayer.Indices.Count(b => (b & RedguardWldFile.HeightIndexMask) != 0) < 5000);
     }
 
     [Fact]
@@ -544,7 +568,9 @@ public sealed class RedguardRetailTests
         // fxart lives only on the original Disc 1, inside its InstallShield cabinet; this runs
         // against the extracted tree.
         BucketBTestGuard.SkipUnlessEnabled();
-        var fxart = Path.Combine(RepositoryRoot(), "Sample", "Full_Builds", "Redguard_Disc1_extracted", "fxart");
+        var fxart = Path.Combine(RepositoryRoot(), "Sample", "Builds",
+            "The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)", "Disc 1 (Install)", "extracted",
+            "fxart");
         Assert.SkipWhen(!Directory.Exists(fxart), RealAssetPaths.SkipMessage("Redguard Disc 1 fxart"));
 
         var files = Directory.GetFiles(fxart, "TEXBSI.*");
@@ -585,7 +611,8 @@ public sealed class RedguardRetailTests
             directory = directory.Parent;
         }
 
-        return directory?.FullName ?? throw new InvalidOperationException("BethesdaMultitool.slnx not found above the test binary.");
+        return directory?.FullName ??
+               throw new InvalidOperationException("BethesdaMultitool.slnx not found above the test binary.");
     }
 
     [Fact]
@@ -639,12 +666,15 @@ public sealed class RedguardRetailTests
 
         var result = await ClassicGameAnalyzer.LoadAsync(root, TestContext.Current.CancellationToken);
 
-        var maps = result.Records.GenericRecords.Where(r => r.RecordType == RedguardMapRecordSource.MapRecordType).ToList();
-        var objects = result.Records.GenericRecords.Where(r => r.RecordType == RedguardMapRecordSource.ObjectRecordType).ToList();
+        var maps = result.Records.GenericRecords.Where(r => r.RecordType == RedguardMapRecordSource.MapRecordType)
+            .ToList();
+        var objects = result.Records.GenericRecords.Where(r => r.RecordType == RedguardMapRecordSource.ObjectRecordType)
+            .ToList();
 
         Assert.Equal(27, maps.Count);
         Assert.Equal(1664, objects.Count);
-        Assert.Equal(4866, result.Records.GenericRecords.Count(r => r.RecordType == RedguardTextRecordSource.TextRecordType));
+        Assert.Equal(4866,
+            result.Records.GenericRecords.Count(r => r.RecordType == RedguardTextRecordSource.TextRecordType));
 
         // Name-hashed identities must not collide anywhere in the retail set.
         var all = result.Records.GenericRecords.Select(r => r.FormId).ToList();

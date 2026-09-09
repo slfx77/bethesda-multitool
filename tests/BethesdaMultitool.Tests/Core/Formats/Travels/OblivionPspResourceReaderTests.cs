@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
 using Xunit;
@@ -58,8 +55,10 @@ public sealed class OblivionPspResourceReaderTests
     }
 
     /// <summary>A minimal RenderWare stream: one chunk of the given root id.</summary>
-    private static byte[] RwStream(uint rootId, int payloadBytes = 16) =>
-        Chunk(rootId, (uint)payloadBytes, OblivionPspResourceReader.RetailLibraryId, new byte[payloadBytes]);
+    private static byte[] RwStream(uint rootId, int payloadBytes = 16)
+    {
+        return Chunk(rootId, (uint)payloadBytes, OblivionPspResourceReader.RetailLibraryId, new byte[payloadBytes]);
+    }
 
     // ---------------------------------------------------------------- the join
 
@@ -108,9 +107,9 @@ public sealed class OblivionPspResourceReaderTests
     }
 
     [Theory]
-    [InlineData(0x10u)]   // CLUMP
-    [InlineData(0x0Bu)]   // WORLD
-    [InlineData(0x16u)]   // TEXDICTIONARY
+    [InlineData(0x10u)] // CLUMP
+    [InlineData(0x0Bu)] // WORLD
+    [InlineData(0x16u)] // TEXDICTIONARY
     public void TheThreeRenderWareRootsAreRecognised(uint rootId)
     {
         var wrapper = Wrapper("rwID_X", @"z:\a\b", RwStream(rootId));

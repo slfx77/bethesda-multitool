@@ -13,9 +13,9 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 /// </summary>
 internal sealed class Dat1Backend : IArchiveBackend
 {
+    private readonly MemoryMappedViewAccessor _accessor;
     private readonly Dat1Directory _directory;
     private readonly MemoryMappedFile _mmf;
-    private readonly MemoryMappedViewAccessor _accessor;
 
     public Dat1Backend(Dat1Directory directory)
     {
@@ -66,7 +66,8 @@ internal sealed class Dat1Backend : IArchiveBackend
         var read = _accessor.ReadArray(record.Offset, stored, 0, stored.Length);
         if (read != stored.Length)
         {
-            throw new InvalidDataException($"DAT1 entry '{record.FullPath}' is truncated: read {read} of {stored.Length} bytes.");
+            throw new InvalidDataException(
+                $"DAT1 entry '{record.FullPath}' is truncated: read {read} of {stored.Length} bytes.");
         }
 
         return record.IsCompressed ? FalloutLzss.Decompress(stored, (int)record.Size) : stored;

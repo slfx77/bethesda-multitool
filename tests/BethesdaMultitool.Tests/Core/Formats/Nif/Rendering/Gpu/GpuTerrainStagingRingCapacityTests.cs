@@ -15,12 +15,16 @@ public sealed class GpuTerrainStagingRingCapacityTests
     private const long Mib = 1024 * 1024;
 
     [Fact]
-    public void A_degenerate_upload_size_plans_no_ring() =>
+    public void A_degenerate_upload_size_plans_no_ring()
+    {
         Assert.Equal(0, GpuTerrainStagingRing12.PlanCapacityBytes(0));
+    }
 
     [Fact]
-    public void A_negative_upload_size_plans_no_ring() =>
+    public void A_negative_upload_size_plans_no_ring()
+    {
         Assert.Equal(0, GpuTerrainStagingRing12.PlanCapacityBytes(-1));
+    }
 
     [Fact]
     public void A_small_grid_gets_the_floor_rather_than_a_ring_too_small_to_absorb_a_frame()
@@ -67,8 +71,10 @@ public sealed class GpuTerrainStagingRingCapacityTests
     {
         // The multiply must not wrap on a nonsense request and produce a tiny (or negative) plan —
         // that would silently disable staging for every cell rather than for the outsized one.
-        Assert.Equal(GpuTerrainStagingRing12.MaxCapacityBytes, GpuTerrainStagingRing12.PlanCapacityBytes(long.MaxValue));
-        Assert.Equal(GpuTerrainStagingRing12.MaxCapacityBytes, GpuTerrainStagingRing12.PlanCapacityBytes(long.MaxValue / 3));
+        Assert.Equal(GpuTerrainStagingRing12.MaxCapacityBytes,
+            GpuTerrainStagingRing12.PlanCapacityBytes(long.MaxValue));
+        Assert.Equal(GpuTerrainStagingRing12.MaxCapacityBytes,
+            GpuTerrainStagingRing12.PlanCapacityBytes(long.MaxValue / 3));
     }
 
     [Fact]

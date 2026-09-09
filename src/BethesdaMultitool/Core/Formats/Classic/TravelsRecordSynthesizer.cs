@@ -589,7 +589,7 @@ internal static class TravelsRecordSynthesizer
         }
 
         var editorId = "DUNGEON" + dungeon.Id.ToString("D2", CultureInfo.InvariantCulture)
-                       + (fullName is null ? "" : "_" + ClassicRecordNaming.ToEditorId(fullName));
+                                 + (fullName is null ? "" : "_" + ClassicRecordNaming.ToEditorId(fullName));
 
         return context.Create(DungeonCode, DungeonTableId, dungeon.Id - 1, editorId, fullName, fields);
     }

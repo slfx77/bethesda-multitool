@@ -52,7 +52,7 @@ public class DdsBc5DecodeTests
         for (var i = 0; i < 4 * 4; i++)
         {
             var p = i * 4;
-            Assert.Equal(red, pixels![p + 0]); // X preserved
+            Assert.Equal(red, pixels[p + 0]); // X preserved
             Assert.Equal(green, pixels[p + 1]); // Y preserved
             Assert.Equal(expectedZ, pixels[p + 2]); // Z from LUT == reference
             Assert.Equal(255, pixels[p + 3]); // alpha

@@ -397,18 +397,8 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
         if (xclc != null && xclc.Data.Length >= 8)
         {
             isExterior = true;
-            gridX = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan());
-            gridY = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan(), 4);
-
-            if (gridX > 0x7FFFFFFF)
-            {
-                gridX = (int)(gridX - 0x100000000);
-            }
-
-            if (gridY > 0x7FFFFFFF)
-            {
-                gridY = (int)(gridY - 0x100000000);
-            }
+            gridX = BinaryUtils.ReadInt32BE(xclc.Data.AsSpan());
+            gridY = BinaryUtils.ReadInt32BE(xclc.Data.AsSpan(), 4);
         }
 
         return new CellEntry(recHeader.FormId, offset, recHeader.Flags, recHeader.DataSize, isExterior, gridX, gridY,
@@ -441,18 +431,8 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
         {
             isExterior = true;
             worldId = defaultWorldId;
-            gridX = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan());
-            gridY = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan(), 4);
-
-            if (gridX > 0x7FFFFFFF)
-            {
-                gridX = (int)(gridX - 0x100000000);
-            }
-
-            if (gridY > 0x7FFFFFFF)
-            {
-                gridY = (int)(gridY - 0x100000000);
-            }
+            gridX = BinaryUtils.ReadInt32BE(xclc.Data.AsSpan());
+            gridY = BinaryUtils.ReadInt32BE(xclc.Data.AsSpan(), 4);
         }
 
         return new CellEntry(recHeader.FormId, offset, recHeader.Flags, recHeader.DataSize, isExterior, gridX, gridY,
@@ -613,18 +593,8 @@ internal sealed class EsmConversionIndexBuilder(byte[] input)
         if (xclc != null && xclc.Data.Length >= 8)
         {
             isExterior = true;
-            gridX = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan());
-            gridY = (int)BinaryUtils.ReadUInt32BE(xclc.Data.AsSpan(), 4);
-
-            if (gridX > 0x7FFFFFFF)
-            {
-                gridX = (int)(gridX - 0x100000000);
-            }
-
-            if (gridY > 0x7FFFFFFF)
-            {
-                gridY = (int)(gridY - 0x100000000);
-            }
+            gridX = BinaryUtils.ReadInt32BE(xclc.Data.AsSpan());
+            gridY = BinaryUtils.ReadInt32BE(xclc.Data.AsSpan(), 4);
         }
 
         return new CellEntry(recHeader.FormId, offset, recHeader.Flags, recHeader.DataSize, isExterior, gridX, gridY,

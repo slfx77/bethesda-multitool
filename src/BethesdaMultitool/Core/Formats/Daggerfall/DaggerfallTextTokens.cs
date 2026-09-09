@@ -122,13 +122,13 @@ internal static class DaggerfallTextTokens
             switch (value)
             {
                 case NewLine:
-                    EndLine(lines, line, force: true);
+                    EndLine(lines, line, true);
                     break;
                 case JustifyLeft:
                 case JustifyCenter:
                 case EndOfPage:
                 case SubrecordSeparator:
-                    EndLine(lines, line, force: false);
+                    EndLine(lines, line, false);
                     break;
                 case EndOfRecord:
                     i = bytes.Length;
@@ -152,13 +152,10 @@ internal static class DaggerfallTextTokens
                 case >= 0x80:
                     line.Append(CodePage437High[value - 0x80]);
                     break;
-                default:
-                    // Any stray low byte carries no text.
-                    break;
             }
         }
 
-        EndLine(lines, line, force: false);
+        EndLine(lines, line, false);
         return Collapse(lines);
     }
 

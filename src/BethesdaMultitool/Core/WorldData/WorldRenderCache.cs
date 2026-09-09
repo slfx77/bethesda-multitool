@@ -23,18 +23,6 @@ namespace BethesdaMultitool.Core.WorldData;
 /// </summary>
 internal sealed class WorldRenderCache : ITrackableResource
 {
-    private readonly ConcurrentDictionary<CellRecord, IReadOnlyList<PlacedLight>> _placedLights =
-        new(ReferenceEqualityComparer.Instance);
-
-    private readonly ConcurrentDictionary<CellRecord, RenderableReference[]> _placements =
-        new(ReferenceEqualityComparer.Instance);
-
-    private readonly ConcurrentDictionary<CellRecord, ReferencePlacementSpatialIndex> _placementSpatialIndexes =
-        new(ReferenceEqualityComparer.Instance);
-
-    private readonly ConcurrentDictionary<CellRecord, DecodedTerrainCell> _terrain =
-        new(ReferenceEqualityComparer.Instance);
-
     // Bake terrain neighbor lookups + per-quadrant CellLayerWeightTable
     // at LoadData (or lazily on first build). Inputs are worldspace-static (cell LAND +
     // cardinal neighbors' LAND); see TerrainRenderer12.BuildCellTextureSet. Moves
@@ -46,6 +34,18 @@ internal sealed class WorldRenderCache : ITrackableResource
     ///     129-grid one settles at a few hundred resident cells instead of tens of thousands.
     /// </summary>
     internal const long MaxDerivedCacheBytes = 512L * 1024L * 1024L;
+
+    private readonly ConcurrentDictionary<CellRecord, IReadOnlyList<PlacedLight>> _placedLights =
+        new(ReferenceEqualityComparer.Instance);
+
+    private readonly ConcurrentDictionary<CellRecord, RenderableReference[]> _placements =
+        new(ReferenceEqualityComparer.Instance);
+
+    private readonly ConcurrentDictionary<CellRecord, ReferencePlacementSpatialIndex> _placementSpatialIndexes =
+        new(ReferenceEqualityComparer.Instance);
+
+    private readonly ConcurrentDictionary<CellRecord, DecodedTerrainCell> _terrain =
+        new(ReferenceEqualityComparer.Instance);
 
     private readonly BoundedDerivedCache<CellRecord, CellTerrainTextureSet> _terrainTextureSets =
         new(MaxDerivedCacheBytes);
@@ -558,7 +558,6 @@ internal sealed class WorldRenderCache : ITrackableResource
             ? null
             : defaultWaterHeight;
     }
-
 }
 
 internal sealed class ReferencePlacementSpatialIndex
@@ -590,8 +589,10 @@ internal sealed class ReferencePlacementSpatialIndex
     internal long EstimatedBytes => (long)_buckets.Length * (2 * 12 + 2 * sizeof(int));
 
     /// <summary>The bucket a placement belongs to. Shared with the sort that groups them.</summary>
-    internal static (int bx, int by) BucketKeyOf(RenderableReference placement) =>
-        BucketKey(placement.BoundsCenter.X, placement.BoundsCenter.Y);
+    internal static (int bx, int by) BucketKeyOf(RenderableReference placement)
+    {
+        return BucketKey(placement.BoundsCenter.X, placement.BoundsCenter.Y);
+    }
 
     /// <summary>
     ///     Describes <paramref name="placements" /> as bucket ranges.

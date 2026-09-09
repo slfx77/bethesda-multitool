@@ -117,19 +117,23 @@ internal static class StarfieldPlanetDataTestData
         return payload;
     }
 
-    internal static byte[] Identifiers(uint systemId, uint parentPlanetId, uint planetId) =>
-        Concat(U32(systemId), U32(parentPlanetId), U32(planetId));
+    internal static byte[] Identifiers(uint systemId, uint parentPlanetId, uint planetId)
+    {
+        return Concat(U32(systemId), U32(parentPlanetId), U32(planetId));
+    }
 
     internal static byte[] Atmosphere(
         uint atmosphereFormId,
         float unknownFloat0,
         float unknownFloat1,
-        float unknownFloat2) =>
-        Concat(
+        float unknownFloat2)
+    {
+        return Concat(
             U32(atmosphereFormId),
             F32(unknownFloat0),
             F32(unknownFloat1),
             F32(unknownFloat2));
+    }
 
     internal static byte[] Subrecord(string signature, byte[] payload)
     {

@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Redguard;
 using BethesdaMultitool.Core.Imaging;
@@ -117,8 +113,10 @@ public sealed class RedguardTexBsiFileTests
         return [.. head, .. BitConverter.GetBytes((uint)body.Length), .. body];
     }
 
-    private static byte[] Build(params byte[][] images) =>
-        [.. images.SelectMany(static i => i), .. new byte[RedguardTexBsiFile.NameLength]];
+    private static byte[] Build(params byte[][] images)
+    {
+        return [.. images.SelectMany(static i => i), .. new byte[RedguardTexBsiFile.NameLength]];
+    }
 
     [Fact]
     public void Parse_StillImage_ReadsDimensionsAndPixels()
@@ -126,7 +124,8 @@ public sealed class RedguardTexBsiFileTests
         var file = RedguardTexBsiFile.Parse(Build(Still("A00000", 4, 3, 7)), "TEXBSI.000");
 
         var image = Assert.Single(file.Images);
-        Assert.Equal(("A00000", 4, 3, 1, false), (image.Name, image.Width, image.Height, image.FrameCount, image.IsAnimated));
+        Assert.Equal(("A00000", 4, 3, 1, false),
+            (image.Name, image.Width, image.Height, image.FrameCount, image.IsAnimated));
         Assert.Null(image.Palette);
         var frame = Assert.Single(image.Frames);
         Assert.Equal(12, frame.Indices.Length);
@@ -167,7 +166,7 @@ public sealed class RedguardTexBsiFileTests
         Assert.NotNull(palette);
 
         // 6-bit VGA: the ramp's last entry is 63, which promotes to 255 rather than staying 63.
-        Assert.Equal(Palette.EntryCount * 4, palette!.Rgba.Length);
+        Assert.Equal(Palette.EntryCount * 4, palette.Rgba.Length);
         Assert.Equal(255, palette.Rgba[255 * 4]);
     }
 
@@ -210,7 +209,8 @@ public sealed class RedguardTexBsiFileTests
         body.AddRange(Subrecord("DATA", new byte[15])); // one short of 16
         body.AddRange(Subrecord("END ", []));
 
-        Assert.Throws<InvalidDataException>(() => RedguardTexBsiFile.Parse(Build(Image("A00000", [.. body])), "BAD.000"));
+        Assert.Throws<InvalidDataException>(() =>
+            RedguardTexBsiFile.Parse(Build(Image("A00000", [.. body])), "BAD.000"));
     }
 
     [Fact]
@@ -219,7 +219,7 @@ public sealed class RedguardTexBsiFileTests
         var bytes = Build(Still("A00000", 2, 2, 1));
 
         // Inflate the DATA subrecord's big-endian length past the image body.
-        var dataLengthAt = RedguardTexBsiFile.NameLength + 4 + 8 + (8 + RedguardTexBsiFile.ImageHeaderLength) + 4;
+        var dataLengthAt = RedguardTexBsiFile.NameLength + 4 + 8 + 8 + RedguardTexBsiFile.ImageHeaderLength + 4;
         BinaryPrimitives.WriteUInt32BigEndian(bytes.AsSpan(dataLengthAt), 4096);
 
         Assert.Throws<InvalidDataException>(() => RedguardTexBsiFile.Parse(bytes, "BAD.000"));

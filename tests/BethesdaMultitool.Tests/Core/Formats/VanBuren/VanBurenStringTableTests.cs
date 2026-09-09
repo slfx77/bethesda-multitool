@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.VanBuren;
 using Xunit;
@@ -16,7 +13,7 @@ public sealed class VanBurenStringTableTests
 {
     private static byte[] Table(string[] strings, int trailing = 0, uint version = VanBurenStringTable.Version)
     {
-        var directory = VanBurenStringTable.HeaderLength + (strings.Length * VanBurenStringTable.RecordLength);
+        var directory = VanBurenStringTable.HeaderLength + strings.Length * VanBurenStringTable.RecordLength;
         var body = strings.Sum(s => s.Length);
         var b = new byte[directory + body + trailing];
 
@@ -27,10 +24,10 @@ public sealed class VanBurenStringTableTests
         var cursor = directory;
         for (var i = 0; i < strings.Length; i++)
         {
-            var at = VanBurenStringTable.HeaderLength + (i * VanBurenStringTable.RecordLength);
+            var at = VanBurenStringTable.HeaderLength + i * VanBurenStringTable.RecordLength;
             BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(at), (uint)cursor);
             BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(at + 4), (uint)strings[i].Length);
-            BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(at + 8), (uint)b.Length);   // the file length, repeated
+            BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(at + 8), (uint)b.Length); // the file length, repeated
             Encoding.ASCII.GetBytes(strings[i]).CopyTo(b.AsSpan(cursor));
             cursor += strings[i].Length;
         }
@@ -72,8 +69,7 @@ public sealed class VanBurenStringTableTests
     {
         // The strings must end exactly at EOF — that is what makes the walk a proof rather than a
         // plausible reading.
-        var error = Assert.Throws<InvalidDataException>(
-            () => VanBurenStringTable.Parse(Table(["x"], trailing: 4), "BAD.stf"));
+        var error = Assert.Throws<InvalidDataException>(() => VanBurenStringTable.Parse(Table(["x"], 4), "BAD.stf"));
         Assert.Contains("strings end at", error.Message, StringComparison.Ordinal);
     }
 
@@ -97,7 +93,7 @@ public sealed class VanBurenStringTableTests
     public void IsStringTable_AcceptsOnlyWhatTiles()
     {
         Assert.True(VanBurenStringTable.IsStringTable(Table(["x"])));
-        Assert.False(VanBurenStringTable.IsStringTable(Table(["x"], trailing: 1)));
+        Assert.False(VanBurenStringTable.IsStringTable(Table(["x"], 1)));
         Assert.False(VanBurenStringTable.IsStringTable("nope"u8.ToArray()));
     }
 }

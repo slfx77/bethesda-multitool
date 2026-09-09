@@ -158,7 +158,7 @@ internal sealed class RwBinMesh
             var indices = new uint[indexCount];
             for (var n = 0; n < indices.Length; n++)
             {
-                indices[n] = BinaryPrimitives.ReadUInt32LittleEndian(body[(position + (n * sizeof(uint)))..]);
+                indices[n] = BinaryPrimitives.ReadUInt32LittleEndian(body[(position + n * sizeof(uint))..]);
             }
 
             position += (int)indexCount * sizeof(uint);

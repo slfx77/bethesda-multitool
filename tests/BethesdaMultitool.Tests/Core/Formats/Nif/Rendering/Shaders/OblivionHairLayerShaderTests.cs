@@ -35,7 +35,8 @@ public sealed class OblivionHairLayerShaderTests
         var firstLayer = new Vector4(0f, 0f, 0f, 1f);
         var secondLayer = new Vector4(1f, 1f, 1f, 0f);
         var independentlyFiltered = RecoveredLayer(baseSample, Vector4.Lerp(firstLayer, secondLayer, 0.5f));
-        var flattened = Vector4.Lerp(RecoveredLayer(baseSample, firstLayer), RecoveredLayer(baseSample, secondLayer), 0.5f);
+        var flattened = Vector4.Lerp(RecoveredLayer(baseSample, firstLayer), RecoveredLayer(baseSample, secondLayer),
+            0.5f);
         VectorAssert.Equal(new Vector4(0.25f), independentlyFiltered);
         VectorAssert.Equal(new Vector4(0f, 0f, 0f, 0.25f), flattened);
         Assert.Equal(baseSample.W, independentlyFiltered.W);
@@ -59,7 +60,8 @@ public sealed class OblivionHairLayerShaderTests
         var operation = SourceContract.Extract(source,
             "    if (HasOblivionHairLayer(input.vTextureState.z))", "    // FO4/FO76 grayscale-to-palette");
         Assert.Contains("input.vTexIndices.z, materialUv, input.vTextureState.z", operation, StringComparison.Ordinal);
-        Assert.Contains("sample.rgb = lerp(sample.rgb, hairLayer.rgb, hairLayer.a);", operation, StringComparison.Ordinal);
+        Assert.Contains("sample.rgb = lerp(sample.rgb, hairLayer.rgb, hairLayer.a);", operation,
+            StringComparison.Ordinal);
         Assert.DoesNotContain("sample.a =", operation, StringComparison.Ordinal);
         Assert.DoesNotContain("saturate", operation, StringComparison.Ordinal);
         Assert.Equal(1, SourceContract.CountOccurrences(source, "if (HasOblivionHairLayer("));
@@ -86,11 +88,13 @@ public sealed class OblivionHairLayerShaderTests
         var viewer = ReadRenderingSource("D3D12/Viewer/BethesdaViewerStaticRenderer12.cs");
         Assert.Contains("submesh.ResolveAuxiliaryTextureIndex(_neutralTextureIndex)", viewer, StringComparison.Ordinal);
         var owner = ReadRenderingSource("D3D12/ReferenceMeshCache12.cs");
-        Assert.Contains("Acquire(textureCache.GetOrUpload(sub.OblivionHairLayerTexturePath!))", owner, StringComparison.Ordinal);
+        Assert.Contains("Acquire(textureCache.GetOrUpload(sub.OblivionHairLayerTexturePath!))", owner,
+            StringComparison.Ordinal);
         Assert.Contains("textureCache.Release(submesh.OblivionHairLayer);", owner, StringComparison.Ordinal);
         Assert.Contains("OblivionHairLayer = oblivionHairLayer", owner, StringComparison.Ordinal);
         var mapper = ReadRenderingSource("D3D12/ReferenceMeshDecoder12.cs");
-        Assert.Equal(2, SourceContract.CountOccurrences(mapper, "OblivionHairLayerTexturePath: sub.OblivionHairLayerTexturePath"));
+        Assert.Equal(2,
+            SourceContract.CountOccurrences(mapper, "OblivionHairLayerTexturePath: sub.OblivionHairLayerTexturePath"));
     }
 
     private static Vector4 RecoveredLayer(Vector4 baseSample, Vector4 layer)
@@ -100,6 +104,9 @@ public sealed class OblivionHairLayerShaderTests
         return new Vector4(rgb, baseSample.W);
     }
 
-    private static string ReadRenderingSource(string relative) => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", relative);
+    private static string ReadRenderingSource(string relative)
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", relative);
+    }
 }

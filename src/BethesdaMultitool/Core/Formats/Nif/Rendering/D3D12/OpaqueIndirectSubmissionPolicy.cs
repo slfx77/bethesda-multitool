@@ -12,7 +12,7 @@ internal enum OpaqueIndirectFallbackReason
     GeometryValidationEnabled,
     InsufficientRingHeadroom,
     ArgumentAllocationFailed,
-    SignatureUnavailable,
+    SignatureUnavailable
 }
 
 /// <summary>
@@ -63,12 +63,16 @@ internal static class OpaqueIndirectSubmissionPolicy
     internal static bool IsOrdinaryLane(
         bool depthWritingBlend,
         bool usesGrassDistanceEnvelope,
-        bool isDecal) =>
-        !depthWritingBlend && !usesGrassDistanceEnvelope && !isDecal;
+        bool isDecal)
+    {
+        return !depthWritingBlend && !usesGrassDistanceEnvelope && !isDecal;
+    }
 
     internal static bool BeginsNewRun<T>(int pendingCount, T? pendingPso, T nextPso)
-        where T : class =>
-        pendingCount > 0 && !ReferenceEquals(pendingPso, nextPso);
+        where T : class
+    {
+        return pendingCount > 0 && !ReferenceEquals(pendingPso, nextPso);
+    }
 }
 
 /// <summary>
@@ -81,17 +85,13 @@ internal struct OpaqueIndirectCommand12
 {
     internal const int ByteStride = 64;
 
-    [FieldOffset(0)]
-    internal ulong PerDrawCbAddress;
+    [FieldOffset(0)] internal ulong PerDrawCbAddress;
 
-    [FieldOffset(8)]
-    internal VertexBufferView VertexBufferView;
+    [FieldOffset(8)] internal VertexBufferView VertexBufferView;
 
-    [FieldOffset(24)]
-    internal IndexBufferView IndexBufferView;
+    [FieldOffset(24)] internal IndexBufferView IndexBufferView;
 
-    [FieldOffset(40)]
-    internal OpaqueIndirectDrawIndexedArguments Draw;
+    [FieldOffset(40)] internal OpaqueIndirectDrawIndexedArguments Draw;
 }
 
 [StructLayout(LayoutKind.Sequential)]

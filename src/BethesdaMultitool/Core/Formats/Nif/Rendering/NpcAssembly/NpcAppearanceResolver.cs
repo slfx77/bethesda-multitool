@@ -33,7 +33,7 @@ internal sealed class NpcAppearanceResolver
     /// <summary>Scans an ESM and builds a resolver over its NPC/creature/race/weapon records.</summary>
     public static NpcAppearanceResolver Build(byte[] esmData, bool bigEndian)
     {
-        return Build(esmData, bigEndian, timingSink: null, cancellationToken: default);
+        return Build(esmData, bigEndian, null, default);
     }
 
     internal static NpcAppearanceResolver Build(

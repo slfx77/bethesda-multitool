@@ -24,8 +24,8 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 /// </summary>
 internal sealed class GpuFixedFootprintTracker12 : ITrackableResource
 {
-    private readonly Lock _gate = new();
     private readonly Dictionary<long, (string Name, long Bytes)> _entries = new();
+    private readonly Lock _gate = new();
     private readonly GpuMemorySegment _segment;
     private long _nextId;
     private long _totalBytes;

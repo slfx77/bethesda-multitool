@@ -119,8 +119,13 @@ internal static class TerrainNormalPacking
     }
 
     /// <summary>+1 for zero, matching the shader's <c>x &gt;= 0 ? +1 : -1</c> so both folds agree.</summary>
-    private static float SignNotZero(float value) => value >= 0f ? 1f : -1f;
+    private static float SignNotZero(float value)
+    {
+        return value >= 0f ? 1f : -1f;
+    }
 
-    private static short Quantise(float value) =>
-        (short)MathF.Round(Math.Clamp(value, -1f, 1f) * SnormScale);
+    private static short Quantise(float value)
+    {
+        return (short)MathF.Round(Math.Clamp(value, -1f, 1f) * SnormScale);
+    }
 }

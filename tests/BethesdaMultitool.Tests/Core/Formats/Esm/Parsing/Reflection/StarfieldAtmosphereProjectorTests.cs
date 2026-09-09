@@ -36,7 +36,7 @@ public sealed class StarfieldAtmosphereProjectorTests
     public void Decode_Diff_ProjectsEarthParentAndClimateWhileSunRemainsAbsent()
     {
         Assert.True(StarfieldAtmosphereDecoder.TryDecode(
-            BuildDiffStream(parent: 0x0020CDD3, climate: 0x00064D14),
+            BuildDiffStream(0x0020CDD3, climate: 0x00064D14),
             StarfieldAtmospherePayloadKind.Diff,
             out var patch, out var error), error);
 
@@ -153,7 +153,7 @@ public sealed class StarfieldAtmosphereProjectorTests
     public void Decode_RejectsWrongReflectedRootClass()
     {
         Assert.False(StarfieldAtmosphereDecoder.TryDecode(
-            BuildFullStream(0, 0, 0, rootType: "BGSAtmosphereLookalike"),
+            BuildFullStream(0, 0, 0, "BGSAtmosphereLookalike"),
             StarfieldAtmospherePayloadKind.FullObject,
             out var patch, out var error));
 
@@ -297,7 +297,7 @@ public sealed class StarfieldAtmosphereProjectorTests
     }
 
     private static byte[] ClassChunk(
-        IReadOnlyDictionary<string, uint> offsets,
+        Dictionary<string, uint> offsets,
         string className,
         params (string Name, uint Type)[] fields)
     {
@@ -317,7 +317,7 @@ public sealed class StarfieldAtmosphereProjectorTests
         return Chunk("CLAS", [.. body]);
     }
 
-    private static byte[] ReflectionStream(byte[] strings, IReadOnlyList<byte[]> chunks)
+    private static byte[] ReflectionStream(byte[] strings, List<byte[]> chunks)
     {
         return Concat(
             Encoding.ASCII.GetBytes("BETH"), U32(8), U32(4), U32((uint)chunks.Count + 2),
@@ -330,13 +330,25 @@ public sealed class StarfieldAtmosphereProjectorTests
         return Concat(Encoding.ASCII.GetBytes(signature), U32((uint)body.Length), body);
     }
 
-    private static byte[] Ref(uint value) => Concat(U32(TypeUInt32), U32(value));
+    private static byte[] Ref(uint value)
+    {
+        return Concat(U32(TypeUInt32), U32(value));
+    }
 
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
-    private static byte[] U64(ulong value) => BitConverter.GetBytes(value);
+    private static byte[] U64(ulong value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {

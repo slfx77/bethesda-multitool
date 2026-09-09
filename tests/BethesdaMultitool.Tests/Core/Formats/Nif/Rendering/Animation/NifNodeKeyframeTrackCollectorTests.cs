@@ -121,13 +121,13 @@ public sealed class NifNodeKeyframeTrackCollectorTests
     private static NifTimeControllerHeader ReverseHeader()
     {
         return new NifTimeControllerHeader(
-            NextControllerRef: -1,
-            Flags: 0x000A,
-            Frequency: 1f,
-            Phase: 0f,
-            StartTime: 0f,
-            StopTime: 49.06667f,
-            TargetRef: 0);
+            -1,
+            0x000A,
+            1f,
+            0f,
+            0f,
+            49.06667f,
+            0);
     }
 
     private static NifNodeTrack MovingTrack(string name)

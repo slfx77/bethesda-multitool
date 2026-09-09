@@ -27,8 +27,8 @@ public sealed class FaceGenTextureMorpherTests
 
         Assert.NotNull(current);
         Assert.NotNull(quantized);
-        Assert.Equal(129, current!.Pixels[0]);
-        Assert.Equal(128, quantized!.Pixels[0]);
+        Assert.Equal(129, current.Pixels[0]);
+        Assert.Equal(128, quantized.Pixels[0]);
         Assert.Equal(128, current.Pixels[1]);
         Assert.Equal(128, quantized.Pixels[1]);
         Assert.Equal(128, current.Pixels[2]);
@@ -58,8 +58,8 @@ public sealed class FaceGenTextureMorpherTests
         Assert.NotNull(implicitTexture);
         Assert.NotNull(explicitTruncate);
         Assert.NotNull(explicitFloor);
-        Assert.Equal(explicitTruncate!.Pixels, implicitTexture!.Pixels);
-        Assert.NotEqual(explicitFloor!.Pixels[0], implicitTexture.Pixels[0]);
+        Assert.Equal(explicitTruncate.Pixels, implicitTexture.Pixels);
+        Assert.NotEqual(explicitFloor.Pixels[0], implicitTexture.Pixels[0]);
     }
 
     [Fact]
@@ -104,8 +104,8 @@ public sealed class FaceGenTextureMorpherTests
 
         Assert.NotNull(centered);
         Assert.NotNull(engineCompressed);
-        Assert.Equal(129, centered!.Pixels[0]);
-        Assert.Equal(128, engineCompressed!.Pixels[0]);
+        Assert.Equal(129, centered.Pixels[0]);
+        Assert.Equal(128, engineCompressed.Pixels[0]);
         Assert.Equal(128, centered.Pixels[1]);
         Assert.Equal(127, engineCompressed.Pixels[1]);
         Assert.Equal(128, centered.Pixels[2]);
@@ -130,7 +130,7 @@ public sealed class FaceGenTextureMorpherTests
         Assert.NotNull(viaApply);
         Assert.NotNull(encodedDelta);
         Assert.NotNull(viaEncodedDelta);
-        Assert.Equal(viaEncodedDelta!.Pixels, viaApply!.Pixels);
+        Assert.Equal(viaEncodedDelta.Pixels, viaApply.Pixels);
         Assert.Equal(99, viaApply.Pixels[0]);
         Assert.Equal(109, viaApply.Pixels[1]);
         Assert.Equal(119, viaApply.Pixels[2]);
@@ -145,7 +145,7 @@ public sealed class FaceGenTextureMorpherTests
         var applied = FaceGenTextureMorpher.ApplyEncodedDeltaTexture(baseTexture, deltaTexture);
 
         Assert.NotNull(applied);
-        for (var offset = 0; offset < applied!.Pixels.Length; offset += 4)
+        for (var offset = 0; offset < applied.Pixels.Length; offset += 4)
         {
             Assert.Equal(121, applied.Pixels[offset]);
             Assert.Equal(101, applied.Pixels[offset + 1]);

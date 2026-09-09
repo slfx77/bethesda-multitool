@@ -36,8 +36,10 @@ public sealed class LiveProfileWindowSourceContractTests
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3D",
             "WorldView3DControl.Profiling.cs");
 
-        var gpu = SourceContract.Extract(source, "private void EmitCompletedGpuFrames()", "private void EmitFrameStall");
-        var aggregate = SourceContract.Extract(source, "private void MaybeLogProfile", "private int BeginSceneSelection");
+        var gpu = SourceContract.Extract(source, "private void EmitCompletedGpuFrames()",
+            "private void EmitFrameStall");
+        var aggregate =
+            SourceContract.Extract(source, "private void MaybeLogProfile", "private int BeginSceneSelection");
         var frame = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "WorldView3D",
             "WorldView3DControl.Frame.cs");

@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -43,7 +39,7 @@ public sealed class OblivionPspResourceRetailTests
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP (cancelled betas)"));
 
         var packs = Directory
-            .EnumerateFiles(root!, "GR.ARC", SearchOption.AllDirectories)
+            .EnumerateFiles(root, "GR.ARC", SearchOption.AllDirectories)
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         Assert.SkipWhen(packs.Length == 0, "No GR.ARC packs are staged.");
@@ -107,7 +103,8 @@ public sealed class OblivionPspResourceRetailTests
         Assert.True(streams > 2_000, $"Only {streams} payloads resolved to a RenderWare stream.");
 
         // Forward: nothing outside the three types ever resolves.
-        Assert.Equal(RenderWareTypes.OrderBy(t => t, StringComparer.Ordinal), resolvedTypes.Order(StringComparer.Ordinal));
+        Assert.Equal(RenderWareTypes.OrderBy(t => t, StringComparer.Ordinal),
+            resolvedTypes.Order(StringComparer.Ordinal));
 
         // Reverse: none of the three types ever fails to resolve.
         Assert.Empty(unresolvedTypes.Intersect(RenderWareTypes, StringComparer.Ordinal));

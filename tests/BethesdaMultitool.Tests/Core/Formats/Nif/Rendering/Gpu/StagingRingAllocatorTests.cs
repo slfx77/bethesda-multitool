@@ -22,19 +22,25 @@ public sealed class StagingRingAllocatorTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void A_degenerate_capacity_is_rejected(long capacity) =>
+    public void A_degenerate_capacity_is_rejected(long capacity)
+    {
         Assert.Throws<ArgumentOutOfRangeException>(() => new StagingRingAllocator(capacity));
+    }
 
     [Fact]
-    public void A_capacity_below_the_alignment_is_rejected() =>
-        Assert.Throws<ArgumentOutOfRangeException>(() => new StagingRingAllocator(8, 16));
+    public void A_capacity_below_the_alignment_is_rejected()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new StagingRingAllocator(8));
+    }
 
     [Theory]
     [InlineData(0)]
     [InlineData(3)]
     [InlineData(24)]
-    public void A_non_power_of_two_alignment_is_rejected(int alignment) =>
+    public void A_non_power_of_two_alignment_is_rejected(int alignment)
+    {
         Assert.Throws<ArgumentOutOfRangeException>(() => new StagingRingAllocator(1024, alignment));
+    }
 
     [Fact]
     public void Sequential_requests_are_bumped_and_aligned()
@@ -70,8 +76,10 @@ public sealed class StagingRingAllocatorTests
     [Theory]
     [InlineData(0)]
     [InlineData(-16)]
-    public void A_degenerate_request_is_rejected(long bytes) =>
+    public void A_degenerate_request_is_rejected(long bytes)
+    {
         Assert.False(new StagingRingAllocator(1024).TryAllocate(bytes, out _, out _, out _));
+    }
 
     [Fact]
     public void A_full_ring_refuses_rather_than_overwriting_live_regions()

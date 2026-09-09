@@ -12,7 +12,7 @@ internal sealed class NifOblivionBodySkinSceneTestData
         Source = new NifOblivionBodySkinTestData(shapeName: "Tail");
         using var stream = new MemoryStream();
         stream.Write(Source.Data);
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
         WriteNode("root", "Scene Root", 2, [0]);
         WriteNode("bone", "Bip01 Tail01", 0x10, []);
         writer.Flush();
@@ -22,33 +22,53 @@ internal sealed class NifOblivionBodySkinSceneTestData
         {
             var start = checked((int)stream.Position);
             var bytes = Encoding.ASCII.GetBytes(name);
-            Mark("name"); writer.Write((uint)bytes.Length); writer.Write(bytes);
-            Mark("extras"); writer.Write(0u);
-            Mark("controller"); writer.Write(-1);
-            Mark("flags"); writer.Write(flags);
-            Mark("transform"); WriteVector(Vector3.Zero);
-            WriteVector(Vector3.UnitX); WriteVector(Vector3.UnitY); WriteVector(Vector3.UnitZ);
+            Mark("name");
+            writer.Write((uint)bytes.Length);
+            writer.Write(bytes);
+            Mark("extras");
+            writer.Write(0u);
+            Mark("controller");
+            writer.Write(-1);
+            Mark("flags");
+            writer.Write(flags);
+            Mark("transform");
+            WriteVector(Vector3.Zero);
+            WriteVector(Vector3.UnitX);
+            WriteVector(Vector3.UnitY);
+            WriteVector(Vector3.UnitZ);
             writer.Write(1f);
-            Mark("properties"); writer.Write(0u);
-            Mark("collision"); writer.Write(-1);
-            Mark("children"); writer.Write((uint)children.Length);
+            Mark("properties");
+            writer.Write(0u);
+            Mark("collision");
+            writer.Write(-1);
+            Mark("children");
+            writer.Write((uint)children.Length);
             foreach (var child in children)
             {
-                Mark("child"); writer.Write(child);
+                Mark("child");
+                writer.Write(child);
             }
-            Mark("effects"); writer.Write(0u);
+
+            Mark("effects");
+            writer.Write(0u);
             Source.Info.Blocks.Add(new BlockInfo
             {
                 Index = Source.Info.Blocks.Count, TypeName = "NiNode", DataOffset = start,
                 Size = checked((int)stream.Position) - start
             });
             Source.Info.BlockCount++;
-            void Mark(string field) => Offsets.Add(prefix + "-" + field, checked((int)stream.Position));
+
+            void Mark(string field)
+            {
+                Offsets.Add(prefix + "-" + field, checked((int)stream.Position));
+            }
         }
 
         void WriteVector(Vector3 value)
         {
-            writer.Write(value.X); writer.Write(value.Y); writer.Write(value.Z);
+            writer.Write(value.X);
+            writer.Write(value.Y);
+            writer.Write(value.Z);
         }
     }
 

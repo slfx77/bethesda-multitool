@@ -1,6 +1,4 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 
@@ -15,22 +13,22 @@ public class DaggerfallRmbBlockTests
             new DaggerfallBlockFixture.BlockData(
                 [new DaggerfallBlockFixture.Model(310, 6, 3, 10, 0, 20, 1024)],
                 [new DaggerfallBlockFixture.Flat(5, 6, 7, DaggerfallBlockFixture_Texture(197, 5), 42, 1)],
-                Section3: 2,
-                People: [new DaggerfallBlockFixture.Flat(1, 2, 3, DaggerfallBlockFixture_Texture(182, 3), 510, 0)],
-                Doors: [new DaggerfallBlockFixture.Door(100, 0, 200, 512, -512, 4)]),
+                2,
+                [new DaggerfallBlockFixture.Flat(1, 2, 3, DaggerfallBlockFixture_Texture(182, 3), 510, 0)],
+                [new DaggerfallBlockFixture.Door(100, 0, 200, 512, -512, 4)]),
             new DaggerfallBlockFixture.BlockData(
                 [new DaggerfallBlockFixture.Model(410, 0, 4, 0, 0, 0, 0)],
                 []),
-            Trailing: 0x96);
+            0x96);
         var house = new DaggerfallBlockFixture.SubRecord(3072, 512, 0, 0x11, 2,
             new DaggerfallBlockFixture.BlockData([new DaggerfallBlockFixture.Model(450, 1, 4, 0, 0, 0, 0)], []),
             new DaggerfallBlockFixture.BlockData([], []));
         return DaggerfallBlockFixture.Rmb("WALLAA03", [tavern, house],
-            misc3d: [new DaggerfallBlockFixture.Model(4, 1, 0, 2000, 0, 2000, 256)],
-            miscFlats: [new DaggerfallBlockFixture.Flat(9, 9, 9, DaggerfallBlockFixture_Texture(210, 1), 0, 2)],
-            groundTiles: Enumerable.Range(0, 256).Select(i => (byte)(i == 0 ? 0xC5 : i % 64)).ToArray(),
-            groundScenery: Enumerable.Range(0, 256).Select(i => (byte)(i == 17 ? 0x0B : 255)).ToArray(),
-            autoMap: Enumerable.Range(0, 4096).Select(i => (byte)(i == 100 ? 0x0F : 0)).ToArray());
+            [new DaggerfallBlockFixture.Model(4, 1, 0, 2000, 0, 2000, 256)],
+            [new DaggerfallBlockFixture.Flat(9, 9, 9, DaggerfallBlockFixture_Texture(210, 1), 0, 2)],
+            Enumerable.Range(0, 256).Select(i => (byte)(i == 0 ? 0xC5 : i % 64)).ToArray(),
+            Enumerable.Range(0, 256).Select(i => (byte)(i == 17 ? 0x0B : 255)).ToArray(),
+            Enumerable.Range(0, 4096).Select(i => (byte)(i == 100 ? 0x0F : 0)).ToArray());
     }
 
     private static ushort DaggerfallBlockFixture_Texture(int archive, int record)
@@ -80,7 +78,8 @@ public class DaggerfallRmbBlockTests
         var person = Assert.Single(exterior.People);
         Assert.Equal((182, 3, 510), (person.TextureArchive, person.TextureRecord, person.FactionId));
         var door = Assert.Single(exterior.Doors);
-        Assert.Equal((100, 200, 512, -512, 4, 0x77), (door.XPos, door.ZPos, door.YRotation, door.OpenRotation, door.DoorModelIndex, door.Unknown));
+        Assert.Equal((100, 200, 512, -512, 4, 0x77),
+            (door.XPos, door.ZPos, door.YRotation, door.OpenRotation, door.DoorModelIndex, door.Unknown));
 
         Assert.Equal(41000u, Assert.Single(tavern.Interior.Models).ModelId);
         Assert.Empty(block.SubRecords[1].Interior.Models);
@@ -95,7 +94,7 @@ public class DaggerfallRmbBlockTests
     {
         var block = DaggerfallRmbBlock.Parse(TwoBuildingBlock(), "WALLAA03.RMB");
 
-        Assert.Equal("GRND", System.Text.Encoding.ASCII.GetString(block.GroundHeader.Span[..4]));
+        Assert.Equal("GRND", Encoding.ASCII.GetString(block.GroundHeader.Span[..4]));
         var corner = block.GroundTileAt(0, 0);
         Assert.Equal(0xC5, corner.Raw);
         Assert.Equal(5, corner.TextureRecord);
@@ -129,11 +128,11 @@ public class DaggerfallRmbBlockTests
         Assert.Throws<InvalidDataException>(() => DaggerfallRmbBlock.Parse(oversized, "X.RMB"));
 
         // Two trailing bytes after the interior set: retail leaves at most one.
-        var declared = System.BitConverter.ToInt32(bytes, 1603);
+        var declared = BitConverter.ToInt32(bytes, 1603);
         var padded = new List<byte>(bytes);
         padded.Insert(6776 + declared, 0x00);
         var paddedBytes = padded.ToArray();
-        System.BitConverter.GetBytes(declared + 1).CopyTo(paddedBytes, 1603);
+        BitConverter.GetBytes(declared + 1).CopyTo(paddedBytes, 1603);
         Assert.Throws<InvalidDataException>(() => DaggerfallRmbBlock.Parse(paddedBytes, "X.RMB"));
 
         // A loose-model count the record cannot hold.

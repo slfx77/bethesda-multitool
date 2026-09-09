@@ -99,8 +99,7 @@ public sealed class WaterAppearanceSelectionResolverTests
             new CellRecord { FormId = 0x10, WaterFormId = null },
             null,
             Index(interiorDefault, exteriorDefault),
-            BethesdaGame.FalloutNewVegas,
-            false);
+            BethesdaGame.FalloutNewVegas);
 
         Assert.Same(exteriorDefault, result.Water);
         Assert.Equal(WaterAppearanceSelectionSource.EngineDefault, result.Source);

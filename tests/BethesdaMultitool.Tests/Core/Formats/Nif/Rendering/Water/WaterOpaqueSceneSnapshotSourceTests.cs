@@ -139,7 +139,8 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
             "public bool TryPrepareWaterOpaqueSnapshot(");
         Assert.Contains("_waterOpaqueCopy = _gpu.Device.CreateCommittedResource", lazyEnsure,
             StringComparison.Ordinal);
-        Assert.Contains("sampleCount: 1", lazyEnsure, StringComparison.Ordinal);
+        SourceContract.AssertContainsIgnoringWhitespace(
+            "ResourceDescription.Texture2D(ColorFormat, (uint)Width, (uint)Height, 1, 1, 1, 0)", lazyEnsure);
         Assert.Contains("ResourceStates.CopyDest", lazyEnsure, StringComparison.Ordinal);
         Assert.Contains("catch (Exception ex)", lazyEnsure, StringComparison.Ordinal);
 

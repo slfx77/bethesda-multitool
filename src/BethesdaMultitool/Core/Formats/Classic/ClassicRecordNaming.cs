@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace BethesdaMultitool.Core.Formats.Classic;
 
 /// <summary>Naming helpers shared by the classic record sources.</summary>
@@ -11,7 +13,7 @@ internal static class ClassicRecordNaming
     {
         ArgumentNullException.ThrowIfNull(name);
 
-        var builder = new System.Text.StringBuilder(name.Length);
+        var builder = new StringBuilder(name.Length);
         foreach (var character in name)
         {
             builder.Append(char.IsLetterOrDigit(character) ? character : '_');

@@ -70,6 +70,7 @@ internal static class NifAnimationParser
         {
             return null;
         }
+
         var numBlocks = BinaryUtils.ReadInt32(data, pos, be);
         pos += 4;
         if (numBlocks <= 0 || numBlocks > 500)
@@ -82,7 +83,7 @@ internal static class NifAnimationParser
         var controlledBlockStride = isOblivionPaletteLayout
             ? OblivionControlledBlockStride
             : ModernControlledBlockStride;
-        var afterBlocksLong = (long)pos + (long)numBlocks * controlledBlockStride;
+        var afterBlocksLong = pos + (long)numBlocks * controlledBlockStride;
         if (afterBlocksLong > sequenceEnd)
         {
             return null;
@@ -211,7 +212,7 @@ internal static class NifAnimationParser
 
     private static bool IsOblivionPaletteSequence(NifInfo nif)
     {
-        return (nif.BinaryVersion is NifVersions.Gamebryo20004 or NifVersions.Gamebryo20005) &&
+        return nif.BinaryVersion is NifVersions.Gamebryo20004 or NifVersions.Gamebryo20005 &&
                nif.BsVersion == OblivionBsVersion &&
                nif.UserVersion is 10 or 11 &&
                nif.HasInlineStrings &&
@@ -232,7 +233,7 @@ internal static class NifAnimationParser
 
         var length = BinaryUtils.ReadUInt32(data, pos, false);
         pos += 4;
-        if (length > MaxInlineStringBytes || (long)pos + length > end)
+        if (length > MaxInlineStringBytes || pos + length > end)
         {
             return false;
         }
@@ -266,7 +267,7 @@ internal static class NifAnimationParser
 
         var paletteLength = BinaryUtils.ReadUInt32(data, palette.DataOffset, false);
         var payloadStart = palette.DataOffset + 4;
-        var payloadEndLong = (long)payloadStart + paletteLength;
+        var payloadEndLong = payloadStart + paletteLength;
         if (paletteLength > int.MaxValue ||
             payloadEndLong + 4L != (long)palette.DataOffset + palette.Size ||
             payloadEndLong + 4L > data.LongLength)

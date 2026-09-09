@@ -283,7 +283,8 @@ internal static class WorldViewCaptureTelemetry
         try
         {
             var length = checked((resolution - 1) * (int)rowPitch + resolution * sizeof(float));
-            return ShadowMapFingerprint.Compute(new ReadOnlySpan<byte>(data, length), resolution, checked((int)rowPitch));
+            return ShadowMapFingerprint.Compute(new ReadOnlySpan<byte>(data, length), resolution,
+                checked((int)rowPitch));
         }
         finally
         {

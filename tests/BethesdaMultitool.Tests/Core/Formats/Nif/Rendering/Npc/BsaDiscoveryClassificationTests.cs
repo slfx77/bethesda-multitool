@@ -1,9 +1,9 @@
+using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Tests.Helpers;
-using System.Text;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Npc;
@@ -33,13 +33,13 @@ public class BsaDiscoveryClassificationTests
     {
         var fullPath = Path.Combine(dir, fileName);
         using var stream = File.Create(fullPath);
-        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, true);
         writer.Write("BTDX"u8.ToArray());
         writer.Write(1u);
         writer.Write("GNRL"u8.ToArray());
         writer.Write((uint)virtualPaths.Length);
         writer.Write((ulong)(24 + virtualPaths.Length * 36));
-        foreach (var path in virtualPaths)
+        for (var index = 0; index < virtualPaths.Length; index++)
         {
             writer.Write(0u); // name hash
             writer.Write("bin\0"u8.ToArray());

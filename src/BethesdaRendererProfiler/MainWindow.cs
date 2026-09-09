@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using Windows.Graphics;
 using Windows.UI;
 using BethesdaMultitool;
@@ -9,12 +10,12 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
+using BethesdaMultitool.Core.WorldData;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaRendererProfiler;
 
@@ -29,8 +30,8 @@ internal sealed partial class MainWindow : Window, IDisposable
     private CancellationTokenSource? _acceptanceScenarioCancellation;
     private bool _disposed;
     private bool _exiting;
-    private RendererProfilerCameraPose? _profileEndCapturePose;
     private float _profileEndCaptureFovDegrees;
+    private RendererProfilerCameraPose? _profileEndCapturePose;
     private (int Width, int Height)? _profileEndCaptureViewport;
     private Renderer3DScenario? _scenario;
     private bool _started;
@@ -50,6 +51,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             // cold-streaming aggregates before the asynchronous Loaded handler reaches the gate.
             _worldView.Profiler_PauseProfileWindow();
         }
+
         _worldView.Loaded += OnWorldViewLoaded;
 
         _statusText = new TextBlock
@@ -81,6 +83,8 @@ internal sealed partial class MainWindow : Window, IDisposable
         }
 
         _disposed = true;
+        _worldView.Loaded -= OnWorldViewLoaded;
+        Closed -= OnClosed;
         _timedExitTimer?.Stop();
         _timedExitTimer = null;
         _acceptanceScenarioCancellation?.Cancel();
@@ -155,7 +159,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 
     private async void OnWorldViewLoaded(object sender, RoutedEventArgs e)
     {
-        if (_started)
+        if (_started || _disposed)
         {
             return;
         }
@@ -166,12 +170,21 @@ internal sealed partial class MainWindow : Window, IDisposable
             SetStatus("Loading renderer data...");
             var progress = new Progress<string>(message =>
             {
+                if (_disposed)
+                {
+                    return;
+                }
+
                 SetStatus(message);
                 Log.Info(message);
             });
 
             var data = await Task.Run(async () =>
                 await RendererProfilerDataLoader.LoadAsync(_options, progress));
+            if (_disposed)
+            {
+                return;
+            }
 
             SetStatus("Opening 3D viewer...");
             _worldView.LoadData(data);
@@ -194,7 +207,13 @@ internal sealed partial class MainWindow : Window, IDisposable
                 return;
             }
 
-            if (!await WaitForProfileSceneReadyAsync())
+            var sceneReady = await WaitForProfileSceneReadyAsync();
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (!sceneReady)
             {
                 Log.Error("Renderer profiler scene did not become ready before the 30-second timeout.");
                 ExitProfiler("scene-ready-timeout", 1);
@@ -205,6 +224,11 @@ internal sealed partial class MainWindow : Window, IDisposable
             {
                 _acceptanceScenarioCancellation = new CancellationTokenSource();
                 var result = await RunAcceptanceScenarioAsync(_acceptanceScenarioCancellation.Token);
+                if (_disposed)
+                {
+                    return;
+                }
+
                 ExitProfiler(result.Reason, result.ExitCode);
                 return;
             }
@@ -257,6 +281,11 @@ internal sealed partial class MainWindow : Window, IDisposable
             {
                 var settled = await WaitForProfileSceneSettledAsync(
                     TimeSpan.FromSeconds(profileSettleTimeoutSeconds));
+                if (_disposed)
+                {
+                    return;
+                }
+
                 if (!settled)
                 {
                     ExitProfiler("profile-settle-timeout", 3);
@@ -286,8 +315,8 @@ internal sealed partial class MainWindow : Window, IDisposable
                 _profileEndCapturePose = _worldView.Profiler_CameraPose;
                 _profileEndCaptureFovDegrees = _worldView.Profiler_CameraFovDegrees;
                 _profileEndCaptureViewport = _worldView.Profiler_ViewportPixelSize ??
-                    throw new InvalidOperationException(
-                        "The scored D3D12 viewport was unavailable for --profile-end-capture.");
+                                             throw new InvalidOperationException(
+                                                 "The scored D3D12 viewport was unavailable for --profile-end-capture.");
                 Log.Info(
                     "Profiler: deterministic end capture armed at {0}x{1}, animation={2:0.###}s -> {3}",
                     _profileEndCaptureViewport.Value.Width,
@@ -302,6 +331,11 @@ internal sealed partial class MainWindow : Window, IDisposable
         }
         catch (Exception ex)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             _progressBar.IsIndeterminate = false;
             SetStatus($"Failed: {ex.GetType().Name}: {ex.Message}");
             Log.Error("Renderer profiler startup failed: {0}", ex);
@@ -366,7 +400,7 @@ internal sealed partial class MainWindow : Window, IDisposable
     private async Task<bool> WaitForProfileSceneReadyAsync()
     {
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
-        while (!_worldView.Profiler_IsSceneReady && DateTime.UtcNow < deadline)
+        while (!_disposed && !_worldView.Profiler_IsSceneReady && DateTime.UtcNow < deadline)
         {
             // Yield the UI thread so WorldspaceComboBox_SelectionChanged can resume after its
             // deliberate Task.Yield, build the spatial index, reset the camera, and apply the
@@ -374,7 +408,7 @@ internal sealed partial class MainWindow : Window, IDisposable
             await Task.Delay(25);
         }
 
-        return _worldView.Profiler_IsSceneReady;
+        return !_disposed && _worldView.Profiler_IsSceneReady;
     }
 
     private async Task<bool> WaitForProfileSceneSettledAsync(TimeSpan timeout)
@@ -394,6 +428,11 @@ internal sealed partial class MainWindow : Window, IDisposable
         while (timer.Elapsed < timeout)
         {
             await Task.Delay(TimeSpan.FromMilliseconds(250));
+            if (_disposed)
+            {
+                return false;
+            }
+
             var frame = _worldView.Profiler_FrameIndex;
             if (frame > lastObservedFrame)
             {
@@ -584,10 +623,10 @@ internal sealed partial class MainWindow : Window, IDisposable
                     // ground), so it stays comparable with what the map shows;
                     // --capture-topdown-terrain-color opts into the batch path's self-contained
                     // colored-terrain image for evidence captures of specific cells.
-                    includeTerrainColor: _options.CaptureTopDownTerrainColor,
-                    projection: TopDownProjection.Straight,
-                    contentWorldZ: null,
-                    trimetricYawDegrees: TrimetricViewProjBuilder.YawDegrees,
+                    _options.CaptureTopDownTerrainColor,
+                    TopDownProjection.Straight,
+                    null,
+                    TrimetricViewProjBuilder.YawDegrees,
                     CancellationToken.None);
                 if (render is null)
                 {
@@ -750,10 +789,9 @@ internal sealed partial class MainWindow : Window, IDisposable
                 LogCaptureScopeState(
                     "activated",
                     _worldView.Profiler_CaptureSceneCensus,
-                    lastUnsettledTerms: "",
-                    referenceBatchBuildTrigger:
-                        _worldView.Profiler_ReferenceStats?.ReferenceBatchBuildTrigger ?? 0,
-                    gateAccepted: false);
+                    "",
+                    _worldView.Profiler_ReferenceStats?.ReferenceBatchBuildTrigger ?? 0,
+                    false);
             }
 
             Console.WriteLine(
@@ -849,7 +887,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                     census,
                     lastDirt,
                     finalReferenceBatchTrigger,
-                    gateAccepted: false);
+                    false);
                 timeoutFields["timeoutSeconds"] = _options.CaptureSettleTimeoutSeconds;
                 timeoutFields["elapsedMilliseconds"] = quiesceTimer.ElapsedMilliseconds;
                 timeoutFields["requestedWorldspace"] = _options.CaptureWorldspaceName;
@@ -911,7 +949,7 @@ internal sealed partial class MainWindow : Window, IDisposable
                     census,
                     lastDirt,
                     finalReferenceBatchTrigger,
-                    gateAccepted: false);
+                    false);
                 driftFields["requestedCameraX"] = framedPose.Position.X;
                 driftFields["requestedCameraY"] = framedPose.Position.Y;
                 driftFields["requestedCameraZ"] = framedPose.Position.Z;
@@ -1085,10 +1123,11 @@ internal sealed partial class MainWindow : Window, IDisposable
                          census,
                          lastDirt,
                          finalReferenceBatchTrigger,
-                         gateAccepted: true))
+                         true))
             {
                 captureFields[key] = value;
             }
+
             RendererProfilerTrace.Event("capture-image", captureFields);
         }
         catch (Exception ex)
@@ -1298,7 +1337,7 @@ internal sealed partial class MainWindow : Window, IDisposable
     {
         const ulong prime = 1099511628211UL;
         var hash = 14695981039346656037UL;
-        var words = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, ulong>(bgra.AsSpan());
+        var words = MemoryMarshal.Cast<byte, ulong>(bgra.AsSpan());
         foreach (var word in words)
         {
             hash = (hash ^ word) * prime;
@@ -1605,7 +1644,7 @@ internal sealed partial class MainWindow : Window, IDisposable
 
     private void ExitProfiler(string message, int exitCode = 0)
     {
-        if (_exiting)
+        if (_exiting || _disposed)
         {
             return;
         }

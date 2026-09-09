@@ -1,6 +1,5 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.FileFormat;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Analysis;

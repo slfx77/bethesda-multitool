@@ -279,13 +279,13 @@ internal static class NifControllerSequenceTrackCollector
 
         if (!tracksByNode.Values.Any(static track => track.HasMotion) ||
             NifAnimationRigBuilder.Build(
-                data,
-                nif,
-                nodeChildren,
-                shapeSkinInstanceMap,
-                tracksByNode,
-                preserveFileRootTransformAndTrack)
-            is not var (bones, tracks))
+                    data,
+                    nif,
+                    nodeChildren,
+                    shapeSkinInstanceMap,
+                    tracksByNode,
+                    preserveFileRootTransformAndTrack)
+                is not var (bones, tracks))
         {
             return null;
         }
@@ -301,7 +301,7 @@ internal static class NifControllerSequenceTrackCollector
 
     private static bool IsOblivionPaletteSequenceStream(NifInfo nif)
     {
-        return (nif.BinaryVersion is NifVersions.Gamebryo20004 or NifVersions.Gamebryo20005) &&
+        return nif.BinaryVersion is NifVersions.Gamebryo20004 or NifVersions.Gamebryo20005 &&
                nif.BsVersion == OblivionBsVersion &&
                nif.UserVersion is 10 or 11 &&
                nif.HasInlineStrings &&
@@ -464,7 +464,7 @@ internal static class NifControllerSequenceTrackCollector
         foreach (var nodeIndex in nodeChildren.Keys)
         {
             if (NifBlockParsers.ReadBlockName(data, nif.Blocks[nodeIndex], nif) is not
-                { Length: > 0 } name || ambiguous.Contains(name))
+                    { Length: > 0 } name || ambiguous.Contains(name))
             {
                 continue;
             }

@@ -176,29 +176,35 @@ internal static class StarfieldSunPresetResolver
         }
     }
 
-    private static ReadOnlyCollection<uint> RootwardChain(IReadOnlyList<uint> targetFirstTraversal) =>
-        Array.AsReadOnly(targetFirstTraversal.Reverse().ToArray());
+    private static ReadOnlyCollection<uint> RootwardChain(IReadOnlyList<uint> targetFirstTraversal)
+    {
+        return Array.AsReadOnly(targetFirstTraversal.Reverse().ToArray());
+    }
 
-    private static bool IsComplete(StarfieldSunPresetPatch patch) =>
-        patch.ParentFormId.HasValue &&
-        IsComplete(patch.SunColor) &&
-        patch.SunIlluminance.HasValue &&
-        IsComplete(patch.SunGlareColor) &&
-        patch.SunDiskTexture is not null &&
-        patch.SunDiskScreenSizeMin.HasValue &&
-        patch.SunDiskScreenSizeMax.HasValue &&
-        patch.DuskDawnPreset is
-        {
-            TransitionStartAngle: not null,
-            TransitionEndAngle: not null
-        } dawnDusk &&
-        IsComplete(dawnDusk.DirectionalColor) &&
-        patch.NightPreset is { DirectionalIlluminance: not null } night &&
-        IsComplete(night.DirectionalColor) &&
-        IsComplete(night.GlareColor);
+    private static bool IsComplete(StarfieldSunPresetPatch patch)
+    {
+        return patch.ParentFormId.HasValue &&
+               IsComplete(patch.SunColor) &&
+               patch.SunIlluminance.HasValue &&
+               IsComplete(patch.SunGlareColor) &&
+               patch.SunDiskTexture is not null &&
+               patch.SunDiskScreenSizeMin.HasValue &&
+               patch.SunDiskScreenSizeMax.HasValue &&
+               patch.DuskDawnPreset is
+               {
+                   TransitionStartAngle: not null,
+                   TransitionEndAngle: not null
+               } dawnDusk &&
+               IsComplete(dawnDusk.DirectionalColor) &&
+               patch.NightPreset is { DirectionalIlluminance: not null } night &&
+               IsComplete(night.DirectionalColor) &&
+               IsComplete(night.GlareColor);
+    }
 
-    private static bool IsComplete(StarfieldSunPresetFloat4Patch? value) =>
-        value is { X: not null, Y: not null, Z: not null, W: not null };
+    private static bool IsComplete(StarfieldSunPresetFloat4Patch? value)
+    {
+        return value is { X: not null, Y: not null, Z: not null, W: not null };
+    }
 
     private static StarfieldSunPresetPatch Merge(
         StarfieldSunPresetPatch inherited,

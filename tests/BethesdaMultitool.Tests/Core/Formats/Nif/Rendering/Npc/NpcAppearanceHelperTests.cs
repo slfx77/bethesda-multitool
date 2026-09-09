@@ -1161,7 +1161,7 @@ public sealed class NpcAppearanceHelperTests
         var meshesBsa = FindXboxFinalMeshesBsa();
         Assert.NotNull(meshesBsa);
 
-        using var meshArchives = MeshArchiveSet.Open(meshesBsa!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsa, null);
 
         var idleBoneTransforms = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
@@ -1193,7 +1193,7 @@ public sealed class NpcAppearanceHelperTests
         var meshesBsa = FindXboxFinalMeshesBsa();
         Assert.NotNull(meshesBsa);
 
-        using var meshArchives = MeshArchiveSet.Open(meshesBsa!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsa, null);
 
         var idleBoneTransforms = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
@@ -1225,7 +1225,7 @@ public sealed class NpcAppearanceHelperTests
         var meshesBsa = FindXboxFinalMeshesBsa();
         Assert.NotNull(meshesBsa);
 
-        using var meshArchives = MeshArchiveSet.Open(meshesBsa!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsa, null);
 
         var idleBoneTransforms = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
@@ -1294,7 +1294,7 @@ public sealed class NpcAppearanceHelperTests
             idleKf.Value.Info);
 
         Assert.NotNull(equipOverrides);
-        Assert.Contains(equipOverrides!.Keys, k => string.Equals(k, "Weapon", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(equipOverrides.Keys, k => string.Equals(k, "Weapon", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(equipOverrides.Keys, k => string.Equals(k, "Bip01 R Hand", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(equipOverrides.Keys,
             k => string.Equals(k, "Bip01 R Forearm", StringComparison.OrdinalIgnoreCase));
@@ -1352,7 +1352,7 @@ public sealed class NpcAppearanceHelperTests
 
         var resolvedWeaponWorld = NpcWeaponAttachmentResolver.ResolveWeaponHolsterAttachmentTransform(
             naiveWorldTransforms,
-            equipOverrides!,
+            equipOverrides,
             skeleton.Value.Data,
             skeleton.Value.Info,
             "Weapon",
@@ -1378,7 +1378,7 @@ public sealed class NpcAppearanceHelperTests
             equipKf.Value.Info,
             true);
         Assert.NotNull(equipOverrides);
-        Assert.Contains("Weapon", equipOverrides!.Keys, StringComparer.OrdinalIgnoreCase);
+        Assert.Contains("Weapon", equipOverrides.Keys, StringComparer.OrdinalIgnoreCase);
 
         var foreTwistWorldTransforms = new Dictionary<string, Matrix4x4>(StringComparer.OrdinalIgnoreCase)
         {
@@ -1418,7 +1418,7 @@ public sealed class NpcAppearanceHelperTests
         Assert.NotNull(holsterOverrides);
         Assert.Equal("Bip01 Spine2", parentOverride);
 
-        var weaponPose = Assert.Contains("Weapon", holsterOverrides!);
+        var weaponPose = Assert.Contains("Weapon", holsterOverrides);
         Assert.True(weaponPose.HasTranslation);
         Assert.Equal(16.985f, weaponPose.Tx, 3);
         Assert.Equal(-12.076f, weaponPose.Ty, 3);
@@ -1637,8 +1637,8 @@ public sealed class NpcAppearanceHelperTests
             var candidate = Path.Combine(
                 dir,
                 "Sample",
-                "Full_Builds",
-                "Fallout New Vegas (360 Final)",
+                "Builds",
+                "Fallout - New Vegas (2010-10-19, X360 - Final)",
                 "Data",
                 "Fallout - Meshes.bsa");
             if (File.Exists(candidate))
@@ -1651,8 +1651,8 @@ public sealed class NpcAppearanceHelperTests
 
         var fallback = Path.Combine(
             "Sample",
-            "Full_Builds",
-            "Fallout New Vegas (360 Final)",
+            "Builds",
+            "Fallout - New Vegas (2010-10-19, X360 - Final)",
             "Data",
             "Fallout - Meshes.bsa");
         return File.Exists(fallback) ? Path.GetFullPath(fallback) : null;

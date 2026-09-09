@@ -260,12 +260,12 @@ public sealed class AssetPathRewriteFixedPointTests : IDisposable
             var normalized = AssetPathRules.TryNormalizeRequestPath(value);
             Assert.NotNull(normalized);
 
-            var resolution = resolver.Resolve(normalized!);
+            var resolution = resolver.Resolve(normalized);
             Assert.NotEqual(AssetResolutionKind.Missing, resolution.Kind);
 
             var predicted = PrototypeAssetConverter.PredictPackedPath(
-                normalized!,
-                resolution.Source?.NormalizedPath ?? normalized!,
+                normalized,
+                resolution.Source?.NormalizedPath ?? normalized,
                 resolution.Source?.IsXbox360 ?? false);
 
             Assert.Equal(normalized, predicted);

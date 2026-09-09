@@ -24,6 +24,12 @@ internal static class GpuResourceFootprint
     public const long CommittedBufferAlignment = 64L * 1024L;
 
     /// <summary>
+    ///     Sub-region alignment inside a geometry/terrain arena block
+    ///     (<c>GeometryArenaAllocator</c>'s default).
+    /// </summary>
+    public const int ArenaRegionAlignment = 16;
+
+    /// <summary>
     ///     Bytes actually charged for a committed buffer of <paramref name="requestedBytes" /> —
     ///     the request rounded up to <see cref="CommittedBufferAlignment" />. Zero stays zero;
     ///     negative input is treated as zero.
@@ -39,14 +45,10 @@ internal static class GpuResourceFootprint
     }
 
     /// <summary>Combined charge for two committed buffers, each rounded independently (as D3D12 does).</summary>
-    public static long CommittedBufferBytes(long firstBytes, long secondBytes) =>
-        CommittedBufferBytes(firstBytes) + CommittedBufferBytes(secondBytes);
-
-    /// <summary>
-    ///     Sub-region alignment inside a geometry/terrain arena block
-    ///     (<c>GeometryArenaAllocator</c>'s default).
-    /// </summary>
-    public const int ArenaRegionAlignment = 16;
+    public static long CommittedBufferBytes(long firstBytes, long secondBytes)
+    {
+        return CommittedBufferBytes(firstBytes) + CommittedBufferBytes(secondBytes);
+    }
 
     /// <summary>
     ///     Bytes an arena charges for two streams packed into ONE sub-allocation: the first stream
@@ -70,6 +72,8 @@ internal static class GpuResourceFootprint
         return AlignUp(AlignUp(first, ArenaRegionAlignment) + second, ArenaRegionAlignment);
     }
 
-    private static long AlignUp(long value, int alignment) =>
-        (value + alignment - 1) & ~((long)alignment - 1);
+    private static long AlignUp(long value, int alignment)
+    {
+        return (value + alignment - 1) & ~((long)alignment - 1);
+    }
 }

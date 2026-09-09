@@ -26,7 +26,7 @@ internal static class NpcActorListPolicy
             .Where(actor =>
                 string.IsNullOrEmpty(searchText) ||
                 actor.DisplayName.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
-                (actor.EditorId?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true) ||
+                actor.EditorId?.Contains(searchText, StringComparison.OrdinalIgnoreCase) == true ||
                 $"0x{actor.FormId:X8}".Contains(searchText, StringComparison.OrdinalIgnoreCase))
             .OrderBy(actor => actor.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();

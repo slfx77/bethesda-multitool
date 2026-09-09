@@ -18,8 +18,10 @@ public sealed class GpuResourceFootprintTests
     [InlineData(65_536, 65_536)] // exact multiples are not rounded up a page
     [InlineData(65_537, 131_072)]
     [InlineData(131_072, 131_072)]
-    public void CommittedBufferBytes_rounds_up_to_the_placement_alignment(long requested, long expected) =>
+    public void CommittedBufferBytes_rounds_up_to_the_placement_alignment(long requested, long expected)
+    {
         Assert.Equal(expected, GpuResourceFootprint.CommittedBufferBytes(requested));
+    }
 
     [Fact]
     public void A_negative_request_is_treated_as_zero()
@@ -66,12 +68,16 @@ public sealed class GpuResourceFootprintTests
     [InlineData(17, 0, 32)]
     [InlineData(78_408, 69_696, 148_112)] // 33-grid: 78,408 is 16-aligned; total padded to 148,112
     public void ArenaSubAllocationBytes_pads_the_first_stream_then_the_whole_range(
-        long first, long second, long expected) =>
+        long first, long second, long expected)
+    {
         Assert.Equal(expected, GpuResourceFootprint.ArenaSubAllocationBytes(first, second));
+    }
 
     [Fact]
-    public void ArenaSubAllocationBytes_treats_negative_inputs_as_zero() =>
+    public void ArenaSubAllocationBytes_treats_negative_inputs_as_zero()
+    {
         Assert.Equal(0, GpuResourceFootprint.ArenaSubAllocationBytes(-1, -1));
+    }
 
     [Fact]
     public void Arena_suballocation_is_dramatically_cheaper_than_two_committed_buffers()

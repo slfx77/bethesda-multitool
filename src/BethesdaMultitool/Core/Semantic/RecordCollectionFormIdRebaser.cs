@@ -166,13 +166,20 @@ internal static class RecordCollectionFormIdRebaser
         if (value is WeatherTimeBands<uint> weatherFormIds &&
             EsmFormIdPropertyRegistry.IsFormIdProperty(propertyName))
         {
-            uint MapRequired(uint formId) => formId == 0 ? 0 : mapFormId(formId);
-            uint? MapOptional(uint? formId) => formId switch
+            uint MapRequired(uint formId)
             {
-                null => null,
-                0 => 0,
-                _ => mapFormId(formId.Value)
-            };
+                return formId == 0 ? 0 : mapFormId(formId);
+            }
+
+            uint? MapOptional(uint? formId)
+            {
+                return formId switch
+                {
+                    null => null,
+                    0 => 0,
+                    _ => mapFormId(formId.Value)
+                };
+            }
 
             return new WeatherTimeBands<uint>(
                 MapRequired(weatherFormIds.Sunrise),
@@ -300,8 +307,9 @@ internal static class RecordCollectionFormIdRebaser
     }
 
     private static StarfieldSunPresetFloat4Patch? CloneSunPresetFloat4(
-        StarfieldSunPresetFloat4Patch? source) =>
-        source is null
+        StarfieldSunPresetFloat4Patch? source)
+    {
+        return source is null
             ? null
             : new StarfieldSunPresetFloat4Patch
             {
@@ -310,13 +318,16 @@ internal static class RecordCollectionFormIdRebaser
                 Z = source.Z,
                 W = source.W
             };
+    }
 
     private static StarfieldCurve3DDefinition CloneCurve3DDefinition(
-        StarfieldCurve3DDefinition source) =>
-        new(
+        StarfieldCurve3DDefinition source)
+    {
+        return new StarfieldCurve3DDefinition(
             CloneFloatCurve(source.XCurve),
             CloneFloatCurve(source.YCurve),
             CloneFloatCurve(source.ZCurve));
+    }
 
     private static StarfieldFloatCurve CloneFloatCurve(StarfieldFloatCurve source)
     {
@@ -334,16 +345,20 @@ internal static class RecordCollectionFormIdRebaser
         };
     }
 
-    private static uint MapNonZeroFormId(uint formId, Func<uint, uint> mapFormId) =>
-        formId == 0 ? 0 : mapFormId(formId);
+    private static uint MapNonZeroFormId(uint formId, Func<uint, uint> mapFormId)
+    {
+        return formId == 0 ? 0 : mapFormId(formId);
+    }
 
-    private static uint? MapOptionalFormId(uint? formId, Func<uint, uint> mapFormId) =>
-        formId switch
+    private static uint? MapOptionalFormId(uint? formId, Func<uint, uint> mapFormId)
+    {
+        return formId switch
         {
             null => null,
             0 => 0,
             _ => mapFormId(formId.Value)
         };
+    }
 
     private static object CloneList(IList source, string propertyName, Func<uint, uint> mapFormId)
     {

@@ -53,13 +53,13 @@ public sealed class NifTextureAnimationEvaluatorTests
         var extracted = NifGeometryExtractor.Extract(data, nif);
         Assert.NotNull(extracted);
 
-        var extractedSubmesh = extracted!.Submeshes.FirstOrDefault(submesh =>
+        var extractedSubmesh = extracted.Submeshes.FirstOrDefault(submesh =>
             string.Equals(submesh.ShapeName, animatedShape.ShapeName, StringComparison.OrdinalIgnoreCase) &&
             submesh.VertexCount == animatedShape.RawSubmesh.VertexCount &&
             submesh.UVs != null);
 
         Assert.NotNull(extractedSubmesh);
-        Assert.NotNull(extractedSubmesh!.UVs);
+        Assert.NotNull(extractedSubmesh.UVs);
         Assert.Equal(expectedUvs.Length, extractedSubmesh.UVs!.Length);
 
         for (var i = 0; i < expectedUvs.Length; i++)
@@ -170,7 +170,7 @@ public sealed class NifTextureAnimationEvaluatorTests
         var sourceNif = NifParser.Parse(sourceData);
         Assert.NotNull(sourceNif);
 
-        if (sourceNif!.IsBigEndian)
+        if (sourceNif.IsBigEndian)
         {
             var conversion = NifConverter.Convert(sourceData);
             Assert.True(conversion.Success, conversion.ErrorMessage);
@@ -178,7 +178,7 @@ public sealed class NifTextureAnimationEvaluatorTests
 
             var convertedNif = NifParser.Parse(conversion.OutputData!);
             Assert.NotNull(convertedNif);
-            return (conversion.OutputData!, convertedNif!);
+            return (conversion.OutputData!, convertedNif);
         }
 
         return (sourceData, sourceNif);

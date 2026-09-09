@@ -236,7 +236,7 @@ public sealed class NifAnimationParserTests
             archivePath is not null && File.Exists(archivePath),
             RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
 
-        using var extractor = new BsaExtractor(archivePath!);
+        using var extractor = new BsaExtractor(archivePath);
         var file = extractor.Archive.AllFiles.First(record =>
             string.Equals(
                 record.FullPath,

@@ -42,8 +42,10 @@ public sealed class TerrainPipelineStateGpuTests
     public static TheoryData<int> ColorBlendQuadCounts =>
         [.. Enumerable.Range(1, TerrainVertexLayout.MaxBlendQuads)];
 
-    private static ShaderMacro[] Macros(int blendQuadCount) =>
-        [new ShaderMacro("TERRAIN_BLEND_QUADS", blendQuadCount.ToString(CultureInfo.InvariantCulture))];
+    private static ShaderMacro[] Macros(int blendQuadCount)
+    {
+        return [new ShaderMacro("TERRAIN_BLEND_QUADS", blendQuadCount.ToString(CultureInfo.InvariantCulture))];
+    }
 
     [Theory]
     [MemberData(nameof(ColorBlendQuadCounts))]

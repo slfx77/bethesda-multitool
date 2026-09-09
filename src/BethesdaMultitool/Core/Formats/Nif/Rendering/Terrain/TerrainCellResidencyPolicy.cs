@@ -66,8 +66,10 @@ internal static class TerrainCellResidencyPolicy
     ///     What the <b>widest</b> cell of this grid size charges — the number the budget plan wants.
     ///     See <see cref="EstimateCellGpuBytes(int, int)" /> for the per-width form.
     /// </summary>
-    public static long EstimateCellGpuBytes(int gridSize) =>
-        EstimateCellGpuBytes(gridSize, TerrainBlendWeightPacking.MaxQuadCount);
+    public static long EstimateCellGpuBytes(int gridSize)
+    {
+        return EstimateCellGpuBytes(gridSize, TerrainBlendWeightPacking.MaxQuadCount);
+    }
 
     /// <summary>
     ///     What one cell charges: a single ARENA sub-allocation holding both streams, with the
@@ -97,7 +99,7 @@ internal static class TerrainCellResidencyPolicy
             return 0;
         }
 
-        long vertices = (long)gridSize * gridSize;
+        var vertices = (long)gridSize * gridSize;
         return GpuResourceFootprint.ArenaSubAllocationBytes(
             vertices * VertexStreamBytesPerVertex,
             vertices * TerrainBlendWeightPacking.BytesPerVertexFor(blendQuadCount));

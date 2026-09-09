@@ -12,9 +12,9 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 /// </summary>
 internal sealed class Dat2Backend : IArchiveBackend
 {
+    private readonly MemoryMappedViewAccessor _accessor;
     private readonly Dat2Directory _directory;
     private readonly MemoryMappedFile _mmf;
-    private readonly MemoryMappedViewAccessor _accessor;
 
     public Dat2Backend(Dat2Directory directory)
     {
@@ -61,7 +61,8 @@ internal sealed class Dat2Backend : IArchiveBackend
             var read = _accessor.ReadArray(record.Offset, packed, 0, packed.Length);
             if (read != packed.Length)
             {
-                throw new InvalidDataException($"DAT2 entry '{record.FullPath}' is truncated: read {read} of {packed.Length} bytes.");
+                throw new InvalidDataException(
+                    $"DAT2 entry '{record.FullPath}' is truncated: read {read} of {packed.Length} bytes.");
             }
         }
 
@@ -86,7 +87,8 @@ internal sealed class Dat2Backend : IArchiveBackend
 
         if (total != output.Length)
         {
-            throw new InvalidDataException($"DAT2 entry '{record.FullPath}' inflated to {total} of {output.Length} declared bytes.");
+            throw new InvalidDataException(
+                $"DAT2 entry '{record.FullPath}' inflated to {total} of {output.Length} declared bytes.");
         }
 
         return output;

@@ -1,6 +1,8 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
@@ -27,6 +29,7 @@ public sealed class FnvAdvertisementLightingRetailTests
     private const string ModelPath = @"meshes\clutter\billboards\BillboardTallNV.NIF";
     private const string DiffusePath = @"textures\clutter\billboards\AtomicWrangler_Billboard.dds";
     private const string NormalPath = @"textures\clutter\billboards\AtomicWrangler_Billboard_n.dds";
+    private static readonly float[] WastelandClearFog = [-10f, 200000f, -10f, 200000f, 0.6f, 0.5f];
 
     [Fact]
     public async Task AtomicWrangler_PinsPlacedModsFaceAndGreaterCutoutActiveAdtEligibility()
@@ -37,7 +40,7 @@ public sealed class FnvAdvertisementLightingRetailTests
         Assert.SkipWhen(esm is null, RealAssetPaths.SkipMessage("Installed FalloutNV.esm"));
         Assert.SkipWhen(meshesBsa is null, RealAssetPaths.SkipMessage("Installed FNV meshes BSA"));
 
-        var result = await RealAssetEsmCache.LoadAsync(esm!, TestContext.Current.CancellationToken);
+        var result = await RealAssetEsmCache.LoadAsync(esm, TestContext.Current.CancellationToken);
         var baseRecord = Assert.Single(result.Records.Statics, static record => record.FormId == BaseFormId);
         Assert.Equal("BillboardAtomicWranglerTall", baseRecord.EditorId);
         var rawOverride = Assert.Single(result.Records.AlternateTexturesByFormId[BaseFormId]);
@@ -52,7 +55,7 @@ public sealed class FnvAdvertisementLightingRetailTests
         Assert.Equal(NormalPath["textures\\".Length..], textureSet.NormalTexture,
             StringComparer.OrdinalIgnoreCase);
 
-        var world = global::BethesdaMultitool.WorldMapOverlayBuilder.BuildFromRecords(result.Records, esm);
+        var world = WorldMapOverlayBuilder.BuildFromRecords(result.Records, esm);
         Assert.Equal(BethesdaGame.FalloutNewVegas, world.Game);
         Assert.True(world.PlacedRefs.TryGetEntry(ReferenceFormId, out var placed));
         Assert.Equal(CellFormId, placed.Cell.FormId);
@@ -74,7 +77,7 @@ public sealed class FnvAdvertisementLightingRetailTests
         Assert.Equal(BaseFormId, reference.Value.BaseFormId);
         Assert.Same(resolved, reference.Value.AlternateTextures);
 
-        using var archives = MeshArchiveSet.Open(meshesBsa!, null, false);
+        using var archives = MeshArchiveSet.Open(meshesBsa, null, false);
         Assert.True(archives.TryExtractFile(ModelPath, out var data, out _), $"Retail NIF missing: {ModelPath}");
         var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
         var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(
@@ -103,13 +106,51 @@ public sealed class FnvAdvertisementLightingRetailTests
         var eligibility = new FnvActiveAdtBaseEligibility(
             world.Game, true, 0, false, false, decoded.AlphaBlend, decoded.AlphaTest,
             decoded.MaterialAlpha, decoded.MaterialAlphaController is not null,
-            decoded.ClassicBasicShaderMode, AlphaTestFunction: decoded.AlphaTestFunction);
+            decoded.ClassicBasicShaderMode, decoded.AlphaTestFunction);
         Assert.True(FnvActiveAdtBasePolicy.IsEligible(eligibility));
         var flags = FnvActiveAdtBasePolicy.ApplyRuntimeFlags(eligibility, 0);
         Assert.NotEqual(0u, flags & FnvActiveAdtBasePolicy.RuntimeActiveAdtFlag);
         Assert.NotEqual(0u, flags & FnvActiveAdtBasePolicy.RuntimeActiveAdtVertexColorFlag);
         Assert.False(FnvActiveAdtBasePolicy.IsEligible(eligibility with { FogEnabled = true }));
         Assert.False(FnvActiveAdtBasePolicy.IsEligible(eligibility with { HasProjectedSunShadow = true }));
+    }
+
+    [Fact]
+    public async Task WastelandClear_PreservesAuthoredSignedFnamAndAdmitsTheObservedFogRoute()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+        var esm = RealAssetPaths.Masters.FalloutNv();
+        Assert.SkipWhen(esm is null, RealAssetPaths.SkipMessage("Installed FalloutNV.esm"));
+        var result = await RealAssetEsmCache.LoadAsync(esm, TestContext.Current.CancellationToken);
+        var weather = Assert.Single(result.Records.Weather, static record => record.FormId == 0x000FFC88);
+        Assert.Equal("NVWastelandClear", weather.EditorId);
+        Assert.Equal(WastelandClearFog, weather.FogDistances);
+        Assert.True(FnvActiveAdtFog.HasUnmodifiedWeatherSource(BethesdaGame.FalloutNewVegas, weather.FogDistances));
+
+        // Canonical handler/resolver join for the retained hour-9 native capture, plus its night pair.
+        var day = AtmosphereState.Resolve(9f, weather, game: BethesdaGame.FalloutNewVegas);
+        var night = AtmosphereState.Resolve(0f, weather, game: BethesdaGame.FalloutNewVegas);
+        Assert.Equal(-10f, day.FogNear);
+        Assert.Equal(-10f, night.FogNear);
+        Assert.Equal(200000f, day.FogFar);
+        Assert.Equal(200000f, night.FogFar);
+        Assert.Equal(0.6f, day.FogPower);
+        Assert.Equal(0.5f, night.FogPower);
+        Assert.True(day.HasUnmodifiedFnvAdtFogSource);
+        Assert.True(night.HasUnmodifiedFnvAdtFogSource);
+        Assert.True(FnvActiveAdtFog.IsSupported(day.HasUnmodifiedFnvAdtFogSource,
+            day.FogNear, day.FogFar, day.FogPower, day.FogColor, day.FogFarColor, day.FogMaxOpacity));
+        Assert.True(FnvActiveAdtFog.IsSupported(night.HasUnmodifiedFnvAdtFogSource,
+            night.FogNear, night.FogFar, night.FogPower, night.FogColor, night.FogFarColor, night.FogMaxOpacity));
+        Assert.True(FnvActiveAdtFog.TryPack(day.FogNear, day.FogFar, day.FogPower, out var packed));
+        Assert.Equal(new Vector3(200000f, 200010f, 0.6f), packed);
+        Assert.InRange(FnvActiveAdtFog.EvaluateAmount(Vector4.Zero, packed), 0.00262f, 0.00264f);
+
+        var eligibility = new FnvActiveAdtBaseEligibility(BethesdaGame.FalloutNewVegas, true, 0,
+            false, true, false, true, 1f, false, FnvClassicBasicShaderMode.Sls1013VertexColor,
+            4, true);
+        Assert.True(FnvActiveAdtBasePolicy.IsEligible(eligibility));
+        Assert.False(FnvActiveAdtBasePolicy.IsEligible(eligibility with { HasSupportedFog = false }));
     }
 
     private static void AssertRetailFaceMaterial(RenderableSubmesh face)

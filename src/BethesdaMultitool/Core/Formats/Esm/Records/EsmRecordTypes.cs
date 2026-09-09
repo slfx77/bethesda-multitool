@@ -1,6 +1,7 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Schema;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Records;
 
@@ -311,7 +312,7 @@ public static class EsmRecordTypes
 
         // Pooled: this is the record-header path, so it ran once per record — 5.1M times on
         // Fallout 76's master, each allocating its own "REFR".
-        return Utils.EsmSignaturePool.TryIntern(sig, out var pooled)
+        return EsmSignaturePool.TryIntern(sig, out var pooled)
             ? pooled
             : Encoding.ASCII.GetString(sig[..4]);
     }

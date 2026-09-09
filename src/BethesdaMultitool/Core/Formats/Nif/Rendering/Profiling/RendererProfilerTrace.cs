@@ -280,6 +280,7 @@ internal static class RendererProfilerTrace
         {
             Add("refPlacedLightTileFallbackReason", stats.ReferencePlacedLightTileFallbackReason);
         }
+
         Add("refFnvClassicBasicLightingEnabled", stats.ReferenceFnvClassicBasicLightingEnabled);
         Add("refFnvClassicBasicFallbackDraws", stats.ReferenceFnvClassicBasicFallbackDraws);
         Add("refFnvClassicBasicFallbackInstances", stats.ReferenceFnvClassicBasicFallbackInstances);
@@ -393,5 +394,8 @@ internal static class RendererProfilerTrace
         _ownsWriter = false;
     }
 
-    private static string CreateSessionId() => Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+    private static string CreateSessionId()
+    {
+        return Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+    }
 }

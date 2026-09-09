@@ -35,15 +35,10 @@ internal static class MeshRenameMapService
     };
 
     /// <summary>Sidecar path for a dump: the dump's own path plus this suffix.</summary>
-    public static string SidecarPathFor(string sourceFilePath) => sourceFilePath + ".assetrenames.json";
-
-    public sealed record BuildResult(
-        IReadOnlyDictionary<string, string> Renames,
-        int Considered,
-        int Renamed,
-        int Exact,
-        int Missing,
-        int CrossRootDeclined);
+    public static string SidecarPathFor(string sourceFilePath)
+    {
+        return sourceFilePath + ".assetrenames.json";
+    }
 
     /// <summary>
     ///     Resolves every distinct mesh path against the donor Data folders, conversion-style, and
@@ -165,6 +160,14 @@ internal static class MeshRenameMapService
             return null;
         }
     }
+
+    public sealed record BuildResult(
+        IReadOnlyDictionary<string, string> Renames,
+        int Considered,
+        int Renamed,
+        int Exact,
+        int Missing,
+        int CrossRootDeclined);
 
     private sealed class SidecarFile
     {

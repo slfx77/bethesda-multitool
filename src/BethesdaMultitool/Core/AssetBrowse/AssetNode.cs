@@ -27,9 +27,6 @@ public sealed class AssetNode : INotifyPropertyChanged
         Size = size;
     }
 
-    /// <summary>Raised for <see cref="IsChecked" /> only — everything else is immutable.</summary>
-    public event PropertyChangedEventHandler? PropertyChanged;
-
     /// <summary>Display name (file or folder segment; the builder's label for the root).</summary>
     public string Name { get; }
 
@@ -74,6 +71,9 @@ public sealed class AssetNode : INotifyPropertyChanged
         set => SetChecked(value ?? false);
     }
 #pragma warning restore S4275
+
+    /// <summary>Raised for <see cref="IsChecked" /> only — everything else is immutable.</summary>
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     /// <summary>
     ///     Depth-first (in <see cref="Children" /> order) enumeration of the checked non-folder

@@ -36,8 +36,8 @@ public sealed class NiAgdDataBlockSwapRegressionTests
         Assert.SkipWhen(xboxPath is null || pcPath is null,
             "Sample LOD NIF pair not available — needs Sample/Meshes/{meshes_360_final,meshes_pc}");
 
-        var xboxBytes = File.ReadAllBytes(xboxPath!);
-        var pcBytes = File.ReadAllBytes(pcPath!);
+        var xboxBytes = File.ReadAllBytes(xboxPath);
+        var pcBytes = File.ReadAllBytes(pcPath);
 
         var result = NifConverter.Convert(xboxBytes);
         Assert.True(result.Success, $"NifConverter failed: {result.ErrorMessage}");
@@ -63,13 +63,13 @@ public sealed class NiAgdDataBlockSwapRegressionTests
         var xboxPath = SampleFileFixture.FindSamplePath(XboxStripLod);
         Assert.SkipWhen(xboxPath is null, "Sample LOD NIF not available");
 
-        var xboxBytes = File.ReadAllBytes(xboxPath!);
+        var xboxBytes = File.ReadAllBytes(xboxPath);
         var result = NifConverter.Convert(xboxBytes);
         Assert.True(result.Success);
 
         var info = NifParser.Parse(result.OutputData!);
         Assert.NotNull(info);
-        var agdBlock = info!.Blocks.First(b => b.TypeName == "NiAdditionalGeometryData");
+        var agdBlock = info.Blocks.First(b => b.TypeName == "NiAdditionalGeometryData");
 
         // Compare buffer-level: at least one byte inside the AGD block must differ from
         // the Xbox source bytes at the same offset.

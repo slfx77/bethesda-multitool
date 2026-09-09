@@ -96,7 +96,8 @@ public static class ClassicGameLocator
                 names.Add(entry.FullName.Replace('/', '\\').TrimStart('\\'));
             }
         }
-        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException or NotSupportedException)
+        catch (Exception e) when (e is IOException or InvalidDataException or UnauthorizedAccessException
+                                      or NotSupportedException)
         {
             return null;
         }
@@ -222,7 +223,8 @@ public static class ClassicGameLocator
         {
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             Span<byte> head = stackalloc byte[4];
-            return stream.Read(head) == 4 && head[0] == (byte)'P' && head[1] == (byte)'K' && head[2] == 3 && head[3] == 4;
+            return stream.Read(head) == 4 && head[0] == (byte)'P' && head[1] == (byte)'K' && head[2] == 3 &&
+                   head[3] == 4;
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {

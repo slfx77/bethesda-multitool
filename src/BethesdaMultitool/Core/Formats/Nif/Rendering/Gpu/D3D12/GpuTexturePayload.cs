@@ -12,6 +12,7 @@ internal enum GpuTexturePayloadFormat
     BC4,
     BC5,
     BC7,
+
     // Keep signed variants at the end: the enum value is serialized by the persistent texture
     // cache, and retaining every existing value avoids reinterpreting an older cache entry.
     BC4S,

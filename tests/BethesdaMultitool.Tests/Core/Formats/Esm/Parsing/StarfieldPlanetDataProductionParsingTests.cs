@@ -1,14 +1,14 @@
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using System.Buffers.Binary;
+using System.IO.MemoryMappedFiles;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.WorldData;
-using System.Buffers.Binary;
-using System.IO.MemoryMappedFiles;
-using System.Text;
 using Xunit;
 using static BethesdaMultitool.Tests.Core.Formats.Esm.Parsing.StarfieldPlanetDataTestData;
 
@@ -31,8 +31,8 @@ public sealed class StarfieldPlanetDataProductionParsingTests
             Subrecord("EDID", [.. Encoding.ASCII.GetBytes("PlanetOverride\0")]),
             ValidOverrideData(
                 [
-                    new(removed, StarfieldPlanetWorldspaceOperation.Removed),
-                    new(added, StarfieldPlanetWorldspaceOperation.Added)
+                    new StarfieldPlanetWorldspaceDelta(removed, StarfieldPlanetWorldspaceOperation.Removed),
+                    new StarfieldPlanetWorldspaceDelta(added, StarfieldPlanetWorldspaceOperation.Added)
                 ],
                 systemId: 77,
                 atmosphereFormId: atmosphereFormId));
@@ -87,7 +87,7 @@ public sealed class StarfieldPlanetDataProductionParsingTests
                 atmosphereFormId: 0x600));
         var bytes = PluginRecord(planetFormId, body);
 
-        var bigEndian = Assert.Single(ParseRecords(bytes, isBigEndian: true).PlanetData);
+        var bigEndian = Assert.Single(ParseRecords(bytes, true).PlanetData);
         Assert.True(bigEndian.IsBigEndian);
         Assert.Contains("little-endian", bigEndian.DecodeFailure, StringComparison.OrdinalIgnoreCase);
 
@@ -110,11 +110,15 @@ public sealed class StarfieldPlanetDataProductionParsingTests
         Assert.Null(recovered.Body);
     }
 
-    private static RecordCollection ParseRecords(params byte[][] recordBytes) =>
-        ParseRecords(recordBytes, false);
+    private static RecordCollection ParseRecords(params byte[][] recordBytes)
+    {
+        return ParseRecords(recordBytes, false);
+    }
 
-    private static RecordCollection ParseRecords(byte[] recordBytes, bool isBigEndian) =>
-        ParseRecords([recordBytes], isBigEndian);
+    private static RecordCollection ParseRecords(byte[] recordBytes, bool isBigEndian)
+    {
+        return ParseRecords([recordBytes], isBigEndian);
+    }
 
     private static RecordCollection ParseRecords(byte[][] recordBytes, bool isBigEndian)
     {
@@ -155,6 +159,8 @@ public sealed class StarfieldPlanetDataProductionParsingTests
         byte[] bytes,
         long offset,
         uint formId,
-        bool isBigEndian) =>
-        new("PNDT", (uint)(bytes.Length - 24), 0, formId, offset, isBigEndian);
+        bool isBigEndian)
+    {
+        return new DetectedMainRecord("PNDT", (uint)(bytes.Length - 24), 0, formId, offset, isBigEndian);
+    }
 }

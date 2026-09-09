@@ -69,13 +69,13 @@ internal sealed class Bs6File
     /// <summary>Bytes in each name of a mesh list.</summary>
     public const int NameLength = 260;
 
+    private const int ChunkHeaderLength = 8;
+
     /// <summary>Tags whose payload is a further chunk sequence rather than data.</summary>
     private static readonly HashSet<string> GroupTags =
     [
         "GNRL", "TEXI", "STRU", "SNAP", "VIEW", "CTRL", "LINK", "OBJS", "OBJD", "LITS", "LITD", "FLAS", "FLAD"
     ];
-
-    private const int ChunkHeaderLength = 8;
 
     private Bs6File(string name, Bs6Chunk root)
     {

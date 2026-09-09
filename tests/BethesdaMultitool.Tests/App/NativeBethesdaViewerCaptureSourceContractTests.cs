@@ -5,13 +5,19 @@ namespace BethesdaMultitool.Tests.App;
 
 public sealed class NativeBethesdaViewerCaptureSourceContractTests
 {
-    private static string CaptureSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
-        "BethesdaSceneViewerControl.Capture.cs");
+    private static string CaptureSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
+            "BethesdaSceneViewerControl.Capture.cs");
+    }
 
-    private static string LifecycleSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
-        "BethesdaSceneViewerControl.Lifecycle.cs");
+    private static string LifecycleSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
+            "BethesdaSceneViewerControl.Lifecycle.cs");
+    }
 
     [Fact]
     public void CaptureCopiesTheTonemappedLiveBackBufferInItsPresentedFrame()
@@ -132,7 +138,7 @@ public sealed class NativeBethesdaViewerCaptureSourceContractTests
         var failCapture = SourceContract.Extract(
             CaptureSource(),
             "private void FailUnfencedCaptureRequest(",
-            "/// <summary>Fails a request that has not entered a submitted GPU frame.");
+            "private void CancelPendingCapture(string reason)");
         Assert.Contains("request.TrySetException(exception);", failCapture, StringComparison.Ordinal);
         Assert.DoesNotContain("request.Dispose();", failCapture, StringComparison.Ordinal);
 
@@ -147,7 +153,7 @@ public sealed class NativeBethesdaViewerCaptureSourceContractTests
             endFrame,
             "_gpu.DirectQueue.ExecuteCommandList(CommandList);",
             "_gpu.DirectQueue.Signal(_gpu.FrameFence, signalValue).CheckError();",
-            "FinalizeFailedSubmission(ex, commandListMayHaveReachedQueue: true, retainIfUnfenced)");
+            "FinalizeFailedSubmission(ex, true, retainIfUnfenced)");
         Assert.Contains("_unfencedSubmissionRetirements.Add(retainIfUnfenced);", recorder,
             StringComparison.Ordinal);
         Assert.Contains("ThrowIfSubmissionPoisoned();", recorder, StringComparison.Ordinal);
@@ -171,11 +177,17 @@ public sealed class NativeBethesdaViewerCaptureSourceContractTests
         var gpu = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuDevice12.cs");
-        SourceContract.AssertOrder(
+        var removeDevice = SourceContract.Extract(
             gpu,
+            "internal bool TryForceDeviceRemoval(string context)",
+            "private static void DisposeNoThrow(");
+        SourceContract.AssertOrder(
+            removeDevice,
             "Device.QueryInterfaceOrNull<ID3D12Device5>()",
+            "if (device5 is null)",
+            "return false;",
             "device5.RemoveDevice();",
-            "public void Dispose()");
+            "return true;");
     }
 
     [Fact]
@@ -184,7 +196,8 @@ public sealed class NativeBethesdaViewerCaptureSourceContractTests
         var context = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
             "BethesdaSceneViewerGraphicsContext12.cs");
-        var dispose = SourceContract.Extract(context, "public void Dispose()", "private static void DisposeOwnedNoThrow(");
+        var dispose =
+            SourceContract.Extract(context, "public void Dispose()", "private static void DisposeOwnedNoThrow(");
         SourceContract.AssertOrder(
             dispose,
             "Recorder.WaitForGpuIdle();",

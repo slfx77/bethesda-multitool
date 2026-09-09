@@ -1,5 +1,4 @@
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -29,7 +28,8 @@ public sealed class OblivionOrdinarySpecularPolicyTests
     public void Resolve_UsesTheResidentFormatAndPreservesAuthoredRgb(
         int format, float expectedExponent)
     {
-        var actual = OblivionOrdinarySpecularPolicy.Resolve(Candidate, true, true, true, true, (GpuTexturePayloadFormat)format);
+        var actual =
+            OblivionOrdinarySpecularPolicy.Resolve(Candidate, true, true, true, true, (GpuTexturePayloadFormat)format);
 
         Assert.Equal(new Vector4(0.17f, 0.31f, 0.59f, expectedExponent), actual);
         Assert.Equal(new Vector4(0.17f, 0.31f, 0.59f, 12f), Candidate);
@@ -75,7 +75,8 @@ public sealed class OblivionOrdinarySpecularPolicyTests
     {
         var candidate = new Vector4(0.17f, 0.31f, 0.59f, exponent);
 
-        var actual = OblivionOrdinarySpecularPolicy.Resolve(candidate, true, true, true, true, (GpuTexturePayloadFormat)format);
+        var actual =
+            OblivionOrdinarySpecularPolicy.Resolve(candidate, true, true, true, true, (GpuTexturePayloadFormat)format);
 
         Assert.Equal(candidate, actual);
     }

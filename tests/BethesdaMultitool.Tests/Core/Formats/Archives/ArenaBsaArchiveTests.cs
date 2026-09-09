@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Xngine.Bsa;
 using Xunit;
@@ -12,7 +13,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Archives;
 ///     extraction through the unified <see cref="ArchiveReader" />, and the rejection matrix that
 ///     keeps the weak probe from stealing files owned by other formats.
 /// </summary>
-public class ArenaBsaArchiveTests : IDisposable
+public sealed class ArenaBsaArchiveTests : IDisposable
 {
     private readonly string _dir = Directory.CreateTempSubdirectory("arena-bsa-").FullName;
 
@@ -155,7 +156,7 @@ public class ArenaBsaArchiveTests : IDisposable
         // Regression gate for the probe-chain restructure: a synthetic Gamebryo BSA must keep
         // resolving to the classic extractor path (FormatName "BSA"), never the Arena backend.
         var path = Path.Combine(_dir, "gamebryo.bsa");
-        using (var writer = new BethesdaMultitool.Core.Formats.Bsa.BsaWriter(false, embedFileNames: false))
+        using (var writer = new BsaWriter(false, embedFileNames: false))
         {
             writer.AddFile(@"meshes\test.nif", "nif-bytes"u8.ToArray());
             writer.Write(path);

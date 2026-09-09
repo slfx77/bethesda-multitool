@@ -10,17 +10,26 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.D3D12;
 /// </summary>
 public sealed class DefaultReferenceGeometrySourceContractTests
 {
-    private static string CacheSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "ReferenceMeshCache12.cs");
+    private static string CacheSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferenceMeshCache12.cs");
+    }
 
-    private static string RendererSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "ReferenceRenderer12.cs");
+    private static string RendererSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferenceRenderer12.cs");
+    }
 
-    private static string RecorderSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
-        "GpuCommandRecorder12.cs");
+    private static string RecorderSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
+            "GpuCommandRecorder12.cs");
+    }
 
     [Fact]
     public void Effective_mode_is_fail_closed_and_recorded_for_unattended_captures()
@@ -50,7 +59,8 @@ public sealed class DefaultReferenceGeometrySourceContractTests
             StringComparison.Ordinal);
         Assert.Contains("public CachedNifMesh12? GetOrUpload(\n        ID3D12GraphicsCommandList commandList,",
             cache, StringComparison.Ordinal);
-        Assert.Contains("geometryArena.Upload(\n                    commandList ?? throw new InvalidOperationException(",
+        Assert.Contains(
+            "geometryArena.Upload(\n                    commandList ?? throw new InvalidOperationException(",
             cache, StringComparison.Ordinal);
     }
 
@@ -108,7 +118,7 @@ public sealed class DefaultReferenceGeometrySourceContractTests
 
         // StartBatchBuild is the only fresh-state constructor. Valid staged continuations call
         // AdvanceBatchBuild directly, so they must not erase retry debt accumulated by prior slices.
-        Assert.Equal(1, renderer.Split(beginGeneration, StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, renderer.Split(beginGeneration).Length - 1);
         SourceContract.AssertOrder(
             renderer,
             "private BatchBuildState StartBatchBuild(",
@@ -151,9 +161,9 @@ public sealed class DefaultReferenceGeometrySourceContractTests
             "if (node.PendingPublication is { } pending)",
             "return pending.Mesh;");
 
-        Assert.Contains("NotifyCurrentFrameParticipants(submitted: false);", recorder,
+        Assert.Contains("NotifyCurrentFrameParticipants(false);", recorder,
             StringComparison.Ordinal);
-        Assert.Contains("NotifyCurrentFrameParticipants(submitted: true);", recorder,
+        Assert.Contains("NotifyCurrentFrameParticipants(true);", recorder,
             StringComparison.Ordinal);
         Assert.Contains("participant.OnCommandListSubmitted();", recorder,
             StringComparison.Ordinal);

@@ -133,8 +133,8 @@ internal static class RaceRecordScanner
                         ref femaleHeadModel);
                     break;
                 case "MODL" when inHeadPartsSection &&
-                                  ((usesTes4HeadPartLayout && currentIndex == 1) ||
-                                   (!usesTes4HeadPartLayout && currentIndex == 1)):
+                                 ((usesTes4HeadPartLayout && currentIndex == 1) ||
+                                  (!usesTes4HeadPartLayout && currentIndex == 1)):
                 {
                     var path = EsmRecordParser.GetSubrecordString(subrecord);
                     if (usesTes4HeadPartLayout)
@@ -152,7 +152,7 @@ internal static class RaceRecordScanner
                     femaleEarModel = EsmRecordParser.GetSubrecordString(subrecord);
                     break;
                 case "MODL" when inHeadPartsSection &&
-                                  currentIndex == (usesTes4HeadPartLayout ? 3 : 2):
+                                 currentIndex == (usesTes4HeadPartLayout ? 3 : 2):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
@@ -161,7 +161,7 @@ internal static class RaceRecordScanner
                         ref femaleMouthModel);
                     break;
                 case "MODL" when inHeadPartsSection &&
-                                  currentIndex == (usesTes4HeadPartLayout ? 4 : 3):
+                                 currentIndex == (usesTes4HeadPartLayout ? 4 : 3):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
@@ -170,7 +170,7 @@ internal static class RaceRecordScanner
                         ref femaleLowerTeethModel);
                     break;
                 case "MODL" when inHeadPartsSection &&
-                                  currentIndex == (usesTes4HeadPartLayout ? 5 : 4):
+                                 currentIndex == (usesTes4HeadPartLayout ? 5 : 4):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
@@ -179,7 +179,7 @@ internal static class RaceRecordScanner
                         ref femaleUpperTeethModel);
                     break;
                 case "MODL" when inHeadPartsSection &&
-                                  currentIndex == (usesTes4HeadPartLayout ? 6 : 5):
+                                 currentIndex == (usesTes4HeadPartLayout ? 6 : 5):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
@@ -188,7 +188,7 @@ internal static class RaceRecordScanner
                         ref femaleTongueModel);
                     break;
                 case "MODL" when inHeadPartsSection &&
-                                  currentIndex == (usesTes4HeadPartLayout ? 7 : 6):
+                                 currentIndex == (usesTes4HeadPartLayout ? 7 : 6):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,
@@ -197,7 +197,7 @@ internal static class RaceRecordScanner
                         ref femaleEyeLeftModel);
                     break;
                 case "MODL" when inHeadPartsSection &&
-                                  currentIndex == (usesTes4HeadPartLayout ? 8 : 7):
+                                 currentIndex == (usesTes4HeadPartLayout ? 8 : 7):
                     AssignPath(
                         EsmRecordParser.GetSubrecordString(subrecord),
                         inMaleSection,

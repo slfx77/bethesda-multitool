@@ -28,7 +28,7 @@ public sealed class StarfieldGlbNoDrawMaterialTests
 
         var glb = GlbWriter.WriteToBytes(scene, resolver);
 
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         var model = ModelRoot.ReadGLB(stream);
         var mesh = Assert.Single(model.LogicalMeshes);
         Assert.Equal("VisibleSurface", mesh.Name);
@@ -52,7 +52,7 @@ public sealed class StarfieldGlbNoDrawMaterialTests
 
         var glb = GlbWriter.WriteToBytes(Scene(submesh), resolver);
 
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         Assert.Equal(submesh.ShapeName, Assert.Single(ModelRoot.ReadGLB(stream).LogicalMeshes).Name);
     }
 
@@ -78,7 +78,7 @@ public sealed class StarfieldGlbNoDrawMaterialTests
 
         var glb = GlbWriter.WriteToBytes(Scene(submesh), resolver);
 
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         Assert.Equal(submesh.ShapeName, Assert.Single(ModelRoot.ReadGLB(stream).LogicalMeshes).Name);
     }
 
@@ -92,7 +92,7 @@ public sealed class StarfieldGlbNoDrawMaterialTests
 
         var glb = GlbWriter.WriteToBytes(Scene(helper), resolver);
 
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         Assert.Empty(ModelRoot.ReadGLB(stream).LogicalMeshes);
     }
 
@@ -135,7 +135,7 @@ public sealed class StarfieldGlbNoDrawMaterialTests
     private static NifTextureResolver Resolver(string shaderRoute)
     {
         var database = StarfieldMaterialOrmPolicyTests.BuildDatabase(
-            useDiffChunks: true,
+            true,
             shaderRoute: shaderRoute);
         return new NifTextureResolver([new MaterialDatabaseSource(database)]);
     }
@@ -180,13 +180,20 @@ public sealed class StarfieldGlbNoDrawMaterialTests
 
     private sealed class MaterialDatabaseSource(byte[] database) : INifTextureSource
     {
-        public DecodedTexture? TryLoad(string path) => null;
+        public DecodedTexture? TryLoad(string path)
+        {
+            return null;
+        }
 
-        public byte[]? TryLoadRaw(string path) =>
-            string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase) ? database : null;
+        public byte[]? TryLoadRaw(string path)
+        {
+            return string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase) ? database : null;
+        }
 
-        public bool Exists(string path) =>
-            string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase);
+        public bool Exists(string path)
+        {
+            return string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase);
+        }
 
         public bool TryGetAssetMetadata(string path, out NifTextureSourceAssetMetadata metadata)
         {

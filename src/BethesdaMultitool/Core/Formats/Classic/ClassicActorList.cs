@@ -20,7 +20,11 @@ internal readonly record struct ClassicActorStat(string Name, string Value, bool
 /// <param name="Kind">What the source called it — <c>Monster</c>, <c>Speaker</c>.</param>
 /// <param name="Stats">Named and unnamed columns, in source order.</param>
 internal sealed record ClassicActor(
-    uint FormId, string Name, string EditorId, string Kind, IReadOnlyList<ClassicActorStat> Stats);
+    uint FormId,
+    string Name,
+    string EditorId,
+    string Kind,
+    IReadOnlyList<ClassicActorStat> Stats);
 
 /// <summary>A game's actors, ready for a list view.</summary>
 /// <param name="GameName">Label for the list.</param>
@@ -120,8 +124,10 @@ internal static class TravelsActorListBuilder
         return stats;
     }
 
-    private static string Format(object value) =>
-        value is IFormattable formattable
+    private static string Format(object value)
+    {
+        return value is IFormattable formattable
             ? formattable.ToString(null, CultureInfo.InvariantCulture)
             : value.ToString() ?? string.Empty;
+    }
 }

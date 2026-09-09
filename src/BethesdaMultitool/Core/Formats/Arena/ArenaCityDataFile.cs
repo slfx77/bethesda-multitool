@@ -83,7 +83,7 @@ internal sealed class ArenaCityDataFile
             var locationsStart = NameLength + 8;
             for (var slot = 0; slot < LocationsPerProvince; slot++)
             {
-                var location = record.Slice(locationsStart + (slot * LocationRecordLength), LocationRecordLength);
+                var location = record.Slice(locationsStart + slot * LocationRecordLength, LocationRecordLength);
                 locations.Add(new ArenaLocation(
                     ReadName(location[..NameLength]),
                     KindOfSlot(slot),

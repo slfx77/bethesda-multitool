@@ -46,7 +46,7 @@ public sealed class BethesdaViewerPerspectiveFramingPolicyTests
             out var distance));
 
         var legacyDistance = bounds.Size.Length() * 0.5f /
-                             MathF.Sin(verticalFov * 0.5f) * 1.2f;
+            MathF.Sin(verticalFov * 0.5f) * 1.2f;
         Assert.True(distance < legacyDistance);
         AssertAllCornersFit(bounds, eye, right, up, verticalFov, aspect, distance);
     }
@@ -93,7 +93,7 @@ public sealed class BethesdaViewerPerspectiveFramingPolicyTests
             out var distance));
 
         var legacyDistance = bounds.Size.Length() * 0.5f /
-                             MathF.Sin(verticalFov * 0.5f) * 1.2f;
+            MathF.Sin(verticalFov * 0.5f) * 1.2f;
         Assert.True(distance < legacyDistance * 0.8f);
         AssertAllCornersFit(bounds, eye, right, up, verticalFov, aspect, distance);
     }

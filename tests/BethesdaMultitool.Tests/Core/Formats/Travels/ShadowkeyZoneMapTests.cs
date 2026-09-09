@@ -1,6 +1,5 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
+using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
@@ -27,7 +26,7 @@ public sealed class ShadowkeyZoneMapTests
     private static byte[] Envelope(byte[] payload, uint? declaredLength = null)
     {
         using var compressed = new MemoryStream();
-        using (var deflater = new ZLibStream(compressed, CompressionLevel.Optimal, leaveOpen: true))
+        using (var deflater = new ZLibStream(compressed, CompressionLevel.Optimal, true))
         {
             deflater.Write(payload, 0, payload.Length);
         }
@@ -53,7 +52,7 @@ public sealed class ShadowkeyZoneMapTests
 
     private static byte[] ZoneMapPayload(int width, int height, Action<Span<byte>, int> writeCell)
     {
-        var payload = new byte[ShadowkeyZoneMap.HeaderLength + (width * height * ShadowkeyZoneMap.CellLength)];
+        var payload = new byte[ShadowkeyZoneMap.HeaderLength + width * height * ShadowkeyZoneMap.CellLength];
         WriteDirtyField(payload.AsSpan(0, ShadowkeyZoneMap.NameFieldLength), "crypt1", "azraled");
         WriteDirtyField(
             payload.AsSpan(ShadowkeyZoneMap.NameFieldLength, ShadowkeyZoneMap.AuthorFieldLength),
@@ -71,7 +70,7 @@ public sealed class ShadowkeyZoneMapTests
         {
             writeCell(
                 payload.AsSpan(
-                    ShadowkeyZoneMap.HeaderLength + (i * ShadowkeyZoneMap.CellLength),
+                    ShadowkeyZoneMap.HeaderLength + i * ShadowkeyZoneMap.CellLength,
                     ShadowkeyZoneMap.CellLength),
                 i);
         }
@@ -96,13 +95,13 @@ public sealed class ShadowkeyZoneMapTests
     private static byte[] PrototypeTablePayload(int count, Action<Span<byte>, int> writeRecord)
     {
         var payload = new byte[
-            ShadowkeyCellPrototypes.HeaderLength + (count * ShadowkeyCellPrototype.RecordLength)];
+            ShadowkeyCellPrototypes.HeaderLength + count * ShadowkeyCellPrototype.RecordLength];
         BinaryPrimitives.WriteUInt32LittleEndian(payload, (uint)count);
         for (var i = 0; i < count; i++)
         {
             writeRecord(
                 payload.AsSpan(
-                    ShadowkeyCellPrototypes.HeaderLength + (i * ShadowkeyCellPrototype.RecordLength),
+                    ShadowkeyCellPrototypes.HeaderLength + i * ShadowkeyCellPrototype.RecordLength,
                     ShadowkeyCellPrototype.RecordLength),
                 i);
         }
@@ -121,11 +120,11 @@ public sealed class ShadowkeyZoneMapTests
             BinaryPrimitives.WriteInt16LittleEndian(record[4..], 0x0400);
             for (var corner = 0; corner < ShadowkeyCellPrototype.CornerCount; corner++)
             {
-                BinaryPrimitives.WriteInt16LittleEndian(record[(6 + (corner * 2))..], (short)(corner * 0x0100));
+                BinaryPrimitives.WriteInt16LittleEndian(record[(6 + corner * 2)..], (short)(corner * 0x0100));
 
                 // The last prototype is solid: its ceiling drops to meet the floor.
                 BinaryPrimitives.WriteInt16LittleEndian(
-                    record[(14 + (corner * 2))..], i == 3 ? (short)0 : (short)0x0400);
+                    record[(14 + corner * 2)..], i == 3 ? (short)0 : (short)0x0400);
             }
 
             record[22] = 5;
@@ -137,7 +136,7 @@ public sealed class ShadowkeyZoneMapTests
 
     private static byte[] TextureBankPayload(int count, int textureLength = ShadowkeyTextureBank.TextureLength)
     {
-        var payload = new byte[ShadowkeyTextureBank.HeaderLength + (count * textureLength)];
+        var payload = new byte[ShadowkeyTextureBank.HeaderLength + count * textureLength];
         payload[0] = (byte)count;
         for (var i = 0; i < count * textureLength; i++)
         {
@@ -154,19 +153,19 @@ public sealed class ShadowkeyZoneMapTests
         for (var i = 0; i < Palette.EntryCount; i++)
         {
             rgb[i * 3] = (byte)i;
-            rgb[(i * 3) + 1] = (byte)(255 - i);
-            rgb[(i * 3) + 2] = 128;
+            rgb[i * 3 + 1] = (byte)(255 - i);
+            rgb[i * 3 + 2] = 128;
         }
 
         rgb[6 * 3] = 0xFF;
-        rgb[(6 * 3) + 1] = 0x00;
-        rgb[(6 * 3) + 2] = 0xFF;
+        rgb[6 * 3 + 1] = 0x00;
+        rgb[6 * 3 + 2] = 0xFF;
         return rgb;
     }
 
     private static byte[] SkyboxPayload(int vertexCount, int cornerCount, int faceCount, int gapLength)
     {
-        var meshLength = ShadowkeySkybox.HeaderLength + (vertexCount * 6) + (cornerCount * 4) + (faceCount * 12);
+        var meshLength = ShadowkeySkybox.HeaderLength + vertexCount * 6 + cornerCount * 4 + faceCount * 12;
         var payload = new byte[meshLength + gapLength + ShadowkeySkybox.TextureLength + ShadowkeySkybox.FooterLength];
         BinaryPrimitives.WriteUInt16LittleEndian(payload, 7);
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(2), 1);
@@ -178,29 +177,29 @@ public sealed class ShadowkeyZoneMapTests
 
         for (var i = 0; i < vertexCount; i++)
         {
-            var offset = ShadowkeySkybox.HeaderLength + (i * 6);
+            var offset = ShadowkeySkybox.HeaderLength + i * 6;
             BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(offset), (short)(-100 - i));
             BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(offset + 2), (short)(i * 2));
             BinaryPrimitives.WriteInt16LittleEndian(payload.AsSpan(offset + 4), (short)(200 + i));
         }
 
-        var cornerOffset = ShadowkeySkybox.HeaderLength + (vertexCount * 6);
+        var cornerOffset = ShadowkeySkybox.HeaderLength + vertexCount * 6;
         for (var i = 0; i < cornerCount; i++)
         {
-            BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(cornerOffset + (i * 4)), (ushort)(i * 256));
-            BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(cornerOffset + (i * 4) + 2), 256);
+            BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(cornerOffset + i * 4), (ushort)(i * 256));
+            BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(cornerOffset + i * 4 + 2), 256);
         }
 
-        var faceOffset = cornerOffset + (cornerCount * 4);
+        var faceOffset = cornerOffset + cornerCount * 4;
         for (var i = 0; i < faceCount; i++)
         {
-            var offset = faceOffset + (i * 12);
+            var offset = faceOffset + i * 12;
             for (var word = 0; word < 3; word++)
             {
                 BinaryPrimitives.WriteUInt16LittleEndian(
-                    payload.AsSpan(offset + (word * 2)), (ushort)((i + word) % vertexCount));
+                    payload.AsSpan(offset + word * 2), (ushort)((i + word) % vertexCount));
                 BinaryPrimitives.WriteUInt16LittleEndian(
-                    payload.AsSpan(offset + 6 + (word * 2)), (ushort)((i + word) % cornerCount));
+                    payload.AsSpan(offset + 6 + word * 2), (ushort)((i + word) % cornerCount));
             }
         }
 
@@ -239,12 +238,13 @@ public sealed class ShadowkeyZoneMapTests
     {
         var payload = TwoByTwoMapPayload();
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyCompressedFile.Inflate(Envelope(payload, (uint)payload.Length + 1), "crypt1.zmp"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyCompressedFile.Inflate(Envelope(payload, (uint)payload.Length + 1), "crypt1.zmp"));
 
         Assert.Contains("crypt1.zmp", error.Message, StringComparison.Ordinal);
-        Assert.Contains(payload.Length.ToString(System.Globalization.CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
-        Assert.Contains((payload.Length + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
+        Assert.Contains(payload.Length.ToString(CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
+        Assert.Contains((payload.Length + 1).ToString(CultureInfo.InvariantCulture), error.Message,
+            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -255,8 +255,7 @@ public sealed class ShadowkeyZoneMapTests
         file[4] = 0x1F; // gzip, not zlib
         file[5] = 0x8B;
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyCompressedFile.Inflate(file, "crypt1.zcp"));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyCompressedFile.Inflate(file, "crypt1.zcp"));
 
         Assert.Contains("crypt1.zcp", error.Message, StringComparison.Ordinal);
         Assert.Contains("zlib", error.Message, StringComparison.Ordinal);
@@ -266,8 +265,7 @@ public sealed class ShadowkeyZoneMapTests
     [Fact]
     public void Inflate_RejectsAFileTooShortToHoldTheLengthPrefix()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyCompressedFile.Inflate(new byte[4], "stub.zmp"));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyCompressedFile.Inflate(new byte[4], "stub.zmp"));
 
         Assert.Contains("stub.zmp", error.Message, StringComparison.Ordinal);
     }
@@ -279,8 +277,7 @@ public sealed class ShadowkeyZoneMapTests
         file[^1] ^= 0xFF;
         file[^2] ^= 0xFF;
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyCompressedFile.Inflate(file, "crypt1.zmp"));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyCompressedFile.Inflate(file, "crypt1.zmp"));
 
         Assert.Contains("crypt1.zmp", error.Message, StringComparison.Ordinal);
     }
@@ -348,7 +345,7 @@ public sealed class ShadowkeyZoneMapTests
         var error = Assert.Throws<InvalidDataException>(() => ShadowkeyZoneMap.Parse(payload, "crypt1.zmp"));
 
         Assert.Contains("crypt1.zmp", error.Message, StringComparison.Ordinal);
-        Assert.Contains(payload.Length.ToString(System.Globalization.CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
+        Assert.Contains(payload.Length.ToString(CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -358,8 +355,8 @@ public sealed class ShadowkeyZoneMapTests
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(130), 0);
 
         Assert.Throws<InvalidDataException>(() => ShadowkeyZoneMap.Parse(payload, "crypt1.zmp"));
-        Assert.Throws<InvalidDataException>(
-            () => ShadowkeyZoneMap.Parse(new byte[ShadowkeyZoneMap.HeaderLength - 1], "crypt1.zmp"));
+        Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyZoneMap.Parse(new byte[ShadowkeyZoneMap.HeaderLength - 1], "crypt1.zmp"));
     }
 
     [Fact]
@@ -399,8 +396,7 @@ public sealed class ShadowkeyZoneMapTests
         var payload = FourPrototypePayload();
         BinaryPrimitives.WriteUInt32LittleEndian(payload, 5);
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyCellPrototypes.Parse(payload, "crypt1.zcp"));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyCellPrototypes.Parse(payload, "crypt1.zcp"));
 
         Assert.Contains("crypt1.zcp", error.Message, StringComparison.Ordinal);
         Assert.Contains("5", error.Message, StringComparison.Ordinal);
@@ -459,21 +455,25 @@ public sealed class ShadowkeyZoneMapTests
             Assert.Equal(ShadowkeyTextureBank.TextureHeight, texture.Height);
         });
 
-        // Second texture starts where the first ends: byte 16384 of the pixel run.
-        Assert.Equal((byte)0, bank.Textures[1].Indices[0]);
-        Assert.Equal((byte)1, bank.Textures[0].Indices[1]);
+        // Second texture starts where the first ends: byte 16384 of the pixel run. The file stores
+        // rows bottom-up, so that first file row lands on the LAST row of the bitmap...
+        var lastRow = (ShadowkeyTextureBank.TextureHeight - 1) * ShadowkeyTextureBank.TextureWidth;
+        Assert.Equal((byte)0, bank.Textures[1].Indices[lastRow]);
+        Assert.Equal((byte)1, bank.Textures[0].Indices[lastRow + 1]);
+
+        // ...and the file's last row (pixel-run bytes 16256..16383) becomes the bitmap's top row.
+        Assert.Equal((byte)(16256 & 0xFF), bank.Textures[0].Indices[0]);
     }
 
     [Fact]
     public void TextureBank_RejectsAPayloadThatIsNotOnePlusCountTimes16384()
     {
-        var payload = TextureBankPayload(2, textureLength: ShadowkeyTextureBank.TextureLength - 1);
+        var payload = TextureBankPayload(2, ShadowkeyTextureBank.TextureLength - 1);
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyTextureBank.Parse(payload, "crypt1.ztx"));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyTextureBank.Parse(payload, "crypt1.ztx"));
 
         Assert.Contains("crypt1.ztx", error.Message, StringComparison.Ordinal);
-        Assert.Contains(payload.Length.ToString(System.Globalization.CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
+        Assert.Contains(payload.Length.ToString(CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
         Assert.Throws<InvalidDataException>(() => ShadowkeyTextureBank.Parse(Array.Empty<byte>(), "crypt1.ztx"));
     }
 
@@ -486,14 +486,16 @@ public sealed class ShadowkeyZoneMapTests
         var texture = bank.Decode(0, palette);
         var pixels = texture.Pixels;
 
-        // Texel 0 is index 0 -> (0, 255, 128) verbatim; a 6-bit promotion would scale it.
-        Assert.Equal(0, pixels[0]);
-        Assert.Equal(255, pixels[1]);
-        Assert.Equal(128, pixels[2]);
+        // The file's first row is the bitmap's LAST row (bottom-up storage). Its first texel is
+        // index 0 -> (0, 255, 128) verbatim; a 6-bit promotion would scale it.
+        var bottomLeft = (ShadowkeyTextureBank.TextureHeight - 1) * ShadowkeyTextureBank.TextureWidth * 4;
+        Assert.Equal(0, pixels[bottomLeft]);
+        Assert.Equal(255, pixels[bottomLeft + 1]);
+        Assert.Equal(128, pixels[bottomLeft + 2]);
 
-        // Texel 200 is index 200 -> (200, 55, 128).
-        Assert.Equal(200, pixels[200 * 4]);
-        Assert.Equal(55, pixels[(200 * 4) + 1]);
+        // Texel 100 of that row is index 100 -> (100, 155, 128).
+        Assert.Equal(100, pixels[bottomLeft + 100 * 4]);
+        Assert.Equal(155, pixels[bottomLeft + 100 * 4 + 1]);
         Assert.Throws<ArgumentOutOfRangeException>(() => bank.Decode(1, palette));
     }
 
@@ -510,8 +512,7 @@ public sealed class ShadowkeyZoneMapTests
     [Fact]
     public void ZonePalette_RejectsAFileThatIsNot768Bytes()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyZonePalette.Parse(new byte[767], "crypt1.pal"));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyZonePalette.Parse(new byte[767], "crypt1.pal"));
 
         Assert.Contains("crypt1.pal", error.Message, StringComparison.Ordinal);
         Assert.Null(ShadowkeyZonePalette.FindColourKeyIndex(new byte[767]));
@@ -521,7 +522,7 @@ public sealed class ShadowkeyZoneMapTests
     public void Skybox_ReadsTheMeshAndLocatesTheImageFromTheFileEnd()
     {
         var sky = ShadowkeySkybox.Parse(
-            SkyboxPayload(vertexCount: 4, cornerCount: 5, faceCount: 2, gapLength: ShadowkeySkybox.OutdoorGapLength),
+            SkyboxPayload(4, 5, 2, ShadowkeySkybox.OutdoorGapLength),
             "azra.zsk");
 
         Assert.Equal(4, sky.Vertices.Count);
@@ -542,7 +543,7 @@ public sealed class ShadowkeyZoneMapTests
     public void Skybox_AcceptsTheFourByteInteriorGap()
     {
         var sky = ShadowkeySkybox.Parse(
-            SkyboxPayload(vertexCount: 3, cornerCount: 3, faceCount: 1, gapLength: ShadowkeySkybox.InteriorGapLength),
+            SkyboxPayload(3, 3, 1, ShadowkeySkybox.InteriorGapLength),
             "crypt1.zsk");
 
         Assert.False(sky.IsOutdoorClass);
@@ -552,7 +553,7 @@ public sealed class ShadowkeyZoneMapTests
     [Fact]
     public void Skybox_RejectsAGapThatIsNeitherFourNorSix()
     {
-        var payload = SkyboxPayload(4, 5, 2, gapLength: 5);
+        var payload = SkyboxPayload(4, 5, 2, 5);
 
         var error = Assert.Throws<InvalidDataException>(() => ShadowkeySkybox.Parse(payload, "azra.zsk"));
 
@@ -569,8 +570,7 @@ public sealed class ShadowkeyZoneMapTests
 
         var wrongCoordinates = SkyboxPayload(4, 5, 2, ShadowkeySkybox.OutdoorGapLength);
         BinaryPrimitives.WriteUInt16LittleEndian(wrongCoordinates.AsSpan(10), 11);
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeySkybox.Parse(wrongCoordinates, "azra.zsk"));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeySkybox.Parse(wrongCoordinates, "azra.zsk"));
         Assert.Contains("11 coordinates", error.Message, StringComparison.Ordinal);
     }
 
@@ -578,13 +578,13 @@ public sealed class ShadowkeyZoneMapTests
     public void Skybox_RejectsAFaceThatIndexesAVertexThatDoesNotExist()
     {
         var payload = SkyboxPayload(4, 5, 2, ShadowkeySkybox.OutdoorGapLength);
-        var faceOffset = ShadowkeySkybox.HeaderLength + (4 * 6) + (5 * 4);
+        var faceOffset = ShadowkeySkybox.HeaderLength + 4 * 6 + 5 * 4;
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(faceOffset), 4);
 
         var error = Assert.Throws<InvalidDataException>(() => ShadowkeySkybox.Parse(payload, "azra.zsk"));
 
         Assert.Contains("face vertex index 4", error.Message, StringComparison.Ordinal);
-        Assert.Contains(faceOffset.ToString(System.Globalization.CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
+        Assert.Contains(faceOffset.ToString(CultureInfo.InvariantCulture), error.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -602,23 +602,22 @@ public sealed class ShadowkeyZoneMapTests
         // Level 0 is black, and the red bank tints green and blue to 2/5 of the palette value.
         Assert.Equal(0, parsed.Lookup(0, 0, 200));
         Assert.Equal(
-            (ushort)(Math.Min(15, 200 * 63 / ShadowkeyLightTable.LightDivisor) << 8
-                | Math.Min(15, 55 * 2 / 5 * 63 / ShadowkeyLightTable.LightDivisor) << 4
-                | Math.Min(15, 128 * 2 / 5 * 63 / ShadowkeyLightTable.LightDivisor)),
+            (ushort)((Math.Min(15, 200 * 63 / ShadowkeyLightTable.LightDivisor) << 8)
+                     | (Math.Min(15, 55 * 2 / 5 * 63 / ShadowkeyLightTable.LightDivisor) << 4)
+                     | Math.Min(15, 128 * 2 / 5 * 63 / ShadowkeyLightTable.LightDivisor)),
             parsed.Lookup(1, 63, 200));
     }
 
     [Fact]
     public void LightTable_RejectsAWrongSizedPayloadAndAnEntryPastTwelveBits()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyLightTable.Parse(new byte[ShadowkeyLightTable.PayloadLength - 2], "crypt1.zlu"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyLightTable.Parse(new byte[ShadowkeyLightTable.PayloadLength - 2], "crypt1.zlu"));
         Assert.Contains("crypt1.zlu", error.Message, StringComparison.Ordinal);
 
         var bytes = new byte[ShadowkeyLightTable.PayloadLength];
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(8), 0x1000);
-        var overflow = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyLightTable.Parse(bytes, "crypt1.zlu"));
+        var overflow = Assert.Throws<InvalidDataException>(() => ShadowkeyLightTable.Parse(bytes, "crypt1.zlu"));
         Assert.Contains("byte 8", overflow.Message, StringComparison.Ordinal);
     }
 
@@ -667,8 +666,8 @@ public sealed class ShadowkeyZoneMapTests
     [Fact]
     public void FogTable_RejectsAWrongSizedPayloadAnEntryPastTwelveBitsAndABadLookup()
     {
-        Assert.Throws<InvalidDataException>(
-            () => ShadowkeyFogTable.Parse(new byte[ShadowkeyFogTable.PayloadLength + 2], "crypt1.zfg"));
+        Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyFogTable.Parse(new byte[ShadowkeyFogTable.PayloadLength + 2], "crypt1.zfg"));
 
         var bytes = new byte[ShadowkeyFogTable.PayloadLength];
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(6), 0xF000);

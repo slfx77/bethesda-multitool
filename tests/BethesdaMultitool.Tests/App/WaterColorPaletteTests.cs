@@ -27,7 +27,7 @@ public sealed class WaterColorPaletteTests
         var palette = WaterColorPalette.FromVisualProperties(props);
 
         Assert.NotNull(palette);
-        Assert.Equal((R: (byte)0x77, G: (byte)0x55, B: (byte)0x33), palette!.Shallow);
+        Assert.Equal((R: (byte)0x77, G: (byte)0x55, B: (byte)0x33), palette.Shallow);
         Assert.Equal((R: (byte)0x44, G: (byte)0x22, B: (byte)0x11), palette.Deep);
     }
 
@@ -56,7 +56,7 @@ public sealed class WaterColorPaletteTests
             new Dictionary<string, object?> { ["ShallowColor"] = 0x00_80_60_40u });
 
         Assert.NotNull(palette);
-        Assert.Equal(palette!.Shallow, palette.Deep);
+        Assert.Equal(palette.Shallow, palette.Deep);
         Assert.Equal((R: (byte)0x40, G: (byte)0x60, B: (byte)0x80), palette.Shallow);
     }
 }

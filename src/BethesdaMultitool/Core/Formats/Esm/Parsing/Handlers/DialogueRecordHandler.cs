@@ -771,7 +771,8 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
 
     private static string? PickTopicPrompt(IEnumerable<DialogueRecord> dialogues)
     {
-        foreach (var dialogue in dialogues.OrderBy(d => d.FormId))
+        var orderedDialogues = dialogues.OrderBy(d => d.FormId).ToArray();
+        foreach (var dialogue in orderedDialogues)
         {
             if (!string.IsNullOrWhiteSpace(dialogue.PromptText))
             {
@@ -779,8 +780,7 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
             }
         }
 
-        return dialogues
-            .OrderBy(d => d.FormId)
+        return orderedDialogues
             .SelectMany(d => d.Responses.OrderBy(r => r.ResponseNumber))
             .Select(response => response.Text)
             .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));

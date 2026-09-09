@@ -72,8 +72,10 @@ internal static class TerrainVertexLayout
     ///     <see cref="TerrainBlendWeightPacking" /> for why 16 bits is both sufficient and the right
     ///     stopping point, and why the quad count varies per cell.
     /// </summary>
-    public static uint BlendWeightStrideFor(int blendQuadCount) =>
-        (uint)TerrainBlendWeightPacking.BytesPerVertexFor(blendQuadCount);
+    public static uint BlendWeightStrideFor(int blendQuadCount)
+    {
+        return (uint)TerrainBlendWeightPacking.BytesPerVertexFor(blendQuadCount);
+    }
 
     private static InputElementDescription[][] BuildAll()
     {

@@ -40,7 +40,7 @@ public sealed class NifSourceOpenLatencyTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -59,7 +59,7 @@ public sealed class NifSourceOpenLatencyTests
             using var service = NifBrowserService.CreateFromBsa(archivePath);
             var updates = new List<NifBrowserScanProgress>();
 
-            var entries = service.ListNifFiles(updates.Add);
+            var entries = service.ListNifFiles(updates.Add, TestContext.Current.CancellationToken);
 
             var directory = Assert.Single(entries);
             Assert.True(directory.IsDirectory);
@@ -77,7 +77,7 @@ public sealed class NifSourceOpenLatencyTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -105,8 +105,8 @@ public sealed class NifSourceOpenLatencyTests
                 discovery = BsaDiscovery.DiscoverInDirectoryWithKnownArchive(
                     tempRoot,
                     selected,
-                    selectedHasMeshes: true,
-                    selectedHasTextures: true);
+                    true,
+                    true);
             }
 
             Assert.Contains(selected, discovery.MeshesBsaPaths);
@@ -120,7 +120,7 @@ public sealed class NifSourceOpenLatencyTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -149,7 +149,7 @@ public sealed class NifSourceOpenLatencyTests
             // Selected-archive browsing neither reads nor caches a failed classification for the
             // locked sibling. Releasing it before the first source-set observation lets the same
             // service discover the material archive normally.
-            var root = Assert.Single(service.ListNifFiles());
+            var root = Assert.Single(service.ListNifFiles(cancellationToken: TestContext.Current.CancellationToken));
             Assert.Equal("model.nif", Assert.Single(root.Children).DisplayName);
             siblingLock.Dispose();
 
@@ -157,7 +157,7 @@ public sealed class NifSourceOpenLatencyTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -172,7 +172,7 @@ public sealed class NifSourceOpenLatencyTests
         var nameTableOffset = checked((ulong)(headerSize + virtualPaths.Length * recordSize));
 
         using var stream = File.Create(archivePath);
-        using var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, Encoding.UTF8, true);
         writer.Write("BTDX"u8.ToArray());
         writer.Write(1u);
         writer.Write("GNRL"u8.ToArray());

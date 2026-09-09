@@ -143,7 +143,7 @@ public sealed class RenderableSubmeshClonerTests
         var clone = RenderableSubmeshCloner.DeepClone(source);
 
         AssertEveryWritablePropertyIsCovered();
-        AssertEquivalent(source, clone, deepCloneArrays: true);
+        AssertEquivalent(source, clone, true);
         Assert.Same(source.ShaderMetadata, clone.ShaderMetadata);
         Assert.Same(source.MaterialAlphaController, clone.MaterialAlphaController);
         Assert.Same(source.ParticleRuntime, clone.ParticleRuntime);
@@ -161,7 +161,7 @@ public sealed class RenderableSubmeshClonerTests
 
         var clone = NpcExportSceneBuilder.CloneSubmesh(source);
 
-        AssertEquivalent(source, clone, deepCloneArrays: true);
+        AssertEquivalent(source, clone, true);
     }
 
     [Fact]
@@ -175,7 +175,7 @@ public sealed class RenderableSubmeshClonerTests
         var geometryProperties = GeometryPropertyNames.ToHashSet(StringComparer.Ordinal);
         foreach (var property in WritableProperties())
         {
-            object? expected = property.Name switch
+            var expected = property.Name switch
             {
                 nameof(RenderableSubmesh.SourceNifPath) => renderState.SourceNifPath,
                 nameof(RenderableSubmesh.SkyType) => renderState.SkyType,

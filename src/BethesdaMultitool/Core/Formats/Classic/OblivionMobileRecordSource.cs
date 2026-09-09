@@ -118,7 +118,6 @@ internal static class OblivionMobileRecordSource
     /// <summary>The two scripts nothing LOADSCRs — where the overlay walk starts.</summary>
     private static readonly string[] RootScripts = ["startup.scr", "l01_1.scr"];
 
-    private static readonly char[] PathSeparators = ['/', '\\'];
 
     /// <summary>
     ///     Reads the mounted install and appends every synthesized record. A family whose files are
@@ -126,7 +125,8 @@ internal static class OblivionMobileRecordSource
     ///     this JAR is itself a trimmed repack (it is missing <c>/4.png</c>, <c>/lang.cml</c>,
     ///     <c>/oh_font.cml</c> and <c>/finale.png</c>), so a short collection must still browse.
     /// </summary>
-    public static void Populate(IGameFileSystem install, RecordCollection records, CancellationToken cancellationToken = default)
+    public static void Populate(IGameFileSystem install, RecordCollection records,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(install);
         ArgumentNullException.ThrowIfNull(records);
@@ -241,7 +241,8 @@ internal static class OblivionMobileRecordSource
 
     /// <summary>Reads every asset whose bare name ends in <paramref name="extension" />, name-ordered.</summary>
     private static IEnumerable<(string Name, byte[] Bytes)> ReadFamily(
-        IGameFileSystem install, Dictionary<string, string> assets, string extension, CancellationToken cancellationToken)
+        IGameFileSystem install, Dictionary<string, string> assets, string extension,
+        CancellationToken cancellationToken)
     {
         foreach (var name in assets.Keys
                      .Where(n => n.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
@@ -344,21 +345,10 @@ internal static class OblivionMobileRecordSource
     private static Dictionary<string, SortedSet<string>> BuildPairing(
         List<(string Name, int Size, OblivionMobileScript Script)> scripts)
     {
-        var pairing = new Dictionary<string, SortedSet<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (_, _, script) in scripts)
-        {
-            foreach (var reference in script.Maps)
-            {
-                var tileMap = FileNameOf(reference.TileMap);
-                if (!pairing.TryGetValue(tileMap, out var set))
-                {
-                    set = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-                    pairing[tileMap] = set;
-                }
-
-                set.Add(FileNameOf(reference.SpriteSet));
-            }
-        }
+        // One implementation, shared with the 2D level view: a viewer that re-derived this
+        // pairing could drift from the records and draw a level with a different tileset than
+        // the one the record browser names for it.
+        var pairing = OblivionMobileAtlasPairing.Build(scripts.Select(s => s.Script));
 
         return pairing;
     }
@@ -707,7 +697,7 @@ internal static class OblivionMobileRecordSource
             ["DuplicatesBaseTable"] = duplicate
         };
 
-        var index = (uint)((table.Index * TextIdsPerOverlay) + entry.Id);
+        var index = (uint)(table.Index * TextIdsPerOverlay + entry.Id);
         return new GenericEsmRecord
         {
             FormId = ClassicFormIdScheme.Compose(TextDomain, index),
@@ -721,8 +711,7 @@ internal static class OblivionMobileRecordSource
     /// <summary>The last path segment; the scripts write resource paths as <c>/name.ext</c>.</summary>
     private static string FileNameOf(string path)
     {
-        var slash = path.LastIndexOfAny(PathSeparators);
-        return slash < 0 ? path : path[(slash + 1)..];
+        return OblivionMobileAtlasPairing.FileNameOf(path);
     }
 
     /// <summary>The file name without its extension.</summary>

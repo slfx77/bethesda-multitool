@@ -23,8 +23,6 @@ internal sealed class SyntheticMinidumpBuilder
     private int _baseRvaAlignmentRemainder;
     private ushort? _processorArchitecture;
 
-    private sealed record Region(long VirtualAddress, long DeclaredSize, byte[] Payload);
-
     /// <summary>Add a region whose declared size matches its payload.</summary>
     public SyntheticMinidumpBuilder AddRegion(long virtualAddress, byte[] payload)
     {
@@ -140,4 +138,6 @@ internal sealed class SyntheticMinidumpBuilder
 
         return data;
     }
+
+    private sealed record Region(long VirtualAddress, long DeclaredSize, byte[] Payload);
 }

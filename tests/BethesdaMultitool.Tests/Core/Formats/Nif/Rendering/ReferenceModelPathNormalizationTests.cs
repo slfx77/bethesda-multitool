@@ -39,7 +39,7 @@ public sealed class ReferenceModelPathNormalizationTests
         Assert.StartsWith(
             @"trees\",
             ReferenceModelPath.Normalize(@"\WastelandShrub01.spt"),
-            System.StringComparison.OrdinalIgnoreCase);
+            StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

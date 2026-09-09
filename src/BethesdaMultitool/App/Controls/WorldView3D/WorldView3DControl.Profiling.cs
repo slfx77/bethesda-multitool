@@ -82,6 +82,7 @@ public sealed partial class WorldView3DControl
     /// </summary>
     internal IReadOnlyList<string> Profiler_LastMissingMeshPaths =>
         _references is { } refs ? [.. refs.LastFrameMissingMeshPaths] : [];
+
     internal WorldRenderStats? Profiler_WaterStats => _water?.LastStats.Snapshot();
     internal WorldRenderStats? Profiler_WireframeStats => _cellGrid?.LastStats.Snapshot();
 

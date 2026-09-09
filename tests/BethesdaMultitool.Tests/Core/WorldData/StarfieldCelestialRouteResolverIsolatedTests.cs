@@ -14,12 +14,12 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
     [Fact]
     public void Resolve_TreatsSolStyleSystemZeroAsAuthoredScalarKey()
     {
-        var sol = Star(PrimaryStarFormId, systemId: 0, sunPresetFormId: RootSunPresetFormId);
+        var sol = Star(PrimaryStarFormId, 0, RootSunPresetFormId);
 
         var route = StarfieldCelestialRouteResolver.Resolve(
-            PlanetCandidate(systemId: 0),
+            PlanetCandidate(0),
             StarfieldStarDataIndex.Build([sol]),
-            SunIndex(Root(RootSunPresetFormId, illuminance: 20_000)));
+            SunIndex(Root(RootSunPresetFormId, 20_000)));
 
         Assert.True(route.IsResolved, route.FailureDetail);
         Assert.Equal(StarfieldCelestialRouteStatus.Resolved, route.Status);
@@ -34,11 +34,11 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
     [Fact]
     public void Resolve_PreservesEveryAmbiguousSystemCandidateWithoutChoosingPreset()
     {
-        var first = Star(0x100, systemId: 7, sunPresetFormId: RootSunPresetFormId);
-        var second = Star(0x200, systemId: 7, sunPresetFormId: DiffSunPresetFormId);
+        var first = Star(0x100, 7, RootSunPresetFormId);
+        var second = Star(0x200, 7, DiffSunPresetFormId);
 
         var route = StarfieldCelestialRouteResolver.Resolve(
-            PlanetCandidate(systemId: 7),
+            PlanetCandidate(7),
             StarfieldStarDataIndex.Build([first, second]),
             new Dictionary<uint, StarfieldSunPresetRecord>());
 
@@ -54,16 +54,16 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
     [Fact]
     public void Resolve_PreservesMissingAndAuthoredZeroPnamWithoutSunpLookup()
     {
-        var missing = Star(0x100, systemId: 1, sunPresetFormId: null);
-        var zero = Star(0x200, systemId: 2, sunPresetFormId: 0);
+        var missing = Star(0x100, 1, null);
+        var zero = Star(0x200, 2, 0);
         var emptySunIndex = new Dictionary<uint, StarfieldSunPresetRecord>();
 
         var missingRoute = StarfieldCelestialRouteResolver.Resolve(
-            PlanetCandidate(systemId: 1),
+            PlanetCandidate(1),
             StarfieldStarDataIndex.Build([missing]),
             emptySunIndex);
         var zeroRoute = StarfieldCelestialRouteResolver.Resolve(
-            PlanetCandidate(systemId: 2),
+            PlanetCandidate(2),
             StarfieldStarDataIndex.Build([zero]),
             emptySunIndex);
 
@@ -84,9 +84,9 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
     {
         const uint missingSunPreset = 0x00DEAD00;
         var route = StarfieldCelestialRouteResolver.Resolve(
-            PlanetCandidate(systemId: 3),
+            PlanetCandidate(3),
             StarfieldStarDataIndex.Build(
-                [Star(PrimaryStarFormId, systemId: 3, sunPresetFormId: missingSunPreset)]),
+                [Star(PrimaryStarFormId, 3, missingSunPreset)]),
             new Dictionary<uint, StarfieldSunPresetRecord>());
 
         Assert.False(route.IsResolved);
@@ -104,7 +104,7 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
     [Fact]
     public void Resolve_ExposesEffectiveInheritedSunPreset()
     {
-        var root = Root(RootSunPresetFormId, illuminance: 20_000);
+        var root = Root(RootSunPresetFormId, 20_000);
         var diff = new StarfieldSunPresetRecord
         {
             FormId = DiffSunPresetFormId,
@@ -118,9 +118,9 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
             }
         };
         var route = StarfieldCelestialRouteResolver.Resolve(
-            PlanetCandidate(systemId: 4),
+            PlanetCandidate(4),
             StarfieldStarDataIndex.Build(
-                [Star(PrimaryStarFormId, systemId: 4, sunPresetFormId: DiffSunPresetFormId)]),
+                [Star(PrimaryStarFormId, 4, DiffSunPresetFormId)]),
             SunIndex(root, diff));
 
         Assert.True(route.IsResolved, route.FailureDetail);
@@ -138,20 +138,20 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
         const uint binarySunPreset = 0x0013424B;
         var primary = Star(
             PrimaryStarFormId,
-            systemId: 5,
-            sunPresetFormId: RootSunPresetFormId,
-            binaryStarFormId: BinaryStarFormId);
+            5,
+            RootSunPresetFormId,
+            BinaryStarFormId);
         var binary = Star(
             BinaryStarFormId,
-            systemId: 6,
-            sunPresetFormId: binarySunPreset);
+            6,
+            binarySunPreset);
 
         var route = StarfieldCelestialRouteResolver.Resolve(
-            PlanetCandidate(systemId: 5),
+            PlanetCandidate(5),
             StarfieldStarDataIndex.Build([primary, binary]),
             SunIndex(
-                Root(RootSunPresetFormId, illuminance: 20_000),
-                Root(binarySunPreset, illuminance: 8_000)));
+                Root(RootSunPresetFormId, 20_000),
+                Root(binarySunPreset, 8_000)));
 
         Assert.True(route.IsResolved, route.FailureDetail);
         Assert.Same(primary, route.PrimaryStar!.Star);
@@ -165,16 +165,16 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
     {
         var primary = Star(
             PrimaryStarFormId,
-            systemId: 9,
-            sunPresetFormId: RootSunPresetFormId,
-            binaryStarFormId: BinaryStarFormId);
-        var firstBinary = Star(BinaryStarFormId, systemId: 10, sunPresetFormId: null);
-        var secondBinary = Star(BinaryStarFormId, systemId: 11, sunPresetFormId: 0);
+            9,
+            RootSunPresetFormId,
+            BinaryStarFormId);
+        var firstBinary = Star(BinaryStarFormId, 10, null);
+        var secondBinary = Star(BinaryStarFormId, 11, 0);
 
         var route = StarfieldCelestialRouteResolver.Resolve(
-            PlanetCandidate(systemId: 9),
+            PlanetCandidate(9),
             StarfieldStarDataIndex.Build([primary, firstBinary, secondBinary]),
-            SunIndex(Root(RootSunPresetFormId, illuminance: 20_000)));
+            SunIndex(Root(RootSunPresetFormId, 20_000)));
 
         Assert.False(route.IsResolved);
         Assert.Equal(StarfieldCelestialRouteStatus.StarDataResolutionFailed, route.Status);
@@ -192,18 +192,18 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
         const uint binarySunPreset = 0x0013424B;
         var primary = Star(
             PrimaryStarFormId,
-            systemId: 7,
-            sunPresetFormId: missingPrimarySunPreset,
-            binaryStarFormId: BinaryStarFormId);
+            7,
+            missingPrimarySunPreset,
+            BinaryStarFormId);
         var binary = Star(
             BinaryStarFormId,
-            systemId: 8,
-            sunPresetFormId: binarySunPreset);
+            8,
+            binarySunPreset);
 
         var route = StarfieldCelestialRouteResolver.Resolve(
-            PlanetCandidate(systemId: 7),
+            PlanetCandidate(7),
             StarfieldStarDataIndex.Build([primary, binary]),
-            SunIndex(Root(binarySunPreset, illuminance: 8_000)));
+            SunIndex(Root(binarySunPreset, 8_000)));
 
         Assert.False(route.IsResolved);
         Assert.Equal(StarfieldCelestialRouteStatus.SunPresetResolutionFailed, route.Status);
@@ -218,17 +218,17 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
     {
         var worldspace = new StarfieldPlanetWorldspaceEntry(0d, 0d, 0x100);
         var body = new StarfieldPlanetBodyData(
-            CnamRawValue: 2,
-            SystemId: systemId,
-            ParentPlanetId: 0,
-            PlanetId: 3,
-            Atmosphere: new StarfieldPlanetAtmosphereData(0, 0, 0, 0));
+            2,
+            systemId,
+            0,
+            3,
+            new StarfieldPlanetAtmosphereData(0, 0, 0, 0));
         var planet = new StarfieldResolvedPlanetData(
-            FormId: 0x200,
-            EditorId: "SyntheticPlanet",
-            Worldspaces: [worldspace],
-            Body: body,
-            SourceRecordCount: 1);
+            0x200,
+            "SyntheticPlanet",
+            [worldspace],
+            body,
+            1);
         return new StarfieldPlanetWorldspaceCandidate(planet, worldspace);
     }
 
@@ -281,10 +281,14 @@ public sealed class StarfieldCelestialRouteResolverIsolatedTests
         };
     }
 
-    private static StarfieldSunPresetFloat4Patch Color(float x, float y, float z, float w) =>
-        new() { X = x, Y = y, Z = z, W = w };
+    private static StarfieldSunPresetFloat4Patch Color(float x, float y, float z, float w)
+    {
+        return new StarfieldSunPresetFloat4Patch { X = x, Y = y, Z = z, W = w };
+    }
 
-    private static IReadOnlyDictionary<uint, StarfieldSunPresetRecord> SunIndex(
-        params StarfieldSunPresetRecord[] records) =>
-        records.ToDictionary(record => record.FormId);
+    private static Dictionary<uint, StarfieldSunPresetRecord> SunIndex(
+        params StarfieldSunPresetRecord[] records)
+    {
+        return records.ToDictionary(record => record.FormId);
+    }
 }

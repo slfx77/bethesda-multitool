@@ -37,7 +37,13 @@ public sealed class NonPumpingParallelTests
     public void For_honours_a_non_zero_start_index()
     {
         var seen = new List<int>();
-        NonPumpingParallel.For(10, 14, i => { lock (seen) { seen.Add(i); } });
+        NonPumpingParallel.For(10, 14, i =>
+        {
+            lock (seen)
+            {
+                seen.Add(i);
+            }
+        });
         Assert.Equal([10, 11, 12, 13], seen.OrderBy(static i => i));
     }
 
@@ -135,7 +141,10 @@ public sealed class NonPumpingParallelTests
 
         NonPumpingParallel.ForEach([1, 2, 3], 1, _ =>
         {
-            lock (threads) { threads.Add(Environment.CurrentManagedThreadId); }
+            lock (threads)
+            {
+                threads.Add(Environment.CurrentManagedThreadId);
+            }
         });
 
         Assert.Equal([callerThread], threads);

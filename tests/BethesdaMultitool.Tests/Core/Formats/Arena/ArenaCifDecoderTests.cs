@@ -13,9 +13,9 @@ public class ArenaCifDecoderTests
     [Fact]
     public void Decode_TwoUncompressedFrames_DistinctSizesAndOffsets()
     {
-        var bytes = FrameHeader(xOffset: 5, yOffset: 6, width: 2, height: 1, flags: 0x0000, dataLength: 2);
+        var bytes = FrameHeader(5, 6, 2, 1, 0x0000, 2);
         bytes.AddRange(new byte[] { 1, 2 });
-        bytes.AddRange(FrameHeader(xOffset: 9, yOffset: 4, width: 1, height: 3, flags: 0x0000, dataLength: 3));
+        bytes.AddRange(FrameHeader(9, 4, 1, 3, 0x0000, 3));
         bytes.AddRange(new byte[] { 7, 8, 9 });
 
         var frames = ArenaCifDecoder.Decode(bytes.ToArray(), "TEST.CIF");
@@ -42,9 +42,9 @@ public class ArenaCifDecoderTests
         // flags 0x0004, but the reference dispatches on the FIRST frame's flags only, so its
         // payload (an RLE literal packet) must still decode via RLE - fed to LZSS instead it
         // would throw on a truncated back-reference, so this vector discriminates.
-        var bytes = FrameHeader(0, 0, width: 2, height: 2, flags: 0x0002, dataLength: 2);
+        var bytes = FrameHeader(0, 0, 2, 2, 0x0002, 2);
         bytes.AddRange(new byte[] { 0x83, 0xAA });
-        bytes.AddRange(FrameHeader(xOffset: 3, yOffset: 1, width: 2, height: 1, flags: 0x0004, dataLength: 3));
+        bytes.AddRange(FrameHeader(3, 1, 2, 1, 0x0004, 3));
         bytes.AddRange(new byte[] { 0x01, 0x11, 0x22 }); // literal packet: 2 verbatim bytes
 
         var frames = ArenaCifDecoder.Decode(bytes.ToArray(), "WEAPON.CIF");
@@ -85,7 +85,7 @@ public class ArenaCifDecoderTests
     {
         // EOF-terminated iteration: 6 stray bytes after a complete frame cannot form the
         // next 12-byte header.
-        var bytes = FrameHeader(0, 0, width: 2, height: 1, flags: 0x0000, dataLength: 2);
+        var bytes = FrameHeader(0, 0, 2, 1, 0x0000, 2);
         bytes.AddRange(new byte[] { 5, 6 });
         bytes.AddRange(new byte[] { 0xDE, 0xAD, 0xBE, 0xEF, 0x01, 0x02 });
 
@@ -95,7 +95,7 @@ public class ArenaCifDecoderTests
     [Fact]
     public void Decode_TruncatedFrameData_Throws()
     {
-        var bytes = FrameHeader(0, 0, width: 4, height: 4, flags: 0x0004, dataLength: 50);
+        var bytes = FrameHeader(0, 0, 4, 4, 0x0004, 50);
         bytes.AddRange(new byte[] { 0x0F, 0x10, 0x20, 0x30, 0x40 }); // 50 bytes declared, 5 present
 
         Assert.Throws<InvalidDataException>(() => ArenaCifDecoder.Decode(bytes.ToArray(), "SHORT.CIF"));
@@ -105,7 +105,7 @@ public class ArenaCifDecoderTests
     public void Decode_UncompressedFrameLengthExceedsPixels_Throws()
     {
         // dataLength 5 for a 1x1 frame: the reference would overrun its pixel buffer.
-        var bytes = FrameHeader(0, 0, width: 1, height: 1, flags: 0x0000, dataLength: 5);
+        var bytes = FrameHeader(0, 0, 1, 1, 0x0000, 5);
         bytes.AddRange(new byte[] { 1, 2, 3, 4, 5 });
 
         Assert.Throws<InvalidDataException>(() => ArenaCifDecoder.Decode(bytes.ToArray(), "OVER.CIF"));
@@ -114,7 +114,7 @@ public class ArenaCifDecoderTests
     [Fact]
     public void Decode_UnrecognizedFlags_Throws()
     {
-        var bytes = FrameHeader(0, 0, width: 1, height: 1, flags: 0x0007, dataLength: 1);
+        var bytes = FrameHeader(0, 0, 1, 1, 0x0007, 1);
         bytes.Add(0x00);
 
         Assert.Throws<InvalidDataException>(() => ArenaCifDecoder.Decode(bytes.ToArray(), "BAD.CIF"));

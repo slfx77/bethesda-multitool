@@ -48,8 +48,6 @@ internal readonly record struct BethesdaSceneViewerFrame12(
 /// </summary>
 internal interface IBethesdaSceneViewerRenderSession12 : IDisposable
 {
-    event EventHandler? StateChanged;
-
     BethesdaSceneViewerRenderState State { get; }
 
     string? StatusMessage { get; }
@@ -77,6 +75,7 @@ internal interface IBethesdaSceneViewerRenderSession12 : IDisposable
     float AnimationTimeSeconds { get; }
 
     float AnimationDurationSeconds { get; }
+    event EventHandler? StateChanged;
 
     /// <summary>Receives the app-scoped D3D stack once, on the WinUI thread.</summary>
     void Initialize(BethesdaSceneViewerGraphicsContext12 graphics);

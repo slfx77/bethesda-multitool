@@ -63,7 +63,7 @@ internal sealed class InstallShieldCabinet
     public const int ComponentOffsetsPosition = 0x15a;
 
     /// <summary>Bytes of fixed cabinet-descriptor fields: both offset arrays end here.</summary>
-    public const int CabDescriptorFixedSize = ComponentOffsetsPosition + (OffsetSlotCount * sizeof(uint));
+    public const int CabDescriptorFixedSize = ComponentOffsetsPosition + OffsetSlotCount * sizeof(uint);
 
     /// <summary>File descriptor flag: the file continues in the next volume.</summary>
     public const ushort FlagSplit = 1;
@@ -218,7 +218,7 @@ internal sealed class InstallShieldCabinet
 
         // Header region: everything the descriptor and the file table can reach. Both must be
         // inside the file — a cabinet cut short anywhere in here is rejected, never guessed at.
-        var headerEnd = (long)descriptorOffset +
+        var headerEnd = descriptorOffset +
                         Math.Max(descriptorSize, (long)fileTableOffset + fileTableSize);
         if (headerEnd > fileLength || headerEnd > int.MaxValue)
         {
@@ -230,7 +230,8 @@ internal sealed class InstallShieldCabinet
         stream.Position = 0;
         stream.ReadExactly(header);
 
-        var region = new HeaderRegion(header, (int)descriptorOffset, (int)(descriptorOffset + fileTableOffset), fileName);
+        var region = new HeaderRegion(header, (int)descriptorOffset, (int)(descriptorOffset + fileTableOffset),
+            fileName);
 
         var tableEntries = (long)directoryCount + fileCount;
         if (tableEntries * sizeof(uint) > fileTableSize)
@@ -268,7 +269,7 @@ internal sealed class InstallShieldCabinet
     /// <summary>Extracts one file through a fresh handle; see the handle overload for the mechanics.</summary>
     public byte[] Extract(InstallShieldFileDescriptor file)
     {
-        using var handle = File.OpenHandle(FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var handle = File.OpenHandle(FilePath);
         return Extract(handle, file);
     }
 
@@ -362,7 +363,7 @@ internal sealed class InstallShieldCabinet
         {
             var value = (byte)(buffer[i] ^ 0xd5);
             value = (byte)((value >> 2) | (value << 6));
-            buffer[i] = (byte)(value - (position % 0x47));
+            buffer[i] = (byte)(value - position % 0x47);
         }
 
         seed = position;
@@ -493,7 +494,7 @@ internal sealed class InstallShieldCabinet
         var descriptors = new List<uint>();
         for (var slot = 0; slot < OffsetSlotCount; slot++)
         {
-            var next = BinaryPrimitives.ReadUInt32LittleEndian(fixedFields[(arrayPosition + (slot * sizeof(uint)))..]);
+            var next = BinaryPrimitives.ReadUInt32LittleEndian(fixedFields[(arrayPosition + slot * sizeof(uint))..]);
             var walked = 0;
             while (next != 0)
             {
@@ -518,7 +519,7 @@ internal sealed class InstallShieldCabinet
     /// </summary>
     private static int Inflate(byte[] chunk, int chunkLength, Span<byte> destination, InstallShieldFileDescriptor file)
     {
-        using var source = new MemoryStream(chunk, 0, chunkLength, writable: false);
+        using var source = new MemoryStream(chunk, 0, chunkLength, false);
         using var inflater = new DeflateStream(source, CompressionMode.Decompress);
 
         int total;
@@ -561,11 +562,15 @@ internal sealed class InstallShieldCabinet
         return total;
     }
 
-    private static InvalidDataException Invalid(string fileName, string reason) =>
-        new($"'{fileName}' is not a readable InstallShield 5 cabinet: {reason}.");
+    private static InvalidDataException Invalid(string fileName, string reason)
+    {
+        return new InvalidDataException($"'{fileName}' is not a readable InstallShield 5 cabinet: {reason}.");
+    }
 
-    private static InvalidDataException Corrupt(InstallShieldFileDescriptor file, string reason) =>
-        new($"InstallShield entry '{file.Name}' is corrupt: {reason}.");
+    private static InvalidDataException Corrupt(InstallShieldFileDescriptor file, string reason)
+    {
+        return new InvalidDataException($"InstallShield entry '{file.Name}' is corrupt: {reason}.");
+    }
 
     /// <summary>
     ///     The in-memory header prefix with the two bases every offset is relative to: the cabinet
@@ -588,18 +593,30 @@ internal sealed class InstallShieldCabinet
 
         public string FileName { get; }
 
-        public uint ReadTableUInt32(long offset) =>
-            BinaryPrimitives.ReadUInt32LittleEndian(Slice(_tableBase, offset, sizeof(uint), "file table"));
+        public uint ReadTableUInt32(long offset)
+        {
+            return BinaryPrimitives.ReadUInt32LittleEndian(Slice(_tableBase, offset, sizeof(uint), "file table"));
+        }
 
-        public ReadOnlySpan<byte> SliceTable(long offset, int length, string what) =>
-            Slice(_tableBase, offset, length, what);
+        public ReadOnlySpan<byte> SliceTable(long offset, int length, string what)
+        {
+            return Slice(_tableBase, offset, length, what);
+        }
 
-        public ReadOnlySpan<byte> SliceDescriptor(long offset, int length, string what) =>
-            Slice(_descriptorBase, offset, length, what);
+        public ReadOnlySpan<byte> SliceDescriptor(long offset, int length, string what)
+        {
+            return Slice(_descriptorBase, offset, length, what);
+        }
 
-        public string ReadTableString(long offset) => ReadString(_tableBase, offset);
+        public string ReadTableString(long offset)
+        {
+            return ReadString(_tableBase, offset);
+        }
 
-        public string ReadDescriptorString(long offset) => ReadString(_descriptorBase, offset);
+        public string ReadDescriptorString(long offset)
+        {
+            return ReadString(_descriptorBase, offset);
+        }
 
         private ReadOnlySpan<byte> Slice(int baseOffset, long offset, int length, string what)
         {
@@ -639,9 +656,9 @@ internal sealed class InstallShieldCabinet
     /// </summary>
     private sealed class DataReader
     {
-        private readonly SafeFileHandle _handle;
-        private readonly InstallShieldFileDescriptor _file;
         private readonly long _end;
+        private readonly InstallShieldFileDescriptor _file;
+        private readonly SafeFileHandle _handle;
         private long _position;
         private uint _seed;
 
@@ -657,7 +674,8 @@ internal sealed class InstallShieldCabinet
         {
             if (_position + destination.Length > _end)
             {
-                throw Corrupt(_file, $"a read of {destination.Length} bytes at 0x{_position:X} runs past its stored data");
+                throw Corrupt(_file,
+                    $"a read of {destination.Length} bytes at 0x{_position:X} runs past its stored data");
             }
 
             var filled = 0;

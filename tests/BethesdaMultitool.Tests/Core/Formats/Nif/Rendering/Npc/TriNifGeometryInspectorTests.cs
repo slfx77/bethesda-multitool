@@ -22,9 +22,9 @@ public sealed class TriNifGeometryInspectorTests
             @"Sample\Meshes\meshes_pc\meshes\characters\head\headhuman.nif");
         Assert.SkipWhen(triPath == null || nifPath == null, "Sample headhuman TRI/NIF not available.");
 
-        var tri = Assert.IsType<TriParser>(TriParser.Parse(File.ReadAllBytes(triPath!)));
+        var tri = Assert.IsType<TriParser>(TriParser.Parse(File.ReadAllBytes(triPath)));
         var inspection = Assert.IsType<TriNifGeometryInspection>(
-            TriNifGeometryInspector.Inspect(File.ReadAllBytes(nifPath!), tri));
+            TriNifGeometryInspector.Inspect(File.ReadAllBytes(nifPath), tri));
 
         Assert.True(inspection.HasExactGeometryMatch);
         Assert.True(inspection.HasDeclaredTriangleCountMatch);
@@ -47,9 +47,9 @@ public sealed class TriNifGeometryInspectorTests
             @"Sample\Meshes\meshes_pc\meshes\characters\head\eyelefthuman.nif");
         Assert.SkipWhen(triPath == null || nifPath == null, "Sample eyelefthuman TRI/NIF not available.");
 
-        var tri = Assert.IsType<TriParser>(TriParser.Parse(File.ReadAllBytes(triPath!)));
+        var tri = Assert.IsType<TriParser>(TriParser.Parse(File.ReadAllBytes(triPath)));
         var inspection = Assert.IsType<TriNifGeometryInspection>(
-            TriNifGeometryInspector.Inspect(File.ReadAllBytes(nifPath!), tri));
+            TriNifGeometryInspector.Inspect(File.ReadAllBytes(nifPath), tri));
 
         Assert.False(inspection.HasExactGeometryMatch);
         Assert.True(inspection.HasDeclaredTriangleCountMatch);

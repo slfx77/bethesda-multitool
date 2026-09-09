@@ -76,7 +76,8 @@ internal sealed class HmiFile
 
         if (span.Length < TrackTableOffset + 4)
         {
-            throw new InvalidDataException($"{name}: {span.Length} bytes is shorter than the {TrackTableOffset + 4}-byte header.");
+            throw new InvalidDataException(
+                $"{name}: {span.Length} bytes is shorter than the {TrackTableOffset + 4}-byte header.");
         }
 
         var trackCount = BinaryPrimitives.ReadUInt16LittleEndian(span[TrackCountOffset..]);
@@ -101,7 +102,8 @@ internal sealed class HmiFile
 
             if (!span.Slice((int)offset, TrackTagBytes.Length).SequenceEqual(TrackTagBytes))
             {
-                throw new InvalidDataException($"{name}: track {i} offset {offset} does not point at a '{TrackTag}' marker.");
+                throw new InvalidDataException(
+                    $"{name}: track {i} offset {offset} does not point at a '{TrackTag}' marker.");
             }
 
             if (i > 0 && offset <= (uint)offsets[i - 1])

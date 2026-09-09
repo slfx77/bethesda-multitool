@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-
 using BethesdaMultitool.Core.Imaging;
 
 namespace BethesdaMultitool.Core.Formats.Fallout;
@@ -18,8 +17,12 @@ namespace BethesdaMultitool.Core.Formats.Fallout;
 ///     <para>
 ///         ⚠ The header is 0x3E, not the 0x3A its last field starts at — an easy off-by-four that
 ///         is measurable rather than arguable: reading frames from 0x3A fails on all 600 sampled
-///         retail sprites, and from 0x3E all 600 walk with <c>width * height == the frame's own
-///         declared size</c>.
+///         retail sprites, and from 0x3E all 600 walk with
+///         <c>
+///             width * height == the frame's own
+///             declared size
+///         </c>
+///         .
 ///     </para>
 ///     <para>
 ///         A frame is u16 width, u16 height, u32 size, i16 xOffset, i16 yOffset, then <c>size</c>
@@ -115,7 +118,8 @@ internal sealed class FalloutFrmFile
         ArgumentNullException.ThrowIfNull(name);
         if (bytes.Length < HeaderLength)
         {
-            throw new InvalidDataException($"'{name}' is {bytes.Length} bytes, shorter than the {HeaderLength}-byte FRM header.");
+            throw new InvalidDataException(
+                $"'{name}' is {bytes.Length} bytes, shorter than the {HeaderLength}-byte FRM header.");
         }
 
         var version = BinaryPrimitives.ReadUInt32BigEndian(bytes);
@@ -151,7 +155,8 @@ internal sealed class FalloutFrmFile
             directions[i] = new FalloutFrmDirection(i, offsets[i], xShifts[i], yShifts[i], frames);
         }
 
-        return new FalloutFrmFile(name, version, framesPerSecond, actionFrame, framesPerDirection, xShifts, yShifts, directions);
+        return new FalloutFrmFile(name, version, framesPerSecond, actionFrame, framesPerDirection, xShifts, yShifts,
+            directions);
     }
 
     private static List<FalloutFrmFrame> ReadFrames(
@@ -183,7 +188,7 @@ internal sealed class FalloutFrmFile
             }
 
             var pixelsAt = at + FrameHeaderLength;
-            if (pixelsAt + (long)size > bytes.Length)
+            if (pixelsAt + size > bytes.Length)
             {
                 throw new InvalidDataException(
                     $"'{name}' direction {direction} frame {i} needs {size} pixel bytes, past its {bytes.Length} bytes.");
@@ -200,7 +205,11 @@ internal sealed class FalloutFrmFile
 
 /// <summary>One direction's run of frames. <see cref="DataOffset" /> is shared when directions share artwork.</summary>
 internal sealed record FalloutFrmDirection(
-    int Index, uint DataOffset, int XShift, int YShift, IReadOnlyList<FalloutFrmFrame> Frames);
+    int Index,
+    uint DataOffset,
+    int XShift,
+    int YShift,
+    IReadOnlyList<FalloutFrmFrame> Frames);
 
 /// <summary>One frame: 8-bit palette indices plus the shift the engine draws it at.</summary>
 internal readonly record struct FalloutFrmFrame(IndexedBitmap Bitmap)

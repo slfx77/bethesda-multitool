@@ -43,15 +43,15 @@ public sealed class StarfieldGlbEffectGlassTests
     private static NifTextureResolver Resolver(string blendMode, float materialAlpha)
     {
         var database = StarfieldMaterialOrmPolicyTests.BuildDatabase(
-            useDiffChunks: true,
+            true,
             shaderRoute: "Effect",
             shaderModel: "1LayerEffectGlass",
             effectSettings: new StarfieldEffectSettingsFixture(
-                IsGlass: true,
-                HasFrosting: false,
-                UsesVertexColor: false,
-                MaterialOverallAlpha: materialAlpha,
-                BlendingMode: blendMode));
+                true,
+                false,
+                false,
+                materialAlpha,
+                blendMode));
         return new NifTextureResolver([new MaterialDatabaseSource(database)]);
     }
 
@@ -78,19 +78,26 @@ public sealed class StarfieldGlbEffectGlassTests
 
     private static ModelRoot Read(byte[] glb)
     {
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         return ModelRoot.ReadGLB(stream);
     }
 
     private sealed class MaterialDatabaseSource(byte[] database) : INifTextureSource
     {
-        public DecodedTexture? TryLoad(string path) => null;
+        public DecodedTexture? TryLoad(string path)
+        {
+            return null;
+        }
 
-        public byte[]? TryLoadRaw(string path) =>
-            string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase) ? database : null;
+        public byte[]? TryLoadRaw(string path)
+        {
+            return string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase) ? database : null;
+        }
 
-        public bool Exists(string path) =>
-            string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase);
+        public bool Exists(string path)
+        {
+            return string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase);
+        }
 
         public bool TryGetAssetMetadata(string path, out NifTextureSourceAssetMetadata metadata)
         {

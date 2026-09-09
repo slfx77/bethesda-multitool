@@ -1,8 +1,5 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Text;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Daggerfall;
@@ -15,28 +12,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Daggerfall;
 /// </summary>
 internal static class DaggerfallMapsFixture
 {
-    public sealed record Building(byte Type, byte Quality, ushort FactionId);
-
-    public sealed record DungeonBlock(sbyte X, sbyte Z, ushort BlockNumber, byte BlockIndex, bool IsStart);
-
-    public sealed record Location(
-        string Name,
-        int MapId,
-        int Longitude,
-        int Latitude,
-        int LocationType,
-        bool Discovered,
-        byte DungeonType,
-        uint Key,
-        ushort LocationId,
-        byte Width,
-        byte Height,
-        byte PortByte,
-        int Doors,
-        IReadOnlyList<Building> Buildings,
-        IReadOnlyList<DungeonBlock>? Dungeon,
-        int DungeonDoors = 0);
-
     /// <summary>A location whose map id's low 20 bits are its world pixel, as retail's are.</summary>
     public static Location Make(
         string name,
@@ -56,7 +31,7 @@ internal static class DaggerfallMapsFixture
         int dungeonDoors = 0)
     {
         var pixelX = longitude / 128;
-        var pixelY = 499 - (latitude / 128);
+        var pixelY = 499 - latitude / 128;
         var mapId = (0x4C << 20) | (pixelY * 1000 + pixelX);
         return new Location(name, mapId, longitude, latitude, locationType, discovered, dungeonType, key,
             locationId, width, height, portByte, doors, buildings ?? [], dungeon, dungeonDoors);
@@ -223,7 +198,7 @@ internal static class DaggerfallMapsFixture
         {
             exterior[49 + i] = (byte)i;
             exterior[113 + i] = (byte)(i * 2);
-            exterior[177 + i] = (byte)('A' + (i % 26));
+            exterior[177 + i] = (byte)('A' + i % 26);
         }
 
         bytes.AddRange(exterior);
@@ -252,7 +227,8 @@ internal static class DaggerfallMapsFixture
             var slot = slots.AsSpan(k * 4, 4);
             slot[0] = (byte)blocks[k].X;
             slot[1] = (byte)blocks[k].Z;
-            var bitfield = (blocks[k].BlockNumber & 0x3FF) | (blocks[k].IsStart ? 0x400 : 0) | (blocks[k].BlockIndex << 11);
+            var bitfield = (blocks[k].BlockNumber & 0x3FF) | (blocks[k].IsStart ? 0x400 : 0) |
+                           (blocks[k].BlockIndex << 11);
             BinaryPrimitives.WriteUInt16LittleEndian(slot[2..], (ushort)bitfield);
         }
 
@@ -273,4 +249,26 @@ internal static class DaggerfallMapsFixture
         BinaryPrimitives.WriteUInt16LittleEndian(buffer, value);
         bytes.AddRange(buffer);
     }
+
+    public sealed record Building(byte Type, byte Quality, ushort FactionId);
+
+    public sealed record DungeonBlock(sbyte X, sbyte Z, ushort BlockNumber, byte BlockIndex, bool IsStart);
+
+    public sealed record Location(
+        string Name,
+        int MapId,
+        int Longitude,
+        int Latitude,
+        int LocationType,
+        bool Discovered,
+        byte DungeonType,
+        uint Key,
+        ushort LocationId,
+        byte Width,
+        byte Height,
+        byte PortByte,
+        int Doors,
+        IReadOnlyList<Building> Buildings,
+        IReadOnlyList<DungeonBlock>? Dungeon,
+        int DungeonDoors = 0);
 }

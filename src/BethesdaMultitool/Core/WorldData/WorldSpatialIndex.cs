@@ -13,6 +13,20 @@ namespace BethesdaMultitool.Core.WorldData;
 internal sealed class WorldSpatialIndex
 {
     internal const int ChunkCellSize = 8;
+
+    /// <summary>
+    ///     Widest plausible interior water level, in absolute world units. Mirrors the bound
+    ///     CellEncoder.IsPlausibleCellWater applies on the plugin-export path: no room is 100k
+    ///     units deep, so a height beyond this is a stale runtime float, not authored water.
+    /// </summary>
+    private const float MaxPlausibleInteriorWaterAbsHeight = 10_000f;
+
+    /// <summary>
+    ///     Smallest side an interior water quad is given, in world units. Enough to read as a water
+    ///     surface in a small room, and far below the one-CELL floor this replaced.
+    /// </summary>
+    private const float MinInteriorWaterSide = 512f;
+
     private readonly Dictionary<(int bx, int by), List<PlacedReference>> _actorsByBucket = new();
 
     private readonly Dictionary<(int gx, int gy), CellRecord> _cellsByGrid = new();
@@ -339,13 +353,6 @@ internal sealed class WorldSpatialIndex
     }
 
     /// <summary>
-    ///     Widest plausible interior water level, in absolute world units. Mirrors the bound
-    ///     CellEncoder.IsPlausibleCellWater applies on the plugin-export path: no room is 100k
-    ///     units deep, so a height beyond this is a stale runtime float, not authored water.
-    /// </summary>
-    private const float MaxPlausibleInteriorWaterAbsHeight = 10_000f;
-
-    /// <summary>
     ///     Whether a dump exterior cell's own water override is credible: at or below the cell's
     ///     captured terrain crest plus shoreline slack — the same test the plugin encoder applies
     ///     (CellEncoder.IsPlausibleCellWater). Without an authored heightmap the override is
@@ -449,12 +456,6 @@ internal sealed class WorldSpatialIndex
         // carry bAutoWaterLoaded == 1, which the corroboration clause preserves.
         return BitConverter.SingleToUInt32Bits(height) != 0u || interior.AutoWaterLoaded == true;
     }
-
-    /// <summary>
-    ///     Smallest side an interior water quad is given, in world units. Enough to read as a water
-    ///     surface in a small room, and far below the one-CELL floor this replaced.
-    /// </summary>
-    private const float MinInteriorWaterSide = 512f;
 
     /// <summary>
     ///     Square water footprint covering an interior's placed-object XY extent (padded), so the

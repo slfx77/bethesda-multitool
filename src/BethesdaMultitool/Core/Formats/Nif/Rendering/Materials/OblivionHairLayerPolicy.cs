@@ -53,10 +53,12 @@ internal static class OblivionHairLayerPolicy
     }
 
     internal static bool IsResidentLayer(
-        string? cacheKey, bool resident, bool cubemap, GpuTexturePayloadFormat format) =>
-        !string.IsNullOrWhiteSpace(cacheKey) && resident && !cubemap &&
-        format is GpuTexturePayloadFormat.Rgba8 or GpuTexturePayloadFormat.BC1 or
-            GpuTexturePayloadFormat.BC2 or GpuTexturePayloadFormat.BC3 or GpuTexturePayloadFormat.BC7;
+        string? cacheKey, bool resident, bool cubemap, GpuTexturePayloadFormat format)
+    {
+        return !string.IsNullOrWhiteSpace(cacheKey) && resident && !cubemap &&
+               format is GpuTexturePayloadFormat.Rgba8 or GpuTexturePayloadFormat.BC1 or
+                   GpuTexturePayloadFormat.BC2 or GpuTexturePayloadFormat.BC3 or GpuTexturePayloadFormat.BC7;
+    }
 
     private static bool HasCompatibleMaterial(RenderableSubmesh submesh)
     {
@@ -98,19 +100,28 @@ internal static class OblivionHairLayerPolicy
                 return false;
             }
         }
+
         return true;
     }
 
-    private static bool ValidTint(float value) => float.IsFinite(value) && value is >= 0f and <= 1f;
+    private static bool ValidTint(float value)
+    {
+        return float.IsFinite(value) && value is >= 0f and <= 1f;
+    }
 
-    private static bool SamePath(string? first, string? second) =>
-        !string.IsNullOrWhiteSpace(first) && !string.IsNullOrWhiteSpace(second) &&
-        string.Equals(NifTexturePathUtility.Normalize(first), NifTexturePathUtility.Normalize(second),
-            StringComparison.Ordinal);
+    private static bool SamePath(string? first, string? second)
+    {
+        return !string.IsNullOrWhiteSpace(first) && !string.IsNullOrWhiteSpace(second) &&
+               string.Equals(NifTexturePathUtility.Normalize(first), NifTexturePathUtility.Normalize(second),
+                   StringComparison.Ordinal);
+    }
 
-    private static bool HasAdditionalTextures(RenderableSubmesh submesh) =>
-        submesh.SpecularMapTexturePath is not null || submesh.GradientMapTexturePath is not null ||
-        submesh.EnvironmentMapTexturePath is not null || submesh.ClassicEnvironmentMapTexturePath is not null ||
-        submesh.ClassicEnvironmentMaskTexturePath is not null || submesh.ClassicParallaxHeightMapTexturePath is not null ||
-        submesh.Lighting30GlowMapTexturePath is not null || submesh.BgsmGlowMapTexturePath is not null;
+    private static bool HasAdditionalTextures(RenderableSubmesh submesh)
+    {
+        return submesh.SpecularMapTexturePath is not null || submesh.GradientMapTexturePath is not null ||
+               submesh.EnvironmentMapTexturePath is not null || submesh.ClassicEnvironmentMapTexturePath is not null ||
+               submesh.ClassicEnvironmentMaskTexturePath is not null ||
+               submesh.ClassicParallaxHeightMapTexturePath is not null ||
+               submesh.Lighting30GlowMapTexturePath is not null || submesh.BgsmGlowMapTexturePath is not null;
+    }
 }

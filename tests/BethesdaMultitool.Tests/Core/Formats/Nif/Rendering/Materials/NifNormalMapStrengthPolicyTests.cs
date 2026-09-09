@@ -15,15 +15,12 @@ public sealed class NifNormalMapStrengthPolicyTests
     [Fact]
     public void SpriteNativeReferenceAndGltfRenderersConsumeSharedDefault()
     {
-        var spriteRenderer = SourceContract.ReadSource(
-            ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
-                "Rasterization", "NifSpriteRenderer.cs"]);
-        var referenceCache = SourceContract.ReadSource(
-            ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
-                "D3D12", "ReferenceMeshCache12.cs"]);
-        var gltfWriter = SourceContract.ReadSource(
-            ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
-                "Export", "GlbWriter.cs"]);
+        var spriteRenderer = SourceContract.ReadSource("src", "BethesdaMultitool", "Core", "Formats", "Nif",
+            "Rendering", "Rasterization", "NifSpriteRenderer.cs");
+        var referenceCache = SourceContract.ReadSource("src", "BethesdaMultitool", "Core", "Formats", "Nif",
+            "Rendering", "D3D12", "ReferenceMeshCache12.cs");
+        var gltfWriter = SourceContract.ReadSource("src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "Export", "GlbWriter.cs");
 
         Assert.Contains(
             "BumpStrength { get; set; } = NifNormalMapStrengthPolicy.GenericDefault;",

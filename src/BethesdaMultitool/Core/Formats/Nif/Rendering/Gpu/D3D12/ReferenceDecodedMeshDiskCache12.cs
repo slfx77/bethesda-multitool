@@ -780,6 +780,7 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         {
             throw new InvalidDataException("Decoded mesh cache has invalid external-emittance influence.");
         }
+
         writer.Write(submesh.UsesExternalEmittance);
         writer.Write(submesh.ExternalEmittanceInfluence);
         writer.Write(submesh.IsTreeAnimation);
@@ -883,11 +884,11 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
             ReadStarfieldMaterialAlpha(reader),
             ReadNullableString(reader, MaxStringBytes),
             ReadVector3(reader),
-            UsesExternalEmittance: reader.ReadBoolean(),
-            ExternalEmittanceInfluence: reader.ReadSingle(),
-            IsTreeAnimation: reader.ReadBoolean(),
-            UsesOblivionOrdinarySpecularPolicy: reader.ReadBoolean(),
-            OblivionHairLayerTexturePath: ReadNullableString(reader, MaxStringBytes));
+            reader.ReadBoolean(),
+            reader.ReadSingle(),
+            reader.ReadBoolean(),
+            reader.ReadBoolean(),
+            ReadNullableString(reader, MaxStringBytes));
         if (!Enum.IsDefined(payload.ClassicBasicShaderMode))
         {
             throw new InvalidDataException("Invalid FNV classic basic shader mode in decoded mesh cache.");
@@ -1000,8 +1001,10 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
         }
     }
 
-    private static bool IsNormalizedFinite(float value) =>
-        float.IsFinite(value) && value is >= 0f and <= 1f;
+    private static bool IsNormalizedFinite(float value)
+    {
+        return float.IsFinite(value) && value is >= 0f and <= 1f;
+    }
 
     private static void WritePhysicsLiteSway(
         BinaryWriter writer, PhysicsLiteSwayDescriptor? descriptor)

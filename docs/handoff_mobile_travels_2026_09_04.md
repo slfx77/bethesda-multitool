@@ -13,7 +13,7 @@ The originating session keeps Redguard (C4), the Fallout block (C5–C7) and the
 | C4e | TES Travels: Oblivion — mobile (2006) | J2ME | `oblivion-repaired.jar` |
 | C4f | TES Travels: Oblivion — PSP (cancelled) | PSP UMD ISO | `Elder Scrolls travels game files.zip` → `Oblivion mobile betas/` |
 
-All fixtures verified present under `Sample/Full_Builds/` on 2026-09-04. The governing plan is
+All fixtures verified present on 2026-09-04 (then under `Sample/Full_Builds/`; migrated to `Sample/Builds/` on 2026-09-07). The governing plan is
 `~/.claude/plans/i-d-like-to-begin-tingly-cat.md`; these five are in its "SCOPE CORRECTION —
 extended catalogue" section, which is the authoritative statement of the 13-title goal.
 
@@ -200,7 +200,7 @@ PSP ISOs** (`iND-TESTO090606.iso` … Jun 2006 → Apr 2007) plus a `Modified` s
 `C:\Users\mmc99\source\repos\NeversoftMultitool\tools\corpus\SampleGenerator`
 (`--media-root` / `--research-root` / `--sample-root`; handles `.iso/.gdi/.bin/.img`, shells to
 `7z`, path-safety-checked, has a `--self-test`). Stage the extracted trees under
-`Sample/Full_Builds/` and only then start format work. Six dated builds means this title also has
+`Sample/Builds/` and only then start format work. Six dated builds means this title also has
 cross-build diff value once anything parses.
 
 ## 5. Repo conventions you must follow

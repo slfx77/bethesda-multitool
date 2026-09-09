@@ -27,7 +27,7 @@ public class CellGrupBuilderTests
     {
         var bundle = MakeMinimalBundle(0x123, 1, 0);
 
-        var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle])!;
+        var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle]);
 
         // First 24 bytes are the top-level GRUP header.
         // Layout: GRUP(4) + Size(4) + Label(4) + GroupType(4) + Stamp(4) + Unknown(4)
@@ -51,7 +51,7 @@ public class CellGrupBuilderTests
     {
         var bundle = MakeMinimalBundle(0xABC, 1, 0);
 
-        var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle])!;
+        var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle]);
 
         // Walk the GRUP nesting. After the top CELL GRUP header (24 bytes), we expect
         // type 2 (block), then type 3 (subblock), then a CELL record (24+ bytes), then
@@ -80,7 +80,7 @@ public class CellGrupBuilderTests
     {
         var bundle = MakeMinimalBundle(0x42, 2, 0);
 
-        var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle])!;
+        var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle]);
 
         // Find the type-8 GRUP by searching for a GRUP header with GroupType==8.
         var found = false;
@@ -121,7 +121,7 @@ public class CellGrupBuilderTests
     {
         var bundle = MakeMinimalBundle(0x42, 0, 0);
 
-        var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle])!;
+        var bytes = CellGrupBuilder.BuildInteriorCellGrup([bundle]);
 
         // No type-6 children GRUP should be present.
         for (var i = 0; i + 24 <= bytes.Length; i++)

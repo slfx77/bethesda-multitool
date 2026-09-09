@@ -195,6 +195,16 @@ internal static class ShaderPermutations
             "native Actors viewer: Oblivion SKIN2000/2001 centroid light and eye"),
         new("reference_classic_skin.frag.hlsl", "main", "ps_5_1", None,
             "native Actors viewer: Oblivion SKIN2000 FaceGen specialization"),
+        new("reference_classic_skin_factor_one.frag.hlsl", "mainFactorOne", "ps_5_1", None,
+            "opt-in native TES4 skin diagnostic: final RGB lighting factor one"),
+        new("reference_classic_skin_independent.frag.hlsl", "mainIndependent", "ps_5_1", None,
+            "opt-in native TES4 stock head diagnostic: independently sampled base and authored Map0"),
+        new("reference_classic_skin_independent_factor_one.frag.hlsl", "mainIndependentFactorOne", "ps_5_1", None,
+            "opt-in native TES4 stock head diagnostic: independent albedo with lighting factor one"),
+        new("reference_oblivion_eye.vert.hlsl", "main", "vs_5_1", None,
+            "opt-in native TES4 stock eye: ordinary SLS2039 vertex pass"),
+        new("reference_oblivion_eye.frag.hlsl", "main", "ps_5_1", None,
+            "opt-in native TES4 stock eye: ordinary SLS2045 reflection pass"),
         // Not referenced by any renderer today. Kept compiling deliberately: they are the last
         // remaining pre-bindless terrain/dev shaders, and a permutation entry is the only thing that
         // stops them silently rotting into non-compiling source.
@@ -218,7 +228,10 @@ internal static class ShaderPermutations
 
     private static List<ShaderPermutation> BuildShadowComparisonPcf()
     {
-        static ShaderMacro Pcf() => new(ShadowComparisonPcf12.ShaderMacroName, "1");
+        static ShaderMacro Pcf()
+        {
+            return new ShaderMacro(ShadowComparisonPcf12.ShaderMacroName, "1");
+        }
 
         var list = new List<ShaderPermutation>
         {
@@ -326,7 +339,8 @@ internal static class ShaderPermutations
         // must be compiled from the same number or PSInput will not match VSOutput.
         for (var quads = 1; quads <= 4; quads++)
         {
-            var macros = (ShaderMacro[])[new ShaderMacro("TERRAIN_BLEND_QUADS", quads.ToString(CultureInfo.InvariantCulture))];
+            var macros = (ShaderMacro[])
+                [new ShaderMacro("TERRAIN_BLEND_QUADS", quads.ToString(CultureInfo.InvariantCulture))];
             var purpose = $"terrain, {quads * 4}-slot cells";
             list.Add(new ShaderPermutation("terrain_textured.vert.hlsl", "main", "vs_5_1", macros, purpose));
             list.Add(new ShaderPermutation("terrain_textured.frag.hlsl", "main", "ps_5_1", macros, purpose));
@@ -340,6 +354,20 @@ internal static class ShaderPermutations
         var list = new List<ShaderPermutation>
         {
             new("water.vert.hlsl", "main", "vs_5_1", None, "water surface"),
+            new("water_oblivion_displace.hlsl", "vsWadingStamp", "vs_5_1", None, "WATERDISPLACE000 recorded geometry"),
+            new("water_oblivion_displace.hlsl", "vsRainStamp", "vs_5_1", None, "WATERDISPLACE001 recorded clip stamp"),
+            new("water_oblivion_displace.hlsl", "vsQuad", "vs_5_1", None, "TES4 recorded quad UV transform"),
+            new("water_oblivion_displace.hlsl", "psWadingStamp", "ps_5_1", None, "WATERDISPLACE000 replacement stamp"),
+            new("water_oblivion_displace.hlsl", "psRainStamp", "ps_5_1", None, "WATERDISPLACE001 replacement stamp"),
+            new("water_oblivion_displace.hlsl", "psWadingEvolution", "ps_5_1", None, "WATERDISPLACE002 recurrence"),
+            new("water_oblivion_displace.hlsl", "psRainEvolution", "ps_5_1", None, "WATERDISPLACE003 recurrence"),
+            new("water_oblivion_displace.hlsl", "psNormal", "ps_5_1", None, "WATERDISPLACE005 absolute-height normal"),
+            new("water_oblivion_displace.hlsl", "psMixedHeight", "ps_5_1", None, "WATERDISPLACE006 height blend"),
+            new("water_oblivion_displace.hlsl", "psRecenter", "ps_5_1", None,
+                "WATERDISPLACE007 recenter and edge fade"),
+            new("water_oblivion_displace.hlsl", "psFftNormal", "ps_5_1", None, "WATERHMAP005 raw FFT normal"),
+            new("water_oblivion_displace.hlsl", "psFftAbsoluteHeight", "ps_5_1", None,
+                "WATERHMAP006 absolute FFT height"),
             new("water_noise.comp.hlsl", "mainScrollBlend", "cs_5_1", None, "FNV noise prepass: scroll+blend"),
             new("water_noise.comp.hlsl", "mainNormal", "cs_5_1", None, "FNV noise prepass: normal"),
             new("water_noise.comp.hlsl", "mainDownsample", "cs_5_1", None,

@@ -146,7 +146,7 @@ public sealed class SpeedTreeRuntimeLodTests
             @"TestOutput\fnv_spt\trees\wastelandshrub01.spt");
         Assert.SkipWhen(first is null, "Missing local TestOutput/fnv_spt fixture set.");
 
-        var directory = Path.GetDirectoryName(first!)!;
+        var directory = Path.GetDirectoryName(first)!;
         var paths = Directory.GetFiles(directory, "*.spt");
         Assert.NotEmpty(paths);
         foreach (var path in paths)

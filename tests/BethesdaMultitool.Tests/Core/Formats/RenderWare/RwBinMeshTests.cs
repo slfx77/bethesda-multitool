@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.RenderWare;
 using Xunit;
 
@@ -65,7 +62,7 @@ public sealed class RwBinMeshTests
         var mesh = RwBinMesh.TryParse(body);
 
         Assert.NotNull(mesh);
-        Assert.True(mesh!.IsTriangleStrip);
+        Assert.True(mesh.IsTriangleStrip);
         Assert.Equal(2, mesh.Splits.Count);
         Assert.Equal(2u, mesh.Splits[0].MaterialIndex);
         Assert.Equal(new uint[] { 0, 1, 2, 3 }, mesh.Splits[0].Indices);
@@ -89,7 +86,7 @@ public sealed class RwBinMeshTests
 
         Assert.NotNull(mesh);
         Assert.Equal(RwBinMesh.HeaderLength, body.Length);
-        Assert.Empty(mesh!.Splits);
+        Assert.Empty(mesh.Splits);
         Assert.Equal(0, mesh.TotalIndices);
         Assert.True(mesh.TotalAgrees);
         Assert.False(mesh.IsTriangleStrip);
@@ -139,7 +136,7 @@ public sealed class RwBinMeshTests
         var mesh = RwBinMesh.TryParse(body);
 
         Assert.NotNull(mesh);
-        Assert.Equal(99u, mesh!.DeclaredIndexCount);
+        Assert.Equal(99u, mesh.DeclaredIndexCount);
         Assert.Equal(3, mesh.TotalIndices);
         Assert.False(mesh.TotalAgrees);
     }

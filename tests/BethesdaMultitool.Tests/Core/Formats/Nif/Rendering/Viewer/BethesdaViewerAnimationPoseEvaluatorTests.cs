@@ -17,19 +17,21 @@ public sealed class BethesdaViewerAnimationPoseEvaluatorTests
             0f,
             2f,
             true,
-            [new BethesdaViewerNodeAnimationTrack(
-                1,
-                1f,
-                0f,
-                BethesdaViewerKeyInterpolation.Linear,
-                [],
-                BethesdaViewerKeyInterpolation.Linear,
-                [
-                    new BethesdaViewerVector3Key(0f, new Vector3(0f, 2f, 0f)),
-                    new BethesdaViewerVector3Key(2f, new Vector3(0f, 6f, 0f))
-                ],
-                BethesdaViewerKeyInterpolation.Linear,
-                [])],
+            [
+                new BethesdaViewerNodeAnimationTrack(
+                    1,
+                    1f,
+                    0f,
+                    BethesdaViewerKeyInterpolation.Linear,
+                    [],
+                    BethesdaViewerKeyInterpolation.Linear,
+                    [
+                        new BethesdaViewerVector3Key(0f, new Vector3(0f, 2f, 0f)),
+                        new BethesdaViewerVector3Key(2f, new Vector3(0f, 6f, 0f))
+                    ],
+                    BethesdaViewerKeyInterpolation.Linear,
+                    [])
+            ],
             [],
             []);
         var evaluator = new BethesdaViewerAnimationPoseEvaluator(
@@ -52,19 +54,21 @@ public sealed class BethesdaViewerAnimationPoseEvaluatorTests
             1f,
             3f,
             false,
-            [new BethesdaViewerNodeAnimationTrack(
-                0,
-                1f,
-                0f,
-                BethesdaViewerKeyInterpolation.Linear,
-                [],
-                BethesdaViewerKeyInterpolation.Constant,
-                [
-                    new BethesdaViewerVector3Key(1f, Vector3.One),
-                    new BethesdaViewerVector3Key(3f, new Vector3(9f))
-                ],
-                BethesdaViewerKeyInterpolation.Linear,
-                [])],
+            [
+                new BethesdaViewerNodeAnimationTrack(
+                    0,
+                    1f,
+                    0f,
+                    BethesdaViewerKeyInterpolation.Linear,
+                    [],
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [
+                        new BethesdaViewerVector3Key(1f, Vector3.One),
+                        new BethesdaViewerVector3Key(3f, new Vector3(9f))
+                    ],
+                    BethesdaViewerKeyInterpolation.Linear,
+                    [])
+            ],
             [],
             []);
         var evaluator = new BethesdaViewerAnimationPoseEvaluator(
@@ -97,17 +101,19 @@ public sealed class BethesdaViewerAnimationPoseEvaluatorTests
             0f,
             1f,
             false,
-            [new BethesdaViewerNodeAnimationTrack(
-                0,
-                1f,
-                0f,
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BsplineTransform: transform)],
+            [
+                new BethesdaViewerNodeAnimationTrack(
+                    0,
+                    1f,
+                    0f,
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BsplineTransform: transform)
+            ],
             [],
             []);
         var evaluator = new BethesdaViewerAnimationPoseEvaluator(
@@ -141,17 +147,19 @@ public sealed class BethesdaViewerAnimationPoseEvaluatorTests
             0f,
             1f,
             false,
-            [new BethesdaViewerNodeAnimationTrack(
-                0,
-                1f,
-                0f,
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BsplineTransform: malformed)],
+            [
+                new BethesdaViewerNodeAnimationTrack(
+                    0,
+                    1f,
+                    0f,
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BsplineTransform: malformed)
+            ],
             [],
             []);
 
@@ -178,17 +186,19 @@ public sealed class BethesdaViewerAnimationPoseEvaluatorTests
             0f,
             1f,
             false,
-            [new BethesdaViewerNodeAnimationTrack(
-                0,
-                1f,
-                0f,
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BethesdaViewerKeyInterpolation.Constant,
-                [],
-                BsplineTransform: malformed)],
+            [
+                new BethesdaViewerNodeAnimationTrack(
+                    0,
+                    1f,
+                    0f,
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BethesdaViewerKeyInterpolation.Constant,
+                    [],
+                    BsplineTransform: malformed)
+            ],
             [],
             []);
 
@@ -207,7 +217,7 @@ public sealed class BethesdaViewerAnimationPoseEvaluatorTests
             0f,
             0f,
             2f,
-            loops: true);
+            true);
 
         Assert.True(float.IsFinite(mapped));
         Assert.InRange(mapped, 0f, 2f);
@@ -228,8 +238,8 @@ public sealed class BethesdaViewerAnimationPoseEvaluatorTests
             0f,
             0f,
             4f,
-            loops: true,
-            pingPongs: true);
+            true,
+            true);
 
         Assert.Equal(expected, mapped, 4);
     }

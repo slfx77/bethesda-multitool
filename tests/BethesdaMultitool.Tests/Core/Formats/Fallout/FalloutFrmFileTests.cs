@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Fallout;
 using BethesdaMultitool.Core.Imaging;
 using Xunit;
@@ -48,7 +44,8 @@ public sealed class FalloutFrmFileTests
     ///     Builds a sprite whose six directions take the offsets given — repeat an offset to share
     ///     artwork, which is what retail does for symmetric directions.
     /// </summary>
-    private static byte[] Build(int framesPerDirection, uint[] directionOffsets, byte[] frameArea, int fps = 10, int actionFrame = 0)
+    private static byte[] Build(int framesPerDirection, uint[] directionOffsets, byte[] frameArea, int fps = 10,
+        int actionFrame = 0)
     {
         var header = new byte[FalloutFrmFile.HeaderLength];
         Be32(FalloutFrmFile.RetailVersion).CopyTo(header, 0);
@@ -58,7 +55,7 @@ public sealed class FalloutFrmFileTests
         for (var i = 0; i < FalloutFrmFile.DirectionCount; i++)
         {
             BinaryPrimitives.WriteInt16BigEndian(header.AsSpan(0x0A + 2 * i), (short)(i + 1));
-            BinaryPrimitives.WriteInt16BigEndian(header.AsSpan(0x16 + 2 * i), (short)(-(i + 1)));
+            BinaryPrimitives.WriteInt16BigEndian(header.AsSpan(0x16 + 2 * i), (short)-(i + 1));
             Be32(directionOffsets[i]).CopyTo(header, FalloutFrmFile.DirectionOffsetsPosition + 4 * i);
         }
 
@@ -69,10 +66,11 @@ public sealed class FalloutFrmFileTests
     [Fact]
     public void Parse_SingleDirectionSprite_ReadsHeaderAndFrames()
     {
-        var area = Frame(4, 3, 9, xOffset: 5, yOffset: -7);
+        var area = Frame(4, 3, 9, 5, -7);
         var file = FalloutFrmFile.Parse(Build(1, [0, 0, 0, 0, 0, 0], area), "BACK1.FRM");
 
-        Assert.Equal((FalloutFrmFile.RetailVersion, 10, 0, 1), (file.Version, file.FramesPerSecond, file.ActionFrame, file.FramesPerDirection));
+        Assert.Equal((FalloutFrmFile.RetailVersion, 10, 0, 1),
+            (file.Version, file.FramesPerSecond, file.ActionFrame, file.FramesPerDirection));
         Assert.Equal(6, file.Directions.Count);
 
         // Every direction shares offset 0, so there is one run of artwork behind all six.
@@ -105,7 +103,8 @@ public sealed class FalloutFrmFileTests
         var area = first.Concat(second).ToArray();
 
         // Directions 0-2 share the first run; 3-5 share the second.
-        var file = FalloutFrmFile.Parse(Build(1, [0, 0, 0, (uint)first.Length, (uint)first.Length, (uint)first.Length], area), "CRITTER.FRM");
+        var file = FalloutFrmFile.Parse(
+            Build(1, [0, 0, 0, (uint)first.Length, (uint)first.Length, (uint)first.Length], area), "CRITTER.FRM");
 
         Assert.Equal(2, file.DistinctFrames.Count());
         Assert.Equal(1, file.Directions[0].Frames[0].Bitmap.Indices[0]);
@@ -131,7 +130,8 @@ public sealed class FalloutFrmFileTests
         var area = Frame(4, 4, 1);
         BinaryPrimitives.WriteUInt32BigEndian(area.AsSpan(4), 15); // 4*4 is 16
 
-        var error = Assert.Throws<InvalidDataException>(() => FalloutFrmFile.Parse(Build(1, [0, 0, 0, 0, 0, 0], area), "BAD.FRM"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            FalloutFrmFile.Parse(Build(1, [0, 0, 0, 0, 0, 0], area), "BAD.FRM"));
 
         Assert.Contains("4x4", error.Message, StringComparison.Ordinal);
     }
@@ -142,7 +142,8 @@ public sealed class FalloutFrmFileTests
         var area = Frame(2, 2, 1);
 
         // Two frames declared, one supplied.
-        Assert.Throws<InvalidDataException>(() => FalloutFrmFile.Parse(Build(2, [0, 0, 0, 0, 0, 0], area), "SHORT.FRM"));
+        Assert.Throws<InvalidDataException>(() =>
+            FalloutFrmFile.Parse(Build(2, [0, 0, 0, 0, 0, 0], area), "SHORT.FRM"));
     }
 
     [Fact]

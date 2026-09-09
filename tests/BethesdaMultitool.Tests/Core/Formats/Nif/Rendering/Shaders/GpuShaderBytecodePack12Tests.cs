@@ -111,14 +111,15 @@ public sealed class GpuShaderBytecodePack12Tests
         var fingerprint = TestFingerprint(0x44);
         try
         {
-            await File.WriteAllBytesAsync(path, [0x00, 0x01]);
+            await File.WriteAllBytesAsync(path, [0x00, 0x01], TestContext.Current.CancellationToken);
             await GpuShaderBytecodePack12.WriteAtomicallyAsync(
                 path,
                 fingerprint,
                 new Dictionary<string, byte[]>(StringComparer.Ordinal)
                 {
                     [SampleKey] = FakeDxbc(0x55)
-                });
+                },
+                TestContext.Current.CancellationToken);
 
             await using var stream = File.OpenRead(path);
             var pack = GpuShaderBytecodePack12.Read(stream, fingerprint, [SampleKey]);
@@ -128,7 +129,7 @@ public sealed class GpuShaderBytecodePack12Tests
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            Directory.Delete(directory, true);
         }
     }
 
@@ -149,20 +150,21 @@ public sealed class GpuShaderBytecodePack12Tests
             await GpuShaderBytecodePack12.WriteAtomicallyAsync(
                 path,
                 GpuShaderBytecodePack12.ComputeCurrentFingerprint(),
-                entries);
-            var before = await File.ReadAllBytesAsync(path);
+                entries,
+                TestContext.Current.CancellationToken);
+            var before = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
             var deliberatelyOldTimestamp = DateTime.UtcNow.AddHours(-1);
             File.SetLastWriteTimeUtc(path, deliberatelyOldTimestamp);
 
             var exitCode = await BuildShaderBytecodePackCommand.BuildAsync(path, CancellationToken.None);
 
             Assert.Equal(0, exitCode);
-            Assert.Equal(before, await File.ReadAllBytesAsync(path));
+            Assert.Equal(before, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
             Assert.True(File.GetLastWriteTimeUtc(path) > deliberatelyOldTimestamp);
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            Directory.Delete(directory, true);
         }
     }
 
@@ -183,19 +185,20 @@ public sealed class GpuShaderBytecodePack12Tests
             await GpuShaderBytecodePack12.WriteAtomicallyAsync(
                 path,
                 GpuShaderBytecodePack12.ComputeCurrentFingerprint(),
-                entries);
-            var before = await File.ReadAllBytesAsync(path);
+                entries,
+                TestContext.Current.CancellationToken);
+            var before = await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken);
             using var cancellationSource = new CancellationTokenSource();
-            cancellationSource.Cancel();
+            await cancellationSource.CancelAsync();
 
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
                 BuildShaderBytecodePackCommand.BuildAsync(path, cancellationSource.Token));
 
-            Assert.Equal(before, await File.ReadAllBytesAsync(path));
+            Assert.Equal(before, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            Directory.Delete(directory, true);
         }
     }
 
@@ -306,6 +309,21 @@ public sealed class GpuShaderBytecodePack12Tests
             "Targets=\"GetShaderBytecodePackOutput\"",
             msbuildTask,
             StringComparison.Ordinal);
+        Assert.Contains("Include=\"@(_MSBuildProjectReferenceExistent)\"", copyTarget,
+            StringComparison.Ordinal);
+        foreach (var metadata in new[] { "SetConfiguration", "SetPlatform", "SetTargetFramework" })
+        {
+            Assert.Contains($"%(_ShaderBytecodePackProducerProject.{metadata})", msbuildTask,
+                StringComparison.Ordinal);
+        }
+
+        Assert.Contains(
+            "RemoveProperties=\"%(_ShaderBytecodePackProducerProject.GlobalPropertiesToRemove)" +
+            "$(_GlobalPropertiesToRemoveFromProjectReferences)\"",
+            msbuildTask, StringComparison.Ordinal);
+        // A solution may map the x64 profiler to an AnyCPU producer. The query must use the
+        // resolved reference metadata, or it selects another output and repeats the main build.
+        Assert.DoesNotContain("Platform=$(Platform)", msbuildTask, StringComparison.Ordinal);
         Assert.Contains(
             "TaskParameter=\"TargetOutputs\"",
             copyTarget,
@@ -459,8 +477,10 @@ public sealed class GpuShaderBytecodePack12Tests
         return stream;
     }
 
-    private static byte[] FakeDxbc(byte marker) =>
-        [(byte)'D', (byte)'X', (byte)'B', (byte)'C', marker, 0x10, 0x20, 0x30];
+    private static byte[] FakeDxbc(byte marker)
+    {
+        return [(byte)'D', (byte)'X', (byte)'B', (byte)'C', marker, 0x10, 0x20, 0x30];
+    }
 
     private static byte[] TestFingerprint(byte value)
     {

@@ -10,7 +10,10 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Profiling;
 /// </summary>
 public sealed class FrameProfileAccumulatorSourceContractTests
 {
-    private static string Source() => SourceContract.ReadAppSource("FrameProfileAccumulator.cs");
+    private static string Source()
+    {
+        return SourceContract.ReadAppSource("FrameProfileAccumulator.cs");
+    }
 
     [Theory]
     [InlineData("[\"refsSampleFrames\"] = _refSampleFrames,")]

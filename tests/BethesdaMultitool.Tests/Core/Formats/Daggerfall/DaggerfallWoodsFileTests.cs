@@ -1,4 +1,3 @@
-using System;
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
@@ -21,22 +20,22 @@ public class DaggerfallWoodsFileTests
     /// <summary>Builds a file with two cell records; pixel (x=1, y=0) points at the second.</summary>
     private static byte[] BuildWoods()
     {
-        var file = new byte[CellsOffset + (2 * CellRecordLength)];
+        var file = new byte[CellsOffset + 2 * CellRecordLength];
         var span = file.AsSpan();
 
-        BinaryPrimitives.WriteUInt32LittleEndian(span, (uint)TableLength);
+        BinaryPrimitives.WriteUInt32LittleEndian(span, TableLength);
         BinaryPrimitives.WriteUInt32LittleEndian(span[4..], DaggerfallWoodsFile.Width);
         BinaryPrimitives.WriteUInt32LittleEndian(span[8..], DaggerfallWoodsFile.Height);
-        BinaryPrimitives.WriteUInt32LittleEndian(span[16..], (uint)HeightMapOffset); // data section 1
+        BinaryPrimitives.WriteUInt32LittleEndian(span[16..], HeightMapOffset); // data section 1
         BinaryPrimitives.WriteUInt32LittleEndian(span[20..], 1);
         BinaryPrimitives.WriteUInt32LittleEndian(span[24..], DaggerfallWoodsFile.CellDataSkip);
-        BinaryPrimitives.WriteUInt32LittleEndian(span[28..], (uint)HeightMapOffset);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[28..], HeightMapOffset);
 
         // Every pixel's offset points at cell 0, except pixel (1, 0) which points at cell 1.
         for (var i = 0; i < DaggerfallWoodsFile.PixelCount; i++)
         {
             BinaryPrimitives.WriteUInt32LittleEndian(
-                span[(DaggerfallWoodsFile.HeaderLength + (i * 4))..],
+                span[(DaggerfallWoodsFile.HeaderLength + i * 4)..],
                 (uint)(CellsOffset + (i == 1 ? CellRecordLength : 0)));
         }
 
@@ -45,7 +44,7 @@ public class DaggerfallWoodsFileTests
         {
             for (var x = 0; x < DaggerfallWoodsFile.Width; x++)
             {
-                file[HeightMapOffset + (y * DaggerfallWoodsFile.Width) + x] = (byte)((x + y) & 0xFF);
+                file[HeightMapOffset + y * DaggerfallWoodsFile.Width + x] = (byte)((x + y) & 0xFF);
             }
         }
 
@@ -105,7 +104,7 @@ public class DaggerfallWoodsFileTests
         Assert.Equal(24, second[24]);
 
         // Row-major: (gx=2, gy=1) is index 7.
-        Assert.Equal(7, second[(1 * DaggerfallWoodsFile.CellGridSize) + 2]);
+        Assert.Equal(7, second[1 * DaggerfallWoodsFile.CellGridSize + 2]);
     }
 
     [Fact]
@@ -131,7 +130,7 @@ public class DaggerfallWoodsFileTests
     {
         var file = BuildWoods();
         BinaryPrimitives.WriteUInt32LittleEndian(
-            file.AsSpan(DaggerfallWoodsFile.HeaderLength + (2 * 4)), (uint)(file.Length - 5));
+            file.AsSpan(DaggerfallWoodsFile.HeaderLength + 2 * 4), (uint)(file.Length - 5));
 
         var woods = DaggerfallWoodsFile.Parse(file, "WOODS.WLD");
 

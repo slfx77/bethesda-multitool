@@ -23,7 +23,7 @@ public class BgsmMaterialTests
         var mat = BgsmMaterial.Parse(BuildBgsm(22, false, 60, diffuse, normal));
 
         Assert.NotNull(mat);
-        Assert.False(mat!.IsEffect);
+        Assert.False(mat.IsEffect);
         Assert.Equal(22, mat.Version);
         Assert.Equal(diffuse, mat.Diffuse);
         Assert.Equal(normal, mat.Normal);
@@ -39,7 +39,7 @@ public class BgsmMaterialTests
         var mat = BgsmMaterial.Parse(BuildBgsm(2, false, 63, diffuse, normal));
 
         Assert.NotNull(mat);
-        Assert.Equal(2, mat!.Version);
+        Assert.Equal(2, mat.Version);
         Assert.Equal(diffuse, mat.Diffuse);
         Assert.Equal(normal, mat.Normal);
     }
@@ -65,10 +65,7 @@ public class BgsmMaterialTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(60), declaredLength);
         BgsmMaterial? material = null;
 
-        var exception = Record.Exception(() =>
-        {
-            material = BgsmMaterial.Parse(data);
-        });
+        var exception = Record.Exception(() => { material = BgsmMaterial.Parse(data); });
 
         Assert.Null(exception);
         var parsed = Assert.IsType<BgsmMaterial>(material);
@@ -90,10 +87,7 @@ public class BgsmMaterialTests
         BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(rootLengthOffset), declaredLength);
         BgsmMaterial? material = null;
 
-        var exception = Record.Exception(() =>
-        {
-            material = BgsmMaterial.Parse(data);
-        });
+        var exception = Record.Exception(() => { material = BgsmMaterial.Parse(data); });
 
         Assert.Null(exception);
         var parsed = Assert.IsType<BgsmMaterial>(material);
@@ -122,7 +116,7 @@ public class BgsmMaterialTests
         var mat = BgsmMaterial.Parse(data);
 
         Assert.NotNull(mat);
-        Assert.Equal(1f, mat!.Alpha);
+        Assert.Equal(1f, mat.Alpha);
         Assert.False(mat.AlphaBlendEnabled);
         Assert.Equal(6, mat.SourceBlendMode);
         Assert.Equal(7, mat.DestinationBlendMode);
@@ -167,7 +161,7 @@ public class BgsmMaterialTests
         var mat = BgsmMaterial.Parse(data);
 
         Assert.NotNull(mat);
-        Assert.True(mat!.Decal);
+        Assert.True(mat.Decal);
         Assert.False(mat.TwoSided); // neighbor byte untouched — offsets don't bleed
     }
 
@@ -200,7 +194,7 @@ public class BgsmMaterialTests
         var mat = BgsmMaterial.Parse(ms.ToArray());
 
         Assert.NotNull(mat);
-        Assert.True(mat!.IsEffect);
+        Assert.True(mat.IsEffect);
         Assert.True(mat.EffectLightingEnabled);
         Assert.True(mat.FalloffEnabled);
         Assert.Equal(0.478f, mat.BaseColor.X, 3);
@@ -242,7 +236,7 @@ public class BgsmMaterialTests
         var mat = BgsmMaterial.Parse(ms.ToArray());
 
         Assert.NotNull(mat);
-        Assert.Equal("shared/cubemaps/mipblur_defaultoutside1.dds", mat!.EnvironmentMap);
+        Assert.Equal("shared/cubemaps/mipblur_defaultoutside1.dds", mat.EnvironmentMap);
         Assert.Equal("metal_s.dds", mat.GetTexturePath(6));
         Assert.Equal(3.0f, mat.EnvironmentMapScale, 3); // min(1.5 × 2.0, 8)
         Assert.False(mat.SpecularEnabled);
@@ -272,7 +266,7 @@ public class BgsmMaterialTests
         var mat = BgsmMaterial.Parse(ms.ToArray());
 
         Assert.NotNull(mat);
-        Assert.Equal(0f, mat!.EnvironmentMapScale);
+        Assert.Equal(0f, mat.EnvironmentMapScale);
         Assert.Equal("shared/cubemaps/mipblur_defaultoutside1.dds", mat.EnvironmentMap);
     }
 

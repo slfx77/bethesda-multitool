@@ -61,6 +61,7 @@ internal static class NifTrackSampler
         {
             return keys[lo].Value;
         }
+
         return interpolation == NifKeyInterpolation.Quadratic &&
                keys[lo].HasQuadraticTangents && keys[hi].HasQuadraticTangents
             ? NifQuadraticVectorCurve.Sample(

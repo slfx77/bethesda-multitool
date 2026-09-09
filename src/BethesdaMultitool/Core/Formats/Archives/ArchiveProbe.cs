@@ -1,11 +1,16 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Arena;
 using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
+using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Formats.DiscImage;
 using BethesdaMultitool.Core.Formats.Fallout;
+using BethesdaMultitool.Core.Formats.InstallShield;
 using BethesdaMultitool.Core.Formats.Redguard;
+using BethesdaMultitool.Core.Formats.Steam;
 using BethesdaMultitool.Core.Formats.Travels.Dawnstar;
 using BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
+using BethesdaMultitool.Core.Formats.VanBuren;
 using BethesdaMultitool.Core.Formats.Xngine.Bsa;
 using BethesdaMultitool.Core.Formats.Zip;
 
@@ -43,6 +48,23 @@ internal static class ArchiveProbe
             return new RedguardRobBackend(RedguardRobParser.Parse(path));
         }
 
+        // 3a-bis. Strong magic at a fixed offset: XDVDFS, the original Xbox's disc filesystem
+        //     ("MICROSOFT*XBOX*MEDIA" at 0x10000 of the game partition, and again at the end of
+        //     that sector). This MUST precede the ISO9660 probe below and not the other way round:
+        //     a retail XISO also carries a STUB ISO9660 descriptor, so the CD001 gate ACCEPTS it —
+        //     measured on the Fallout: Brotherhood of Steel Xbox disc (2026-09-08), whose sector 16
+        //     is a type-1 CD001 descriptor with an all-zero root directory record, so the ISO9660
+        //     walk claims the image and reports 0 of its 491 files.
+        //     ⚑ The 360 uses the same filesystem and the same ordering argument holds there with a
+        //     DIFFERENT failure mode: the Fallout: New Vegas X360 dump's CD001 descriptor is a real
+        //     one (root LBA 23, extent 194 B) describing the disc's _SYSTEMU/AUDIO_TS/VIDEO_TS
+        //     dummy partition, so ISO9660 would claim it and report 13 system files instead of the
+        //     game's 172. Zero files and thirteen wrong ones are both silent; hence the order.
+        if (XdvdfsBackend.TryProbe(path))
+        {
+            return XdvdfsBackend.Open(path);
+        }
+
         // 3b. Strong content gate on a strong extension: CD images (.iso with a CD001 descriptor,
         //     .cue whose tracks all exist, .bin opening with the raw-sector sync pattern). Sits here,
         //     ahead of the arithmetic probes, because those never claim these extensions.
@@ -51,11 +73,21 @@ internal static class ArchiveProbe
             return DiscImageBackend.Open(path);
         }
 
+        // 3b-bis. Strong magic: a Steam retail disc's .sim manifest (0x3FD04C1F), whose sibling
+        //     .sid parts carry the encrypted payload. Anchored on the manifest rather than on a
+        //     .sid because only the manifest says which file owns which bytes — a .sid alone is a
+        //     block chain with no names in it. Nothing else claims the extension, so a plain magic
+        //     gate is enough and the parser owns the informative failure.
+        if (SteamInstallerManifest.HasMagic(path))
+        {
+            return new SteamInstallerBackend(SteamInstallerArchive.Open(path));
+        }
+
         // 3c. Strong magic: InstallShield 5 cabinet ("ISc(" — Redguard Disc 1's DATA1.CAB holds
         //     the whole install). Magic-only gate; the parser owns the informative failure.
-        if (InstallShield.InstallShieldCabinet.TryProbe(path))
+        if (InstallShieldCabinet.TryProbe(path))
         {
-            return new InstallShieldBackend(InstallShield.InstallShieldCabinet.Parse(path));
+            return new InstallShieldBackend(InstallShieldCabinet.Parse(path));
         }
 
         // 3d. Exact arithmetic, no magic, extension-gated: the two Fallout containers. DAT2 is
@@ -106,6 +138,29 @@ internal static class ArchiveProbe
             return new OblivionPspArchiveBackend(OblivionPspArchive.Parse(path));
         }
 
+        // 5d. Exact arithmetic, no magic: the Daggerfall CD's ARENA2\PACKED.DAT. Its entry table
+        //     must be a whole number of 25-byte records ending where a 60-byte destination
+        //     directory name begins, that name must close the file, and every entry's DCL block
+        //     chain must tile from the previous entry's end with the four header constants intact.
+        //     Probe and parse are ONE call here: the probe IS the walk, so the TryProbe-then-Parse
+        //     shape the older steps use would read every block header twice.
+        if (DaggerfallPackedArchive.TryParse(path, out var packed))
+        {
+            return new DaggerfallPackedBackend(packed!);
+        }
+
+        // 5e. Exact arithmetic, no magic, NAME-gated: the Arena v1.04 floppy installer, whose
+        //     directory (ARENA.H1..Hn) and block stream (ARENA.1..n) are separate files spread over
+        //     eight disks. Only ARENA.H1 / ARENA.1 can anchor it, so nothing else pays for the
+        //     probe; the claim is that the directory's sizes sum to ARENA.TDS exactly and the block
+        //     walk consumes the concatenated stream exactly.
+        //     Parsed in ONE call for the same reason as 5d, and it matters more here: a second pass
+        //     would re-read and re-concatenate the release's whole 11 MB stream.
+        if (ArenaInstallerArchive.TryParse(path, out var installer))
+        {
+            return new ArenaInstallerBackend(installer!);
+        }
+
         // 6. Strong magic plus exact arithmetic: plain PKZIP (TES Travels J2ME JARs, Fallout Tactics
         //    .bos). PK\x03\x04 at offset 0, an end record that ends exactly at EOF, and a central
         //    directory that tiles exactly between its declared offset and that record.
@@ -119,7 +174,7 @@ internal static class ArchiveProbe
         //    a signature, so it deliberately runs LAST of the real formats — everything with a magic
         //    gets first refusal. The claim is the tiling: the first entry begins exactly where the
         //    directory ends, each subsequent one where the previous ended, and the last at EOF.
-        if (VanBuren.VanBurenGrpArchive.TryProbe(path))
+        if (VanBurenGrpArchive.TryProbe(path))
         {
             return new VanBurenGrpBackend(path);
         }

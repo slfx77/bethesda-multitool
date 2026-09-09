@@ -25,7 +25,7 @@ public class DdsTextureDecoderDx10Tests
         var result = DdsTextureDecoder.Decode(dds);
 
         Assert.NotNull(result);
-        Assert.Equal(4, result!.Width);
+        Assert.Equal(4, result.Width);
         Assert.Equal(4, result.Height);
         Assert.Single(result.MipLevels);
         Assert.Equal(4 * 4 * 4, result.Pixels.Length); // RGBA8
@@ -41,7 +41,7 @@ public class DdsTextureDecoderDx10Tests
         var result = DdsTextureDecoder.Decode(dds);
 
         Assert.NotNull(result);
-        Assert.Equal(4, result!.Width);
+        Assert.Equal(4, result.Width);
         Assert.Equal(4, result.Height);
         Assert.Equal(4 * 4 * 4, result.Pixels.Length);
     }
@@ -92,7 +92,7 @@ public class DdsTextureDecoderDx10Tests
         var result = DdsTextureDecoder.Decode(BuildClassicDds("BC5S", new byte[16], 16));
 
         Assert.NotNull(result);
-        var px = result!.Pixels; // RGBA of pixel 0
+        var px = result.Pixels; // RGBA of pixel 0
         Assert.InRange(px[0], 126, 130); // X ≈ 0 → 128
         Assert.InRange(px[1], 126, 130); // Y ≈ 0 → 128
         Assert.InRange(px[2], 250, 255); // Z ≈ +1 → ~255
@@ -109,7 +109,7 @@ public class DdsTextureDecoderDx10Tests
         var result = DdsTextureDecoder.Decode(BuildClassicDds("BC5S", block, 16));
 
         Assert.NotNull(result);
-        Assert.InRange(result!.Pixels[0], 253, 255); // X = +1 → ~255
+        Assert.InRange(result.Pixels[0], 253, 255); // X = +1 → ~255
     }
 
     /// <summary>Builds a 4×4, single-mip DDS with a classic <paramref name="fourCc" /> pixel format.</summary>

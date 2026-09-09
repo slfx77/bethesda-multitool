@@ -230,10 +230,12 @@ public sealed class StarfieldSunPresetProjectorTests
 
     private static BethesdaReflectionObject Object(
         string type,
-        params (string Name, BethesdaReflectionValue Value)[] fields) =>
-        new(
+        params (string Name, BethesdaReflectionValue Value)[] fields)
+    {
+        return new BethesdaReflectionObject(
             type,
             fields.ToDictionary(field => field.Name, field => field.Value, StringComparer.Ordinal));
+    }
 
     private static void AssertDecodeFails(
         byte[] data,

@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
@@ -68,7 +64,7 @@ public sealed class ShadowkeyPackTests
             for (var v = 0; v < 3; v++)
             {
                 I16(v * 10);
-                I16((f * 100) + v);
+                I16(f * 100 + v);
                 I16(-v);
             }
         }
@@ -108,12 +104,12 @@ public sealed class ShadowkeyPackTests
 
     private static byte[] ModelIndex(params (uint Offset, uint Size)[] entries)
     {
-        var bytes = new byte[4 + (entries.Length * 8)];
+        var bytes = new byte[4 + entries.Length * 8];
         BinaryPrimitives.WriteUInt32LittleEndian(bytes, (uint)entries.Length);
         for (var i = 0; i < entries.Length; i++)
         {
-            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4 + (i * 8)), entries[i].Offset);
-            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8 + (i * 8)), entries[i].Size);
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4 + i * 8), entries[i].Offset);
+            BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(8 + i * 8), entries[i].Size);
         }
 
         return bytes;
@@ -123,7 +119,7 @@ public sealed class ShadowkeyPackTests
     public void ModelPack_WhoseIndexTilesThePack_ExposesEveryEntry()
     {
         var first = Mesh();
-        var second = Mesh(frames: 1);
+        var second = Mesh(1);
         var pack = (byte[])[.. first, .. second];
         var index = ModelIndex(
             (0u, (uint)first.Length),
@@ -146,7 +142,7 @@ public sealed class ShadowkeyPackTests
         Assert.Null(models.GetMesh(1));
         var mesh = models.GetMesh(0);
         Assert.NotNull(mesh);
-        Assert.Equal(2, mesh!.FrameCount);
+        Assert.Equal(2, mesh.FrameCount);
         Assert.Same(mesh, models.GetMesh(0));
     }
 
@@ -157,8 +153,7 @@ public sealed class ShadowkeyPackTests
         var pack = (byte[])[.. mesh, .. mesh];
         var index = ModelIndex((0u, (uint)mesh.Length), ((uint)mesh.Length + 1, (uint)mesh.Length));
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyModelPack.Parse(index, pack, null, PackName));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyModelPack.Parse(index, pack, null, PackName));
 
         Assert.Contains("tile to", error.Message, StringComparison.Ordinal);
     }
@@ -170,8 +165,7 @@ public sealed class ShadowkeyPackTests
         var pack = (byte[])[.. mesh, 0, 0];
         var index = ModelIndex((0u, (uint)mesh.Length));
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyModelPack.Parse(index, pack, null, PackName));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyModelPack.Parse(index, pack, null, PackName));
 
         Assert.Contains($"but the pack is {pack.Length} bytes", error.Message, StringComparison.Ordinal);
     }
@@ -191,8 +185,7 @@ public sealed class ShadowkeyPackTests
         var index = ModelIndex((0u, 0u));
         var truncated = index[..^2];
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyModelPack.Parse(truncated, [], null, PackName));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyModelPack.Parse(truncated, [], null, PackName));
 
         Assert.Contains("declares 1 entries", error.Message, StringComparison.Ordinal);
     }
@@ -212,8 +205,7 @@ public sealed class ShadowkeyPackTests
     {
         var index = ModelIndex((0u, 0u));
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyModelPack.Parse(index, [], modelsTxt, PackName));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyModelPack.Parse(index, [], modelsTxt, PackName));
 
         Assert.Contains(expected, error.Message, StringComparison.Ordinal);
     }
@@ -271,7 +263,7 @@ public sealed class ShadowkeyPackTests
         // 0x0F0F is the magenta colour key: the colour survives, the alpha does not.
         Assert.Equal(((byte)255, (byte)0, (byte)255, (byte)0), image.Palette.GetEntry(3));
 
-        var opaque = mesh.DecodeSkin(0, magentaIsTransparent: false);
+        var opaque = mesh.DecodeSkin(0, false);
         Assert.Equal(((byte)255, (byte)0, (byte)255, (byte)255), opaque.Palette.GetEntry(3));
 
         var texture = image.ToDecodedTexture();
@@ -327,7 +319,8 @@ public sealed class ShadowkeyPackTests
     [InlineData(7, 9, 1, 2, 2, 3, 0, "over 2 frames")]
     [InlineData(7, 9, 1, 2, 2, 0, 4, "but the entry is")]
     public void Mesh_WithABrokenSection_Throws(
-        ushort tag, ushort coordinateCount, ushort trailer, ushort faceVertex, ushort faceUv, ushort sequenceEnd, int trailingBytes, string expected)
+        ushort tag, ushort coordinateCount, ushort trailer, ushort faceVertex, ushort faceUv, ushort sequenceEnd,
+        int trailingBytes, string expected)
     {
         var bytes = Mesh(
             tag: tag,
@@ -364,7 +357,8 @@ public sealed class ShadowkeyPackTests
     }
 
     /// <summary>Builds one sprite blob: width, height, palette, then the given row spans.</summary>
-    private static byte[] Sprite(int width, int height, ushort[] palette, IEnumerable<(int X0, int X1, byte[] Indices)> rows)
+    private static byte[] Sprite(int width, int height, ushort[] palette,
+        IEnumerable<(int X0, int X1, byte[] Indices)> rows)
     {
         var bytes = new List<byte>();
 
@@ -419,7 +413,7 @@ public sealed class ShadowkeyPackTests
             [
                 (1, 3, [1, 2]),
                 (ShadowkeySpriteRow.EmptyMarker, ShadowkeySpriteRow.EmptyMarker, []),
-                (0, 4, [0, 1, 2, 0]),
+                (0, 4, [0, 1, 2, 0])
             ]);
     }
 
@@ -439,7 +433,7 @@ public sealed class ShadowkeyPackTests
         var sprite = sprites.GetSprite(0);
         Assert.NotNull(sprite);
         Assert.Same(sprite, sprites.GetSprite(0));
-        Assert.Equal(4, sprite!.Width);
+        Assert.Equal(4, sprite.Width);
         Assert.Equal(3, sprite.Height);
         Assert.Equal(3, sprite.UsedPaletteLength);
         Assert.Equal(6, sprite.SpanPixelCount);
@@ -457,21 +451,21 @@ public sealed class ShadowkeyPackTests
         var image = sprite.ToImage();
 
         // Index 3 is the first slot no pixel uses, so it can carry the transparency.
-        Assert.Equal(3, (int)image.TransparentIndex);
+        Assert.Equal(3, image.TransparentIndex);
         Assert.False(image.TransparentIndexAliasesPixels);
         Assert.Equal(
             [
                 3, 1, 2, 3,
                 3, 3, 3, 3,
-                0, 1, 2, 0,
+                0, 1, 2, 0
             ],
             image.Bitmap.Indices);
-        Assert.Equal(0, (int)image.Palette.GetEntry(3).A);
+        Assert.Equal(0, image.Palette.GetEntry(3).A);
         Assert.Equal(((byte)255, (byte)0, (byte)0, (byte)255), image.Palette.GetEntry(0));
 
         // Palette slot 2 is the magenta key and defaults to transparent, colour intact.
         Assert.Equal(((byte)255, (byte)0, (byte)255, (byte)0), image.Palette.GetEntry(2));
-        Assert.Equal(255, (int)sprite.BuildPalette(3, magentaIsTransparent: false).GetEntry(2).A);
+        Assert.Equal(255, sprite.BuildPalette(3, false).GetEntry(2).A);
     }
 
     [Fact]
@@ -489,16 +483,16 @@ public sealed class ShadowkeyPackTests
             [.. Enumerable.Repeat((ushort)0x0123, Palette.EntryCount)],
             [
                 (0, Palette.EntryCount, indices),
-                (ShadowkeySpriteRow.EmptyMarker, ShadowkeySpriteRow.EmptyMarker, []),
+                (ShadowkeySpriteRow.EmptyMarker, ShadowkeySpriteRow.EmptyMarker, [])
             ]);
 
         var sprite = ShadowkeySpritePack.Parse(SpritePack(blob), "global.spr").GetSprite(0)!;
 
         Assert.Null(sprite.FindUnusedIndex());
         var image = sprite.ToImage();
-        Assert.Equal(255, (int)image.TransparentIndex);
+        Assert.Equal(255, image.TransparentIndex);
         Assert.True(image.TransparentIndexAliasesPixels);
-        Assert.Equal(255, (int)image.Bitmap.Indices[Palette.EntryCount]);
+        Assert.Equal(255, image.Bitmap.Indices[Palette.EntryCount]);
     }
 
     [Fact]
@@ -550,8 +544,8 @@ public sealed class ShadowkeyPackTests
     [Fact]
     public void Sprite_TooShortForItsPalette_Throws()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeySpritePack.ParseSprite(new byte[100], 0, "global.spr[0]"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeySpritePack.ParseSprite(new byte[100], 0, "global.spr[0]"));
 
         Assert.Contains("too short for the 516-byte header", error.Message, StringComparison.Ordinal);
     }
@@ -561,8 +555,8 @@ public sealed class ShadowkeyPackTests
     {
         var blob = Sprite(4, 1, [0x0F00], [(2, 6, [0, 0, 0, 0])]);
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeySpritePack.ParseSprite(blob, 0, "global.spr[0]"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeySpritePack.ParseSprite(blob, 0, "global.spr[0]"));
 
         Assert.Contains("spans [2, 6) of a 4-pixel row", error.Message, StringComparison.Ordinal);
     }
@@ -572,8 +566,8 @@ public sealed class ShadowkeyPackTests
     {
         var blob = (byte[])[.. Sprite(4, 1, [0x0F00], [(0, 2, [0, 0])]), 0, 0];
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeySpritePack.ParseSprite(blob, 0, "global.spr[0]"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeySpritePack.ParseSprite(blob, 0, "global.spr[0]"));
 
         Assert.Contains("rows end at byte", error.Message, StringComparison.Ordinal);
     }
@@ -664,17 +658,18 @@ public sealed class ShadowkeyPackTests
         Assert.Throws<InvalidDataException>(() => ShadowkeyStringTable.Parse([1, 2], "StringTable.eng"));
     }
 
-    private static byte[] ProductTable(params (ushort Id, ushort Type, uint Cost, ushort NameId, byte[] Flags)[] products)
+    private static byte[] ProductTable(
+        params (ushort Id, ushort Type, uint Cost, ushort NameId, byte[] Flags)[] products)
     {
         var bytes = new byte[ShadowkeyProductTable.HeaderLength
-            + (products.Length * ShadowkeyProductTable.RecordLength)];
+                             + products.Length * ShadowkeyProductTable.RecordLength];
         BinaryPrimitives.WriteUInt16LittleEndian(bytes, ShadowkeyProductTable.RetailFormatTag);
         BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(2), (ushort)products.Length);
 
         for (var i = 0; i < products.Length; i++)
         {
             var record = bytes.AsSpan(
-                ShadowkeyProductTable.HeaderLength + (i * ShadowkeyProductTable.RecordLength),
+                ShadowkeyProductTable.HeaderLength + i * ShadowkeyProductTable.RecordLength,
                 ShadowkeyProductTable.RecordLength);
             BinaryPrimitives.WriteUInt16LittleEndian(record, products[i].Id);
             BinaryPrimitives.WriteUInt16LittleEndian(record[2..], products[i].Type);
@@ -697,21 +692,22 @@ public sealed class ShadowkeyPackTests
             (50, 1, 108_779, 2772, [0, 0, 1, 0, 1, 0, 1, 1, 0]),
             (4905, 3, 30, 208, [1, 1, 1, 1, 1, 1, 1, 1, 1]));
 
-        var table = ShadowkeyProductTable.Parse(bytes, "products.dat", stringCount: 4082);
+        var table = ShadowkeyProductTable.Parse(bytes, "products.dat", 4082);
 
         Assert.Equal(ShadowkeyProductTable.RetailFormatTag, table.FormatTag);
         Assert.Equal(2, table.Products.Count);
 
         var weapon = table.Products[0];
-        Assert.Equal(50, (int)weapon.Id);
+        Assert.Equal(50, weapon.Id);
         Assert.Equal(ShadowkeyProductType.Weapon, weapon.Type);
         Assert.Equal(108_779u, weapon.Cost);
-        Assert.Equal(42, (int)weapon.Rating);
-        Assert.Equal(2773, (int)weapon.DescriptionStringId);
-        Assert.Equal(2772, (int)weapon.NameStringId);
-        Assert.Equal(3, (int)weapon.ArmorSlot);
+        Assert.Equal(42, weapon.Rating);
+        Assert.Equal(2773, weapon.DescriptionStringId);
+        Assert.Equal(2772, weapon.NameStringId);
+        Assert.Equal(3, weapon.ArmorSlot);
         Assert.Equal(
-            ShadowkeyClasses.Battlemage | ShadowkeyClasses.Nightblade | ShadowkeyClasses.Spellsword | ShadowkeyClasses.Sorcerer,
+            ShadowkeyClasses.Battlemage | ShadowkeyClasses.Nightblade | ShadowkeyClasses.Spellsword |
+            ShadowkeyClasses.Sorcerer,
             weapon.UsableBy);
         Assert.Equal(ShadowkeyClasses.All, table.Products[1].UsableBy);
         Assert.Equal(ShadowkeyProductType.Armor, table.Products[1].Type);
@@ -722,8 +718,8 @@ public sealed class ShadowkeyPackTests
     {
         var bytes = ProductTable((50, 1, 10, 100, [1, 0, 0, 0, 0, 0, 0, 0, 0]));
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyProductTable.Parse([.. bytes, 0], "products.dat"));
+        var error =
+            Assert.Throws<InvalidDataException>(() => ShadowkeyProductTable.Parse([.. bytes, 0], "products.dat"));
 
         Assert.Contains("declares 1 records", error.Message, StringComparison.Ordinal);
     }
@@ -754,10 +750,9 @@ public sealed class ShadowkeyPackTests
     {
         var bytes = ProductTable((50, 1, 10, 5000, [1, 0, 0, 0, 0, 0, 0, 0, 0]));
 
-        Assert.Equal(5000, (int)ShadowkeyProductTable.Parse(bytes, "products.dat").Products[0].NameStringId);
+        Assert.Equal(5000, ShadowkeyProductTable.Parse(bytes, "products.dat").Products[0].NameStringId);
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyProductTable.Parse(bytes, "products.dat", stringCount: 4082));
+        var error = Assert.Throws<InvalidDataException>(() => ShadowkeyProductTable.Parse(bytes, "products.dat", 4082));
 
         Assert.Contains("past the 4082-entry string table", error.Message, StringComparison.Ordinal);
     }

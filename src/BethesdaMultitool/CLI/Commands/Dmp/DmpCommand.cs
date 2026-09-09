@@ -397,16 +397,6 @@ public static class DmpCommand
         }
     }
 
-    // ===== shared helpers =====
-
-    /// <summary>How a bare (non-'va:'-prefixed) hexdump address relates to the dump file.</summary>
-    internal enum BareOffsetClassification
-    {
-        InRange,
-        OutOfRange,
-        OutOfRangeLikelyVirtualAddress
-    }
-
     /// <summary>
     ///     Classifies a bare hexdump address against the dump file's length. Out-of-range
     ///     values at or above 0x80000000, or that resolve through the module/region tables,
@@ -452,5 +442,15 @@ public static class DmpCommand
         }
 
         return long.TryParse(str, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out value);
+    }
+
+    // ===== shared helpers =====
+
+    /// <summary>How a bare (non-'va:'-prefixed) hexdump address relates to the dump file.</summary>
+    internal enum BareOffsetClassification
+    {
+        InRange,
+        OutOfRange,
+        OutOfRangeLikelyVirtualAddress
     }
 }

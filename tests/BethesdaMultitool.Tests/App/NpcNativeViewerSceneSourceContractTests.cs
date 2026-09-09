@@ -5,9 +5,12 @@ namespace BethesdaMultitool.Tests.App;
 
 public sealed class NpcNativeViewerSceneSourceContractTests
 {
-    private static string ServiceSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Npc",
-        "NpcBrowserService.cs");
+    private static string ServiceSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Npc",
+            "NpcBrowserService.cs");
+    }
 
     [Fact]
     public void NpcAndCreatureCompositionEnterNativeSceneBeforeGlbSerialization()

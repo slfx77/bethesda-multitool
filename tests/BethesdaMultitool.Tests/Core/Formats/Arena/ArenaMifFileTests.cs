@@ -1,5 +1,4 @@
-using System.Collections.Generic;
-using System.Linq;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Arena;
 using Xunit;
 
@@ -13,18 +12,18 @@ namespace BethesdaMultitool.Tests.Core.Formats.Arena;
 /// </summary>
 public class ArenaMifFileTests
 {
+    private const int LzhufAabLength = 3;
+
     /// <summary>
     ///     "AAB" — the hand-derived LZHUF vector from <c>LzhufCodecTests</c>. Its first two bytes
     ///     read back as the little-endian voxel id 0x4141.
     /// </summary>
     private static readonly byte[] LzhufAab = [0xE6, 0xE2, 0xF3, 0x80];
 
-    private const int LzhufAabLength = 3;
-
     private static List<byte> Chunk(string tag, IEnumerable<byte> payload)
     {
         var body = payload.ToList();
-        var bytes = new List<byte>(System.Text.Encoding.ASCII.GetBytes(tag));
+        var bytes = new List<byte>(Encoding.ASCII.GetBytes(tag));
         bytes.Add((byte)(body.Count & 0xFF));
         bytes.Add((byte)((body.Count >> 8) & 0xFF));
         bytes.AddRange(body);
@@ -57,7 +56,7 @@ public class ArenaMifFileTests
     [Fact]
     public void Parse_ReadsDimensionsAndStartingLevelFromTheHeader()
     {
-        var map = ArenaMifFile.Parse(Map(Header(64, 48, startingLevel: 2, levelCount: 1)), "T.MIF");
+        var map = ArenaMifFile.Parse(Map(Header(64, 48, 2, 1)), "T.MIF");
 
         Assert.Equal(64, map.Width);
         Assert.Equal(48, map.Depth);

@@ -1,4 +1,5 @@
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -36,8 +37,9 @@ public sealed class OblivionNpcBodyTextureRetailTests
         Assert.SkipWhen(meshes is null, RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
         Assert.SkipWhen(textures is null, RealAssetPaths.SkipMessage("Oblivion - Textures - Compressed.bsa"));
         var token = TestContext.Current.CancellationToken;
-        var loaded = await RealAssetEsmCache.LoadAsync(esm!, token);
-        var records = loaded.RawResult.EsmRecords ?? throw new InvalidOperationException("Retail record descriptors missing");
+        var loaded = await RealAssetEsmCache.LoadAsync(esm, token);
+        var records = loaded.RawResult.EsmRecords ??
+                      throw new InvalidOperationException("Retail record descriptors missing");
         var accessor = loaded.Accessor ?? throw new InvalidOperationException("Retail mapping missing");
         var index = NpcAppearanceIndexBuilder.Build(new MmfMemoryAccessor(accessor), loaded.RawResult.FileSize,
             records.MainRecords, records.BigEndianRecords > 0, records.Game, cancellationToken: token);
@@ -47,8 +49,8 @@ public sealed class OblivionNpcBodyTextureRetailTests
         Assert.Equal(@"textures\Characters\Orc\Female\HandFemale.dds", npc.HandTexturePath);
         Assert.NotNull(npc.FaceGenTextureCoeffs);
         var unchangedCoefficients = npc.FaceGenTextureCoeffs.ToArray();
-        using var archives = MeshArchiveSet.Open(meshes!, null);
-        using var resolver = new NifTextureResolver(textures!);
+        using var archives = MeshArchiveSet.Open(meshes, null);
+        using var resolver = new NifTextureResolver(textures);
         var caches = new NpcCompositionCaches();
         var options = new NpcCompositionOptions { IncludeWeapon = false, IncludeHair = false, ApplyEgm = false };
         var plan = NpcCompositionPlanner.CreatePlan(npc, archives, resolver, caches, options);
@@ -59,7 +61,7 @@ public sealed class OblivionNpcBodyTextureRetailTests
         Assert.Null(plan.EffectiveTailTexturePath);
         Assert.Equal(unchangedCoefficients, npc.FaceGenTextureCoeffs);
         var hand = Assert.Single(plan.BodyParts);
-        Assert.Equal(HandMesh, hand.MeshPath, ignoreCase: true);
+        Assert.Equal(HandMesh, hand.MeshPath, true);
         Assert.Equal(HandKey, hand.TextureOverride);
         Assert.Contains(@"meshes\characters\_male\upperbodyhumanfemale.egt", caches.EgtFiles.Keys);
         Assert.Contains(@"meshes\characters\_male\body.egt", caches.EgtFiles.Keys);
@@ -82,8 +84,10 @@ public sealed class OblivionNpcBodyTextureRetailTests
             {
                 Assert.Equal(source.Pixels[alpha], tinted.Pixels[alpha]);
             }
+
             Assert.Contains(pair.Item1, NpcTextureHelpers.BuildNpcGeneratedTextureKeys(npc));
         }
+
         token.ThrowIfCancellationRequested();
         using var headCache = NpcRenderModelCache.CreateHeadMeshCache();
         var cpu = NpcBodyBuilder.BuildFromPlan(plan, archives, resolver, caches, new NpcRenderModelCache(headCache));
@@ -94,12 +98,13 @@ public sealed class OblivionNpcBodyTextureRetailTests
         AssertBoundParts(exported.MeshParts.Select(static p => p.Submesh));
         AssertDetailAtlases(resolver);
         var scene = BethesdaViewerSceneGlbAdapter.FromGlbScene(exported, "Mazoga body tint routing",
-            BethesdaViewerScenePurpose.NpcAppearance, game: BethesdaGame.Oblivion, textureSourcePaths: [textures!]);
+            BethesdaViewerScenePurpose.NpcAppearance, game: BethesdaGame.Oblivion, textureSourcePaths: [textures]);
         AssertBoundParts(scene.MeshParts.Select(static p => p.Submesh));
         var decoded = BethesdaViewerSceneDecoder12.Decode(scene);
         var posed = BethesdaViewerScenePoseMaterializer12.Materialize(decoded);
         foreach (var partIndex in Enumerable.Range(0, scene.MeshParts.Count)
-                     .Where(i => scene.MeshParts[i].Submesh.DiffuseTexturePath is UpperSkinKey or LowerSkinKey or HandSkinKey))
+                     .Where(i => scene.MeshParts[i].Submesh.DiffuseTexturePath is UpperSkinKey or LowerSkinKey
+                         or HandSkinKey))
         {
             var source = scene.MeshParts[partIndex].Submesh;
             Assert.Equal(source.DiffuseTexturePath, decoded.MeshParts[partIndex].Submesh.DiffuseTexturePath);
@@ -108,15 +113,18 @@ public sealed class OblivionNpcBodyTextureRetailTests
             Assert.DoesNotContain(posed.UnsupportedMeshParts, p => p.MeshPartIndex == partIndex);
             Assert.NotEmpty(posed.Mesh.Submeshes[partIndex].Indices);
         }
+
         // These controls use the real shared planner, not a second implementation of its condition.
         var noTint = NpcCompositionPlanner.CreatePlan(npc, archives, resolver, caches,
-            new NpcCompositionOptions { IncludeWeapon = false, IncludeHair = false, ApplyEgm = false, ApplyEgt = false });
+            new NpcCompositionOptions
+                { IncludeWeapon = false, IncludeHair = false, ApplyEgm = false, ApplyEgt = false });
         Assert.Equal(npc.BodyTexturePath, noTint.EffectiveBodyTexturePath);
         Assert.Equal(npc.HandTexturePath, noTint.EffectiveHandTexturePath);
         Assert.Equal(npc.LowerBodyTexturePath, noTint.EffectiveLowerBodyTexturePath);
         Assert.Equal(npc.FootTexturePath, noTint.EffectiveFootTexturePath);
         var headOnly = NpcCompositionPlanner.CreatePlan(npc, archives, resolver, caches,
-            new NpcCompositionOptions { IncludeWeapon = false, IncludeHair = false, ApplyEgm = false, HeadOnly = true });
+            new NpcCompositionOptions
+                { IncludeWeapon = false, IncludeHair = false, ApplyEgm = false, HeadOnly = true });
         Assert.Empty(headOnly.BodyParts);
         Assert.Equal(npc.HandTexturePath, headOnly.EffectiveHandTexturePath);
         var khajiit = new NpcAppearanceFactory(index).Build(
@@ -125,13 +133,14 @@ public sealed class OblivionNpcBodyTextureRetailTests
         var khajiitScene = NpcCompositionExportAdapter.BuildNpc(khajiitPlan, archives, resolver, caches);
         Assert.NotNull(khajiitScene);
         var shoe = Assert.Single(khajiitScene.MeshParts.Select(static p => p.Submesh), static p =>
-            string.Equals(p.SourceNifPath, @"meshes\Clothes\MiddleClass\01\M\Shoes.NIF", StringComparison.OrdinalIgnoreCase));
+            string.Equals(p.SourceNifPath, @"meshes\Clothes\MiddleClass\01\M\Shoes.NIF",
+                StringComparison.OrdinalIgnoreCase));
         Assert.Equal("Foot", shoe.ShapeName);
         Assert.Equal("foot", shoe.LegacyMaterialName);
         Assert.False(shoe.HasAuthoredOblivionBodySkinInputs);
         Assert.False(shoe.IsFaceGen);
-        Assert.Equal(@"textures\clothes\middleclass\Shoe01.dds", shoe.DiffuseTexturePath, ignoreCase: true);
-        Assert.Equal(@"textures\clothes\middleclass\Shoe01_n.dds", shoe.NormalMapTexturePath, ignoreCase: true);
+        Assert.Equal(@"textures\clothes\middleclass\Shoe01.dds", shoe.DiffuseTexturePath, true);
+        Assert.Equal(@"textures\clothes\middleclass\Shoe01_n.dds", shoe.NormalMapTexturePath, true);
         Assert.NotNull(resolver.GetTexture(shoe.NormalMapTexturePath!));
         Assert.Equal((1f, 1f, 1f), shoe.SpecularColor);
         Assert.Equal(10f, shoe.MaterialGlossiness);
@@ -142,14 +151,14 @@ public sealed class OblivionNpcBodyTextureRetailTests
         AssertTailBinding(khajiitCpu.Submeshes, resolver);
         AssertTailBinding(khajiitScene.MeshParts.Select(static p => p.Submesh), resolver);
         var khajiitViewer = BethesdaViewerSceneGlbAdapter.FromGlbScene(khajiitScene, "Khajiit tail source routing",
-            BethesdaViewerScenePurpose.NpcAppearance, game: BethesdaGame.Oblivion, textureSourcePaths: [textures!]);
+            BethesdaViewerScenePurpose.NpcAppearance, game: BethesdaGame.Oblivion, textureSourcePaths: [textures]);
         AssertTailBinding(khajiitViewer.MeshParts.Select(static p => p.Submesh), resolver);
         var tailIndex = Assert.Single(Enumerable.Range(0, khajiitViewer.MeshParts.Count), i =>
             string.Equals(khajiitViewer.MeshParts[i].Submesh.ShapeName, "Tail", StringComparison.Ordinal));
         var khajiitDecoded = BethesdaViewerSceneDecoder12.Decode(khajiitViewer);
         Assert.True(khajiitDecoded.MeshParts[tailIndex].NativeSemantics.IsFaceGen);
         Assert.Equal(@"body_skin\00023E35_tail.dds",
-            khajiitDecoded.MeshParts[tailIndex].Submesh.DiffuseTexturePath, ignoreCase: true);
+            khajiitDecoded.MeshParts[tailIndex].Submesh.DiffuseTexturePath, true);
     }
 
     private static void AssertTailBinding(IEnumerable<RenderableSubmesh> meshes, NifTextureResolver resolver)
@@ -160,11 +169,11 @@ public sealed class OblivionNpcBodyTextureRetailTests
         Assert.True(tail.HasAuthoredOblivionBodySkinInputs);
         Assert.Equal((0.588f, 0.588f, 0.588f), tail.AuthoredOblivionBodySkinAmbientColor);
         Assert.Equal(@"textures\characters\khajiit\female\tail.dds",
-            tail.AuthoredOblivionBodySkinDiffusePath, ignoreCase: true);
+            tail.AuthoredOblivionBodySkinDiffusePath, true);
         Assert.True(tail.IsFaceGen);
-        Assert.Equal(@"body_skin\00023E35_tail.dds", tail.DiffuseTexturePath, ignoreCase: true);
+        Assert.Equal(@"body_skin\00023E35_tail.dds", tail.DiffuseTexturePath, true);
         Assert.Equal(@"textures\characters\khajiit\female\tail_n.dds",
-            tail.NormalMapTexturePath, ignoreCase: true);
+            tail.NormalMapTexturePath, true);
         var normal = resolver.GetTexture(tail.NormalMapTexturePath!);
         Assert.NotNull(normal);
         Assert.Equal(64, normal.Width);
@@ -176,17 +185,19 @@ public sealed class OblivionNpcBodyTextureRetailTests
     private static void AssertBoundParts(IEnumerable<RenderableSubmesh> meshes)
     {
         var parts = meshes.ToArray();
-        var hand = Assert.Single(parts, static p => string.Equals(p.SourceNifPath, HandMesh, StringComparison.OrdinalIgnoreCase));
+        var hand = Assert.Single(parts,
+            static p => string.Equals(p.SourceNifPath, HandMesh, StringComparison.OrdinalIgnoreCase));
         Assert.Equal(HandSkinKey, hand.DiffuseTexturePath);
-        Assert.Equal("skin", hand.LegacyMaterialName, ignoreCase: true);
-        Assert.Equal(@"textures\characters\imperial\female\HandFemale_n.dds", hand.NormalMapTexturePath, ignoreCase: true);
+        Assert.Equal("skin", hand.LegacyMaterialName, true);
+        Assert.Equal(@"textures\characters\imperial\female\HandFemale_n.dds", hand.NormalMapTexturePath, true);
         Assert.Contains(parts, static p => p.DiffuseTexturePath == UpperSkinKey);
         Assert.Contains(parts, static p => p.DiffuseTexturePath == LowerSkinKey);
-        var skin = parts.Where(static p => p.DiffuseTexturePath is UpperSkinKey or LowerSkinKey or HandSkinKey).ToArray();
+        var skin = parts.Where(static p => p.DiffuseTexturePath is UpperSkinKey or LowerSkinKey or HandSkinKey)
+            .ToArray();
         Assert.Equal(4, skin.Length);
         Assert.All(skin, static p =>
         {
-            Assert.Equal("skin", p.LegacyMaterialName, ignoreCase: true);
+            Assert.Equal("skin", p.LegacyMaterialName, true);
             Assert.True(p.HasAuthoredOblivionBodySkinInputs);
             Assert.NotNull(p.AuthoredOblivionBodySkinDiffusePath);
             Assert.True(p.IsFaceGen);
@@ -197,16 +208,19 @@ public sealed class OblivionNpcBodyTextureRetailTests
         Assert.Contains(parts, static p => p.DiffuseTexturePath == @"textures\armor\iron\f\Cuirass.dds");
         Assert.Contains(parts, static p => p.DiffuseTexturePath == @"textures\armor\iron\f\Greaves.dds");
         Assert.Contains(parts, static p => p.DiffuseTexturePath == @"textures\armor\iron\m\Boots.dds");
-        Assert.All(parts.Where(static p => p.DiffuseTexturePath?.StartsWith(@"textures\armor\iron\", StringComparison.OrdinalIgnoreCase) == true),
+        Assert.All(
+            parts.Where(static p =>
+                p.DiffuseTexturePath?.StartsWith(@"textures\armor\iron\", StringComparison.OrdinalIgnoreCase) == true),
             static p => Assert.False(p.IsFaceGen));
     }
 
     private static void AssertDetailAtlases(NifTextureResolver resolver)
     {
-        foreach (var (atlas, skin) in new[] { (UpperKey, UpperSkinKey), (LowerKey, LowerSkinKey), (HandKey, HandSkinKey) })
+        foreach (var (atlas, skin) in new[]
+                     { (UpperKey, UpperSkinKey), (LowerKey, LowerSkinKey), (HandKey, HandSkinKey) })
         {
-            var original = Assert.IsType<BethesdaMultitool.Core.Formats.Dds.DecodedTexture>(resolver.GetTexture(atlas));
-            var detail = Assert.IsType<BethesdaMultitool.Core.Formats.Dds.DecodedTexture>(resolver.GetTexture(skin));
+            var original = Assert.IsType<DecodedTexture>(resolver.GetTexture(atlas));
+            var detail = Assert.IsType<DecodedTexture>(resolver.GetTexture(skin));
             Assert.Equal(original.Width, detail.Width);
             Assert.Equal(original.Height, detail.Height);
             Assert.NotSame(original.Pixels, detail.Pixels);

@@ -18,8 +18,10 @@ internal static class GpuGeometryArenaBackingModePolicy
     ///     Only the explicit, trimmed, case-insensitive token <c>default</c> enables DEFAULT heap.
     ///     Unset, <c>upload</c>, and unknown values retain the established UPLOAD path.
     /// </summary>
-    public static GpuGeometryArenaBackingMode Parse(string? value) =>
-        string.Equals(value?.Trim(), "default", StringComparison.OrdinalIgnoreCase)
+    public static GpuGeometryArenaBackingMode Parse(string? value)
+    {
+        return string.Equals(value?.Trim(), "default", StringComparison.OrdinalIgnoreCase)
             ? GpuGeometryArenaBackingMode.DefaultHeap
             : GpuGeometryArenaBackingMode.UploadHeap;
+    }
 }

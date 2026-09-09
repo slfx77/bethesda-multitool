@@ -1,6 +1,8 @@
 using BethesdaMultitool;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.WorldData;
 
@@ -44,7 +46,7 @@ internal static class Map2DProfilerDataLoader
                 // the live renderer.
                 if (primary.FileType == AnalysisFileType.Minidump)
                 {
-                    var enriched = BethesdaMultitool.Core.Formats.Esm.Records.EsmLandEnricher
+                    var enriched = EsmLandEnricher
                         .EnrichCellsWithMasterEsmLandFallback(semantic.Cells, loadOrderRecords.Cells);
                     for (var i = 0; i < semantic.Cells.Count; i++)
                     {
@@ -69,10 +71,8 @@ internal static class Map2DProfilerDataLoader
         data.IsMemoryDump = primary.FileType == AnalysisFileType.Minidump;
         if (data.IsMemoryDump)
         {
-            data.MeshPathRenames = BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking
-                .MeshRenameMapService.TryLoad(
-                    BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking
-                        .MeshRenameMapService.SidecarPathFor(primary.FilePath));
+            data.MeshPathRenames = MeshRenameMapService.TryLoad(
+                MeshRenameMapService.SidecarPathFor(primary.FilePath));
         }
 
         return data;

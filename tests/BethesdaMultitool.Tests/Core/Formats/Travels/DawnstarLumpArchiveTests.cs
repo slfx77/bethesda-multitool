@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Archives;
 using BethesdaMultitool.Core.Formats.Travels.Dawnstar;
@@ -74,7 +70,7 @@ public sealed class DawnstarLumpArchiveTests
 
         // Directory length is exactly the sum of name + 2 dashes + 6-byte record, and the first
         // payload starts there — that is what ends the directory walk.
-        var directoryLength = "charin.dat".Length + "geomin.dat".Length + "icons.png".Length + (3 * 8);
+        var directoryLength = "charin.dat".Length + "geomin.dat".Length + "icons.png".Length + 3 * 8;
         Assert.Equal(directoryLength, archive.Entries[0].Offset);
 
         Assert.Equal(new[] { "charin.dat", "geomin.dat", "icons.png" }, archive.Entries.Select(e => e.Name));
@@ -100,7 +96,7 @@ public sealed class DawnstarLumpArchiveTests
         var archive = DawnstarLumpArchive.Parse(SampleLump(), Name);
 
         Assert.True(archive.TryGetEntry("geomin.dat", out var entry));
-        Assert.Equal(222, entry!.Length);
+        Assert.Equal(222, entry.Length);
 
         // The engine compares the raw directory token, so a case-folded name must MISS.
         Assert.False(archive.TryGetEntry("GEOMIN.DAT", out _));
@@ -114,10 +110,10 @@ public sealed class DawnstarLumpArchiveTests
         var archive = DawnstarLumpArchive.Parse(bytes, Name);
 
         Assert.True(archive.TryGetEntry("charin.dat", out var entry));
-        var slice = archive.Read(entry!);
+        var slice = archive.Read(entry);
 
         Assert.Equal(16, slice.Length);
-        Assert.True(slice.Span.SequenceEqual(bytes.AsSpan(entry!.Offset, entry.Length)));
+        Assert.True(slice.Span.SequenceEqual(bytes.AsSpan(entry.Offset, entry.Length)));
     }
 
     [Fact]

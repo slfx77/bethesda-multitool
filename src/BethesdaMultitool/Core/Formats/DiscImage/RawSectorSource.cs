@@ -34,7 +34,8 @@ internal sealed class RawSectorSource : IDiscSectorSource
 
             if (region.StartLba > long.MaxValue - region.SectorCountValue)
             {
-                throw new InvalidDataException($"Track LBA range {region.StartLba} + {region.SectorCountValue} overflows Int64.");
+                throw new InvalidDataException(
+                    $"Track LBA range {region.StartLba} + {region.SectorCountValue} overflows Int64.");
             }
 
             // Division avoids overflowing sectorCount * sectorSize. Exact EOF is valid; any
@@ -143,16 +144,6 @@ internal sealed class RawSectorSource : IDiscSectorSource
         }
     }
 
-    /// <summary>Raw physical read for CD-DA extraction (audio tracks).</summary>
-    public int ReadRawSector(long lba, Span<byte> buffer)
-    {
-        var (region, stream) = FindTrack(lba);
-        ReadPhysical(region, stream, lba);
-        var size = region.PhysicalSectorSize;
-        _rawBuffer.AsSpan(0, size).CopyTo(buffer[..size]);
-        return size;
-    }
-
     public void Dispose()
     {
         foreach (var (_, stream) in _tracks)
@@ -161,6 +152,16 @@ internal sealed class RawSectorSource : IDiscSectorSource
         }
 
         _tracks.Clear();
+    }
+
+    /// <summary>Raw physical read for CD-DA extraction (audio tracks).</summary>
+    public int ReadRawSector(long lba, Span<byte> buffer)
+    {
+        var (region, stream) = FindTrack(lba);
+        ReadPhysical(region, stream, lba);
+        var size = region.PhysicalSectorSize;
+        _rawBuffer.AsSpan(0, size).CopyTo(buffer[..size]);
+        return size;
     }
 
     private (DiscTrackRegion Region, FileStream Stream) FindTrack(long lba)

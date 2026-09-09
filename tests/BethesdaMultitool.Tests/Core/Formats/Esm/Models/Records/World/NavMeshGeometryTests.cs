@@ -18,7 +18,7 @@ public sealed class NavMeshGeometryTests
         var geom = NavMeshGeometry.TryParse(record);
 
         Assert.NotNull(geom);
-        Assert.Equal(4, geom!.Vertices.Length);
+        Assert.Equal(4, geom.Vertices.Length);
         Assert.Equal(new Vector3(1f, 2f, 3f), geom.Vertices[0]);
         Assert.Equal(new Vector3(10f, 11f, 12f), geom.Vertices[3]);
         Assert.Equal(2, geom.Triangles.Length);
@@ -55,7 +55,7 @@ public sealed class NavMeshGeometryTests
         var geom = NavMeshGeometry.TryParse(NavmNvnm(nvnm));
 
         Assert.NotNull(geom);
-        Assert.Equal(3, geom!.Vertices.Length);
+        Assert.Equal(3, geom.Vertices.Length);
         Assert.Equal(new Vector3(7f, 8f, 9f), geom.Vertices[2]);
         Assert.Equal(((ushort)0, (ushort)1, (ushort)2), Assert.Single(geom.Triangles));
     }
@@ -72,7 +72,7 @@ public sealed class NavMeshGeometryTests
         var geom = NavMeshGeometry.TryParse(NavmNvnm(nvnm));
 
         Assert.NotNull(geom);
-        Assert.Equal(4, geom!.Vertices.Length);
+        Assert.Equal(4, geom.Vertices.Length);
         Assert.Equal(2, geom.Triangles.Length);
         Assert.Equal(((ushort)1, (ushort)2, (ushort)3), geom.Triangles[1]);
     }
@@ -91,7 +91,7 @@ public sealed class NavMeshGeometryTests
         var geom = NavMeshGeometry.TryParse(Pgrd(pgrp, pgrr));
 
         Assert.NotNull(geom);
-        Assert.Equal(20, geom!.Vertices.Length); // 5 quads × 4 verts
+        Assert.Equal(20, geom.Vertices.Length); // 5 quads × 4 verts
         Assert.Equal(10, geom.Triangles.Length); // 5 quads × 2 tris
         // Node marker sits at the authored position (± halfSize, small z lift).
         Assert.Equal(100f + 6f, geom.Vertices[0].Z);
@@ -111,7 +111,7 @@ public sealed class NavMeshGeometryTests
         var geom = NavMeshGeometry.TryParse(Pgrd(pgrp, pgrr));
 
         Assert.NotNull(geom);
-        Assert.Equal(12, geom!.Vertices.Length); // 2 nodes + 1 ribbon
+        Assert.Equal(12, geom.Vertices.Length); // 2 nodes + 1 ribbon
         Assert.Equal(6, geom.Triangles.Length);
     }
 
@@ -121,7 +121,7 @@ public sealed class NavMeshGeometryTests
         var geom = NavMeshGeometry.TryParse(Pgrd(Pgrp(((0f, 0f, 0f), 0)), null));
 
         Assert.NotNull(geom);
-        Assert.Equal(4, geom!.Vertices.Length);
+        Assert.Equal(4, geom.Vertices.Length);
         Assert.Equal(2, geom.Triangles.Length);
     }
 

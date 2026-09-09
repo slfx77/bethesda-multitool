@@ -4,8 +4,8 @@ using System.Text;
 using BethesdaMultitool.CLI.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
@@ -41,7 +41,8 @@ public sealed class NpcAppearancePluginFramingTests
         Assert.Equal(NpcFormId, record.FormId);
         Assert.Equal(headerSize, record.RecordHeaderSize);
 
-        var index = NpcAppearanceIndexBuilder.Build(esm, bigEndian);
+        var index = NpcAppearanceIndexBuilder.Build(esm, bigEndian,
+            cancellationToken: TestContext.Current.CancellationToken);
         var npc = Assert.Contains(NpcFormId, index.Npcs);
         Assert.Equal("FramingNpc", npc.EditorId);
         Assert.Equal("Framing NPC", npc.FullName);
@@ -57,10 +58,11 @@ public sealed class NpcAppearancePluginFramingTests
         var esmPath = RealAssetPaths.Masters.Oblivion();
         Assert.SkipWhen(esmPath is null, RealAssetPaths.SkipMessage("Oblivion.esm"));
 
-        var esm = File.ReadAllBytes(esmPath!);
+        var esm = File.ReadAllBytes(esmPath);
         Assert.Equal(20, PluginFormat.Detect(esm).RecordHeaderSize);
 
-        var index = NpcAppearanceIndexBuilder.Build(esm, bigEndian: false);
+        var index = NpcAppearanceIndexBuilder.Build(esm, false,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(index.Npcs.Count > 1000, $"Expected >1000 Oblivion NPCs; got {index.Npcs.Count}.");
         Assert.True(index.Races.Count > 5, $"Expected Oblivion races; got {index.Races.Count}.");
@@ -81,8 +83,9 @@ public sealed class NpcAppearancePluginFramingTests
         var esmPath = RealAssetPaths.Masters.Oblivion();
         Assert.SkipWhen(esmPath is null, RealAssetPaths.SkipMessage("Oblivion.esm"));
 
-        var esm = File.ReadAllBytes(esmPath!);
-        var index = NpcAppearanceIndexBuilder.Build(esm, bigEndian: false);
+        var esm = File.ReadAllBytes(esmPath);
+        var index = NpcAppearanceIndexBuilder.Build(esm, false,
+            cancellationToken: TestContext.Current.CancellationToken);
         var argonian = Assert.Contains(0x00023FE9u, index.Races);
         Assert.Equal(@"Characters\Argonian\Tail.NIF", argonian.MaleTailPath);
         Assert.Equal(@"Characters\Argonian\Tail.NIF", argonian.FemaleTailPath);
@@ -115,7 +118,7 @@ public sealed class NpcAppearancePluginFramingTests
         Assert.Equal(@"textures\Characters\Khajiit\Female\tail.dds", mraajDar.TailTexturePath);
         Assert.Equal(@"meshes\characters\_Male\skeletonbeast.nif", mraajDar.SkeletonNifPath);
 
-        var meshesPath = Path.Combine(Path.GetDirectoryName(esmPath!)!, "Oblivion - Meshes.bsa");
+        var meshesPath = Path.Combine(Path.GetDirectoryName(esmPath)!, "Oblivion - Meshes.bsa");
         Assert.SkipWhen(!File.Exists(meshesPath), RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
         using var meshArchives = MeshArchiveSet.Open(meshesPath, null);
         var skeleton = NpcCompositionPlanner.BuildSkeletonComposition(
@@ -124,7 +127,7 @@ public sealed class NpcAppearancePluginFramingTests
             new NpcCompositionCaches(),
             new NpcCompositionOptions());
         Assert.NotNull(skeleton);
-        Assert.Contains("Bip01 TailRoot", skeleton!.BodySkinningBones!);
+        Assert.Contains("Bip01 TailRoot", skeleton.BodySkinningBones!);
         // tailIndex, not index: an outer scope in this method already binds `index`, and C#
         // refuses a nested declaration of the same name (CS0136).
         for (var tailIndex = 1; tailIndex <= 8; tailIndex++)
@@ -142,11 +145,12 @@ public sealed class NpcAppearancePluginFramingTests
         BucketBTestGuard.SkipUnlessEnabled();
         var esmPath = RealAssetPaths.Masters.Oblivion();
         Assert.SkipWhen(esmPath is null, RealAssetPaths.SkipMessage("Oblivion.esm"));
-        var meshesPath = Path.Combine(Path.GetDirectoryName(esmPath!)!, "Oblivion - Meshes.bsa");
+        var meshesPath = Path.Combine(Path.GetDirectoryName(esmPath)!, "Oblivion - Meshes.bsa");
         Assert.SkipWhen(!File.Exists(meshesPath), RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
 
-        var esm = File.ReadAllBytes(esmPath!);
-        var index = NpcAppearanceIndexBuilder.Build(esm, bigEndian: false);
+        var esm = File.ReadAllBytes(esmPath);
+        var index = NpcAppearanceIndexBuilder.Build(esm, false,
+            cancellationToken: TestContext.Current.CancellationToken);
         var factory = new NpcAppearanceFactory(index);
         var noContextAppearance = factory.Build(
             0x00085969,
@@ -161,7 +165,7 @@ public sealed class NpcAppearancePluginFramingTests
             0x00085969,
             Assert.Contains(0x00085969u, index.Npcs),
             "Oblivion.esm",
-            previewPlayerLevel: 10);
+            10);
 
         Assert.Equal(BethesdaGame.Oblivion, index.Game);
         var shield = Assert.Single(appearance.EquippedItems!, item =>
@@ -178,8 +182,11 @@ public sealed class NpcAppearancePluginFramingTests
             new ushort[] { 1, 2, 4, 6, 9, 12, 16, 20 },
             authoredLongswords.Entries.Select(static entry => entry.Level).ToArray());
         Assert.Equal(
-            new uint[] { 0x00000C0C, 0x000229BA, 0x0002521F, 0x00035DD1,
-                0x000229B3, 0x00035E5F, 0x00035E6E, 0x00035E76 },
+            new uint[]
+            {
+                0x00000C0C, 0x000229BA, 0x0002521F, 0x00035DD1,
+                0x000229B3, 0x00035E5F, 0x00035E6E, 0x00035E76
+            },
             authoredLongswords.Entries.Select(static entry => entry.FormId).ToArray());
         Assert.Equal(0x000229B3u, weapon.WeaponFormId); // level 10 -> highest eligible tier 9 (Elven)
         Assert.Equal(WeaponVisualSourceKind.EsmBestWeapon, weapon.SourceKind);
@@ -193,7 +200,7 @@ public sealed class NpcAppearancePluginFramingTests
             0x00085969,
             Assert.Contains(0x00085969u, index.Npcs),
             "Oblivion.esm",
-            previewPlayerLevel: 20);
+            20);
         Assert.Equal(0x00035E76u, levelTwentyAppearance.WeaponVisual?.WeaponFormId);
         Assert.Equal((ushort)20, levelTwentyAppearance.WeaponVisual?.LeveledListTrace?.SelectedEntryLevel);
 
@@ -212,8 +219,8 @@ public sealed class NpcAppearancePluginFramingTests
         Assert.NotNull(defaultIdleSkeleton);
         Assert.NotNull(skeleton);
         Assert.Equal(2, skeletonCaches.SkeletonPlans.Count);
-        Assert.Null(defaultIdleSkeleton!.BodyPoseKfPath);
-        Assert.Equal("onehandidle.kf", skeleton!.BodyPoseKfPath);
+        Assert.Null(defaultIdleSkeleton.BodyPoseKfPath);
+        Assert.Equal("onehandidle.kf", skeleton.BodyPoseKfPath);
         Assert.Same(skeleton.BodySkinningBones, skeleton.WeaponAttachmentBones);
         Assert.NotEqual(
             Assert.Contains("Bip01 R Hand", defaultIdleSkeleton.BodySkinningBones!).Translation,
@@ -227,7 +234,7 @@ public sealed class NpcAppearancePluginFramingTests
             weapon.AttachmentPoseKfPath);
 
         Assert.NotNull(pose);
-        Assert.Contains("Weapon", pose!.WorldTransforms.Keys);
+        Assert.Contains("Weapon", pose.WorldTransforms.Keys);
         Assert.Contains("Bip01 R Hand", pose.WorldTransforms.Keys);
         Assert.Contains("Bip01 L Forearm", pose.WorldTransforms.Keys);
         var bodyRightHand = Assert.Contains("Bip01 R Hand", skeleton.BodySkinningBones!);
@@ -261,7 +268,8 @@ public sealed class NpcAppearancePluginFramingTests
     {
         var esm = BuildOblivionRacePlugin();
 
-        var index = NpcAppearanceIndexBuilder.Build(esm, bigEndian: false);
+        var index = NpcAppearanceIndexBuilder.Build(esm, false,
+            cancellationToken: TestContext.Current.CancellationToken);
         var race = Assert.Contains(RaceFormId, index.Races);
 
         Assert.Equal("HeadHuman.nif", race.MaleHeadModelPath);
@@ -302,7 +310,8 @@ public sealed class NpcAppearancePluginFramingTests
     {
         var esm = BuildOblivionClothingPlugin();
 
-        var index = NpcAppearanceIndexBuilder.Build(esm, bigEndian: false);
+        var index = NpcAppearanceIndexBuilder.Build(esm, false,
+            cancellationToken: TestContext.Current.CancellationToken);
         var clothing = Assert.Contains(0x0001C884u, index.Armors);
 
         Assert.Equal("MiddleShirt03", clothing.EditorId);

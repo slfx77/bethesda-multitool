@@ -15,8 +15,7 @@ public sealed class RttiCommandUsageTests
     [Fact]
     public void UsageTextNoInput_RendersThroughSpectreWithLiteralBrackets()
     {
-        var output = CliHelpers.CaptureSpectreOutput(
-            console => console.MarkupLine(RttiCommand.UsageTextNoInput));
+        var output = CliHelpers.CaptureSpectreOutput(console => console.MarkupLine(RttiCommand.UsageTextNoInput));
 
         // Assert on short fragments: the capture console wraps at its default width,
         // so the full line may span multiple output lines.
@@ -27,8 +26,7 @@ public sealed class RttiCommandUsageTests
     [Fact]
     public void UsageTextNoAction_RendersThroughSpectreWithLiteralBrackets()
     {
-        var output = CliHelpers.CaptureSpectreOutput(
-            console => console.MarkupLine(RttiCommand.UsageTextNoAction));
+        var output = CliHelpers.CaptureSpectreOutput(console => console.MarkupLine(RttiCommand.UsageTextNoAction));
 
         Assert.Contains("[<va2> ...]", output);
         Assert.Contains("--scan 0xSTART-0xEND", output);

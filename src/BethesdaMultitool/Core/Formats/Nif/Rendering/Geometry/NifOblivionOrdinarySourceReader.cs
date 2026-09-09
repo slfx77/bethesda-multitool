@@ -228,7 +228,8 @@ internal sealed class NifOblivionOrdinarySourceReader
         }
 
         return texture.ReadUInt32() == 0 && Remaining(texture) == 0
-            ? ReadSourceTexture(data, nif, source) : null;
+            ? ReadSourceTexture(data, nif, source)
+            : null;
     }
 
     private static string? ReadSourceTexture(byte[] data, NifInfo nif, int index)
@@ -368,10 +369,15 @@ internal sealed class NifOblivionOrdinarySourceReader
         return Encoding.ASCII.GetString(bytes);
     }
 
-    private static long Remaining(BinaryReader reader) => reader.BaseStream.Length - reader.BaseStream.Position;
+    private static long Remaining(BinaryReader reader)
+    {
+        return reader.BaseStream.Length - reader.BaseStream.Position;
+    }
 
-    private static bool IsBlockType(NifInfo nif, int index, string type) =>
-        index >= 0 && index < nif.Blocks.Count && nif.Blocks[index].TypeName == type;
+    private static bool IsBlockType(NifInfo nif, int index, string type)
+    {
+        return index >= 0 && index < nif.Blocks.Count && nif.Blocks[index].TypeName == type;
+    }
 
     private static BinaryReader? OpenBlock(byte[] data, NifInfo nif, int index, string type)
     {
@@ -387,7 +393,7 @@ internal sealed class NifOblivionOrdinarySourceReader
             return null;
         }
 
-        return new BinaryReader(new MemoryStream(data, block.DataOffset, block.Size, writable: false),
+        return new BinaryReader(new MemoryStream(data, block.DataOffset, block.Size, false),
             Encoding.ASCII);
     }
 }

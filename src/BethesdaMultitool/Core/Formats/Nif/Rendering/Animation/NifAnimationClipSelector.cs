@@ -85,10 +85,12 @@ internal static class NifAnimationClipSelector
             {
                 Expand(eulerX.Length, i => eulerX[i].Time, ref min, ref max);
             }
+
             if (track.EulerYKeys is { } eulerY)
             {
                 Expand(eulerY.Length, i => eulerY[i].Time, ref min, ref max);
             }
+
             if (track.EulerZKeys is { } eulerZ)
             {
                 Expand(eulerZ.Length, i => eulerZ[i].Time, ref min, ref max);

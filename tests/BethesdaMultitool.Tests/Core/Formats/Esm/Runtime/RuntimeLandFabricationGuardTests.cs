@@ -45,6 +45,19 @@ public sealed class RuntimeLandFabricationGuardTests
     }
 
     [Fact]
+    public void BulkReadConsumesEntryStreamOnce()
+    {
+        var (reader, accessor) = Build();
+        var pending = new Queue<RuntimeEditorIdEntry>([Entry("__LAND_0009A283")]);
+        var entries = Enumerable.Range(0, 1).Select(_ => pending.Dequeue());
+
+        var result = reader.ReadAllRuntimeLandData(entries, false);
+
+        Assert.Empty(result);
+        Assert.NotEmpty(accessor.Reads);
+    }
+
+    [Fact]
     public void SingleEntryReadIsNotFiltered_BecauseTheCallerChoseThatEntryDeliberately()
     {
         // The filter belongs on the bulk path, where an unfiltered table becomes thousands of

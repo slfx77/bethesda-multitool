@@ -1,9 +1,9 @@
-using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Tests.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Tests.Helpers;
 using SharpGLTF.Schema2;
 using Xunit;
@@ -106,7 +106,7 @@ public sealed class StarfieldGlbOrmPackerTests
             "StarfieldGlbOrmPacker.Pack(",
             "starfieldOrm.Texture is { } ormTexture",
             "material.WithMetallicRoughness(",
-            "material.WithOcclusion(ormImage, 1f);");
+            "material.WithOcclusion(ormImage);");
     }
 
     [Fact]
@@ -114,8 +114,7 @@ public sealed class StarfieldGlbOrmPackerTests
     {
         const string materialPath = @"materials\test\orm.mat";
         const string normalPath = @"textures\test\legacy_n.dds";
-        var cdb = BethesdaMultitool.Tests.Core.Formats.Nif.Materials
-            .StarfieldMaterialOrmPolicyTests.BuildDatabase(useDiffChunks: false);
+        var cdb = StarfieldMaterialOrmPolicyTests.BuildDatabase(false);
         var normal = Texture(2, 1,
         [
             128, 128, 255, 0,
@@ -132,7 +131,7 @@ public sealed class StarfieldGlbOrmPackerTests
 
         var glb = GlbWriter.WriteToBytes(scene, resolver);
 
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         var model = ModelRoot.ReadGLB(stream);
 
         // This fixture's material resolves to the Deferred route with NO diffuse slot, which
@@ -200,9 +199,9 @@ public sealed class StarfieldGlbOrmPackerTests
         public bool Exists(string path)
         {
             return string.Equals(
-                path,
-                @"materials\materialsbeta.cdb",
-                StringComparison.OrdinalIgnoreCase) ||
+                       path,
+                       @"materials\materialsbeta.cdb",
+                       StringComparison.OrdinalIgnoreCase) ||
                    textures.ContainsKey(path);
         }
 

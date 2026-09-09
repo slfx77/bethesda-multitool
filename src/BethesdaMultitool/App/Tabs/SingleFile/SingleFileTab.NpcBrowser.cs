@@ -24,24 +24,24 @@ namespace BethesdaMultitool;
 public sealed partial class SingleFileTab
 {
     private readonly NpcBrowserController _npcBrowser = new();
+    private bool _npcActorKindChangeInProgress;
     private CancellationTokenSource? _npcBatchCts;
     private NpcBrowserService? _npcBrowserService;
-    private BethesdaViewerScene? _npcViewerScene;
-    private CancellationTokenSource? _npcViewerLoadCts;
-    private Task? _npcViewerLoadTask;
-    private int _npcViewerLoadGeneration;
-    private bool _npcViewerNativeReady;
-    private TaskCompletionSource<BethesdaSceneViewerRenderState>? _npcViewerNativeOutcome;
-    private BethesdaViewerScene? _npcViewerNativeOutcomeScene;
-    private int _npcViewerNativeOutcomeGeneration;
-    private bool _npcViewerDisposed;
+    private bool _npcFileOperationInProgress;
+    private bool _npcListRefreshInProgress;
     private CancellationTokenSource? _npcRenderOptionDebounce;
     private NpcSelectionState _npcSelectionState = NpcSelectionState.Empty;
-    private bool _npcFileOperationInProgress;
-    private bool _npcActorKindChangeInProgress;
-    private bool _npcListRefreshInProgress;
-    private bool _webViewInitialized;
+    private bool _npcViewerDisposed;
+    private CancellationTokenSource? _npcViewerLoadCts;
+    private int _npcViewerLoadGeneration;
+    private Task? _npcViewerLoadTask;
+    private TaskCompletionSource<BethesdaSceneViewerRenderState>? _npcViewerNativeOutcome;
+    private int _npcViewerNativeOutcomeGeneration;
+    private BethesdaViewerScene? _npcViewerNativeOutcomeScene;
+    private bool _npcViewerNativeReady;
+    private BethesdaViewerScene? _npcViewerScene;
     private Task? _webViewInitializationTask;
+    private bool _webViewInitialized;
 
     #region Cross-Tab Navigation
 
@@ -89,7 +89,7 @@ public sealed partial class SingleFileTab
     }
 
     /// <summary>
-     ///     Applies an explicit unattended-startup selector after the complete browser list exists.
+    ///     Applies an explicit unattended-startup selector after the complete browser list exists.
     ///     Resolution is exact and fail-closed; normal interactive startup never calls this method.
     /// </summary>
     private void SelectAutoOpenActor(string selector, Logger log)
@@ -438,7 +438,11 @@ public sealed partial class SingleFileTab
         }
 
         CancelNpcRenderOptionDebounce();
-        unchecked { _npcViewerLoadGeneration++; }
+        unchecked
+        {
+            _npcViewerLoadGeneration++;
+        }
+
         _npcViewerScene = null;
         NpcSceneViewer.ClearScene();
         ApplyNpcSelectionState(NpcSelectionState.Empty);
@@ -1478,7 +1482,11 @@ public sealed partial class SingleFileTab
         if (_npcViewerDisposed) return;
         _npcViewerDisposed = true;
 
-        unchecked { _npcViewerLoadGeneration++; }
+        unchecked
+        {
+            _npcViewerLoadGeneration++;
+        }
+
         _npcViewerLoadCts?.Cancel();
         _npcViewerLoadCts = null;
         _npcRenderOptionDebounce?.Cancel();
@@ -1519,7 +1527,11 @@ public sealed partial class SingleFileTab
         _npcRenderOptionDebounce?.Dispose();
         _npcRenderOptionDebounce = null;
 
-        unchecked { _npcViewerLoadGeneration++; }
+        unchecked
+        {
+            _npcViewerLoadGeneration++;
+        }
+
         _npcViewerLoadCts?.Cancel();
         _npcViewerLoadCts = null;
         _npcViewerScene = null;

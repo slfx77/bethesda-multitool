@@ -23,7 +23,7 @@ public sealed class NavMeshPdbOffsetTests
     {
         var layout = PdbStructLayouts.Get(NavmFormType);
         Assert.NotNull(layout);
-        Assert.Equal("NavMesh", layout!.ClassName);
+        Assert.Equal("NavMesh", layout.ClassName);
         Assert.Equal(280, layout.StructSize);
 
         AssertFieldAtOffset(layout, "iFormID", 12);
@@ -42,7 +42,7 @@ public sealed class NavMeshPdbOffsetTests
     {
         var layout = PdbStructLayouts.Get(NaviFormType);
         Assert.NotNull(layout);
-        Assert.Equal("NavMeshInfoMap", layout!.ClassName);
+        Assert.Equal("NavMeshInfoMap", layout.ClassName);
         Assert.Equal(80, layout.StructSize);
 
         AssertFieldAtOffset(layout, "iFormID", 12);
@@ -54,6 +54,6 @@ public sealed class NavMeshPdbOffsetTests
     {
         var field = layout.Fields.SingleOrDefault(f => f.Name == fieldName);
         Assert.NotNull(field);
-        Assert.Equal(expectedOffset, field!.Offset);
+        Assert.Equal(expectedOffset, field.Offset);
     }
 }

@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using System.Text;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing.Reflection;
@@ -41,7 +40,7 @@ internal static class StarfieldReflectionTestStreamBuilder
         var serializedValues = omitScatteringVolumeFar
             ? values.Where((_, index) => index != 1)
             : values;
-        var body = new List<byte>(sizeof(uint) + (32 * sizeof(float)));
+        var body = new List<byte>(sizeof(uint) + 32 * sizeof(float));
         body.AddRange(U32(schema.Offsets[rootType]));
         foreach (var value in serializedValues)
         {
@@ -93,6 +92,7 @@ internal static class StarfieldReflectionTestStreamBuilder
 
         var strings = new List<byte>();
         var tokens = new Dictionary<string, uint>(StringComparer.Ordinal);
+
         uint Token(string value)
         {
             if (tokens.TryGetValue(value, out var existing))
@@ -226,35 +226,49 @@ internal static class StarfieldReflectionTestStreamBuilder
         (string Class, ushort Flags, (string Name, string? NamedType, uint BuiltInType)[] Fields)[] classes =
         [
             (float4, 8,
-                [("x", null, TypeFloat), ("y", null, TypeFloat),
-                    ("z", null, TypeFloat), ("w", null, TypeFloat)]),
+            [
+                ("x", null, TypeFloat), ("y", null, TypeFloat),
+                ("z", null, TypeFloat), ("w", null, TypeFloat)
+            ]),
             (thickness, 0,
-                [("ThicknessNoiseScale", null, TypeFloat), ("ThicknessNoiseBias", null, TypeFloat),
-                    ("MinFogThickness", null, TypeFloat), ("MaxFogThickness", null, TypeFloat)]),
+            [
+                ("ThicknessNoiseScale", null, TypeFloat), ("ThicknessNoiseBias", null, TypeFloat),
+                ("MinFogThickness", null, TypeFloat), ("MaxFogThickness", null, TypeFloat)
+            ]),
             (fogMap, 0,
-                [("HeightAboveTerrain", null, TypeFloat), ("TerrainMatch", null, TypeFloat),
-                    ("Albedo", float4, 0), ("Anisotropy", null, TypeFloat),
-                    ("MinMeanFreePath", null, TypeFloat), ("MaxMeanFreePath", null, TypeFloat),
-                    ("HeightFalloffExponent", null, TypeFloat), ("Span", null, TypeFloat)]),
+            [
+                ("HeightAboveTerrain", null, TypeFloat), ("TerrainMatch", null, TypeFloat),
+                ("Albedo", float4, 0), ("Anisotropy", null, TypeFloat),
+                ("MinMeanFreePath", null, TypeFloat), ("MaxMeanFreePath", null, TypeFloat),
+                ("HeightFalloffExponent", null, TypeFloat), ("Span", null, TypeFloat)
+            ]),
             (density, 0,
-                [("DensityNoiseScale", null, TypeFloat), ("DensityNoiseBias", null, TypeFloat),
-                    ("MinFogDensity", null, TypeFloat), ("MaxFogDensity", null, TypeFloat),
-                    ("DensityStartDistance", null, TypeFloat),
-                    ("DensityFullDistance", null, TypeFloat),
-                    ("DensityDistanceExponent", null, TypeFloat)]),
+            [
+                ("DensityNoiseScale", null, TypeFloat), ("DensityNoiseBias", null, TypeFloat),
+                ("MinFogDensity", null, TypeFloat), ("MaxFogDensity", null, TypeFloat),
+                ("DensityStartDistance", null, TypeFloat),
+                ("DensityFullDistance", null, TypeFloat),
+                ("DensityDistanceExponent", null, TypeFloat)
+            ]),
             (shared, 0, sharedFields.Select(field =>
                 (field.Name, (string?)null, field.Type)).ToArray()),
             (settings, 0,
-                [("ExteriorAndInterior", shared, 0), ("Exterior", exterior, 0),
-                    ("DistantLighting", distant, 0)]),
+            [
+                ("ExteriorAndInterior", shared, 0), ("Exterior", exterior, 0),
+                ("DistantLighting", distant, 0)
+            ]),
             (exterior, 0,
-                [("FogThickness", thickness, 0), ("FogDensity", density, 0),
-                    ("HorizonFog", horizon, 0), ("FogMap", fogMap, 0)]),
+            [
+                ("FogThickness", thickness, 0), ("FogDensity", density, 0),
+                ("HorizonFog", horizon, 0), ("FogMap", fogMap, 0)
+            ]),
             (rootType, 0, [("Settings", settings, 0)]),
             (horizon, 0,
-                [("FogThickness", null, TypeFloat), ("FogDensity", null, TypeFloat),
-                    ("DensityStartDistance", null, TypeFloat),
-                    ("DensityFullDistance", null, TypeFloat)]),
+            [
+                ("FogThickness", null, TypeFloat), ("FogDensity", null, TypeFloat),
+                ("DensityStartDistance", null, TypeFloat),
+                ("DensityFullDistance", null, TypeFloat)
+            ]),
             (distant, 0,
                 [("ScatteringTransition", null, TypeFloat), ("ScatteringFar", null, TypeFloat)])
         ];
@@ -291,7 +305,7 @@ internal static class StarfieldReflectionTestStreamBuilder
     }
 
     private static byte[] VolumetricLightingClassChunk(
-        IReadOnlyDictionary<string, uint> offsets,
+        Dictionary<string, uint> offsets,
         string className,
         ushort flags,
         params (string Name, uint Type)[] fields)
@@ -312,7 +326,7 @@ internal static class StarfieldReflectionTestStreamBuilder
         return Chunk("CLAS", [.. body]);
     }
 
-    private static byte[] ReflectionStream(byte[] strings, IReadOnlyList<byte[]> chunks)
+    private static byte[] ReflectionStream(byte[] strings, List<byte[]> chunks)
     {
         return Concat(
             Encoding.ASCII.GetBytes("BETH"), U32(8), U32(4), U32((uint)chunks.Count + 2),
@@ -320,12 +334,25 @@ internal static class StarfieldReflectionTestStreamBuilder
             Concat([.. chunks]));
     }
 
-    private static byte[] Chunk(string signature, byte[] body) =>
-        Concat(Encoding.ASCII.GetBytes(signature), U32((uint)body.Length), body);
+    private static byte[] Chunk(string signature, byte[] body)
+    {
+        return Concat(Encoding.ASCII.GetBytes(signature), U32((uint)body.Length), body);
+    }
 
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
-    private static byte[] F32(float value) => BitConverter.GetBytes(value);
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] F32(float value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {

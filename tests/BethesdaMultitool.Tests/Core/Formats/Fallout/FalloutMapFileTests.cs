@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Fallout;
 using Xunit;
@@ -24,7 +21,7 @@ public sealed class FalloutMapFileTests
         ushort roof = 1, ushort floor = 1, int trailing = 0)
     {
         var count = FalloutMapFile.ElevationCount(flags);
-        var b = new byte[FalloutMapFile.HeaderLength + (count * FalloutMapFile.ElevationLength) + trailing];
+        var b = new byte[FalloutMapFile.HeaderLength + count * FalloutMapFile.ElevationLength + trailing];
         BinaryPrimitives.WriteUInt32BigEndian(b, FalloutMapFile.Version19);
         Encoding.ASCII.GetBytes(name).CopyTo(b, 4);
         BinaryPrimitives.WriteUInt32BigEndian(b.AsSpan(20), 21_302);
@@ -36,11 +33,11 @@ public sealed class FalloutMapFileTests
 
         for (var e = 0; e < count; e++)
         {
-            var at = FalloutMapFile.HeaderLength + (e * FalloutMapFile.ElevationLength);
+            var at = FalloutMapFile.HeaderLength + e * FalloutMapFile.ElevationLength;
             for (var i = 0; i < FalloutMapFile.GridWidth * FalloutMapFile.GridHeight; i++)
             {
-                BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(at + (i * 4)), (ushort)(roof + e));
-                BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(at + (i * 4) + 2), (ushort)(floor + e));
+                BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(at + i * 4), (ushort)(roof + e));
+                BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(at + i * 4 + 2), (ushort)(floor + e));
             }
         }
 
@@ -53,7 +50,7 @@ public sealed class FalloutMapFileTests
         var map = FalloutMapFile.Parse(Map(script: 659), "CARAVAN.MAP");
 
         Assert.Equal(FalloutMapFile.Version19, map.Version);
-        Assert.Equal("CARAVAN.MAP", map.MapName);      // the header name equals the file name on 72/72
+        Assert.Equal("CARAVAN.MAP", map.MapName); // the header name equals the file name on 72/72
         Assert.Equal(21_302u, map.PlayerPosition);
         Assert.Equal(2u, map.PlayerOrientation);
         Assert.Equal(659u, map.ScriptId);
@@ -124,7 +121,8 @@ public sealed class FalloutMapFileTests
         var map = FalloutMapFile.Parse(Map(0x0, roof: 10, floor: 20), "M.MAP");
 
         Assert.Equal(3, map.Elevations.Count);
-        Assert.All(map.Elevations, e => Assert.Equal(FalloutMapFile.GridWidth * FalloutMapFile.GridHeight, e.Tiles.Count));
+        Assert.All(map.Elevations,
+            e => Assert.Equal(FalloutMapFile.GridWidth * FalloutMapFile.GridHeight, e.Tiles.Count));
 
         // Each synthetic elevation is stamped with its own value, so a reader that read the same
         // block three times, or strided wrongly, shows up here.
@@ -140,7 +138,7 @@ public sealed class FalloutMapFileTests
         // "valid tile id" range test, so a scan for the first plausible grid lands on 56 and is
         // wrong by 180 bytes. Here the header is filled with a value that IS a plausible tile id,
         // so only a reader using the real offset gets the stamped grid back.
-        var b = Map(0xC, roof: 7, floor: 9);
+        var b = Map(roof: 7, floor: 9);
         for (var o = 56; o < FalloutMapFile.HeaderLength; o += 2)
         {
             BinaryPrimitives.WriteUInt16BigEndian(b.AsSpan(o), 3);
@@ -153,13 +151,20 @@ public sealed class FalloutMapFileTests
     }
 
     [Fact]
-    public void Parse_HandsBackTheUndecodedSectionsAfterTheGrid()
+    public void Parse_HandsBackTheObjectSectionAfterDecodingScripts()
     {
-        var map = FalloutMapFile.Parse(Map(trailing: 64), "M.MAP");
+        const int scriptListBytes = 5 * sizeof(uint);
+        var bytes = Map(trailing: scriptListBytes + 64);
+        var objectOffset = FalloutMapFile.HeaderLength + FalloutMapFile.ElevationLength + scriptListBytes;
+        bytes.AsSpan(objectOffset).Fill(0xA5);
+        var map = FalloutMapFile.Parse(bytes, "M.MAP");
 
-        // The scripts and object-placement sections are not decoded yet; they must not be silently
-        // dropped, or a later reader has no way to tell an empty map from an unparsed one.
-        Assert.Equal(64, map.Remainder.Length);
+        // Five empty script lists are decoded; without a prototype resolver the object section
+        // must remain byte-for-byte available to a later reader.
+        Assert.True(map.ScriptsDecoded);
+        Assert.Empty(map.Scripts);
+        Assert.False(map.ObjectsDecoded);
+        Assert.Equal(bytes[objectOffset..], map.Undecoded.ToArray());
     }
 
     [Fact]

@@ -78,7 +78,8 @@ public sealed class NpcEquipmentSkinTexturePolicyTests
     [InlineData((int)BethesdaGame.Skyrim)]
     public void OtherGamesRetainTheirBodyAtlasAndHandFallback(int gameValue)
     {
-        var npc = new NpcAppearance { Game = (BethesdaGame)gameValue, LowerBodyTexturePath = Leg, FootTexturePath = Foot };
+        var npc = new NpcAppearance
+            { Game = (BethesdaGame)gameValue, LowerBodyTexturePath = Leg, FootTexturePath = Foot };
 
         Assert.Equal(Upper, NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(
             npc, @"textures\characters\_female\lowerbody.dds", Upper, Hand));
@@ -90,12 +91,15 @@ public sealed class NpcEquipmentSkinTexturePolicyTests
             npc, @"textures\characters\_female\hand.dds", null, Hand));
     }
 
-    private static NpcAppearance CreateAppearance() => new()
+    private static NpcAppearance CreateAppearance()
     {
-        Game = BethesdaGame.Oblivion,
-        BodyTexturePath = @"textures\characters\orc\female\UpperBodyFemale.dds",
-        LowerBodyTexturePath = Leg,
-        HandTexturePath = @"textures\characters\orc\female\HandFemale.dds",
-        FootTexturePath = Foot
-    };
+        return new NpcAppearance
+        {
+            Game = BethesdaGame.Oblivion,
+            BodyTexturePath = @"textures\characters\orc\female\UpperBodyFemale.dds",
+            LowerBodyTexturePath = Leg,
+            HandTexturePath = @"textures\characters\orc\female\HandFemale.dds",
+            FootTexturePath = Foot
+        };
+    }
 }

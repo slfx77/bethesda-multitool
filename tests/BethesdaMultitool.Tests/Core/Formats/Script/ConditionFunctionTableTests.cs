@@ -68,7 +68,7 @@ public class ConditionFunctionTableTests
 
         var getDistance = set.Get(0x1001);
         Assert.NotNull(getDistance);
-        Assert.Equal("GetDistance", getDistance!.Name);
+        Assert.Equal("GetDistance", getDistance.Name);
         Assert.Same(getDistance, ScriptFunctionTable.ConditionFunctions[0x0001]);
         Assert.Same(getDistance, set.GetConditionFunction(0x0001));
         Assert.Same(getDistance, conditions.Get(0x0001));
@@ -132,7 +132,7 @@ public class ConditionFunctionTableTests
 
         var getDistance = scripts.GetConditionFunction(0x0001);
         Assert.NotNull(getDistance);
-        Assert.Equal("GetDistance", getDistance!.Name);
+        Assert.Equal("GetDistance", getDistance.Name);
         Assert.Same(getDistance, conditions.Get(0x0001));
         Assert.NotSame(fnv.GetConditionFunction(0x0001), getDistance);
 
@@ -147,7 +147,7 @@ public class ConditionFunctionTableTests
 
         var fo3HasPerk = scripts.GetConditionFunction(0x01C1);
         Assert.NotNull(fo3HasPerk);
-        Assert.Equal("HasPerk", fo3HasPerk!.Name);
+        Assert.Equal("HasPerk", fo3HasPerk.Name);
         var fo3PerkParam = Assert.Single(fo3HasPerk.Params);
         Assert.Equal("Perk", fo3PerkParam.Name);
         Assert.Equal(ScriptParamType.Perk, fo3PerkParam.Type);
@@ -253,7 +253,7 @@ public class ConditionFunctionTableTests
 
         var getItemCount = set.Get(0x102F);
         Assert.NotNull(getItemCount);
-        Assert.Equal("GetItemCount", getItemCount!.Name);
+        Assert.Equal("GetItemCount", getItemCount.Name);
         Assert.Equal(Fallout4ScriptParamType.InvObjectOrFormList, getItemCount.Params[0].Fallout4Type);
         Assert.Same(getItemCount, Fallout4ScriptFunctionTable.ConditionFunctions[0x02F]);
         Assert.Same(getItemCount, set.GetConditionFunction(0x02F));
@@ -1202,7 +1202,7 @@ public class ConditionFunctionTableTests
         var set = ScriptFunctionTables.For(BethesdaGame.Oblivion);
         var def = set.Get(opcode);
         Assert.NotNull(def);
-        Assert.Equal(name, def!.Name);
+        Assert.Equal(name, def.Name);
         Assert.Equal(isRef, def.IsReferenceFunction);
     }
 
@@ -1237,7 +1237,7 @@ public class ConditionFunctionTableTests
         // independently keyed maps intentionally reuse the exact same definition object.
         var getDistance = set.Get(0x1001);
         Assert.NotNull(getDistance);
-        Assert.Equal("GetDistance", getDistance!.Name);
+        Assert.Equal("GetDistance", getDistance.Name);
         Assert.Same(getDistance, set.GetConditionFunction(0x001));
         Assert.Same(getDistance, OblivionScriptFunctionTable.ConditionFunctions[0x001]);
 
@@ -1253,7 +1253,7 @@ public class ConditionFunctionTableTests
         Assert.NotNull(hasSpellCommand);
         var hasSpell = set.GetConditionFunction(0x462);
         Assert.NotNull(hasSpell);
-        Assert.Equal("HasSpell", hasSpell!.Name);
+        Assert.Equal("HasSpell", hasSpell.Name);
         Assert.Equal(ObScriptParamType.SpellItem, hasSpell.Params[0].ObType);
         Assert.Same(hasSpellCommand, hasSpell);
         Assert.Same(hasSpell, conditions.Get(0x462));

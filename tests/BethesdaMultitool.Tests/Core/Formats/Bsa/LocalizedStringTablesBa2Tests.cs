@@ -31,7 +31,7 @@ public class LocalizedStringTablesBa2Tests
             var tables = LocalizedStringTables.TryLoad(esm);
 
             Assert.NotNull(tables);
-            Assert.Equal("Appalachia", tables!.Resolve(1u, LStringKind.Strings));
+            Assert.Equal("Appalachia", tables.Resolve(1u, LStringKind.Strings));
             Assert.Null(tables.Resolve(999u, LStringKind.Strings)); // unknown id
             Assert.Equal(string.Empty, tables.Resolve(0u, LStringKind.Strings)); // Bethesda "no string"
         }
@@ -60,7 +60,7 @@ public class LocalizedStringTablesBa2Tests
             var tables = LocalizedStringTables.TryLoad(esm); // default language "English" -> also tries "en"
 
             Assert.NotNull(tables);
-            Assert.Equal("Appalachia", tables!.Resolve(7u, LStringKind.Strings));
+            Assert.Equal("Appalachia", tables.Resolve(7u, LStringKind.Strings));
         }
         finally
         {
@@ -88,7 +88,7 @@ public class LocalizedStringTablesBa2Tests
             var tables = LocalizedStringTables.TryLoad(esm);
 
             Assert.NotNull(tables);
-            Assert.Equal("Earlier fallback", tables!.Resolve(8u, LStringKind.Strings));
+            Assert.Equal("Earlier fallback", tables.Resolve(8u, LStringKind.Strings));
         }
         finally
         {

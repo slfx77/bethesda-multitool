@@ -30,10 +30,10 @@ internal sealed class GpuVideoMemoryBudgetWatcher : IDisposable
     private static readonly Logger Log = Logger.Instance;
 
     private readonly IDXGIAdapter3 _adapter;
-    private readonly AutoResetEvent _signal;
+    private readonly int _cookie;
     private readonly SafeWaitHandle _handle;
     private readonly IntPtr _rawHandle;
-    private readonly int _cookie;
+    private readonly AutoResetEvent _signal;
     private bool _disposed;
 
     private GpuVideoMemoryBudgetWatcher(
@@ -48,6 +48,32 @@ internal sealed class GpuVideoMemoryBudgetWatcher : IDisposable
 
     /// <summary>Budget changes observed since creation. Diagnostics only.</summary>
     public long NotificationCount { get; private set; }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        try
+        {
+            // Unregister BEFORE the handle is closed. The other order leaves DXGI holding a handle
+            // it may signal after we have freed it, which is a use-after-free in the kernel object
+            // table rather than anything the CLR would catch.
+            _adapter.UnregisterVideoMemoryBudgetChangeNotification(_cookie);
+        }
+        catch (SharpGenException ex)
+        {
+            Log.Debug("GpuVideoMemoryBudgetWatcher: unregister failed ({0}).", ex.Message);
+        }
+
+        // Release the count taken in TryCreate, then the event itself. DXGI no longer holds the
+        // handle by this point, so the order here is unregister -> release -> dispose.
+        _handle.DangerousRelease();
+        _signal.Dispose();
+    }
 
     /// <summary>
     ///     True exactly once per budget change. Auto-reset, so a caller that consumes the
@@ -131,32 +157,6 @@ internal sealed class GpuVideoMemoryBudgetWatcher : IDisposable
                 signal?.Dispose();
             }
         }
-    }
-
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        try
-        {
-            // Unregister BEFORE the handle is closed. The other order leaves DXGI holding a handle
-            // it may signal after we have freed it, which is a use-after-free in the kernel object
-            // table rather than anything the CLR would catch.
-            _adapter.UnregisterVideoMemoryBudgetChangeNotification(_cookie);
-        }
-        catch (SharpGenException ex)
-        {
-            Log.Debug("GpuVideoMemoryBudgetWatcher: unregister failed ({0}).", ex.Message);
-        }
-
-        // Release the count taken in TryCreate, then the event itself. DXGI no longer holds the
-        // handle by this point, so the order here is unregister -> release -> dispose.
-        _handle.DangerousRelease();
-        _signal.Dispose();
     }
 
     [DllImport("kernel32.dll", SetLastError = true)]

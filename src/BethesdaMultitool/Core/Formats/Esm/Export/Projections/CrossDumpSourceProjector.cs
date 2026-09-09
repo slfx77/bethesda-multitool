@@ -345,10 +345,7 @@ internal static class CrossDumpSourceProjector
                 factionMembers,
                 null, // cross-source — not needed for non-Key reports
                 modToWeapon,
-                placedReferenceLocations,
-                null, // cross-source — not needed for non-NPC reports
-                null, // cross-source — not needed for non-NPC reports
-                null // cross-source — not needed for non-Container reports
+                placedReferenceLocations // cross-source — not needed for non-Container reports
             );
             if (report == null)
             {

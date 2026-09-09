@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Formats;
 using BethesdaMultitool.Core.Formats.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
@@ -89,7 +90,7 @@ public class FaceGenFormatTests
     {
         // Arrange - cols=3 aligns to 8: 64 + 1 * (4 + 3*8*2) = 116 (matches the
         // FaceGenTextureMorpherTests fixture layout)
-        var data = CreateEgtFixture(rows: 2, cols: 3, symCount: 1, asymCount: 0, out var expectedSize);
+        var data = CreateEgtFixture(2, 3, 1, 0, out var expectedSize);
         Assert.Equal(116, expectedSize);
 
         // Act
@@ -107,7 +108,7 @@ public class FaceGenFormatTests
     public void EgtParse_AlignedCols_ReturnsExactSize()
     {
         // Arrange - cols=16 is already 8-aligned: 64 + 2 * (4 + 3*16*4)
-        var data = CreateEgtFixture(rows: 4, cols: 16, symCount: 2, asymCount: 0, out var expectedSize);
+        var data = CreateEgtFixture(4, 16, 2, 0, out var expectedSize);
         Assert.Equal(64 + 2 * (4 + 3 * 16 * 4), expectedSize);
 
         // Act
@@ -122,7 +123,7 @@ public class FaceGenFormatTests
     public void EgtParse_SizePinnedAgainstEgtParser()
     {
         // Arrange - unaligned cols to exercise the align8 stride in both implementations
-        var data = CreateEgtFixture(rows: 3, cols: 5, symCount: 2, asymCount: 1, out _);
+        var data = CreateEgtFixture(3, 5, 2, 1, out _);
         var result = new EgtFormat().Parse(data);
         Assert.NotNull(result);
 
@@ -219,7 +220,7 @@ public class FaceGenFormatTests
         var format = FormatRegistry.GetByFormatId(formatId);
 
         Assert.NotNull(format);
-        Assert.True(format!.EnableSignatureScanning);
+        Assert.True(format.EnableSignatureScanning);
         Assert.Equal(extension, format.Extension);
         Assert.Equal("facegen", format.OutputFolder);
         Assert.Equal(FileCategory.Model, format.Category);
@@ -235,8 +236,8 @@ public class FaceGenFormatTests
         var format = FormatRegistry.GetBySignatureId(signatureId);
 
         Assert.NotNull(format);
-        var signature = Assert.Single(format!.Signatures);
-        Assert.Equal(magic, System.Text.Encoding.ASCII.GetString(signature.MagicBytes));
+        var signature = Assert.Single(format.Signatures);
+        Assert.Equal(magic, Encoding.ASCII.GetString(signature.MagicBytes));
     }
 
     #endregion

@@ -122,7 +122,6 @@ internal static class NifSkinningMath
 
             WriteVector3(destination, result, vertexIndex);
         }
-
     }
 
     internal static float[] ApplySkinningNormals(
@@ -177,7 +176,6 @@ internal static class NifSkinningMath
 
             WriteVector3(destination, result, vertexIndex);
         }
-
     }
 
     internal static float[] ApplySkinningPositionsDqs(
@@ -219,7 +217,6 @@ internal static class NifSkinningMath
                 result,
                 vertexIndex);
         }
-
     }
 
     internal static float[] ApplySkinningNormalsDqs(
@@ -265,7 +262,6 @@ internal static class NifSkinningMath
 
             WriteVector3(destination, result, vertexIndex);
         }
-
     }
 
     private static DualQuaternion[] BuildDualQuaternions(ReadOnlySpan<Matrix4x4> boneSkinMatrices)

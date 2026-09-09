@@ -38,6 +38,8 @@ internal readonly record struct Level2DRender(int Width, int Height, byte[] Rgba
 ///     as a grid. The classic catalogue is the case that motivates it here — an Arena <c>.MIF</c>
 ///     IS a voxel grid and a Daggerfall <c>WOODS.WLD</c> IS a heightmap, so building a 3D surface
 ///     to look at one is a detour through a lossier representation.
+///     Sources that own external assets also implement <see cref="IDisposable" />; presenters
+///     release them when replaced, cleared, or discarded before display.
 /// </remarks>
 internal interface ILevel2DSource
 {

@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
@@ -43,14 +39,14 @@ public sealed class ShadowkeyZoneSceneBuilderTests
     private static ShadowkeyZoneMap Map(
         int width, int height, Func<int, bool> blocked, Func<int, int> prototypeOf)
     {
-        var payload = new byte[ShadowkeyZoneMap.HeaderLength + (width * height * ShadowkeyZoneMap.CellLength)];
+        var payload = new byte[ShadowkeyZoneMap.HeaderLength + width * height * ShadowkeyZoneMap.CellLength];
         "testzone"u8.CopyTo(payload);
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(128), (ushort)width);
         BinaryPrimitives.WriteUInt16LittleEndian(payload.AsSpan(130), (ushort)height);
         for (var i = 0; i < width * height; i++)
         {
             var cell = payload.AsSpan(
-                ShadowkeyZoneMap.HeaderLength + (i * ShadowkeyZoneMap.CellLength),
+                ShadowkeyZoneMap.HeaderLength + i * ShadowkeyZoneMap.CellLength,
                 ShadowkeyZoneMap.CellLength);
             cell[0] = blocked(i) ? ShadowkeyMapCell.BlockedFlag : (byte)0;
             BinaryPrimitives.WriteUInt16LittleEndian(cell[4..], (ushort)prototypeOf(i));
@@ -63,18 +59,18 @@ public sealed class ShadowkeyZoneSceneBuilderTests
     private static ShadowkeyCellPrototypes Prototypes(params (short[] Floor, short[] Ceiling)[] records)
     {
         var payload = new byte[
-            ShadowkeyCellPrototypes.HeaderLength + (records.Length * ShadowkeyCellPrototype.RecordLength)];
+            ShadowkeyCellPrototypes.HeaderLength + records.Length * ShadowkeyCellPrototype.RecordLength];
         BinaryPrimitives.WriteUInt32LittleEndian(payload, (uint)records.Length);
         for (var i = 0; i < records.Length; i++)
         {
             var record = payload.AsSpan(
-                ShadowkeyCellPrototypes.HeaderLength + (i * ShadowkeyCellPrototype.RecordLength),
+                ShadowkeyCellPrototypes.HeaderLength + i * ShadowkeyCellPrototype.RecordLength,
                 ShadowkeyCellPrototype.RecordLength);
             record[1] = 0xCD;
             for (var c = 0; c < ShadowkeyCellPrototype.CornerCount; c++)
             {
-                BinaryPrimitives.WriteInt16LittleEndian(record[(6 + (c * 2))..], records[i].Floor[c]);
-                BinaryPrimitives.WriteInt16LittleEndian(record[(14 + (c * 2))..], records[i].Ceiling[c]);
+                BinaryPrimitives.WriteInt16LittleEndian(record[(6 + c * 2)..], records[i].Floor[c]);
+                BinaryPrimitives.WriteInt16LittleEndian(record[(14 + c * 2)..], records[i].Ceiling[c]);
             }
 
             record.Slice(22, ShadowkeyCellPrototype.SurfaceSlotCount).Fill(ShadowkeyCellPrototype.NoSurface);
@@ -84,8 +80,10 @@ public sealed class ShadowkeyZoneSceneBuilderTests
     }
 
     /// <summary>A flat room: floor at 0, ceiling at 4 tiles.</summary>
-    private static ShadowkeyCellPrototypes FlatRoom() =>
-        Prototypes((new short[] { 0, 0, 0, 0 }, [OneTile * 4, OneTile * 4, OneTile * 4, OneTile * 4]));
+    private static ShadowkeyCellPrototypes FlatRoom()
+    {
+        return Prototypes((new short[] { 0, 0, 0, 0 }, [OneTile * 4, OneTile * 4, OneTile * 4, OneTile * 4]));
+    }
 
     /// <summary>Every vertex of a scene, as points.</summary>
     private static List<Vector3> Vertices(BethesdaViewerScene scene)
@@ -104,15 +102,17 @@ public sealed class ShadowkeyZoneSceneBuilderTests
     }
 
     /// <summary>Total triangles across every part.</summary>
-    private static int TriangleCount(BethesdaViewerScene scene) =>
-        scene.MeshParts.Sum(p => p.Submesh.Triangles.Length) / 3;
+    private static int TriangleCount(BethesdaViewerScene scene)
+    {
+        return scene.MeshParts.Sum(p => p.Submesh.Triangles.Length) / 3;
+    }
 
     /// <summary>The face normal of one triangle of a submesh.</summary>
     private static Vector3 TriangleNormal(RenderableSubmesh submesh, int triangle)
     {
         Vector3 At(int corner)
         {
-            var v = submesh.Triangles[(triangle * 3) + corner] * 3;
+            var v = submesh.Triangles[triangle * 3 + corner] * 3;
             return new Vector3(submesh.Positions[v], submesh.Positions[v + 1], submesh.Positions[v + 2]);
         }
 
@@ -165,10 +165,10 @@ public sealed class ShadowkeyZoneSceneBuilderTests
 
         var floor = Vertices(scene);
         Assert.Equal(4, floor.Count);
-        Assert.Contains(new Vector3(0, 1, 0), floor);   // slot 0 -> (x,   y+1) at 0 tiles
-        Assert.Contains(new Vector3(1, 1, 1), floor);   // slot 1 -> (x+1, y+1) at 1 tile
-        Assert.Contains(new Vector3(1, 0, 2), floor);   // slot 2 -> (x+1, y  ) at 2 tiles
-        Assert.Contains(new Vector3(0, 0, 3), floor);   // slot 3 -> (x,   y  ) at 3 tiles
+        Assert.Contains(new Vector3(0, 1, 0), floor); // slot 0 -> (x,   y+1) at 0 tiles
+        Assert.Contains(new Vector3(1, 1, 1), floor); // slot 1 -> (x+1, y+1) at 1 tile
+        Assert.Contains(new Vector3(1, 0, 2), floor); // slot 2 -> (x+1, y  ) at 2 tiles
+        Assert.Contains(new Vector3(0, 0, 3), floor); // slot 3 -> (x,   y  ) at 3 tiles
     }
 
     // ---------------------------------------------------------------- face emission
@@ -234,7 +234,7 @@ public sealed class ShadowkeyZoneSceneBuilderTests
     {
         var prototypes = Prototypes(
             (new short[] { 0, 0, 0, 0 }, [OneTile * 4, OneTile * 4, OneTile * 4, OneTile * 4]),
-            (new short[] { OneTile, OneTile, OneTile, OneTile },
+            (new[] { OneTile, OneTile, OneTile, OneTile },
                 [OneTile * 4, OneTile * 4, OneTile * 4, OneTile * 4]));
 
         var level = ShadowkeyZoneSceneBuilder.Build(Map(2, 1, static _ => false, static _ => 0), prototypes);
@@ -327,7 +327,7 @@ public sealed class ShadowkeyZoneSceneBuilderTests
 
         var normals = scene.MeshParts[0].Submesh.Normals;
         Assert.NotNull(normals);
-        Assert.Equal(4 * 3, normals!.Length);
+        Assert.Equal(4 * 3, normals.Length);
         for (var i = 3; i < normals.Length; i += 3)
         {
             Assert.Equal(normals[0], normals[i], 5);
@@ -459,14 +459,17 @@ public sealed class ShadowkeyZoneSceneBuilderTests
     public void Build_RejectsNullInputs()
     {
         Assert.Throws<ArgumentNullException>(() => ShadowkeyZoneSceneBuilder.Build(null!, FlatRoom()));
-        Assert.Throws<ArgumentNullException>(
-            () => ShadowkeyZoneSceneBuilder.Build(Map(1, 1, static _ => false, static _ => 0), null!));
+        Assert.Throws<ArgumentNullException>(() =>
+            ShadowkeyZoneSceneBuilder.Build(Map(1, 1, static _ => false, static _ => 0), null!));
     }
 
     /// <summary>A resolver driven by a lambda, so a test states its material rule inline.</summary>
     private sealed class StubResolver(Func<ShadowkeyTileFace, ShadowkeyTileMaterial> rule)
         : IShadowkeyTileMaterialResolver
     {
-        public ShadowkeyTileMaterial Resolve(in ShadowkeyTileFace face) => rule(face);
+        public ShadowkeyTileMaterial Resolve(in ShadowkeyTileFace face)
+        {
+            return rule(face);
+        }
     }
 }

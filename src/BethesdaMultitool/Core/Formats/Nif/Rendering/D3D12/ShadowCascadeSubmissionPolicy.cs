@@ -35,7 +35,9 @@ internal static class ShadowCascadeSubmissionPolicy
 
     /// <summary>Clamps one cascade prefix to the range the draw can actually address.</summary>
     internal static int ClampInstanceCount(int drawCount, int cascadeCount)
-        => Math.Min(Math.Max(drawCount, 0), Math.Max(cascadeCount, 0));
+    {
+        return Math.Min(Math.Max(drawCount, 0), Math.Max(cascadeCount, 0));
+    }
 
     /// <summary>
     ///     True when at least one of the four cascade prefixes contains an addressable instance.
@@ -70,8 +72,10 @@ internal static class ShadowCascadeSubmissionPolicy
         int cascade1,
         int cascade2,
         int cascade3)
-        => ClampInstanceCount(drawCount, cascade0) > 0
-           || ClampInstanceCount(drawCount, cascade1) > 0
-           || ClampInstanceCount(drawCount, cascade2) > 0
-           || ClampInstanceCount(drawCount, cascade3) > 0;
+    {
+        return ClampInstanceCount(drawCount, cascade0) > 0
+               || ClampInstanceCount(drawCount, cascade1) > 0
+               || ClampInstanceCount(drawCount, cascade2) > 0
+               || ClampInstanceCount(drawCount, cascade3) > 0;
+    }
 }

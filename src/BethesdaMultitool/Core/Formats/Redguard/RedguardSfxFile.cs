@@ -9,9 +9,11 @@ namespace BethesdaMultitool.Core.Formats.Redguard;
 ///     <see cref="RedguardRobParser" /> and <see cref="RedguardGxaFile" />: a 4-char tag, a
 ///     BIG-endian u32 length, the payload, and a 4-byte <c>"END "</c> terminator.
 ///     <list type="bullet">
-///         <item><c>FXHD</c> (36 bytes): a 32-character ASCII banner — <c>"Conveted by SoupFX"</c>,
-///         the game's own typo — then a little-endian u32 <b>sound count</b>. Note the count is a
-///         dword here where a <c>.GXA</c>'s is a word.</item>
+///         <item>
+///             <c>FXHD</c> (36 bytes): a 32-character ASCII banner — <c>"Conveted by SoupFX"</c>,
+///             the game's own typo — then a little-endian u32 <b>sound count</b>. Note the count is a
+///             dword here where a <c>.GXA</c>'s is a word.
+///         </item>
 ///         <item><c>FXDT</c>: that many records, each a 27-byte header followed by its samples.</item>
 ///     </list>
 ///     <para>
@@ -89,7 +91,8 @@ internal sealed class RedguardSfxFile
         var (headerOffset, headerLength) = RequireChunk(span, 0, "FXHD", name);
         if (headerLength < BankHeaderLength)
         {
-            throw new InvalidDataException($"{name}: FXHD is {headerLength} bytes, expected at least {BankHeaderLength}.");
+            throw new InvalidDataException(
+                $"{name}: FXHD is {headerLength} bytes, expected at least {BankHeaderLength}.");
         }
 
         // The banner is a FIXED 32-byte field padded with NULs, and TrimEnd() does not remove
@@ -133,7 +136,8 @@ internal sealed class RedguardSfxFile
         return new RedguardSfxFile(name, banner, sounds);
     }
 
-    private static (int Offset, int Length) RequireChunk(ReadOnlySpan<byte> bytes, int position, string expected, string name)
+    private static (int Offset, int Length) RequireChunk(ReadOnlySpan<byte> bytes, int position, string expected,
+        string name)
     {
         if (position < 0 || position + ChunkHeaderLength > bytes.Length ||
             !bytes.Slice(position, 4).SequenceEqual(Encoding.ASCII.GetBytes(expected)))
@@ -142,7 +146,7 @@ internal sealed class RedguardSfxFile
         }
 
         var declared = BinaryPrimitives.ReadUInt32BigEndian(bytes.Slice(position + 4, 4));
-        if (declared > int.MaxValue || position + ChunkHeaderLength + (long)declared > bytes.Length)
+        if (declared > int.MaxValue || position + ChunkHeaderLength + declared > bytes.Length)
         {
             throw new InvalidDataException(
                 $"{name}: '{expected}' declares {declared} bytes, which do not fit the file.");

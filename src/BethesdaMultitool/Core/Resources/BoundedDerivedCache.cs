@@ -33,6 +33,8 @@ internal sealed class BoundedDerivedCache<TKey, TValue>
     private readonly ConcurrentQueue<TKey> _insertionOrder = new();
     private long _bytes;
 
+    private long _evictionCount;
+
     /// <summary>Creates a cache that evicts in insertion order once it exceeds a byte ceiling.</summary>
     /// <param name="maxBytes">
     ///     Ceiling for the whole cache. A non-positive value means unbounded — useful in tests that
@@ -56,11 +58,13 @@ internal sealed class BoundedDerivedCache<TKey, TValue>
     /// <summary>Entries dropped to stay inside the ceiling, since construction.</summary>
     public long EvictionCount => Interlocked.Read(ref _evictionCount);
 
-    private long _evictionCount;
-
     /// <summary>
-    ///     Looks up <paramref name="key" />. Returns true when an entry is present <i>even if its
-    ///     value is null</i> — a null result is a real, cached answer for these caches ("this cell
+    ///     Looks up <paramref name="key" />. Returns true when an entry is present
+    ///     <i>
+    ///         even if its
+    ///         value is null
+    ///     </i>
+    ///     — a null result is a real, cached answer for these caches ("this cell
     ///     has no texture data"), and conflating it with a miss would rebuild it forever.
     /// </summary>
     public bool TryGet(TKey key, out TValue? value)

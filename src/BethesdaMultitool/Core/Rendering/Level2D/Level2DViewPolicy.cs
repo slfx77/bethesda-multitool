@@ -13,13 +13,16 @@ internal static class Level2DViewPolicy
     /// <summary>Daggerfall's world heightmap. Its name is fixed by the game.</summary>
     private const string WoodsFileName = "WOODS.WLD";
 
+    /// <summary>Daggerfall's two RLE overlays over the same grid, also named by the game.</summary>
+    private static readonly string[] OverlayFileNames = ["CLIMATE.PAK", "POLITIC.PAK"];
+
     /// <summary>Whether this file has an authored 2D picture to show at all.</summary>
     public static bool Supports(string fileName)
     {
         ArgumentNullException.ThrowIfNull(fileName);
 
         var name = Path.GetFileName(fileName);
-        if (name.Equals(WoodsFileName, StringComparison.OrdinalIgnoreCase))
+        if (IsDaggerfallWorldMap(name))
         {
             return true;
         }
@@ -28,11 +31,22 @@ internal static class Level2DViewPolicy
         {
             // Arena's voxel maps: a .MIF level and an .RMD wilderness chunk are both grids.
             ".MIF" or ".RMD" => true,
-            // Daggerfall's CLIMATE/POLITIC overlays.
-            ".PAK" => true,
+            // An Oblivion mobile tile map. Its atlas is named by the scripts, not by the stem.
+            ".JTM" => true,
             // A Shadowkey zone grid. The 2D view is the ONLY view for its layout that does not
             // depend on the unresolved tile-to-texture mapping, so it is worth offering by default.
             ".ZMP" => true,
+            // A Van Buren EMAP inside a .grp: its walk grid is an authored 0.5-unit cell grid and
+            // its placements draw as a plan, so the 2D pane is its picture; the scene it names is
+            // geometry the 3D pane does not read yet.
+            ".EMAP" => true,
+            // A Fallout Tactics mission: its tile grid IS the level, drawn from the game's own
+            // isometric tile art (see TacticsMissionLevel2DSource).
+            ".MIS" => true,
+            // A Fallout 1/2 map: floor and roof tiles on the isometric lattice with every placed
+            // object drawn in the game's own art (FalloutMapLevel2DSource). ⚠ Extension only — the
+            // opener still checks the version word, so a stray .MAP from elsewhere gets no view.
+            ".MAP" => true,
             _ => false
         };
     }
@@ -48,6 +62,21 @@ internal static class Level2DViewPolicy
     public static bool DefaultsToTwoDimensional(string fileName)
     {
         return Supports(fileName);
+    }
+
+    /// <summary>
+    ///     Daggerfall's world-map files are named by convention, not extension.
+    ///     <para>
+    ///         ⚠ Matched by NAME because neither extension is exclusive: Redguard also ships
+    ///         <c>.WLD</c> files in a completely different format, and <c>.PAK</c> is a common
+    ///         extension. Admitting either by extension alone claims files nothing can draw — which
+    ///         is the drift this class exists to prevent.
+    ///     </para>
+    /// </summary>
+    private static bool IsDaggerfallWorldMap(string name)
+    {
+        return name.Equals(WoodsFileName, StringComparison.OrdinalIgnoreCase)
+               || OverlayFileNames.Contains(name, StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>A short label for a layer, for the picker and for export stems.</summary>

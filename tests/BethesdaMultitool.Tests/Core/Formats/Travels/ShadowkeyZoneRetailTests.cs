@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -57,7 +54,7 @@ public sealed class ShadowkeyZoneRetailTests
         new("raiders", 6, 5, 0, 0, 12, 1072, 12),
         new("snowline", 6, 0, 0, 0, 27, 108, 19),
         new("stouttp", 6, 0, 0, 0, 14, 81, 14),
-        new("twilite", 20, 0, 0, 0, 20, 421, 21),
+        new("twilite", 20, 0, 0, 0, 20, 421, 21)
     ];
 
     /// <summary>
@@ -132,7 +129,7 @@ public sealed class ShadowkeyZoneRetailTests
                     nonAsciiScripts++;
                 }
 
-                var at = 4 + (i * ShadowkeyZoneFiles.EntityRecordLength) + 26;
+                var at = 4 + i * ShadowkeyZoneFiles.EntityRecordLength + 26;
                 if (raw[at] == 0xCC && raw[at + 1] == 0xCC)
                 {
                     padSlots++;
@@ -213,7 +210,7 @@ public sealed class ShadowkeyZoneRetailTests
             var textures = ShadowkeyCompressedFile.Inflate(Read(root, zone.Stem, ".ztx"), zone.Stem + ".ztx");
             int textureCount = textures[0];
             Assert.Equal(zone.Textures, textureCount);
-            Assert.Equal(1 + (textureCount * 128 * 128), textures.Length);
+            Assert.Equal(1 + textureCount * 128 * 128, textures.Length);
 
             var surfaces = ShadowkeyZoneFiles.ParseSur(Read(root, zone.Stem, ".sur"), zone.Stem + ".sur");
             Assert.Equal(textureCount - 1, surfaces.Max(s => (int)s.TextureIndex));
@@ -281,16 +278,18 @@ public sealed class ShadowkeyZoneRetailTests
         Assert.All(list.Entities, e => Assert.NotNull(entityTable.Find(e.EntityId)));
     }
 
-    private static byte[] Read(string root, string stem, string extension) =>
-        File.ReadAllBytes(Path.Combine(root, stem + extension));
+    private static byte[] Read(string root, string stem, string extension)
+    {
+        return File.ReadAllBytes(Path.Combine(root, stem + extension));
+    }
 
     private static string RequireRoot()
     {
         var root = RealAssetPaths.Travels.ShadowkeyRoot();
         Assert.SkipWhen(
             root is null,
-            "The Shadowkey (N-Gage) application directory is not staged under Sample/Full_Builds.");
-        return root!;
+            "The Shadowkey (N-Gage) application directory is not staged under Sample/Builds.");
+        return root;
     }
 
     private sealed record ZoneCensus(

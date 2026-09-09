@@ -23,7 +23,7 @@ internal static class StarfieldGlbOrmPacker
             return default;
         }
 
-        DecodedTexture? firstTexture = roughness ?? metalness ?? ambientOcclusion;
+        var firstTexture = roughness ?? metalness ?? ambientOcclusion;
         var needsImage = firstTexture is not null ||
                          state.RoughnessSlot.ReplacementRgba.HasValue ||
                          state.MetalnessSlot.ReplacementRgba.HasValue ||
@@ -70,7 +70,7 @@ internal static class StarfieldGlbOrmPacker
         }
 
         return new StarfieldGlbOrmPackResult(
-            DecodedTexture.FromBaseLevel(packed, width, height, generateMipChain: false),
+            DecodedTexture.FromBaseLevel(packed, width, height, false),
             true,
             state.AmbientOcclusionSlot.IsResolved,
             1f,

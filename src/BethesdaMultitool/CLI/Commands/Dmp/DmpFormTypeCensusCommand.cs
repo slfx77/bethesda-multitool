@@ -59,7 +59,7 @@ internal static class DmpFormTypeCensusCommand
         string inputPath, bool verbose, string? csvDir, CancellationToken cancellationToken)
     {
         var dmpFiles = CliHelpers.DiscoverDumps(
-            inputPath, SearchOption.TopDirectoryOnly, orderByLastWriteTime: true);
+            inputPath, SearchOption.TopDirectoryOnly, true);
         if (dmpFiles == null)
         {
             AnsiConsole.MarkupLine($"[red]ERROR:[/] Path not found: {inputPath}");
@@ -150,8 +150,7 @@ internal static class DmpFormTypeCensusCommand
         Directory.CreateDirectory(csvDir);
 
         var buildsByFile = BuildDiscovery.DiscoverBuilds(null, dumpsDir)
-            .Where(b => b.SourcePath != null)
-            .GroupBy(b => Path.GetFileName(b.SourcePath!), StringComparer.OrdinalIgnoreCase)
+            .GroupBy(b => Path.GetFileName(b.SourcePath), StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         string BuildDate(CensusEntry e)

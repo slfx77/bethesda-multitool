@@ -15,7 +15,9 @@ public sealed class Fo4SplineShadowDiagnosticPolicyTests
     [InlineData(" 1", false)]
     [InlineData("1", true)]
     public void OnlyExplicitOneEnablesDiagnostic(string? value, bool expected)
-        => Assert.Equal(expected, Fo4SplineShadowDiagnosticPolicy.IsEnabled(value));
+    {
+        Assert.Equal(expected, Fo4SplineShadowDiagnosticPolicy.IsEnabled(value));
+    }
 
     [Fact]
     public void SourceWindMarkerIsQualifiedByExactGame()
@@ -23,8 +25,8 @@ public sealed class Fo4SplineShadowDiagnosticPolicyTests
         foreach (var game in Enum.GetValues<BethesdaGame>())
         {
             Assert.Equal(game == BethesdaGame.Fallout4,
-                Fo4SplineShadowDiagnosticPolicy.IsCaster(game, isBendableSplineWind: true));
-            Assert.False(Fo4SplineShadowDiagnosticPolicy.IsCaster(game, isBendableSplineWind: false));
+                Fo4SplineShadowDiagnosticPolicy.IsCaster(game, true));
+            Assert.False(Fo4SplineShadowDiagnosticPolicy.IsCaster(game, false));
         }
 
         Assert.False(Fo4SplineShadowDiagnosticPolicy.IsCaster((BethesdaGame)int.MaxValue, true));
@@ -36,5 +38,7 @@ public sealed class Fo4SplineShadowDiagnosticPolicyTests
     [InlineData(true, false, false)]
     [InlineData(true, true, true)]
     public void OnlyEnabledQualifiedCastersAreOmitted(bool enabled, bool isCaster, bool expected)
-        => Assert.Equal(expected, Fo4SplineShadowDiagnosticPolicy.ShouldOmit(enabled, isCaster));
+    {
+        Assert.Equal(expected, Fo4SplineShadowDiagnosticPolicy.ShouldOmit(enabled, isCaster));
+    }
 }

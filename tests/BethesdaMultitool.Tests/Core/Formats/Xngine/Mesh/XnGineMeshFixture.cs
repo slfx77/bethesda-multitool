@@ -1,7 +1,6 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Xngine.Mesh;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Xngine.Mesh;
 
@@ -12,14 +11,19 @@ namespace BethesdaMultitool.Tests.Core.Formats.Xngine.Mesh;
 /// </summary>
 internal static class XnGineMeshFixture
 {
-    public sealed record Plane(ushort TextureBits, IReadOnlyList<(int PointIndex, short U, short V)> Points, (int X, int Y, int Z) Normal);
-
     public static ushort Texture(int archive, int record)
     {
         return (ushort)((archive << 7) | (record & 0x7F));
     }
 
-    public static byte[] Build(string version, IReadOnlyList<(int X, int Y, int Z)> points, IReadOnlyList<Plane> planes, uint radius = 1000)
+    /// <summary>
+    ///     Builds a record. <paramref name="layout" /> selects the plane header: Daggerfall's 8 bytes
+    ///     (u16 texture bits + a 4-byte tail of 0xCAFEBABE) or Battlespire's 10 (the u32
+    ///     <see cref="Plane.TextureKey" /> — or the texture bits when none is given — then four
+    ///     zero bytes, as every retail plane carries).
+    /// </summary>
+    public static byte[] Build(string version, IReadOnlyList<(int X, int Y, int Z)> points, IReadOnlyList<Plane> planes,
+        uint radius = 1000, XnGineMeshLayout layout = XnGineMeshLayout.Daggerfall)
     {
         var pointList = new byte[points.Count * 12];
         for (var i = 0; i < points.Count; i++)
@@ -39,8 +43,16 @@ internal static class XnGineMeshFixture
 
             planeList.Add((byte)planes[k].Points.Count);
             planeList.Add(0x11);
-            AddUInt16(planeList, planes[k].TextureBits);
-            AddUInt32(planeList, 0xCAFEBABE);
+            if (layout == XnGineMeshLayout.Battlespire)
+            {
+                AddUInt32(planeList, planes[k].TextureKey ?? planes[k].TextureBits);
+                AddUInt32(planeList, 0);
+            }
+            else
+            {
+                AddUInt16(planeList, planes[k].TextureBits);
+                AddUInt32(planeList, 0xCAFEBABE);
+            }
             foreach (var (pointIndex, u, v) in planes[k].Points)
             {
                 var byteOffset = pointIndex * 12;
@@ -109,4 +121,10 @@ internal static class XnGineMeshFixture
     {
         AddUInt32(bytes, (uint)value);
     }
+
+    public sealed record Plane(
+        ushort TextureBits,
+        IReadOnlyList<(int PointIndex, short U, short V)> Points,
+        (int X, int Y, int Z) Normal,
+        uint? TextureKey = null);
 }

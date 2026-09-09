@@ -177,7 +177,7 @@ public sealed class BsaMalformedTests : IDisposable
         var record = Assert.Single(extractor.Archive.AllFiles);
 
         var ex = Assert.Throws<InvalidDataException>(() =>
-            extractor.ExtractFileBounded(record, maximumOutputBytes: 4));
+            extractor.ExtractFileBounded(record, 4));
 
         Assert.Contains("stores", ex.Message, StringComparison.Ordinal);
         Assert.Contains("caller limit", ex.Message, StringComparison.Ordinal);
@@ -194,7 +194,7 @@ public sealed class BsaMalformedTests : IDisposable
         var record = Assert.Single(extractor.Archive.AllFiles);
 
         var ex = Assert.Throws<InvalidDataException>(() =>
-            extractor.ExtractFileBounded(record, maximumOutputBytes: 64));
+            extractor.ExtractFileBounded(record, 64));
 
         Assert.Contains("decompressed bytes", ex.Message, StringComparison.Ordinal);
         Assert.Contains("caller limit", ex.Message, StringComparison.Ordinal);

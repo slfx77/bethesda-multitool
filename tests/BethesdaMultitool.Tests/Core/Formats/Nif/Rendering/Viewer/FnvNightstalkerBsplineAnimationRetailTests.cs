@@ -20,8 +20,10 @@ public sealed class FnvNightstalkerBsplineAnimationRetailTests(ITestOutputHelper
 {
     private const string ModelPath = @"meshes\creatures\nightstalker\nvnightstalker.nif";
     private const string AnimationPath = @"meshes\creatures\nightstalker\h2hattackleft.kf";
+
     private const string ModelSha256 =
         "3EEA84CA6594AEE1A0308C6AA9B7D5DDE18410F0337B1967A31AAA92D215F1EF";
+
     private const string AnimationSha256 =
         "5CEB69C927CF1B6BD3532D4FF535178A2B0F668C1D05B038B37828607429E6B8";
 
@@ -32,10 +34,10 @@ public sealed class FnvNightstalkerBsplineAnimationRetailTests(ITestOutputHelper
         var archivePath = RealAssetPaths.SteamGameFile(
             "Fallout New Vegas",
             @"Data\Fallout - Meshes.bsa",
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa");
         Assert.SkipWhen(archivePath is null, RealAssetPaths.SkipMessage("FNV Fallout - Meshes.bsa"));
 
-        using var service = NifBrowserService.CreateFromBsa(archivePath!);
+        using var service = NifBrowserService.CreateFromBsa(archivePath);
         var modelData = Assert.IsType<byte[]>(service.ReadNifData(ModelPath));
         Assert.Equal(ModelSha256, Convert.ToHexString(SHA256.HashData(modelData)));
         var build = service.BuildViewerSceneWithDiagnostics(

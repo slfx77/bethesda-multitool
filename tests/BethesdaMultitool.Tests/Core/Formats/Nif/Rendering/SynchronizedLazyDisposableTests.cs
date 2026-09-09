@@ -8,6 +8,7 @@ public sealed class SynchronizedLazyDisposableTests
     [Fact]
     public async Task Dispose_WaitsForActiveUse_ThenDisposesExactlyOnce()
     {
+        var cancellationToken = TestContext.Current.CancellationToken;
         using var useStarted = new ManualResetEventSlim();
         using var releaseUse = new ManualResetEventSlim();
         using var disposeStarted = new ManualResetEventSlim();
@@ -22,30 +23,48 @@ public sealed class SynchronizedLazyDisposableTests
         var useTask = Task.Run(() => resource.Use(value =>
         {
             useStarted.Set();
-            Assert.True(releaseUse.Wait(TimeSpan.FromSeconds(5)));
+            Assert.True(releaseUse.Wait(TimeSpan.FromSeconds(5), cancellationToken));
             Assert.False(value.IsDisposed);
             return 42;
-        }));
+        }), cancellationToken);
 
-        Assert.True(useStarted.Wait(TimeSpan.FromSeconds(5)));
-        var disposeTask = Task.Run(() =>
+        Task? disposeTask = null;
+        try
         {
-            disposeStarted.Set();
+            Assert.True(useStarted.Wait(TimeSpan.FromSeconds(5), cancellationToken));
+            disposeTask = Task.Run(() =>
+            {
+                disposeStarted.Set();
+                resource.Dispose();
+            }, cancellationToken);
+            Assert.True(disposeStarted.Wait(TimeSpan.FromSeconds(5), cancellationToken));
+            Assert.False(disposeTask.IsCompleted);
+
+            releaseUse.Set();
+            Assert.Equal(42, await useTask);
+            await disposeTask;
+
+            Assert.Equal(1, factoryCalls);
+            Assert.Equal(1, owned.DisposeCalls);
+            Assert.Throws<ObjectDisposedException>(() => resource.Use(static _ => 0));
+
             resource.Dispose();
-        });
-        Assert.True(disposeStarted.Wait(TimeSpan.FromSeconds(5)));
-        Assert.False(disposeTask.IsCompleted);
-
-        releaseUse.Set();
-        Assert.Equal(42, await useTask);
-        await disposeTask;
-
-        Assert.Equal(1, factoryCalls);
-        Assert.Equal(1, owned.DisposeCalls);
-        Assert.Throws<ObjectDisposedException>(() => resource.Use(static _ => 0));
-
-        resource.Dispose();
-        Assert.Equal(1, owned.DisposeCalls);
+            Assert.Equal(1, owned.DisposeCalls);
+        }
+        finally
+        {
+            // Release and drain workers before their wait handles leave scope, including when
+            // the test is canceled or a rendezvous assertion fails.
+            releaseUse.Set();
+            try
+            {
+                await Task.WhenAll(useTask, disposeTask ?? Task.CompletedTask);
+            }
+            finally
+            {
+                resource.Dispose();
+            }
+        }
     }
 
     [Fact]

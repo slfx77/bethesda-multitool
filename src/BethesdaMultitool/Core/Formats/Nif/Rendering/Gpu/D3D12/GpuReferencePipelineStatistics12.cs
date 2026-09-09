@@ -22,17 +22,16 @@ internal readonly record struct GpuReferencePipelineStatisticsSample(
 internal sealed unsafe class GpuReferencePipelineStatistics12 : IDisposable
 {
     internal const int QueryCountPerFrame = 1;
-    internal static int ResultSizeInBytes => sizeof(QueryDataPipelineStatistics);
 
     private readonly GpuDevice12 _gpu;
     private readonly PendingFrame[] _pendingFrames = new PendingFrame[GpuCommandRecorder12.FramesInFlight];
     private readonly ID3D12QueryHeap _queryHeap;
     private readonly ID3D12Resource _readback;
     private int _activeFrameIndex = -1;
-    private bool _queryOpen;
-    private bool _queryCompleted;
-    private bool _queryResolved;
     private bool _disposed;
+    private bool _queryCompleted;
+    private bool _queryOpen;
+    private bool _queryResolved;
 
     public GpuReferencePipelineStatistics12(GpuDevice12 gpu)
     {
@@ -61,6 +60,8 @@ internal sealed unsafe class GpuReferencePipelineStatistics12 : IDisposable
 
         _queryHeap = queryHeap;
     }
+
+    internal static int ResultSizeInBytes => sizeof(QueryDataPipelineStatistics);
 
     public bool IsEnabled => !_disposed;
 

@@ -40,28 +40,28 @@ public class ProfileParityTests
 
     private static IReadOnlyList<ProfileParityCase> Cases =>
     [
-        Case("WEAP", "weapons", minimumCompared: 50, new WeaponProfile(),
+        Case("WEAP", "weapons", 50, new WeaponProfile(),
             records => records.Weapons,
             weapon => weapon.FormId,
             weapon => weapon.EditorId,
             weapon => weapon.FullName,
             (weapon, _, resolver) => RecordDetailBuilders.BuildWeapon(weapon, resolver)),
 
-        Case("ARMO", "armor records", minimumCompared: 200, new ArmorProfile(),
+        Case("ARMO", "armor records", 200, new ArmorProfile(),
             records => records.Armor,
             armor => armor.FormId,
             armor => armor.EditorId,
             armor => armor.FullName,
             (armor, _, resolver) => RecordDetailBuilders.BuildArmor(armor, resolver)),
 
-        Case("CREA", "creatures", minimumCompared: 50, new CreatureProfile(),
+        Case("CREA", "creatures", 50, new CreatureProfile(),
             records => records.Creatures,
             creature => creature.FormId,
             creature => creature.EditorId,
             creature => creature.FullName,
             (creature, _, resolver) => RecordDetailBuilders.BuildCreature(creature, resolver)),
 
-        Case("NPC_", "NPCs", minimumCompared: 1000, new NpcProfile(),
+        Case("NPC_", "NPCs", 1000, new NpcProfile(),
             records => records.Npcs,
             npc => npc.FormId,
             npc => npc.EditorId,
@@ -70,7 +70,7 @@ public class ProfileParityTests
 
         // QUST: Variables and RelatedNpcFormIds are cross-record enrichment the profile cannot
         // (and should not) reproduce from the record's own tree.
-        Case("QUST", "quests", minimumCompared: 50, new QuestProfile(),
+        Case("QUST", "quests", 50, new QuestProfile(),
             records => records.Quests,
             quest => quest.FormId,
             quest => quest.EditorId,
@@ -82,7 +82,7 @@ public class ProfileParityTests
         // stripped from the typed reference (the profile omits it; FNV keeps BuildDialogTopic for
         // the full display). DIAL is also the only profile that needs the whole collection, for
         // its child-INFO list.
-        Case("DIAL", "dialog topics", minimumCompared: 50, new DialogTopicProfile(),
+        Case("DIAL", "dialog topics", 50, new DialogTopicProfile(),
             records => records.DialogTopics,
             topic => topic.FormId,
             topic => topic.EditorId,
@@ -93,7 +93,7 @@ public class ProfileParityTests
         // PACK: the profile is given a null display name, and two fields decoded from
         // schema-"Unused" bytes are not recoverable from the tree, so they are stripped from the
         // typed reference rather than asserted.
-        Case("PACK", "packages", minimumCompared: 50, new PackageProfile(),
+        Case("PACK", "packages", 50, new PackageProfile(),
             records => records.Packages,
             package => package.FormId,
             package => package.EditorId,
@@ -118,7 +118,7 @@ public class ProfileParityTests
         Assert.SkipUnless(esm is not null, RealAssetPaths.SkipMessage("FalloutNV.esm"));
 
         // Never disposed: RealAssetEsmCache owns the result and shares it across this collection.
-        var result = await RealAssetEsmCache.LoadAsync(esm!, TestContext.Current.CancellationToken);
+        var result = await RealAssetEsmCache.LoadAsync(esm, TestContext.Current.CancellationToken);
         var records = result.Records;
         var resolver = new FormIdResolver(records.FormIdToEditorId, records.FormIdToDisplayName);
 

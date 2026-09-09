@@ -5,13 +5,19 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Viewer;
 
 public sealed class BethesdaViewerRenderSession12SourceContractTests
 {
-    private static string SessionSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "Viewer",
-        "BethesdaViewerRenderSession12.cs");
+    private static string SessionSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "Viewer",
+            "BethesdaViewerRenderSession12.cs");
+    }
 
-    private static string GraphicsContextSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
-        "BethesdaSceneViewerGraphicsContext12.cs");
+    private static string GraphicsContextSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
+            "BethesdaSceneViewerGraphicsContext12.cs");
+    }
 
     [Fact]
     public void SessionMaterializesBeforeReadyAndRendersWaterBetweenDepthAndTransparentGeometry()
@@ -278,7 +284,7 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
                      "submesh.IsDecal",
                      "submesh.DepthTestOff",
                      "NifAlphaRenderMode.AlphaToCoverage",
-                     "submesh.MaterialAlphaController is not null",
+                     "submesh.MaterialAlphaController is not null"
                  })
         {
             Assert.Contains(excludedAxis, classify, StringComparison.Ordinal);
@@ -305,9 +311,12 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
         Assert.Contains("eligible opaque part(s) use the direct", renderer, StringComparison.Ordinal);
     }
 
-    private static string StaticRendererSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "Viewer",
-        "BethesdaViewerStaticRenderer12.cs");
+    private static string StaticRendererSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "Viewer",
+            "BethesdaViewerStaticRenderer12.cs");
+    }
 
     [Fact]
     public void ViewerRetainsNativeAlphaToCoverageSemanticsAndHasAnExplicitSingleSampleFallback()
@@ -323,7 +332,7 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
             "ReferencePipelineFactory12.cs");
 
         Assert.Contains("NifAlphaRenderMode NativeAlphaRenderMode", decoder, StringComparison.Ordinal);
-        Assert.Contains("NifAlphaClassifier.Classify(source, diffuseTexture: null).RenderMode", decoder,
+        Assert.Contains("NifAlphaClassifier.Classify(source, null).RenderMode", decoder,
             StringComparison.Ordinal);
         Assert.Contains("_pipelines.GetDirectAlphaToCoveragePipeline", renderer, StringComparison.Ordinal);
         Assert.Contains("submesh.IsDecal,\n                    submesh.DepthTestOff)", renderer,
@@ -440,7 +449,8 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
             "embedded node animation",
             "if (animation is null)",
             "NifControllerSequenceTrackCollector.Collect(");
-        Assert.Contains("preserveFileRootTransformAndTrack: true", browser, StringComparison.Ordinal);
+        SourceContract.AssertContainsIgnoringWhitespace(
+            "NifNodeKeyframeTrackCollector.Collect(parsedData, parsedNif, true)", browser);
 
         Assert.Contains("AnimationPlayPauseButton_Click", control, StringComparison.Ordinal);
         Assert.Contains("AnimationPlayPauseIcon.Glyph", control, StringComparison.Ordinal);

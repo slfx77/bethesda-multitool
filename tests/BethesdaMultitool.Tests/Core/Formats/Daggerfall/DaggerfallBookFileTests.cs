@@ -1,5 +1,3 @@
-using System;
-using System.IO;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 
@@ -40,8 +38,12 @@ public class DaggerfallBookFileTests
     public void Parse_NaughtyFlag_IsComparedTrimmed()
     {
         // BOK00088's flag reads "naughty " with a trailing space; BOK10000's carries a stray name.
-        var naughty = DaggerfallBookFile.Parse(DaggerfallTextFixture.Book("A", "B", "naughty ", 1, 1, DaggerfallTextFixture.Page("x")), "BOK00088.TXT");
-        var stray = DaggerfallBookFile.Parse(DaggerfallTextFixture.Book("A", "B", "Arkay", 1, 1, DaggerfallTextFixture.Page("x")), "BOK10000.TXT");
+        var naughty =
+            DaggerfallBookFile.Parse(
+                DaggerfallTextFixture.Book("A", "B", "naughty ", 1, 1, DaggerfallTextFixture.Page("x")),
+                "BOK00088.TXT");
+        var stray = DaggerfallBookFile.Parse(
+            DaggerfallTextFixture.Book("A", "B", "Arkay", 1, 1, DaggerfallTextFixture.Page("x")), "BOK10000.TXT");
 
         Assert.True(naughty.IsNaughty);
         Assert.False(stray.IsNaughty);

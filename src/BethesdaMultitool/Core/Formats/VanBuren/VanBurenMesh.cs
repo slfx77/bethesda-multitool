@@ -16,8 +16,11 @@ namespace BethesdaMultitool.Core.Formats.VanBuren;
 ///         Every payload opens <c>"B3D 1.1 "</c> (8 bytes, 3,915/3,915). Byte <c>+8</c> is the first
 ///         opcode: 28 on 3,808 payloads, 3 on 104, 53 on 3.
 ///         ⚑ The naming rule: the byte pair <c>0A 0C</c> introduces a u16-length-prefixed node name.
-///         <b>3,912 of the 3,915 carry exactly TWO such nodes, and in every one of them the first is
-///         <c>"Scene Root"</c></b> — so the second is the mesh's own name. 3,589 names are distinct,
+///         <b>
+///             3,912 of the 3,915 carry exactly TWO such nodes, and in every one of them the first is
+///             <c>"Scene Root"</c>
+///         </b>
+///         — so the second is the mesh's own name. 3,589 names are distinct,
 ///         and they read as authored identifiers (<c>CR_Bat</c>, <c>CR_Cougar</c>,
 ///         <c>CR_DesertStalker</c>), which is the oracle that the walk is aligned.
 ///     </para>
@@ -26,10 +29,10 @@ namespace BethesdaMultitool.Core.Formats.VanBuren;
 ///         <c>Critters.grp</c>. They are reported as unnamed rather than guessed at.
 ///     </para>
 ///     <para>
-///         Observed opcode forms, for whoever finishes this: <c>03</c> and <c>04</c> take a float,
-///         <c>05</c> and <c>07</c> a u16-length string, <c>0x16</c> a u32. A material block follows
-///         <c>07</c> carrying bare u16 strings (texture name, colour, <c>OPAQUE</c>/<c>ALPHABLEND</c>,
-///         a surface sound such as <c>SILENT</c> or <c>SAND</c>) around 64 bytes of floats.
+///         ⚑ The opcode stream IS established now — see <see cref="VanBurenB3DFile" /> (2026-09-08,
+///         from <c>F3.exe</c>'s own <c>G3D_Mesh::ReadB3D</c>), which decodes geometry, materials and
+///         the skeleton and tiles 3,912 of the 3,915 payloads. This scan stays as the cheap name
+///         probe a listing wants; the 3 payloads it cannot name are the 3 the engine refuses too.
 ///     </para>
 /// </summary>
 internal sealed class VanBurenMesh

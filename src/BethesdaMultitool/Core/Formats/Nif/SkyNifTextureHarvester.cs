@@ -84,7 +84,7 @@ public static class SkyNifTextureHarvester
             if (TryReadSkyShaderProperty(nifData, block.DataOffset, block.Size, be, out var type, out var fileName) &&
                 !string.IsNullOrWhiteSpace(fileName))
             {
-                result.Add(new SkyNifTexture(type, fileName!));
+                result.Add(new SkyNifTexture(type, fileName));
             }
         }
 

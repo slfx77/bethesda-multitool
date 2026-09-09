@@ -217,8 +217,8 @@ internal static class BsaDebugCommand
             {
                 var match = val1.Equals(val2);
                 var matchStr = match ? "[green]\u2713[/]" : "[red]\u2717[/]";
-                var val1Str = val1?.ToString() ?? "(null)";
-                var val2Str = val2?.ToString() ?? "(null)";
+                var val1Str = val1.ToString() ?? "(null)";
+                var val2Str = val2.ToString() ?? "(null)";
                 if (!match)
                 {
                     val1Str = $"[yellow]{val1Str}[/]";

@@ -190,13 +190,13 @@ public class Tes4PersistentDummyCellIntegrationTests
             "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         var ws = result.Records.Worldspaces.FirstOrDefault(w =>
             string.Equals(w.EditorId, worldspaceEditorId, StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(ws);
 
-        var cells = result.Records.Cells.Where(c => c.WorldspaceFormId == ws!.FormId).ToList();
+        var cells = result.Records.Cells.Where(c => c.WorldspaceFormId == ws.FormId).ToList();
         Assert.NotEmpty(cells);
 
         // No persistent dummy may reach the spatial grid.

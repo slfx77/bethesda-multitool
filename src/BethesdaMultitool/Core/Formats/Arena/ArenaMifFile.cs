@@ -4,6 +4,7 @@
 //   THIRD_PARTY_LICENSES.
 
 using System.Buffers.Binary;
+using System.Collections.ObjectModel;
 using System.Text;
 using BethesdaMultitool.Core.Compression;
 
@@ -98,8 +99,8 @@ internal sealed class ArenaMifFile
         for (var i = 0; i < StartPointCount; i++)
         {
             startPoints.Add(new ArenaMifStartPoint(
-                BinaryPrimitives.ReadUInt16LittleEndian(header[(2 + (i * 2))..]),
-                BinaryPrimitives.ReadUInt16LittleEndian(header[(10 + (i * 2))..])));
+                BinaryPrimitives.ReadUInt16LittleEndian(header[(2 + i * 2)..]),
+                BinaryPrimitives.ReadUInt16LittleEndian(header[(10 + i * 2)..])));
         }
 
         var startingLevelIndex = header[18];
@@ -197,7 +198,7 @@ internal sealed class ArenaMifLevel
     ///     inspectable; the reference stores them the same way and likewise does not interpret them.
     /// </summary>
     public IReadOnlyDictionary<string, byte[]> UndecodedChunks { get; private set; } =
-        System.Collections.ObjectModel.ReadOnlyDictionary<string, byte[]>.Empty;
+        ReadOnlyDictionary<string, byte[]>.Empty;
 
     /// <summary>Reads one LEVL block, returning how many bytes it consumed (0 if it is not a level).</summary>
     internal static int TryParse(
@@ -326,7 +327,7 @@ internal sealed class ArenaMifLevel
             return 0;
         }
 
-        var index = x + (z * width);
+        var index = x + z * width;
         return (uint)index < (uint)layer.Length ? layer[index] : (ushort)0;
     }
 

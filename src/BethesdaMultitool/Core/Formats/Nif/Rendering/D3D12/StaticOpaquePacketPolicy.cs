@@ -7,7 +7,7 @@ internal enum StaticOpaquePacketGame
 {
     Unknown,
     Fallout76,
-    Starfield,
+    Starfield
 }
 
 internal enum StaticOpaquePacketFallbackReason
@@ -37,7 +37,7 @@ internal enum StaticOpaquePacketFallbackReason
     KeyMismatch,
     ShadowTailAllocationFailed,
     BuildFailed,
-    ExternalEmittance,
+    ExternalEmittance
 }
 
 /// <summary>
@@ -180,7 +180,10 @@ internal static class StaticOpaquePacketPolicy
 
     internal static bool CanReuse(
         in StaticOpaquePacketReuseKey packetKey,
-        in StaticOpaquePacketReuseKey frameKey) => packetKey == frameKey;
+        in StaticOpaquePacketReuseKey frameKey)
+    {
+        return packetKey == frameKey;
+    }
 }
 
 /// <summary>
@@ -244,19 +247,25 @@ internal readonly record struct StaticOpaquePacketReuseKey(
 
 internal readonly record struct StaticOpaquePacketVector3Bits(int X, int Y, int Z)
 {
-    internal static StaticOpaquePacketVector3Bits From(Vector3 value) => new(
-        BitConverter.SingleToInt32Bits(value.X),
-        BitConverter.SingleToInt32Bits(value.Y),
-        BitConverter.SingleToInt32Bits(value.Z));
+    internal static StaticOpaquePacketVector3Bits From(Vector3 value)
+    {
+        return new StaticOpaquePacketVector3Bits(
+            BitConverter.SingleToInt32Bits(value.X),
+            BitConverter.SingleToInt32Bits(value.Y),
+            BitConverter.SingleToInt32Bits(value.Z));
+    }
 }
 
 internal readonly record struct StaticOpaquePacketPlaneBits(int X, int Y, int Z, int D)
 {
-    internal static StaticOpaquePacketPlaneBits From(Plane value) => new(
-        BitConverter.SingleToInt32Bits(value.Normal.X),
-        BitConverter.SingleToInt32Bits(value.Normal.Y),
-        BitConverter.SingleToInt32Bits(value.Normal.Z),
-        BitConverter.SingleToInt32Bits(value.D));
+    internal static StaticOpaquePacketPlaneBits From(Plane value)
+    {
+        return new StaticOpaquePacketPlaneBits(
+            BitConverter.SingleToInt32Bits(value.Normal.X),
+            BitConverter.SingleToInt32Bits(value.Normal.Y),
+            BitConverter.SingleToInt32Bits(value.Normal.Z),
+            BitConverter.SingleToInt32Bits(value.D));
+    }
 }
 
 internal readonly record struct StaticOpaquePacketFrustumBits(
@@ -267,11 +276,14 @@ internal readonly record struct StaticOpaquePacketFrustumBits(
     StaticOpaquePacketPlaneBits Near,
     StaticOpaquePacketPlaneBits Far)
 {
-    internal static StaticOpaquePacketFrustumBits From(in Frustum value) => new(
-        StaticOpaquePacketPlaneBits.From(value.Left),
-        StaticOpaquePacketPlaneBits.From(value.Right),
-        StaticOpaquePacketPlaneBits.From(value.Bottom),
-        StaticOpaquePacketPlaneBits.From(value.Top),
-        StaticOpaquePacketPlaneBits.From(value.Near),
-        StaticOpaquePacketPlaneBits.From(value.Far));
+    internal static StaticOpaquePacketFrustumBits From(in Frustum value)
+    {
+        return new StaticOpaquePacketFrustumBits(
+            StaticOpaquePacketPlaneBits.From(value.Left),
+            StaticOpaquePacketPlaneBits.From(value.Right),
+            StaticOpaquePacketPlaneBits.From(value.Bottom),
+            StaticOpaquePacketPlaneBits.From(value.Top),
+            StaticOpaquePacketPlaneBits.From(value.Near),
+            StaticOpaquePacketPlaneBits.From(value.Far));
+    }
 }

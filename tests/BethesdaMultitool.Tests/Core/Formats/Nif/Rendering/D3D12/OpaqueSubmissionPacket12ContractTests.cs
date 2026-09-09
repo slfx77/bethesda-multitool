@@ -163,7 +163,10 @@ public sealed class OpaqueSubmissionPacket12ContractTests
         Assert.Equal(1, SourceContract.CountOccurrences(dispose, "Resource.Dispose();"));
     }
 
-    private static string PacketSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "OpaqueSubmissionPacket12.cs");
+    private static string PacketSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "OpaqueSubmissionPacket12.cs");
+    }
 }

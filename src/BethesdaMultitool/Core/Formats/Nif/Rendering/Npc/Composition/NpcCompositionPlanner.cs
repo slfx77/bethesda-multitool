@@ -260,6 +260,7 @@ internal static class NpcCompositionPlanner
         }
 
         string? generatedEgtPath = null;
+
         EgtParser? LoadGeneratedEgt()
         {
             if (npc.BaseHeadNifPath == null)
@@ -307,6 +308,7 @@ internal static class NpcCompositionPlanner
             npc.EarTexturePath != null)
         {
             var earEgtPath = Path.ChangeExtension(npc.EarNifPath, ".egt");
+
             EgtParser? LoadEarEgt()
             {
                 if (!caches.EgtFiles.TryGetValue(earEgtPath, out var egt))
@@ -364,6 +366,7 @@ internal static class NpcCompositionPlanner
             HeadPreSkinMorphDeltas = headPreSkinMorphDeltas,
             EffectiveHeadTexturePath = effectiveHeadTexturePath,
             EffectiveHeadTextureSource = headTexture.Source,
+            AuthoredSkinAlbedo = headTexture.AuthoredAlbedo,
             EffectiveEarTexturePath = effectiveEarTexturePath,
             HairFilter = options.IncludeEquipment && NpcTextureHelpers.HasHatEquipment(npc.EquippedItems)
                 ? "Hat"
@@ -705,6 +708,7 @@ internal static class NpcCompositionPlanner
                 {
                     attachmentSourceLabel = $" (game-native attachment KF '{posePath}')";
                 }
+
                 if (!mainAttachmentTransform.HasValue)
                 {
                     return new NpcWeaponCompositionPlan

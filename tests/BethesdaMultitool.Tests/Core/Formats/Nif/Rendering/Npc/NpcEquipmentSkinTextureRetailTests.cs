@@ -44,7 +44,7 @@ public sealed class NpcEquipmentSkinTextureRetailTests
             RealAssetPaths.SkipMessage("Oblivion - Textures - Compressed.bsa"));
 
         var cancellationToken = TestContext.Current.CancellationToken;
-        var index = await LoadAppearanceIndexAsync(esmPath!, cancellationToken);
+        var index = await LoadAppearanceIndexAsync(esmPath, cancellationToken);
         var npcRecord = Assert.Contains(0x00085969u, index.Npcs);
         Assert.Equal(0x000191C0u, npcRecord.RaceFormId);
         var greavesList = Assert.Contains(0x00033EC5u, index.LeveledItemRecords);
@@ -67,10 +67,10 @@ public sealed class NpcEquipmentSkinTextureRetailTests
         Assert.Equal(0x20u, boots.BipedFlags);
         Assert.Equal(0x04u, cuirass.BipedFlags);
 
-        using var meshArchives = MeshArchiveSet.Open(meshesPath!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesPath, null);
         AssertAuthoredRetailShapes(meshArchives);
 
-        using var textureResolver = new NifTextureResolver(texturesPath!);
+        using var textureResolver = new NifTextureResolver(texturesPath);
         var caches = new NpcCompositionCaches();
         var options = new NpcCompositionOptions { IncludeWeapon = false };
         var skeleton = NpcCompositionPlanner.BuildSkeletonComposition(appearance, meshArchives, caches, options);
@@ -104,7 +104,7 @@ public sealed class NpcEquipmentSkinTextureRetailTests
             "Mazoga retail equipment texture regression",
             BethesdaViewerScenePurpose.NpcAppearance,
             game: BethesdaGame.Oblivion,
-            textureSourcePaths: [texturesPath!]);
+            textureSourcePaths: [texturesPath]);
         AssertComposedTextures(nativeScene.MeshParts.Select(static part => part.Submesh));
         Assert.All(nativeScene.MeshParts.Where(static part => IsTargetEquipment(part.Submesh)),
             static part => Assert.NotNull(part.Skin));
@@ -231,18 +231,18 @@ public sealed class NpcEquipmentSkinTextureRetailTests
         Assert.True(skin.HasAuthoredOblivionBodySkinInputs);
         Assert.Equal(ImperialLegTexture, skin.AuthoredOblivionBodySkinDiffusePath);
         Assert.Equal(@"textures\characters\imperial\female\LegFemale_n.dds", skin.NormalMapTexturePath,
-            ignoreCase: true);
+            true);
         foreach (var blockIndex in new[] { 18, 27 })
         {
             var armor = Assert.Single(greaves, part => part.SourceBlockIndex == blockIndex);
             Assert.Equal(GreavesArmorTexture, armor.DiffuseTexturePath);
-            Assert.Equal(@"textures\armor\iron\f\Greaves_n.dds", armor.NormalMapTexturePath, ignoreCase: true);
+            Assert.Equal(@"textures\armor\iron\f\Greaves_n.dds", armor.NormalMapTexturePath, true);
         }
 
         // The armor's shape is named Foot, but its texture is not skin.
         var boot = Assert.Single(parts, static part => PathEquals(part.SourceNifPath, BootsPath));
         Assert.Equal(BootsArmorTexture, boot.DiffuseTexturePath);
-        Assert.Equal(@"textures\armor\iron\m\Boots_n.dds", boot.NormalMapTexturePath, ignoreCase: true);
+        Assert.Equal(@"textures\armor\iron\m\Boots_n.dds", boot.NormalMapTexturePath, true);
 
         var cuirass = parts.Where(static part => PathEquals(part.SourceNifPath, CuirassPath)).ToArray();
         Assert.Equal(5, cuirass.Length);
@@ -253,14 +253,16 @@ public sealed class NpcEquipmentSkinTextureRetailTests
             Assert.True(exposedSkin.HasAuthoredOblivionBodySkinInputs);
             Assert.Equal(ImperialUpperTexture, exposedSkin.AuthoredOblivionBodySkinDiffusePath);
             Assert.Equal(@"textures\characters\imperial\female\UpperBodyFemale_n.dds",
-                exposedSkin.NormalMapTexturePath, ignoreCase: true);
+                exposedSkin.NormalMapTexturePath, true);
         }
+
         foreach (var block in new[] { 32, 41, 49 })
         {
             var armor = Assert.Single(cuirass, part => part.SourceBlockIndex == block);
             Assert.Equal(CuirassArmorTexture, armor.DiffuseTexturePath);
-            Assert.Equal(@"textures\armor\iron\f\Cuirass_n.dds", armor.NormalMapTexturePath, ignoreCase: true);
+            Assert.Equal(@"textures\armor\iron\f\Cuirass_n.dds", armor.NormalMapTexturePath, true);
         }
+
         Assert.All(parts, static part =>
         {
             Assert.Equal(IsExposedGreavesSkin(part), part.IsFaceGen);
@@ -269,8 +271,10 @@ public sealed class NpcEquipmentSkinTextureRetailTests
         });
     }
 
-    private static bool IsExposedGreavesSkin(RenderableSubmesh part) =>
-        PathEquals(part.SourceNifPath, GreavesPath) && part.SourceBlockIndex == 1;
+    private static bool IsExposedGreavesSkin(RenderableSubmesh part)
+    {
+        return PathEquals(part.SourceNifPath, GreavesPath) && part.SourceBlockIndex == 1;
+    }
 
     private static void AssertFiniteTangentFrame(RenderableSubmesh submesh)
     {

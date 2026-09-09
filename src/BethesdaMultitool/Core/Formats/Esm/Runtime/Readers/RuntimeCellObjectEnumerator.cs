@@ -427,6 +427,7 @@ internal sealed class RuntimeCellObjectEnumerator
             ? formType
             : measuredFallback;
     }
+
     private const int MaxCellExtraListNodes = 64;
 
     private const byte ExtraCellMusicTypeCode = 0x07;

@@ -4,61 +4,118 @@ using System.Text;
 namespace BethesdaMultitool.Core.Formats.Fallout;
 
 /// <summary>One cell of a map's tile grid: the floor tile drawn under it and the roof over it.</summary>
-/// <param name="Roof">Roof tile, as a 1-based index into <c>PROTO\TILES\TILES.LST</c>.</param>
-/// <param name="Floor">Floor tile, same indexing. 1 is the empty tile.</param>
-internal readonly record struct FalloutMapTile(ushort Roof, ushort Floor);
+/// <param name="Roof">
+///     The roof word as stored. Its low 12 bits (<see cref="RoofId" />) index <c>ART\TILES\TILES.LST</c>;
+///     bit 12 is a flag the game's loader CLEARS on load (<c>FUN_00476084</c> keeps <c>roof &amp; 0xEFFF</c>).
+/// </param>
+/// <param name="Floor">
+///     The floor word as stored. Its low 12 bits (<see cref="FloorId" />) index the art list; bit 12
+///     is the "hidden" flag the floor renderer tests before drawing (<c>FUN_0049f3ec</c>).
+/// </param>
+internal readonly record struct FalloutMapTile(ushort Roof, ushort Floor)
+{
+    /// <summary>The roof art index — 0 and 1 mean no roof.</summary>
+    public int RoofId => Roof & FalloutMapFile.ArtIndexMask;
 
-/// <summary>One elevation of a map: a full <c>100 x 100</c> tile grid.</summary>
+    /// <summary>The floor art index — 0 and 1 mean no floor.</summary>
+    public int FloorId => Floor & FalloutMapFile.ArtIndexMask;
+
+    /// <summary>True when the floor renderer would skip this cell (bit 12 of the floor word).</summary>
+    public bool FloorHidden => (Floor & FalloutMapFile.HiddenFlag) != 0;
+
+    /// <summary>True when the roof word carries the flag the loader strips.</summary>
+    public bool RoofFlagged => (Roof & FalloutMapFile.HiddenFlag) != 0;
+
+    /// <summary>True when there is a floor tile to draw here.</summary>
+    public bool HasFloor => FloorId > FalloutMapFile.EmptyTile;
+
+    /// <summary>True when there is a roof tile to draw here.</summary>
+    public bool HasRoof => RoofId > FalloutMapFile.EmptyTile;
+}
+
+/// <summary>One elevation of a map: a full <c>100 x 100</c> tile grid plus the objects placed on it.</summary>
 /// <param name="Index">Which elevation this is, 0-2.</param>
-/// <param name="Tiles">The grid in file order — see the note on orientation in <see cref="FalloutMapFile" />.</param>
-internal readonly record struct FalloutMapElevation(int Index, IReadOnlyList<FalloutMapTile> Tiles);
+/// <param name="Tiles">The grid in file order: cell <c>i</c> is square tile <c>i</c>, x = i % 100, y = i / 100.</param>
+/// <param name="Objects">
+///     The top-level objects placed on this elevation, in file order. Empty when the object section
+///     was not decoded (see <see cref="FalloutMapFile.ObjectsDecoded" />).
+/// </param>
+internal readonly record struct FalloutMapElevation(int Index, IReadOnlyList<FalloutMapTile> Tiles,
+    IReadOnlyList<FalloutMapObject> Objects);
 
 /// <summary>
-///     A Fallout <c>.MAP</c>: the tile grid a location is built on, plus the header describing it.
-///     Everything is BIG-endian. Measured over all 72 Fallout 1 maps and all 155 Fallout 2 maps,
-///     2026-09-06 — the layout is the SAME in both; only the version word and the tile lists differ.
-///     <list type="bullet">
-///         <item><c>+0</c> version — <b>19 on all 72 Fallout 1 maps, 20 on all 155 Fallout 2 maps</b>.</item>
-///         <item><c>+4</c> a NUL-TERMINATED name in a 16-byte field that <b>equals the file's own
-///         name on 72/72</b> (⚠ terminated, not padded — bytes after the NUL are leftovers) —
-///         a self-evident oracle, and the reason the header offsets below can be trusted.</item>
-///         <item><c>+20</c> player start tile, below 40,000 (a cell of the grid) on 72/72;
-///         <c>+24</c> elevation, <c>+28</c> orientation.</item>
-///         <item><c>+36</c> script id — -1 or a valid <c>SCRIPTS.LST</c> index on 72/72.</item>
-///         <item><c>+40</c> elevation flags: a SET bit means that elevation is ABSENT, and the CLEAR
-///         bits name which elevations the consecutive grids actually are. Fallout 1 uses only 0x0
-///         (3 elevations, 14 maps), 0x8 (2, 17) and 0xC (1, 41); Fallout 2 adds <b>0x2</b> (2 maps),
-///         where elevation 0 is missing and the first stored grid is elevation 1.</item>
-///         <item><c>+44</c> is 1 on all 227 maps of both games.</item>
+///     One record of a map's script section. The engine's record is <c>sid</c>, <c>next</c>, a type-specific
+///     part and 14 more dwords; only the id is named here and the rest is handed back, because what those
+///     dwords mean is not something this reader has established.
+/// </summary>
+/// <param name="List">Which of the five script lists (0-4) the record sits in.</param>
+/// <param name="ScriptId">The record's own id word; its high byte is the script type the size keys off.</param>
+/// <param name="IsPadding">True for a record past the list's count — the loader reads whole extents of 16.</param>
+/// <param name="Bytes">The whole record, 64, 68 or 72 bytes.</param>
+internal sealed record FalloutMapScript(int List, uint ScriptId, bool IsPadding, ReadOnlyMemory<byte> Bytes)
+{
+    /// <summary>The type in the id's high byte: 1 = spatial (two extra dwords), 2 = timer (one).</summary>
+    public int Type => (int)(ScriptId >> 24);
+}
+
+/// <summary>
+///     A Fallout <c>.MAP</c>, decoded the way the game's own loader decodes it. Everything is BIG-endian.
+///     The layout below is read off <c>FALLOUTW.EXE</c> (<c>map_load_file</c> = <c>FUN_0047471c</c> and its
+///     callees) and <c>fallout2.exe</c> (<c>FUN_0049f004</c>, the one place the two differ), and then
+///     verified by EXACT TILING — the walk consumes every one of the 72 Fallout 1 and 155 Fallout 2 retail
+///     maps to the last byte with every declared count satisfied (measured 2026-09-08).
+///     <list type="number">
+///         <item>
+///             A 236-byte header: <c>+0</c> version (<b>19 on all 72 Fallout 1 maps, 20 on all 155 Fallout 2
+///             maps</b>); <c>+4</c> a NUL-TERMINATED name in 16 bytes that equals the file's own name;
+///             <c>+20</c> player start hex, <c>+24</c> elevation, <c>+28</c> orientation; <c>+32</c> the LOCAL
+///             variable count; <c>+36</c> script id (-1 = none); <c>+40</c> elevation flags — a SET bit means
+///             that elevation is ABSENT; <c>+44</c> 1 on every map; <c>+48</c> the GLOBAL variable count;
+///             <c>+52</c> map id; <c>+56</c> a time stamp; then 44 unused dwords.
+///         </item>
+///         <item>
+///             ⚠⚠ <b>The global variables, then the local variables — <c>int32</c> each — come BEFORE the
+///             grids.</b> The loader reads them (<c>FUN_00475da4</c> / <c>FUN_00475e40</c> then
+///             <c>FUN_004b0ab0</c>) before it reads a tile, so the first grid starts at
+///             <c>236 + 4 * (globals + locals)</c>. This reader used to start the grid at 236 unconditionally
+///             and was wrong by that much on every map with variables (VAULT13 by 6 cells, WATRSHD by 11,
+///             Fallout 2's BROKEN1 by 33): the grid shifted by whole cells, every "tail" then opened with
+///             exactly <c>globals + locals</c> empty-looking pairs — the displaced end of the grid — and
+///             CAVES' "awkward first dword 65537" was one of them. Measured 72/72 and 154/155 by that
+///             signature (the 155th simply does not end on empty cells), and settled by the loader's code.
+///         </item>
+///         <item>
+///             Per PRESENT elevation, <c>100 x 100</c> cells of two big-endian u16 (roof, floor): 40,000 bytes.
+///             ⚑ A word's low 12 bits are an index into <c>ART\TILES\TILES.LST</c> — the tile renderer builds its
+///             art id straight from <c>tile &amp; 0xFFF</c>, never through a prototype. Bit 12 is a flag: the
+///             loader clears it on the roof word and the floor renderer skips a cell that carries it.
+///             ⛔ The earlier "LAGUNRUN has 257 stray roof words at 5,181-5,184" was that flag over ids
+///             1,085-1,088; nothing in either corpus indexes past its list once masked (2,120,150 of
+///             2,120,150 non-empty words resolve to a shipped FRM).
+///         </item>
+///         <item>
+///             Five script lists (<c>FUN_00493df4</c>): a <c>u32 count</c> each, and when non-zero,
+///             <c>ceil(count / 16)</c> extents of 16 records followed by 2 dwords (<c>FUN_00493d84</c>). A record
+///             (<c>FUN_00493bb8</c>) is 2 dwords, then 2 more when ITS OWN id's high byte is 1 (spatial) or 1
+///             when it is 2 (timer), then 14 dwords — 64, 72 or 68 bytes. ⚠ Padding records past the count are
+///             still read, and by their own type byte, which is 0xCC fill on most of them.
+///         </item>
+///         <item>
+///             Objects (<c>FUN_0047ab08</c>): <c>u32 total</c>, then for EACH OF THE THREE elevations — present
+///             or not — a <c>u32 count</c> and that many records; see <see cref="FalloutMapObject" /> for the
+///             record. ⚠ Three counts, not one per present elevation: the two or one zero dwords a one- or
+///             two-elevation map ends with are the absent elevations' counts, not a trailer.
+///         </item>
 ///     </list>
 ///     <para>
-///         ⚠⚠ <b>The header is 236 bytes, not 56</b>, and the difference is a trap worth naming: the
-///         44 unused dwords that pad it out are ZEROS, and zero passes a "looks like a tile id"
-///         range test, so scanning for the first plausible tile block finds 56 and is wrong by
-///         exactly 180 bytes. The tell is that the block then ends 180 bytes early, leaving 45
-///         orphaned empty-tile pairs behind it; reading at 236 also drops the count of impossible
-///         zero tile ids inside the grid from 7,073 to 595 across the corpus.
+///         The object record's size depends on the prototype the object points at (items and scenery carry
+///         subtype-sized extras), so decoding objects needs a subtype resolver; without one the object section
+///         is handed back raw in <see cref="Undecoded" /> and <see cref="ObjectsDecoded" /> is false.
 ///     </para>
 ///     <para>
-///         Each present elevation contributes <c>100 x 100</c> cells of two big-endian u16 —
-///         40,000 bytes — laid out consecutively from <see cref="HeaderLength" />.
-///         ⚑ Tile ids index <c>TILES.LST</c> the same 1-based way prototype ids do
-///         (<see cref="FalloutProList" />); 71 of the 72 maps have every word in range. The one that
-///         does not is a data anomaly rather than a decode failure and is left as read:
-///         <c>LAGUNRUN</c> has 257 roof words at 5,181-5,184. Ids are therefore exposed raw and
-///         resolved only when in range.
-///     </para>
-///     <para>
-///         ⚠ Grid ORIENTATION is not established — the tiles are exposed in file order, and nothing
-///         here claims which corner cell 0 is or which way rows run. That needs to be settled by eye
-///         against a rendered map, not asserted from the bytes.
-///     </para>
-///     <para>
-///         What follows the grid is NOT decoded here and is handed back as <see cref="Remainder" />.
-///         Measured so far: a short section of mostly-zero dwords, then records carrying prototype
-///         ids (<c>0x04000005</c> and the like) interleaved with <c>0xCCCCCCCC</c> — the engine's
-///         uninitialised-memory fill, 64 bytes apart. That is the scripts and object-placement half
-///         of the format and is still open.
+///         Grid ORIENTATION — which way the picture goes — is the game's, read off <c>square_coord</c>
+///         (<c>FUN_0049e8b4</c>) and <c>tile_coord</c> (<c>FUN_0049e258</c>) and applied by
+///         <c>FalloutMapLevel2DSource</c>; nothing here re-orders the cells.
 ///     </para>
 /// </summary>
 internal sealed class FalloutMapFile
@@ -69,7 +126,7 @@ internal sealed class FalloutMapFile
     /// <summary>Fallout 2's map version — 20 on all 155 of its retail maps.</summary>
     public const uint Version20 = 20;
 
-    /// <summary>Bytes of header before the first elevation's grid.</summary>
+    /// <summary>Bytes of fixed header before the variable arrays.</summary>
     public const int HeaderLength = 236;
 
     /// <summary>Cells across a grid.</summary>
@@ -81,6 +138,12 @@ internal sealed class FalloutMapFile
     /// <summary>Bytes one elevation's grid occupies.</summary>
     public const int ElevationLength = GridWidth * GridHeight * 4;
 
+    /// <summary>Hex columns across the object grid — two per square tile.</summary>
+    public const int HexGridWidth = 200;
+
+    /// <summary>Hex rows down the object grid.</summary>
+    public const int HexGridHeight = 200;
+
     /// <summary>Characters of map name in the header.</summary>
     public const int NameLength = 16;
 
@@ -89,6 +152,21 @@ internal sealed class FalloutMapFile
 
     /// <summary>A script id of -1: the map runs no script.</summary>
     public const uint NoScript = 0xFFFFFFFF;
+
+    /// <summary>The bits of a tile word that index the art list.</summary>
+    public const int ArtIndexMask = 0xFFF;
+
+    /// <summary>Bit 12 of a tile word: hidden (floor) / stripped on load (roof).</summary>
+    public const int HiddenFlag = 0x1000;
+
+    /// <summary>Art index 1 (and 0) draw nothing.</summary>
+    public const int EmptyTile = 1;
+
+    /// <summary>How many script lists a map carries.</summary>
+    public const int ScriptListCount = 5;
+
+    /// <summary>Records per script extent; every extent is read whole.</summary>
+    public const int ScriptExtentSize = 16;
 
     private FalloutMapFile()
     {
@@ -103,7 +181,7 @@ internal sealed class FalloutMapFile
     /// <summary>The name the header carries, which on retail is the file's own.</summary>
     public required string MapName { get; init; }
 
-    /// <summary>Grid cell the player starts on.</summary>
+    /// <summary>Hex the player starts on (an index into the 200 x 200 hex grid).</summary>
     public required uint PlayerPosition { get; init; }
 
     /// <summary>Elevation the player starts on.</summary>
@@ -118,14 +196,47 @@ internal sealed class FalloutMapFile
     /// <summary>Raw elevation flags; a SET bit means that elevation is absent.</summary>
     public required uint ElevationFlags { get; init; }
 
+    /// <summary>The map id word at +52.</summary>
+    public required uint MapId { get; init; }
+
+    /// <summary>The time stamp word at +56.</summary>
+    public required uint TimeStamp { get; init; }
+
+    /// <summary>The map's global variables, as stored.</summary>
+    public required IReadOnlyList<int> GlobalVariables { get; init; }
+
+    /// <summary>The map's local variables, as stored.</summary>
+    public required IReadOnlyList<int> LocalVariables { get; init; }
+
+    /// <summary>File offset of the first grid: 236 plus the variables.</summary>
+    public required int GridOffset { get; init; }
+
     /// <summary>The elevations the map actually carries, lowest first.</summary>
     public required IReadOnlyList<FalloutMapElevation> Elevations { get; init; }
 
-    /// <summary>Everything after the last grid: the undecoded scripts and objects sections.</summary>
-    public required ReadOnlyMemory<byte> Remainder { get; init; }
+    /// <summary>Every script record of the five lists, padding included, in file order.</summary>
+    public required IReadOnlyList<FalloutMapScript> Scripts { get; init; }
+
+    /// <summary>True when the script section was present and walked.</summary>
+    public required bool ScriptsDecoded { get; init; }
+
+    /// <summary>True when the object section was walked with a subtype resolver.</summary>
+    public required bool ObjectsDecoded { get; init; }
+
+    /// <summary>The object total the section declares, or 0 when it was not decoded.</summary>
+    public required int DeclaredObjectCount { get; init; }
+
+    /// <summary>
+    ///     Whatever was not decoded: the whole object section when no resolver was given, otherwise
+    ///     the bytes after the last object — EMPTY on all 227 retail maps.
+    /// </summary>
+    public required ReadOnlyMemory<byte> Undecoded { get; init; }
 
     /// <summary>True when the map runs a script.</summary>
     public bool HasScript => ScriptId != NoScript;
+
+    /// <summary>All top-level objects across the elevations.</summary>
+    public IEnumerable<FalloutMapObject> Objects => Elevations.SelectMany(e => e.Objects);
 
     /// <summary>
     ///     How many elevations a flag word describes. Bit 1 marks elevation 0 absent, bit 2
@@ -137,13 +248,19 @@ internal sealed class FalloutMapFile
         var count = 0;
         for (var i = 0; i < MaxElevations; i++)
         {
-            if ((flags & (2u << i)) == 0)
+            if (IsElevationPresent(flags, i))
             {
                 count++;
             }
         }
 
         return count;
+    }
+
+    /// <summary>Whether the flag word says elevation <paramref name="level" /> is stored.</summary>
+    public static bool IsElevationPresent(uint flags, int level)
+    {
+        return (flags & (2u << level)) == 0;
     }
 
     /// <summary>Content probe: the version word, which is the only fixed value at a fixed place.</summary>
@@ -159,9 +276,9 @@ internal sealed class FalloutMapFile
     }
 
     /// <summary>Parses a map, throwing <see cref="InvalidDataException" /> when it does not fit.</summary>
-    public static FalloutMapFile Parse(ReadOnlyMemory<byte> bytes, string name)
+    public static FalloutMapFile Parse(ReadOnlyMemory<byte> bytes, string name, Func<uint, int?>? subtypeOf = null)
     {
-        if (!TryParse(bytes, name, out var map, out var error))
+        if (!TryParse(bytes, name, out var map, out var error, subtypeOf))
         {
             throw new InvalidDataException(error);
         }
@@ -169,8 +286,13 @@ internal sealed class FalloutMapFile
         return map;
     }
 
-    /// <summary>Parses a map, reporting why rather than throwing.</summary>
-    public static bool TryParse(ReadOnlyMemory<byte> bytes, string name, out FalloutMapFile map, out string error)
+    /// <summary>
+    ///     Parses a map, reporting why rather than throwing. With <paramref name="subtypeOf" /> — a
+    ///     prototype-id-to-subtype lookup, which <see cref="FalloutMapPrototypes" /> provides — the object
+    ///     section is walked too; without it, only the header, variables, grids and scripts are.
+    /// </summary>
+    public static bool TryParse(ReadOnlyMemory<byte> bytes, string name, out FalloutMapFile map, out string error,
+        Func<uint, int?>? subtypeOf = null)
     {
         map = null!;
         var span = bytes.Span;
@@ -187,30 +309,84 @@ internal sealed class FalloutMapFile
             return false;
         }
 
+        var localCount = BinaryPrimitives.ReadUInt32BigEndian(span[32..]);
         var flags = BinaryPrimitives.ReadUInt32BigEndian(span[40..]);
-        var count = ElevationCount(flags);
-        var required = HeaderLength + (count * ElevationLength);
-        if (span.Length < required)
+        var globalCount = BinaryPrimitives.ReadUInt32BigEndian(span[48..]);
+        if (localCount > 100_000 || globalCount > 100_000)
         {
-            error = $"{name}: flags 0x{flags:X} declare {count} elevations, needing {required} bytes of {span.Length}.";
+            error = $"{name}: {globalCount} global and {localCount} local variables is not a map.";
             return false;
         }
+
+        var count = ElevationCount(flags);
+        var gridOffset = HeaderLength + 4 * (int)(globalCount + localCount);
+        var required = gridOffset + count * ElevationLength;
+        if (span.Length < required)
+        {
+            error =
+                $"{name}: flags 0x{flags:X} declare {count} elevations after {globalCount} + {localCount} variables, needing {required} bytes of {span.Length}.";
+            return false;
+        }
+
+        var globals = ReadInts(span, HeaderLength, (int)globalCount);
+        var locals = ReadInts(span, HeaderLength + 4 * (int)globalCount, (int)localCount);
 
         // ⚠ The stored grids are consecutive, but their ELEVATION NUMBERS are the clear flag bits —
         // not 0,1,2. Fallout 2 ships two maps with flags 0x2, where elevation 0 is absent and the
         // first grid in the file is elevation 1; numbering them by position mislabels both.
-        var elevations = new FalloutMapElevation[count];
+        var grids = new FalloutMapTile[MaxElevations][];
         var stored = 0;
         for (var level = 0; level < MaxElevations; level++)
         {
-            if ((flags & (2u << level)) != 0)
+            if (!IsElevationPresent(flags, level))
             {
                 continue;
             }
 
-            elevations[stored] = new FalloutMapElevation(
-                level, ReadGrid(span, HeaderLength + (stored * ElevationLength)));
+            grids[level] = ReadGrid(span, gridOffset + stored * ElevationLength);
             stored++;
+        }
+
+        // The sections after the grids. A file that stops at the grids (synthetic fixtures do) is a
+        // map with nothing placed; a file that has them is walked the loader's way.
+        var position = required;
+        var scripts = new List<FalloutMapScript>();
+        var scriptsDecoded = false;
+        var objectsDecoded = false;
+        var declared = 0;
+        var objects = new List<FalloutMapObject>[MaxElevations];
+        for (var i = 0; i < MaxElevations; i++)
+        {
+            objects[i] = [];
+        }
+
+        if (position < span.Length)
+        {
+            if (!TryReadScripts(bytes, ref position, scripts, name, out error))
+            {
+                return false;
+            }
+
+            scriptsDecoded = true;
+
+            if (subtypeOf is not null)
+            {
+                if (!TryReadObjects(bytes, ref position, version, subtypeOf, objects, name, out declared, out error))
+                {
+                    return false;
+                }
+
+                objectsDecoded = true;
+            }
+        }
+
+        var elevations = new List<FalloutMapElevation>(count);
+        for (var level = 0; level < MaxElevations; level++)
+        {
+            if (grids[level] is { } grid)
+            {
+                elevations.Add(new FalloutMapElevation(level, grid, objects[level]));
+            }
         }
 
         map = new FalloutMapFile
@@ -223,8 +399,17 @@ internal sealed class FalloutMapFile
             PlayerOrientation = BinaryPrimitives.ReadUInt32BigEndian(span[28..]),
             ScriptId = BinaryPrimitives.ReadUInt32BigEndian(span[36..]),
             ElevationFlags = flags,
+            MapId = BinaryPrimitives.ReadUInt32BigEndian(span[52..]),
+            TimeStamp = BinaryPrimitives.ReadUInt32BigEndian(span[56..]),
+            GlobalVariables = globals,
+            LocalVariables = locals,
+            GridOffset = gridOffset,
             Elevations = elevations,
-            Remainder = bytes[required..]
+            Scripts = scripts,
+            ScriptsDecoded = scriptsDecoded,
+            ObjectsDecoded = objectsDecoded,
+            DeclaredObjectCount = declared,
+            Undecoded = bytes[position..]
         };
 
         error = string.Empty;
@@ -244,17 +429,157 @@ internal sealed class FalloutMapFile
         return Encoding.Latin1.GetString(end < 0 ? field : field[..end]).Trim();
     }
 
+    private static int[] ReadInts(ReadOnlySpan<byte> span, int offset, int count)
+    {
+        var values = new int[count];
+        for (var i = 0; i < count; i++)
+        {
+            values[i] = BinaryPrimitives.ReadInt32BigEndian(span[(offset + 4 * i)..]);
+        }
+
+        return values;
+    }
+
     private static FalloutMapTile[] ReadGrid(ReadOnlySpan<byte> span, int offset)
     {
         var tiles = new FalloutMapTile[GridWidth * GridHeight];
         for (var i = 0; i < tiles.Length; i++)
         {
-            var at = offset + (i * 4);
+            var at = offset + i * 4;
             tiles[i] = new FalloutMapTile(
                 BinaryPrimitives.ReadUInt16BigEndian(span[at..]),
                 BinaryPrimitives.ReadUInt16BigEndian(span[(at + 2)..]));
         }
 
         return tiles;
+    }
+
+    /// <summary>The five script lists, walked exactly as <c>FUN_00493df4</c> walks them.</summary>
+    private static bool TryReadScripts(ReadOnlyMemory<byte> bytes, ref int position, List<FalloutMapScript> scripts,
+        string name, out string error)
+    {
+        var span = bytes.Span;
+        for (var list = 0; list < ScriptListCount; list++)
+        {
+            if (position + 4 > span.Length)
+            {
+                error = $"{name}: script list {list}'s count would start at {position}, past {span.Length} bytes.";
+                return false;
+            }
+
+            var count = BinaryPrimitives.ReadUInt32BigEndian(span[position..]);
+            position += 4;
+            if (count == 0)
+            {
+                continue;
+            }
+
+            if (count > 100_000)
+            {
+                error = $"{name}: script list {list} declares {count} records, which is not a map.";
+                return false;
+            }
+
+            var extents = ((int)count + ScriptExtentSize - 1) / ScriptExtentSize;
+            for (var extent = 0; extent < extents; extent++)
+            {
+                for (var slot = 0; slot < ScriptExtentSize; slot++)
+                {
+                    if (position + 8 > span.Length)
+                    {
+                        error = $"{name}: script list {list} record {extent * ScriptExtentSize + slot} starts past the end.";
+                        return false;
+                    }
+
+                    var id = BinaryPrimitives.ReadUInt32BigEndian(span[position..]);
+                    var length = FalloutMapScriptLength(id);
+                    if (position + length > span.Length)
+                    {
+                        error = $"{name}: script list {list} record {extent * ScriptExtentSize + slot} needs {length} bytes past the end.";
+                        return false;
+                    }
+
+                    var index = extent * ScriptExtentSize + slot;
+                    scripts.Add(new FalloutMapScript(list, id, index >= count, bytes.Slice(position, length)));
+                    position += length;
+                }
+
+                // The extent's own two dwords: its record count and a next pointer (FUN_00493d84).
+                position += 8;
+            }
+
+            if (position > span.Length)
+            {
+                error = $"{name}: script list {list}'s extents run {position - span.Length} bytes past the end.";
+                return false;
+            }
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
+    /// <summary>Record length by the id's OWN type byte, as <c>FUN_00493bb8</c> reads it.</summary>
+    public static int FalloutMapScriptLength(uint scriptId)
+    {
+        return (scriptId >> 24) switch
+        {
+            1 => 72,
+            2 => 68,
+            _ => 64
+        };
+    }
+
+    /// <summary>The object section: a total, then three per-elevation lists (FUN_0047ab08).</summary>
+    private static bool TryReadObjects(ReadOnlyMemory<byte> bytes, ref int position, uint version,
+        Func<uint, int?> subtypeOf, List<FalloutMapObject>[] objects, string name, out int declared, out string error)
+    {
+        var span = bytes.Span;
+        declared = 0;
+        if (position + 4 > span.Length)
+        {
+            error = $"{name}: the object total would start at {position}, past {span.Length} bytes.";
+            return false;
+        }
+
+        declared = BinaryPrimitives.ReadInt32BigEndian(span[position..]);
+        position += 4;
+        var counted = 0;
+        for (var level = 0; level < MaxElevations; level++)
+        {
+            if (position + 4 > span.Length)
+            {
+                error = $"{name}: elevation {level}'s object count would start at {position}, past {span.Length} bytes.";
+                return false;
+            }
+
+            var count = BinaryPrimitives.ReadInt32BigEndian(span[position..]);
+            position += 4;
+            if (count < 0 || count > 1_000_000)
+            {
+                error = $"{name}: elevation {level} declares {count} objects, which is not a map.";
+                return false;
+            }
+
+            for (var i = 0; i < count; i++)
+            {
+                if (!FalloutMapObject.TryRead(bytes, ref position, version, subtypeOf, name, out var item, out error))
+                {
+                    return false;
+                }
+
+                objects[level].Add(item);
+                counted++;
+            }
+        }
+
+        if (counted != declared)
+        {
+            error = $"{name}: the object section declares {declared} objects but its three lists hold {counted}.";
+            return false;
+        }
+
+        error = string.Empty;
+        return true;
     }
 }

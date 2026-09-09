@@ -36,15 +36,15 @@ public sealed class ShadowCascadeSubmissionPolicyTests
         Assert.Equal(
             17,
             ShadowCascadeSubmissionPolicy.UsefulSourceTailCount(
-                sourceCount: 40,
-                cascadePrefixes: [0, 9, 17, 14],
-                prefixesCompatible: true));
+                40,
+                [0, 9, 17, 14],
+                true));
         Assert.Equal(
             40,
             ShadowCascadeSubmissionPolicy.UsefulSourceTailCount(
-                sourceCount: 40,
-                cascadePrefixes: [0, 9, 17, 99],
-                prefixesCompatible: true));
+                40,
+                [0, 9, 17, 99],
+                true));
     }
 
     [Fact]
@@ -53,15 +53,15 @@ public sealed class ShadowCascadeSubmissionPolicyTests
         Assert.Equal(
             40,
             ShadowCascadeSubmissionPolicy.UsefulSourceTailCount(
-                sourceCount: 40,
-                cascadePrefixes: [0, 0, 0, 0],
-                prefixesCompatible: false));
+                40,
+                [0, 0, 0, 0],
+                false));
         Assert.Equal(
             40,
             ShadowCascadeSubmissionPolicy.UsefulSourceTailCount(
-                sourceCount: 40,
-                cascadePrefixes: [0, 0, 0],
-                prefixesCompatible: true));
+                40,
+                [0, 0, 0],
+                true));
     }
 
     [Fact]

@@ -286,7 +286,8 @@ public sealed partial class WorldView3DControl
             }
 
             target.ReleaseDedicatedWaterOpaqueSnapshotResource();
-            Log.Warn("WorldView3DControl: water refraction snapshot SRV creation failed; using the RT-free fallback: {0}",
+            Log.Warn(
+                "WorldView3DControl: water refraction snapshot SRV creation failed; using the RT-free fallback: {0}",
                 ex.Message);
             return false;
         }
@@ -634,7 +635,7 @@ public sealed partial class WorldView3DControl
                 cylinder,
                 isPerspectiveProjection: true);
             captureWaterOpaqueSnapshotSrvReady = initialWaterOpaqueSceneSnapshotRequest &&
-                                                  TryEnsureCaptureWaterOpaqueSnapshotSrv(target);
+                                                 TryEnsureCaptureWaterOpaqueSnapshotSrv(target);
             _water.SetWaterOpaqueSceneSnapshot(null, 0, 0);
             // Clear the LIVE window's planar-reflection binding: its bindless index and the scene
             // dimensions the shader divides by are set by the live frame path, so an in-app capture
@@ -743,6 +744,7 @@ public sealed partial class WorldView3DControl
                             "real-color-bind", primeAttempts, captureRenderOrigin, _lastBoundShadowConstants);
                     }
                 }
+
                 target.Bind(cmd);
 
                 // Sky FIRST (gradient + sun/moon billboards), then the scene over it — same order as the live
@@ -1558,6 +1560,7 @@ public sealed partial class WorldView3DControl
     {
         static float[] Vec3(Vector3 value) => [value.X, value.Y, value.Z];
         static float[] Vec4(Vector4 value) => [value.X, value.Y, value.Z, value.W];
+
         static Dictionary<string, object?>? WthsColor(StarfieldBlendableColorPatch? color)
         {
             if (color is null)
@@ -2094,7 +2097,7 @@ public sealed partial class WorldView3DControl
             sunPresetRenderSource = "primary STDT PNAM→SUNP";
         }
         else if (starfieldEnvironmentRoute?.SunPresetOverrideFormId is
-                 { } nonzeroAtmosphereOverride && nonzeroAtmosphereOverride != 0)
+                     { } nonzeroAtmosphereOverride && nonzeroAtmosphereOverride != 0)
         {
             sunPresetRenderSource = "blocked: nonzero ATMO override precedence/combination is unresolved";
         }
@@ -2201,7 +2204,8 @@ public sealed partial class WorldView3DControl
                 ["imageSpaceNightFormId"] = effectiveWeatherSettings?.ImageSpaceNightFormId is { } nightImageSpaceFormId
                     ? $"0x{nightImageSpaceFormId:X8}"
                     : null,
-                ["volumetricLightingFormId"] = effectiveWeatherSettings?.VolumetricLightingFormId is { } volumetricFormId
+                ["volumetricLightingFormId"] = effectiveWeatherSettings?.VolumetricLightingFormId is
+                    { } volumetricFormId
                     ? $"0x{volumetricFormId:X8}"
                     : null,
                 ["cloudsFormId"] = effectiveWeatherSettings?.CloudsFormId is { } cloudsFormId

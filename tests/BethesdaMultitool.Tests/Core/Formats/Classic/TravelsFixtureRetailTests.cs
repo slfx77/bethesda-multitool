@@ -1,7 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
@@ -28,7 +24,7 @@ public sealed class TravelsFixtureRetailTests
     {
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipWhen(path is null, RealAssetPaths.SkipMessage(what));
-        return path!;
+        return path;
     }
 
     public static TheoryData<int, int, int> JarCensus()
@@ -109,7 +105,7 @@ public sealed class TravelsFixtureRetailTests
         Assert.Equal(game, ClassicGameLocator.DetectFromArchive(jar)?.Game);
         Assert.Equal(AnalysisFileType.ClassicGameData, FileTypeDetector.Detect(jar));
 
-        var result = await ClassicGameAnalyzer.LoadAsync(jar);
+        var result = await ClassicGameAnalyzer.LoadAsync(jar, TestContext.Current.CancellationToken);
         Assert.Equal(AnalysisFileType.ClassicGameData, result.FileType);
         Assert.Equal(game, result.Records.Game);
         Assert.Equal(Path.GetFullPath(jar), result.FilePath);
@@ -127,10 +123,11 @@ public sealed class TravelsFixtureRetailTests
         Assert.Equal(21, zones.Count);
         foreach (var extension in new[] { "stn", "pth", "sur", "pal", "ent", "zmp", "zcp", "zlu", "zfg", "zsk", "ztx" })
         {
-            Assert.All(zones, zone => Assert.True(File.Exists(Path.Combine(root, $"{zone}.{extension}")), $"{zone}.{extension}"));
+            Assert.All(zones,
+                zone => Assert.True(File.Exists(Path.Combine(root, $"{zone}.{extension}")), $"{zone}.{extension}"));
         }
 
-        var result = await ClassicGameAnalyzer.LoadAsync(root);
+        var result = await ClassicGameAnalyzer.LoadAsync(root, TestContext.Current.CancellationToken);
         Assert.Equal(BethesdaGame.Shadowkey, result.Records.Game);
     }
 

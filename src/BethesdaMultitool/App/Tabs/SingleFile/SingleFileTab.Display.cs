@@ -141,7 +141,7 @@ public sealed partial class SingleFileTab
         // Totals header
         var totalsText = new TextBlock
         {
-            Text = PipelinePhaseHelper.BuildRecordTotalsText(r, _session.IsEsmFile),
+            Text = PipelinePhaseHelper.BuildRecordTotalsText(r, _session.FileType),
             FontSize = 13,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 4)

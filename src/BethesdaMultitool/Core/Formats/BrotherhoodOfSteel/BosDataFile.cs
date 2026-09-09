@@ -4,7 +4,12 @@ namespace BethesdaMultitool.Core.Formats.BrotherhoodOfSteel;
 
 /// <summary>One record of a <see cref="BosDataFile" />: a hash key and its bytes.</summary>
 /// <param name="Index">Position in the directory.</param>
-/// <param name="Hash">The record's key. ⚠ The function producing it is NOT established.</param>
+/// <param name="Hash">
+///     The record's key. ⚑ The function IS established (2026-09-08): <see cref="BosNameHash" />,
+///     <c>default.xbe</c> <c>0x00014BE0</c>, the same hash that keys the <c>.SDB</c> databases —
+///     which is what lets a string be PROVEN to be this record's name rather than merely filed
+///     under its key.
+/// </param>
 /// <param name="Offset">Byte offset of the payload.</param>
 /// <param name="Size">Payload length, derived from the next entry's offset (or EOF for the last).</param>
 /// <param name="Type">
@@ -32,8 +37,12 @@ internal readonly record struct BosDataRecord(
 ///     against the shipped disc; the Snowblind references are GPL or unlicensed and describe a
 ///     different container family anyway.
 ///     <para>
-///         Little-endian. <c>+0</c> is the record COUNT. What follows is a <b>772-byte fixed
-///         header</b> — established not by guessing field boundaries but by the fact that the first
+///         Little-endian. <c>+0</c> is the record COUNT. What follows is a
+///         <b>
+///             772-byte fixed
+///             header
+///         </b>
+///         — established not by guessing field boundaries but by the fact that the first
 ///         772 bytes are <b>byte-identical across all 55 files</b> apart from that count. It carries
 ///         a constant signature (<c>+4</c> = 1055, <c>+8</c> = 19, <c>+12</c> = 0xD590B5DE, bytes
 ///         16-52 zero) and IEEE floats (80.0, 20.0), so it reads as a defaults or tuning block.
@@ -62,7 +71,7 @@ internal readonly record struct BosDataRecord(
 ///     </para>
 ///     <para>
 ///         ⚠ Resolve names from the SIBLING database first. The union is convenient but lossy —
-///         115 hashes carry DIFFERENT text in different databases, so a global lookup will
+///         63 hashes carry DIFFERENT text in different databases, so a global lookup will
 ///         mislabel some records that a per-level lookup gets right.
 ///     </para>
 ///     <para>
@@ -137,7 +146,8 @@ internal sealed class BosDataFile
             BinaryPrimitives.ReadUInt32LittleEndian(bytes[8..]) != SecondSignature ||
             BinaryPrimitives.ReadUInt32LittleEndian(bytes[12..]) != ThirdSignature)
         {
-            error = $"{name}: the header constants are not the {Signature}/{SecondSignature}/0x{ThirdSignature:X8} every file carries.";
+            error =
+                $"{name}: the header constants are not the {Signature}/{SecondSignature}/0x{ThirdSignature:X8} every file carries.";
             return false;
         }
 
@@ -148,12 +158,12 @@ internal sealed class BosDataFile
             return false;
         }
 
-        var directoryEnd = HeaderLength + ((int)count * RecordLength);
+        var directoryEnd = HeaderLength + (int)count * RecordLength;
         var offsets = new int[count];
         var hashes = new uint[count];
         for (var i = 0; i < count; i++)
         {
-            var at = HeaderLength + (i * RecordLength);
+            var at = HeaderLength + i * RecordLength;
             hashes[i] = BinaryPrimitives.ReadUInt32LittleEndian(bytes[at..]);
             offsets[i] = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[(at + 4)..]);
 
@@ -180,7 +190,8 @@ internal sealed class BosDataFile
             var next = i + 1 < count ? offsets[i + 1] : bytes.Length;
             if (next <= offsets[i] || next > bytes.Length)
             {
-                error = $"{name}: record {i} runs from {offsets[i]} to {next}, which is not forward and inside the file.";
+                error =
+                    $"{name}: record {i} runs from {offsets[i]} to {next}, which is not forward and inside the file.";
                 return false;
             }
 

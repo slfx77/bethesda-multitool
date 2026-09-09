@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
 using BethesdaMultitool.CLI.Rendering.Sprite;
 using BethesdaMultitool.Core.Formats.Fallout;
 using BethesdaMultitool.Core.Imaging;
@@ -35,17 +32,18 @@ public sealed class SpriteDecodeBytesTests
         BinaryPrimitives.WriteUInt16BigEndian(frame, (ushort)width);
         BinaryPrimitives.WriteUInt16BigEndian(frame.AsSpan(2), (ushort)height);
         BinaryPrimitives.WriteUInt32BigEndian(frame.AsSpan(4), (uint)pixels.Length);
-        BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(FalloutFrmFile.FrameAreaSizePosition), (uint)(frame.Length + pixels.Length));
+        BinaryPrimitives.WriteUInt32BigEndian(header.AsSpan(FalloutFrmFile.FrameAreaSizePosition),
+            (uint)(frame.Length + pixels.Length));
         return [.. header, .. frame, .. pixels];
     }
 
     /// <summary>A 768-byte 6-bit palette where entry <paramref name="index" /> is a known colour.</summary>
     private static byte[] Palette768(int index, byte r, byte g, byte b)
     {
-        var rgb = new byte[BethesdaMultitool.Core.Imaging.Palette.RgbByteCount];
+        var rgb = new byte[Palette.RgbByteCount];
         rgb[index * 3] = r;
-        rgb[(index * 3) + 1] = g;
-        rgb[(index * 3) + 2] = b;
+        rgb[index * 3 + 1] = g;
+        rgb[index * 3 + 2] = b;
         return rgb;
     }
 
@@ -71,6 +69,7 @@ public sealed class SpriteDecodeBytesTests
         Assert.Equal(0, frame.Texture.Pixels[1]);
         Assert.Equal(0, frame.Texture.Pixels[2]);
         Assert.Equal(FalloutPalette.FileName, frames.PaletteSource);
+        Assert.Contains(FalloutPalette.FileName, asked, StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -109,8 +108,8 @@ public sealed class SpriteDecodeBytesTests
     [Fact]
     public void DecodeBytes_WhenNoCandidateResolves_Throws()
     {
-        var error = Assert.Throws<FileNotFoundException>(
-            () => SpriteRenderPipeline.DecodeBytes(Frm(7), "SOMEART.FRM", _ => null));
+        var error = Assert.Throws<FileNotFoundException>(() =>
+            SpriteRenderPipeline.DecodeBytes(Frm(7), "SOMEART.FRM", _ => null));
 
         Assert.Contains(FalloutPalette.FileName, error.Message, StringComparison.Ordinal);
     }

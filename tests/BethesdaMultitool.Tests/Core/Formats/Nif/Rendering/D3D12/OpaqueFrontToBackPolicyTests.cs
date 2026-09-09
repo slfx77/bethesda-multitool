@@ -13,9 +13,9 @@ public sealed class OpaqueFrontToBackPolicyTests
     public void NearDepthUsesNormalizedForwardAndSubtractsSphereRadius()
     {
         var view = OpaqueFrontToBackPolicy.CreateBuildView(
-            requested: true,
-            eye: new Vector3(10, 20, 30),
-            forward: new Vector3(0, 0, 4));
+            true,
+            new Vector3(10, 20, 30),
+            new Vector3(0, 0, 4));
         var bounds = new Vector4(12, 24, 50, 3);
 
         Assert.True(view.Valid);
@@ -187,6 +187,9 @@ public sealed class OpaqueFrontToBackPolicyTests
             StringComparison.Ordinal);
     }
 
-    private static string D3D12Source(string fileName) => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", fileName);
+    private static string D3D12Source(string fileName)
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", fileName);
+    }
 }

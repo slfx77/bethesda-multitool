@@ -46,14 +46,26 @@ internal sealed class XnGinePlane
     /// <summary>Byte after the point count (unread by the reference).</summary>
     public required byte Unknown1 { get; init; }
 
-    /// <summary>Packed texture reference: archive in the high 9 bits, record in the low 7.</summary>
+    /// <summary>The u16 at plane header +2 — Daggerfall's packed texture reference: archive in the high 9 bits, record in the low 7.</summary>
     public required ushort TextureBits { get; init; }
 
-    /// <summary>TEXTURE.nnn archive number.</summary>
-    public int TextureArchive => TextureBits >> 7;
+    /// <summary>
+    ///     The plane's texture key as its game reads it. Daggerfall: <see cref="TextureBits" />.
+    ///     Battlespire: the 32-bit dword at +2 (GAME.EXE <c>FUN_00087E40</c> reads
+    ///     <c>*(uint*)(plane + 2)</c>), a base-40 encoding of the BSI stem — see
+    ///     <c>BattlespireTextureName</c>. On Battlespire <see cref="TextureBits" /> is only its low word.
+    /// </summary>
+    public required uint TextureKey { get; init; }
 
-    /// <summary>Record within the texture archive.</summary>
-    public int TextureRecord => TextureBits & 0x7F;
+    /// <summary>
+    ///     Daggerfall: the TEXTURE.nnn archive number (<c>TextureBits &gt;&gt; 7</c>). Battlespire: the
+    ///     key's HIGH word, so that (archive, record) still identifies one material and a
+    ///     Battlespire resolver can rebuild the key as <c>(archive &lt;&lt; 16) | record</c>.
+    /// </summary>
+    public required int TextureArchive { get; init; }
+
+    /// <summary>Daggerfall: the record within the archive (<c>TextureBits &amp; 0x7F</c>). Battlespire: the key's LOW word.</summary>
+    public required int TextureRecord { get; init; }
 
     /// <summary>
     ///     The bytes after the texture reference: four on Daggerfall, six on Battlespire. Neither
@@ -201,7 +213,8 @@ internal sealed class XnGineMesh
         var span = bytes.Span;
         if (span.Length < HeaderLength)
         {
-            throw new InvalidDataException($"Mesh {objectId}: {span.Length} bytes is shorter than the {HeaderLength}-byte header.");
+            throw new InvalidDataException(
+                $"Mesh {objectId}: {span.Length} bytes is shorter than the {HeaderLength}-byte header.");
         }
 
         var tag = ReadTag(span[..4]);
@@ -228,13 +241,15 @@ internal sealed class XnGineMesh
         if (suppliedPoints is null &&
             (pointCount < 0 || pointListOffset < 0 || pointListOffset + (long)pointCount * PointLength > span.Length))
         {
-            throw new InvalidDataException($"Mesh {objectId}: {pointCount} points at {pointListOffset} do not fit in {span.Length} bytes.");
+            throw new InvalidDataException(
+                $"Mesh {objectId}: {pointCount} points at {pointListOffset} do not fit in {span.Length} bytes.");
         }
 
         if (suppliedNormals is null &&
             (planeCount < 0 || normalListOffset < 0 || normalListOffset + (long)planeCount * PointLength > span.Length))
         {
-            throw new InvalidDataException($"Mesh {objectId}: {planeCount} normals at {normalListOffset} do not fit in {span.Length} bytes.");
+            throw new InvalidDataException(
+                $"Mesh {objectId}: {planeCount} normals at {normalListOffset} do not fit in {span.Length} bytes.");
         }
 
         if (suppliedPoints is not null && suppliedPoints.Count != pointCount)
@@ -251,7 +266,8 @@ internal sealed class XnGineMesh
 
         if (planeListOffset < 0 || planeListOffset > span.Length)
         {
-            throw new InvalidDataException($"Mesh {objectId}: plane list offset {planeListOffset} lies outside the record.");
+            throw new InvalidDataException(
+                $"Mesh {objectId}: plane list offset {planeListOffset} lies outside the record.");
         }
 
         var points = new XnGineMeshPoint[pointCount];
@@ -301,18 +317,6 @@ internal sealed class XnGineMesh
         };
     }
 
-    /// <summary>Everything <see cref="ReadPlane" /> needs that does not change between planes.</summary>
-    private readonly record struct PlaneContext(
-        ReadOnlyMemory<byte> Bytes,
-        uint ObjectId,
-        XnGineMeshLayout Layout,
-        XnGineMeshVersion Version,
-        int PlaneHeaderLength,
-        int PointCount,
-        int PlaneDataOffset,
-        int NormalListOffset,
-        IReadOnlyList<XnGineMeshPoint>? SuppliedNormals);
-
     /// <summary>Reads one plane's header and points, advancing <paramref name="position" />.</summary>
     private static XnGinePlane ReadPlane(PlaneContext context, int index, ref int position)
     {
@@ -326,6 +330,24 @@ internal sealed class XnGineMesh
         var unknown1 = span[position + 1];
         var textureBits = BinaryPrimitives.ReadUInt16LittleEndian(span[(position + 2)..]);
         var headerTail = context.Bytes.Slice(position + 4, context.PlaneHeaderLength - 4);
+
+        // Battlespire's texture field is a 32-bit dword whose high word sits where Daggerfall's
+        // header ends; splitting it into (high, low) words keeps the material identity a pair.
+        uint textureKey;
+        int textureArchive, textureRecord;
+        if (context.Layout == XnGineMeshLayout.Battlespire)
+        {
+            textureKey = BinaryPrimitives.ReadUInt32LittleEndian(span[(position + 2)..]);
+            textureArchive = (int)(textureKey >> 16);
+            textureRecord = (int)(textureKey & 0xFFFF);
+        }
+        else
+        {
+            textureKey = textureBits;
+            textureArchive = textureBits >> 7;
+            textureRecord = textureBits & 0x7F;
+        }
+
         position += context.PlaneHeaderLength;
 
         var planePoints = new XnGinePlanePoint[planePointCount];
@@ -333,7 +355,8 @@ internal sealed class XnGineMesh
         {
             if (position + PlanePointLength > span.Length)
             {
-                throw new InvalidDataException($"Mesh {context.ObjectId}: plane {index} point {q} lies past the record.");
+                throw new InvalidDataException(
+                    $"Mesh {context.ObjectId}: plane {index} point {q} lies past the record.");
             }
 
             var offset = BinaryPrimitives.ReadInt32LittleEndian(span[position..]);
@@ -368,6 +391,9 @@ internal sealed class XnGineMesh
             Index = index,
             Unknown1 = unknown1,
             TextureBits = textureBits,
+            TextureKey = textureKey,
+            TextureArchive = textureArchive,
+            TextureRecord = textureRecord,
             HeaderTail = headerTail,
             Normal = context.SuppliedNormals is { } normals
                 ? normals[index]
@@ -429,4 +455,16 @@ internal sealed class XnGineMesh
 
         return (new XnGineMeshPoint(minX, minY, minZ), new XnGineMeshPoint(maxX, maxY, maxZ));
     }
+
+    /// <summary>Everything <see cref="ReadPlane" /> needs that does not change between planes.</summary>
+    private readonly record struct PlaneContext(
+        ReadOnlyMemory<byte> Bytes,
+        uint ObjectId,
+        XnGineMeshLayout Layout,
+        XnGineMeshVersion Version,
+        int PlaneHeaderLength,
+        int PointCount,
+        int PlaneDataOffset,
+        int NormalListOffset,
+        IReadOnlyList<XnGineMeshPoint>? SuppliedNormals);
 }

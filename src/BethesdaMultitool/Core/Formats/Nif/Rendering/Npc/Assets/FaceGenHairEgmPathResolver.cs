@@ -15,7 +15,7 @@ internal static class FaceGenHairEgmPathResolver
         // NIF; they are not suffixes on the EGM asset (for example Style03.NIF -> Style03.egm).
         if (game == BethesdaGame.Oblivion)
         {
-            return Path.ChangeExtension(hairNifPath, ".egm")!;
+            return Path.ChangeExtension(hairNifPath, ".egm");
         }
 
         var hairBaseName = Path.GetFileNameWithoutExtension(hairNifPath);

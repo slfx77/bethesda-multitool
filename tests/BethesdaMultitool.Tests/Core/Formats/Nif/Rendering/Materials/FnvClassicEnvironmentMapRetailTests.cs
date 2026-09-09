@@ -12,7 +12,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 public sealed class FnvClassicEnvironmentMapRetailTests
 {
     private const string MeshesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+        @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa";
 
     private const string HeliosReflectorPath =
         @"meshes\architecture\helios_one\heliosone_solarreflector_row.nif";
@@ -268,6 +268,6 @@ public sealed class FnvClassicEnvironmentMapRetailTests
     {
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC-final meshes BSA not available");
-        return bsaPath!;
+        return bsaPath;
     }
 }

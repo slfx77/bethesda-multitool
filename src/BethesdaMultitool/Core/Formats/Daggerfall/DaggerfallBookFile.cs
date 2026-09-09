@@ -121,7 +121,8 @@ internal sealed class DaggerfallBookFile
 
         if (bytes.Length < HeaderLength)
         {
-            throw new InvalidDataException($"{name}: {bytes.Length} bytes is shorter than the {HeaderLength}-byte book header.");
+            throw new InvalidDataException(
+                $"{name}: {bytes.Length} bytes is shorter than the {HeaderLength}-byte book header.");
         }
 
         var flag = ReadCString(bytes.AsSpan(TitleLength + AuthorLength, FlagLength)).Trim();
@@ -130,7 +131,8 @@ internal sealed class DaggerfallBookFile
         var tableEnd = HeaderLength + pageCount * 4;
         if (bytes.Length < tableEnd)
         {
-            throw new InvalidDataException($"{name}: {pageCount} page offsets need {tableEnd} bytes, the file has {bytes.Length}.");
+            throw new InvalidDataException(
+                $"{name}: {pageCount} page offsets need {tableEnd} bytes, the file has {bytes.Length}.");
         }
 
         var offsets = new int[pageCount];
@@ -139,7 +141,8 @@ internal sealed class DaggerfallBookFile
             var offset = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(HeaderLength + i * 4));
             if (offset < (uint)tableEnd || offset > (uint)bytes.Length)
             {
-                throw new InvalidDataException($"{name}: page {i} offset {offset} lies outside the page area ({tableEnd}-{bytes.Length}).");
+                throw new InvalidDataException(
+                    $"{name}: page {i} offset {offset} lies outside the page area ({tableEnd}-{bytes.Length}).");
             }
 
             offsets[i] = (int)offset;

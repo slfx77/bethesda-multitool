@@ -278,9 +278,9 @@ public sealed class ArchiveHandleRegistryTests : IDisposable
         using var lease = registry.Acquire(bsa);
         var extractor = lease.Reader.AsBsaExtractor;
         Assert.NotNull(extractor);
-        Assert.Throws<InvalidOperationException>(() => extractor!.EnableNifConversion(true));
-        Assert.Throws<InvalidOperationException>(() => extractor!.EnableDdxConversion(true));
-        Assert.Throws<InvalidOperationException>(() => extractor!.EnableXmaConversion(true));
+        Assert.Throws<InvalidOperationException>(() => extractor.EnableNifConversion(true));
+        Assert.Throws<InvalidOperationException>(() => extractor.EnableDdxConversion(true));
+        Assert.Throws<InvalidOperationException>(() => extractor.EnableXmaConversion(true));
     }
 
     /// <summary>
@@ -299,7 +299,7 @@ public sealed class ArchiveHandleRegistryTests : IDisposable
             using var lease = registry.Acquire(bsa);
             var bytes = lease.Reader.ReadFile("meshes\\a.nif");
             Assert.NotNull(bytes);
-            Assert.Equal(expected, bytes!);
+            Assert.Equal(expected, bytes);
         });
 
         Assert.Equal(0, registry.OpenHandleCount);

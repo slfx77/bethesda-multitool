@@ -39,7 +39,9 @@ internal static class Fo4BendableSplineWind
     internal const float MaximumDefaultDisplacement = 405f;
 
     private const float TimerScale = 0.0016666667070239782f;
+
     private const float TimerRadians = 6.283180236816406f;
+
     // Sky::UpdateWind uses MULSS with 0x3B808081, not division by 255.
     private const float WeatherByteScale = 0.003921568859368563f;
     private const float FrequencyEpsilon = 1e-6f;
@@ -162,8 +164,8 @@ internal static class Fo4BendableSplineWind
         var speed = Math.Clamp(normalizedSpeed, 0f, 1f);
         var turbulence = Math.Clamp(normalizedTurbulence, 0f, 1f);
         var frequency = Lerp(LowestFrequency, HighestFrequency, turbulence);
-        var minimumSpeed = ((1f - turbulence) + turbulence * LowestSpeedLowMultiplier) * speed;
-        var maximumSpeed = ((1f - turbulence) + turbulence * HighestSpeedHighMultiplier) * speed;
+        var minimumSpeed = (1f - turbulence + turbulence * LowestSpeedLowMultiplier) * speed;
+        var maximumSpeed = (1f - turbulence + turbulence * HighestSpeedHighMultiplier) * speed;
         var packedTimer = PackTimer(animationSeconds);
         return new Fo4BendableSplineWindConstants(
             new Vector4(angle, flexibility, packedTimer, packedTimer),
@@ -194,13 +196,13 @@ internal static class Fo4BendableSplineWind
         var placementPhase = 0.001f *
                              (absolutePlacement.X + absolutePlacement.Y + absolutePlacement.Z);
         var spatial = placementPhase + MathF.PI *
-            (placementPhase * MathF.Sin((wind.W * 5f) * placementPhase) / (windEx.Z * 10f));
+            (placementPhase * MathF.Sin(wind.W * 5f * placementPhase) / (windEx.Z * 10f));
         var phase = (1f + wind.Y * alpha) * spatial -
                     40f * windEx.Z +
                     50f * windEx.Z * wind.W;
         var speedRange = windEx.Y - windEx.X;
         var amplitude = alpha *
-            (0.002f * speedRange * speedRange * MathF.Sin(phase) + 0.25f * windEx.X);
+                        (0.002f * speedRange * speedRange * MathF.Sin(phase) + 0.25f * windEx.X);
         if (!float.IsFinite(amplitude))
         {
             return worldPosition;
@@ -240,19 +242,35 @@ internal static class Fo4BendableSplineWind
     }
 
     // This is the deterministic weather center; retail additionally selects a random angle.
-    internal static float DirectionByteToRadians(byte value) => NormalizeByte(value) * MathF.Tau;
+    internal static float DirectionByteToRadians(byte value)
+    {
+        return NormalizeByte(value) * MathF.Tau;
+    }
 
-    internal static float DirectionRangeByteToDegrees(byte value) => NormalizeByte(value) * 180f;
+    internal static float DirectionRangeByteToDegrees(byte value)
+    {
+        return NormalizeByte(value) * 180f;
+    }
 
-    private static float NormalizeByte(byte value) => value * WeatherByteScale;
+    private static float NormalizeByte(byte value)
+    {
+        return value * WeatherByteScale;
+    }
 
     // Preserve the producer's separately rounded weighted terms rather than difference-form lerp.
-    private static float Lerp(float from, float to, float amount) => from * (1f - amount) + to * amount;
+    private static float Lerp(float from, float to, float amount)
+    {
+        return from * (1f - amount) + to * amount;
+    }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 
-    private static bool IsFinite(Vector4 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) &&
-        float.IsFinite(value.Z) && float.IsFinite(value.W);
+    private static bool IsFinite(Vector4 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) &&
+               float.IsFinite(value.Z) && float.IsFinite(value.W);
+    }
 }

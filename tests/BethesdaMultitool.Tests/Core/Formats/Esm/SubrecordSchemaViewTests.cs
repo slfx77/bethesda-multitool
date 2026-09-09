@@ -117,7 +117,7 @@ public class SubrecordSchemaViewTests
         Assert.Equal(250u, view.UInt32("Value"));
         var flags = view.Bytes("Flags");
         Assert.NotNull(flags);
-        Assert.Equal(0x02, flags![0]);
+        Assert.Equal(0x02, flags[0]);
     }
 
     [Fact]

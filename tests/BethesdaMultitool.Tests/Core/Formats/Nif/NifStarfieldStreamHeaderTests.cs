@@ -38,7 +38,7 @@ public class NifStarfieldStreamHeaderTests
         var info = NifParser.Parse(nif);
 
         Assert.NotNull(info);
-        Assert.Equal(StarfieldBsVersion, info!.BsVersion);
+        Assert.Equal(StarfieldBsVersion, info.BsVersion);
         Assert.Equal(StarfieldBlockTypes, info.BlockTypeNames);
         Assert.Equal(StarfieldBlockTypes.Length, info.BlockCount);
     }
@@ -59,7 +59,7 @@ public class NifStarfieldStreamHeaderTests
         var info = NifParser.Parse(nif);
 
         Assert.NotNull(info);
-        Assert.Equal(StarfieldBlockTypes, info!.BlockTypeNames);
+        Assert.Equal(StarfieldBlockTypes, info.BlockTypeNames);
     }
 
     /// <summary>
@@ -76,7 +76,7 @@ public class NifStarfieldStreamHeaderTests
         var info = NifParser.Parse(nif);
 
         Assert.NotNull(info);
-        Assert.Equal(bsVersion, info!.BsVersion);
+        Assert.Equal(bsVersion, info.BsVersion);
         Assert.Equal(["NiNode", "BSTriShape"], info.BlockTypeNames);
     }
 

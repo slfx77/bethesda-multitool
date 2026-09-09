@@ -20,7 +20,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Animation;
 public sealed class FnvRigidNodeAnimationRetailTests
 {
     private const string MeshesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+        @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa";
 
     private const string GoodspringsSignPath =
         @"meshes\architecture\goodsprings\nv_gs-saloon-sign.nif";
@@ -35,7 +35,7 @@ public sealed class FnvRigidNodeAnimationRetailTests
     {
         var bsaPath = SampleFileFixture.FindSamplePath(MeshesBsaRelative);
         Assert.SkipWhen(bsaPath is null, "FNV PC final meshes BSA not available");
-        using var archives = MeshArchiveSet.Open(bsaPath!, null, false);
+        using var archives = MeshArchiveSet.Open(bsaPath, null, false);
         Assert.True(
             archives.TryExtractFile(GoodspringsSignPath, out var data, out _),
             $"Retail NIF missing: {GoodspringsSignPath}");

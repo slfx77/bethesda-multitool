@@ -48,9 +48,10 @@ public sealed class NpcAppearanceAnalyzedIndexReuseTests(ITestOutputHelper outpu
             accessor,
             recordBytes.LongLength,
             [record],
-            bigEndian: false,
-            game: BethesdaGame.FalloutNewVegas,
-            timingSink: timings.Add);
+            false,
+            BethesdaGame.FalloutNewVegas,
+            timings.Add,
+            TestContext.Current.CancellationToken);
 
         var npc = Assert.Contains(NpcFormId, index.Npcs);
         Assert.Equal(BethesdaGame.FalloutNewVegas, index.Game);
@@ -62,7 +63,7 @@ public sealed class NpcAppearanceAnalyzedIndexReuseTests(ITestOutputHelper outpu
         Assert.Equal("appearance-record-decode", timing.Stage);
         Assert.Equal(1, timing.RecordsVisited);
         Assert.Equal(1, timing.RecordsDecoded);
-        Assert.Equal((long)record.DataSize, timing.BytesRead);
+        Assert.Equal(record.DataSize, timing.BytesRead);
         Assert.DoesNotContain(timings, stage => stage.Stage == "record-descriptor-rescan");
         var read = Assert.Single(accessor.Reads);
         Assert.Equal(24, read.Position);
@@ -92,8 +93,9 @@ public sealed class NpcAppearanceAnalyzedIndexReuseTests(ITestOutputHelper outpu
             accessor,
             recordBytes.LongLength,
             [invalidRecord],
-            bigEndian: false,
-            game: BethesdaGame.FalloutNewVegas);
+            false,
+            BethesdaGame.FalloutNewVegas,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Empty(index.Npcs);
         Assert.Equal(BethesdaGame.FalloutNewVegas, index.Game);
@@ -107,14 +109,15 @@ public sealed class NpcAppearanceAnalyzedIndexReuseTests(ITestOutputHelper outpu
         BucketBTestGuard.SkipUnlessEnabled();
         var esmPath = RealAssetPaths.Masters.Oblivion();
         Assert.SkipWhen(esmPath is null, RealAssetPaths.SkipMessage("Oblivion.esm"));
-        var esm = File.ReadAllBytes(esmPath!);
+        var esm = File.ReadAllBytes(esmPath);
 
         var descriptorTimer = Stopwatch.StartNew();
         var analyzed = EsmDescriptorScanner.Scan(esm).ScanResult;
         descriptorTimer.Stop();
 
         var legacyTimer = Stopwatch.StartNew();
-        var legacy = NpcAppearanceIndexBuilder.Build(esm, bigEndian: false);
+        var legacy = NpcAppearanceIndexBuilder.Build(esm, false,
+            cancellationToken: TestContext.Current.CancellationToken);
         legacyTimer.Stop();
 
         var mappedTimings = new List<NpcAppearanceIndexBuildTiming>();
@@ -123,9 +126,10 @@ public sealed class NpcAppearanceAnalyzedIndexReuseTests(ITestOutputHelper outpu
             new ByteArrayMemoryAccessor(esm),
             esm.LongLength,
             analyzed.MainRecords,
-            bigEndian: false,
-            game: analyzed.Game,
-            timingSink: mappedTimings.Add);
+            false,
+            analyzed.Game,
+            mappedTimings.Add,
+            TestContext.Current.CancellationToken);
         mappedTimer.Stop();
 
         Assert.Equal(legacy.Game, mapped.Game);

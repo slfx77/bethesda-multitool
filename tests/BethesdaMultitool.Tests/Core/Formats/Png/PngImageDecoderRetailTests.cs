@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Png;
 using BethesdaMultitool.Core.Formats.Travels.Dawnstar;
@@ -24,7 +20,21 @@ namespace BethesdaMultitool.Tests.Core.Formats.Png;
 [Trait("Category", BucketBTestGuard.Category)]
 public sealed class PngImageDecoderRetailTests
 {
+    /// <summary>
+    ///     ⚠ Dawnstar keeps only 3 images loose in the JAR; its real art — 43 PNGs — lives inside
+    ///     the <c>imgfiles.lmp</c> lump, and none of the 3 loose ones carries a tRNS chunk. A test
+    ///     that scanned loose members alone would silently cover 3 of 46 images for that game.
+    /// </summary>
+    private const string DawnstarImageLump = "imgfiles.lmp";
+
     private static readonly byte[] PngSignature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+
+    /// <summary>
+    ///     The bit depths the retail Travels art actually uses. PNG allows 1 as well for a
+    ///     palette image; no image in either J2ME game declares it, so accepting 1 here would
+    ///     widen the assertion past what was measured.
+    /// </summary>
+    private static readonly int[] PalettedBitDepths = [2, 4, 8];
 
     public static TheoryData<string> Jars()
     {
@@ -37,27 +47,26 @@ public sealed class PngImageDecoderRetailTests
         return data;
     }
 
-    private static string? JarPath(string game) => game switch
+    private static string? JarPath(string game)
     {
-        "Stormhold" => RealAssetPaths.Travels.StormholdJar(),
-        "Dawnstar" => RealAssetPaths.Travels.DawnstarJar(),
-        "OblivionMobile" => RealAssetPaths.Travels.OblivionMobileJar(),
-        _ => throw new ArgumentOutOfRangeException(nameof(game), game, "Unknown Travels JAR.")
-    };
+        return game switch
+        {
+            "Stormhold" => RealAssetPaths.Travels.StormholdJar(),
+            "Dawnstar" => RealAssetPaths.Travels.DawnstarJar(),
+            "OblivionMobile" => RealAssetPaths.Travels.OblivionMobileJar(),
+            _ => throw new ArgumentOutOfRangeException(nameof(game), game, "Unknown Travels JAR.")
+        };
+    }
 
-    /// <summary>
-    ///     ⚠ Dawnstar keeps only 3 images loose in the JAR; its real art — 43 PNGs — lives inside
-    ///     the <c>imgfiles.lmp</c> lump, and none of the 3 loose ones carries a tRNS chunk. A test
-    ///     that scanned loose members alone would silently cover 3 of 46 images for that game.
-    /// </summary>
-    private const string DawnstarImageLump = "imgfiles.lmp";
-
-    private static int ExpectedPngCount(string game) => game switch
+    private static int ExpectedPngCount(string game)
     {
-        "Stormhold" => 16,
-        "Dawnstar" => 3 + 43,
-        _ => 26
-    };
+        return game switch
+        {
+            "Stormhold" => 16,
+            "Dawnstar" => 3 + 43,
+            _ => 26
+        };
+    }
 
     /// <summary>
     ///     Every PNG one game ships, as (entry name, bytes) — loose JAR members plus, for
@@ -66,9 +75,9 @@ public sealed class PngImageDecoderRetailTests
     private static List<(string Name, byte[] Bytes)> AllPngs(string game)
     {
         var jar = JarPath(game);
-        Assert.SkipWhen(jar is null, $"The {game} JAR is not staged under Sample/Full_Builds.");
+        Assert.SkipWhen(jar is null, $"The {game} JAR is not staged under Sample/Builds.");
 
-        using var reader = ArchiveReader.Open(jar!);
+        using var reader = ArchiveReader.Open(jar);
         var result = new List<(string, byte[])>();
         foreach (var path in reader.EnumerateFilePaths().OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
@@ -103,15 +112,10 @@ public sealed class PngImageDecoderRetailTests
         return result;
     }
 
-    private static bool IsPng(byte[] bytes) =>
-        bytes.Length >= 8 && bytes.AsSpan(0, 8).SequenceEqual(PngSignature);
-
-    /// <summary>
-    ///     The bit depths the retail Travels art actually uses. PNG allows 1 as well for a
-    ///     palette image; no image in either J2ME game declares it, so accepting 1 here would
-    ///     widen the assertion past what was measured.
-    /// </summary>
-    private static readonly int[] PalettedBitDepths = [2, 4, 8];
+    private static bool IsPng(byte[] bytes)
+    {
+        return bytes.Length >= 8 && bytes.AsSpan(0, 8).SequenceEqual(PngSignature);
+    }
 
     /// <summary>
     ///     Reads the header, failing the test by name if it does not parse. Every call site wants
@@ -122,7 +126,7 @@ public sealed class PngImageDecoderRetailTests
     {
         var info = PngImageDecoder.ReadInfo(bytes);
         Assert.True(info.HasValue, $"{game}/{name}: IHDR did not parse.");
-        return info!.Value;
+        return info.Value;
     }
 
     /// <summary>The PNG census, pinned exactly.</summary>

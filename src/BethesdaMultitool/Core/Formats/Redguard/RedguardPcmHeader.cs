@@ -14,7 +14,13 @@ namespace BethesdaMultitool.Core.Formats.Redguard;
 ///         conventions, so the samples go into a WAV verbatim. Retail rates are 11,025 and 22,050.
 ///     </para>
 /// </summary>
-internal readonly record struct RedguardPcmHeader(int Format, int BitsPerSample, int SampleRate, byte Volume, byte Flags, int ByteLength)
+internal readonly record struct RedguardPcmHeader(
+    int Format,
+    int BitsPerSample,
+    int SampleRate,
+    byte Volume,
+    byte Flags,
+    int ByteLength)
 {
     /// <summary>Bytes in the header, before its samples.</summary>
     public const int Length = 27;
@@ -42,7 +48,8 @@ internal readonly record struct RedguardPcmHeader(int Format, int BitsPerSample,
     {
         if (bytes.Length < Length)
         {
-            throw new InvalidDataException($"{context}: {bytes.Length} bytes is shorter than the {Length}-byte sound header.");
+            throw new InvalidDataException(
+                $"{context}: {bytes.Length} bytes is shorter than the {Length}-byte sound header.");
         }
 
         var depthFlag = BinaryPrimitives.ReadUInt32LittleEndian(bytes[DepthFlagOffset..]);

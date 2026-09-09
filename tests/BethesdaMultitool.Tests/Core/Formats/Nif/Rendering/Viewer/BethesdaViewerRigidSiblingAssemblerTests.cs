@@ -23,7 +23,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             out var targetNodeName);
 
         Assert.True(resolved);
-        Assert.Equal(expectedSiblingPath, siblingPath, ignoreCase: true);
+        Assert.Equal(expectedSiblingPath, siblingPath, true);
         Assert.Equal("Bip01 Head", targetNodeName);
     }
 
@@ -146,7 +146,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             Matrix4x4.Identity,
             GlbNodeKind.Skeleton,
             "Bip01 Head",
-            sourceBlockIndex: null);
+            null);
         var sibling = BuildRigidHeadSibling("Bip01 Head");
         var originalNodeCount = host.Nodes.Count;
         var originalPart = Assert.Single(host.MeshParts);
@@ -212,7 +212,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             Matrix4x4.Identity,
             GlbNodeKind.Attachment,
             "Unrelated",
-            sourceBlockIndex: 99);
+            99);
         sibling.MeshParts.Add(new GlbMeshPart
         {
             Name = "Unrelated",
@@ -253,7 +253,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             Matrix4x4.Identity,
             GlbNodeKind.Skeleton,
             "SecondHeadRoot",
-            sourceBlockIndex: 3);
+            3);
         var secondShape = sibling.AddNode(
             "Second Head Shape",
             secondRoot,
@@ -261,7 +261,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             Matrix4x4.Identity,
             GlbNodeKind.Attachment,
             "SecondHeadShape",
-            sourceBlockIndex: 4);
+            4);
         sibling.MeshParts.Add(new GlbMeshPart
         {
             Name = "SecondHeadShape",
@@ -297,7 +297,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             neckLocal,
             GlbNodeKind.Skeleton,
             "Bip01 Neck",
-            sourceBlockIndex: null);
+            null);
         var headLocal = Matrix4x4.CreateTranslation(0f, 5f, 0f);
         var headWorld = headLocal * neckLocal;
         var head = scene.AddNode(
@@ -307,7 +307,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             headWorld,
             GlbNodeKind.Skeleton,
             "Bip01 Head",
-            sourceBlockIndex: null);
+            null);
         scene.MeshParts.Add(new GlbMeshPart
         {
             Name = "BearBody",
@@ -336,7 +336,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             siblingAnchorLocal,
             GlbNodeKind.Skeleton,
             anchorLookupName,
-            sourceBlockIndex: 1);
+            1);
         var shapeLocal = Matrix4x4.CreateTranslation(0f, 0f, 2f);
         var shape = scene.AddNode(
             "BearHeadShape",
@@ -345,7 +345,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             shapeLocal * siblingAnchorLocal,
             GlbNodeKind.Attachment,
             "BearHead",
-            sourceBlockIndex: 2);
+            2);
         scene.MeshParts.Add(new GlbMeshPart
         {
             Name = "BearHead",
@@ -366,7 +366,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             rootLocal,
             GlbNodeKind.Skeleton,
             "BearHead",
-            sourceBlockIndex: 1);
+            1);
         var shapeLocal = Matrix4x4.CreateScale(2f) * Matrix4x4.CreateTranslation(0f, 0f, 4f);
         var shape = scene.AddNode(
             "BearHead:0",
@@ -375,7 +375,7 @@ public sealed class BethesdaViewerRigidSiblingAssemblerTests
             shapeLocal * rootLocal,
             GlbNodeKind.Attachment,
             "BearHead:0",
-            sourceBlockIndex: 2);
+            2);
         scene.MeshParts.Add(new GlbMeshPart
         {
             Name = "BearHead:0",

@@ -118,9 +118,12 @@ internal static class DialogGrupBuilder
         IReadOnlySet<uint>? liveScriptVariableOwnerFormIds = null)
     {
         masterDialogueIndex ??= MasterDialogueIndex.BuildFromRecordOrder(masterRecordsByFormId.Values);
+        var masterFormIdSet = masterFormIds as HashSet<uint> ?? new HashSet<uint>(masterFormIds);
+        var additionalValidFormIdSet = additionalValidFormIds as IReadOnlyCollection<uint>
+                                       ?? additionalValidFormIds?.ToArray();
         var combinePlan = DialogueCombinePlanner.Build(
-            topics, infos, classifier, masterDialogueIndex, masterFormIds,
-            additionalValidFormIds, remapTable);
+            topics, infos, classifier, masterDialogueIndex, masterFormIdSet,
+            additionalValidFormIdSet, remapTable);
         ReportIdentityTelemetry(combinePlan.TopicIdentities, sink);
         var newTopics = combinePlan.NewTopics.ToList();
         var newInfos = combinePlan.NewInfos.ToList();
@@ -200,8 +203,6 @@ internal static class DialogGrupBuilder
         {
             newInfos.AddRange(synthesizedGreetings);
         }
-
-        var masterFormIdSet = masterFormIds as HashSet<uint> ?? new HashSet<uint>(masterFormIds);
 
         // Group new INFOs by their EMITTED parent DIAL FormID. INFOs whose TPIC points at
         // a master DIAL are grouped under that master FormID and emitted after a reconstructed
@@ -321,9 +322,9 @@ internal static class DialogGrupBuilder
             validFormIds.Add(newInfoId);
         }
 
-        if (additionalValidFormIds is not null)
+        if (additionalValidFormIdSet is not null)
         {
-            foreach (var fid in additionalValidFormIds)
+            foreach (var fid in additionalValidFormIdSet)
             {
                 validFormIds.Add(fid);
             }

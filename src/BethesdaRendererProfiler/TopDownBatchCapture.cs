@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.WorldData;
+using Microsoft.UI.Xaml;
 
 namespace BethesdaRendererProfiler;
 
@@ -25,14 +26,96 @@ internal sealed class TopDownBatchCapture(
     WorldView3DControl worldView,
     RendererProfilerOptions options)
 {
-    private static readonly Logger Log = Logger.Instance;
-
     /// <summary>
     ///     Pause between convergence attempts. The render itself is synchronous on the UI thread;
     ///     this yields long enough for decode/upload workers to make progress before the next pass
     ///     re-reads their state.
     /// </summary>
     private const int AttemptDelayMilliseconds = 200;
+
+    /// <summary>
+    ///     Fraction of the image's long edge the drawn content should span after auto-fit. Short of
+    ///     1.0 so nothing sits flush against the border.
+    /// </summary>
+    private const float TargetFillFraction = 0.92f;
+
+    /// <summary>
+    ///     A subject renders iff it holds at least one NON-PERSISTENT ref (terrain-bearing
+    ///     exteriors are exempt). USER RULING: capture residency is the test, not mesh taxonomy —
+    ///     persistent refs (doors, activators) exist for every cell in the file whether or not it
+    ///     was ever resident, while non-persistent refs exist only because the cell was loaded at
+    ///     capture time.
+    /// </summary>
+    private const int MinNonPersistentPlacements = 1;
+
+    /// <summary>
+    ///     Maximum auto-fit iterations per subject. Each costs a full settle, so this is a budget,
+    ///     not a convergence target; a well-framed subject exits for free the moment
+    ///     <see cref="TryAutoFit" /> declines to move the frame. The budget must cover the worst
+    ///     realistic case — clipped on two edges — which spends passes on compounded
+    ///     <see cref="ClippedGrowthStep" /> growth before the shrink-to-target pass can even run.
+    /// </summary>
+    private const int MaxRefitPasses = 4;
+
+    /// <summary>
+    ///     Minimum box growth applied when content is clipped at the image border. A clipped frame's
+    ///     measured fill saturates just below 1.0 however much is actually outside, so the
+    ///     proportional correction alone converges far too slowly to recover within the pass budget.
+    /// </summary>
+    private const float ClippedGrowthStep = 1.35f;
+
+    /// <summary>
+    ///     Fraction of drawn pixels the auto-fit box may discard from each edge.
+    ///     <para>
+    ///         A strict min/max box is at the mercy of a single outlier. Cells routinely contain one
+    ///         stray reference sitting far outside the room — a lone door panel below Benny's floor
+    ///         pushed the box down until the actual suite occupied the top 30% of a 2048² image.
+    ///         Trimming a thin tail off each edge frames what is actually there.
+    ///     </para>
+    /// </summary>
+    private const float OutlierTrimFraction = 0.005f;
+
+    /// <summary>
+    ///     Minimum drawn pixels in an edge row/column for it to count as clipped, as a fraction of
+    ///     the perpendicular image dimension. 2% of a 2000-px edge is 40 px — well above any orphan
+    ///     blob, well below a wall face running off the frame.
+    /// </summary>
+    private const float EdgeClipFraction = 0.02f;
+
+    /// <summary>Absolute floor for the edge-clip test, for very small renders.</summary>
+    private const float EdgeClipMinPixels = 24f;
+
+    /// <summary>Transparent border kept around the content by the save-time trim, in pixels.</summary>
+    private const int TrimMarginPixels = 16;
+
+    /// <summary>Manifest column header — shared by fresh writes and partial-run merges.</summary>
+    private const string ManifestHeader =
+        "file,kind,name,formid,cells,placements,width_px,height_px," +
+        "world_min_x,world_max_x,world_min_y,world_max_y," +
+        "settled,coverage,ref_drawn,ref_instances,attempts,seconds,angle";
+
+    private static readonly Logger Log = Logger.Instance;
+
+    /// <summary>
+    ///     The four-corner angle set: camera positions at the NE/SE/SW/NW compass corners, each
+    ///     looking back at the subject. Yaw here is the camera's azimuth, so 30° puts the camera
+    ///     north-east of the subject. Offset from the exact 45° corners by the trimetric asymmetry
+    ///     (see <see cref="TrimetricViewProjBuilder.YawDegrees" />), and 90° apart so together the
+    ///     four views see every facade.
+    /// </summary>
+    private static readonly (float Yaw, string Name)[] FourCompassAngles =
+    [
+        (TrimetricViewProjBuilder.YawDegrees, "ne"),
+        (TrimetricViewProjBuilder.YawDegrees + 90f, "se"),
+        (TrimetricViewProjBuilder.YawDegrees + 180f, "sw"),
+        (TrimetricViewProjBuilder.YawDegrees + 270f, "nw")
+    ];
+
+    /// <summary>Single-angle set: the primary NE view, with no filename suffix.</summary>
+    private static readonly (float Yaw, string Name)[] PrimaryAngleOnly =
+    [
+        (TrimetricViewProjBuilder.YawDegrees, "")
+    ];
 
     /// <summary>
     ///     Renders every subject and returns the run summary. Never throws for a single subject's
@@ -57,14 +140,14 @@ internal sealed class TopDownBatchCapture(
 
         // Collapse the live view so its render loop idles and does not share the command recorder
         // with the offscreen passes — the same thing the single-shot capture does.
-        worldView.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+        worldView.Visibility = Visibility.Collapsed;
         // Lift the control's default final-dimension cap, which is sized for the 2D map's
         // continuously re-rendering overlay. A one-shot capture at a fixed world-units-per-pixel
         // scale legitimately needs more, and the cap silently rescaled every large subject.
         worldView.TopDownMaxFinalDimension = Math.Max(options.CaptureBatchMaxPixels, 64);
         await Task.Delay(800, ct);
 
-        IReadOnlyList<TopDownCaptureSubject> subjects = worldView.Profiler_EnumerateTopDownSubjects();
+        var subjects = worldView.Profiler_EnumerateTopDownSubjects();
         if (!string.IsNullOrEmpty(options.CaptureBatchFilter))
         {
             // Comma-separated substrings, OR-combined, so a verification run can name several
@@ -177,14 +260,15 @@ internal sealed class TopDownBatchCapture(
 
                 try
                 {
-                    var outcome = await CaptureSubjectAsync(provider!, subject, path, yaw, angleName, ct);
+                    var outcome = await CaptureSubjectAsync(provider, subject, path, yaw, angleName, ct);
                     if (outcome is { Empty: true } && subjectDrew)
                     {
                         // A sibling angle already drew this subject, so "nothing drew" is a
                         // transient streaming/cull flake, not a verdict. One full re-capture gets a
                         // fresh settle budget and has always recovered in practice.
-                        Console.WriteLine($"[Batch] retry: {subject.Name} [{angleName}] drew nothing but a sibling angle drew content");
-                        outcome = await CaptureSubjectAsync(provider!, subject, path, yaw, angleName, ct);
+                        Console.WriteLine(
+                            $"[Batch] retry: {subject.Name} [{angleName}] drew nothing but a sibling angle drew content");
+                        outcome = await CaptureSubjectAsync(provider, subject, path, yaw, angleName, ct);
                     }
 
                     if (outcome is null)
@@ -199,7 +283,8 @@ internal sealed class TopDownBatchCapture(
                         if (subjectDrew)
                         {
                             failed++;
-                            Console.WriteLine($"[Batch] FAILED: {subject.Name} [{angleName}] (drew nothing twice despite sibling angles drawing)");
+                            Console.WriteLine(
+                                $"[Batch] FAILED: {subject.Name} [{angleName}] (drew nothing twice despite sibling angles drawing)");
                             continue;
                         }
 
@@ -239,7 +324,8 @@ internal sealed class TopDownBatchCapture(
                 {
                     failed++;
                     Log.Error("Batch capture '{0}' [{1}] failed: {2}", subject.Name, angleName, ex);
-                    Console.WriteLine($"[Batch] FAILED: {subject.Name} [{angleName}]: {ex.GetType().Name}: {ex.Message}");
+                    Console.WriteLine(
+                        $"[Batch] FAILED: {subject.Name} [{angleName}]: {ex.GetType().Name}: {ex.Message}");
                 }
             }
         }
@@ -326,58 +412,6 @@ internal sealed class TopDownBatchCapture(
         Console.WriteLine(summary);
         return new TopDownBatchResult(written, skipped, unsettled, failed, null);
     }
-
-    /// <summary>
-    ///     The four-corner angle set: camera positions at the NE/SE/SW/NW compass corners, each
-    ///     looking back at the subject. Yaw here is the camera's azimuth, so 30° puts the camera
-    ///     north-east of the subject. Offset from the exact 45° corners by the trimetric asymmetry
-    ///     (see <see cref="TrimetricViewProjBuilder.YawDegrees" />), and 90° apart so together the
-    ///     four views see every facade.
-    /// </summary>
-    private static readonly (float Yaw, string Name)[] FourCompassAngles =
-    [
-        (TrimetricViewProjBuilder.YawDegrees, "ne"),
-        (TrimetricViewProjBuilder.YawDegrees + 90f, "se"),
-        (TrimetricViewProjBuilder.YawDegrees + 180f, "sw"),
-        (TrimetricViewProjBuilder.YawDegrees + 270f, "nw")
-    ];
-
-    /// <summary>Single-angle set: the primary NE view, with no filename suffix.</summary>
-    private static readonly (float Yaw, string Name)[] PrimaryAngleOnly =
-    [
-        (TrimetricViewProjBuilder.YawDegrees, "")
-    ];
-
-    /// <summary>
-    ///     Fraction of the image's long edge the drawn content should span after auto-fit. Short of
-    ///     1.0 so nothing sits flush against the border.
-    /// </summary>
-    private const float TargetFillFraction = 0.92f;
-
-    /// <summary>
-    ///     A subject renders iff it holds at least one NON-PERSISTENT ref (terrain-bearing
-    ///     exteriors are exempt). USER RULING: capture residency is the test, not mesh taxonomy —
-    ///     persistent refs (doors, activators) exist for every cell in the file whether or not it
-    ///     was ever resident, while non-persistent refs exist only because the cell was loaded at
-    ///     capture time.
-    /// </summary>
-    private const int MinNonPersistentPlacements = 1;
-
-    /// <summary>
-    ///     Maximum auto-fit iterations per subject. Each costs a full settle, so this is a budget,
-    ///     not a convergence target; a well-framed subject exits for free the moment
-    ///     <see cref="TryAutoFit" /> declines to move the frame. The budget must cover the worst
-    ///     realistic case — clipped on two edges — which spends passes on compounded
-    ///     <see cref="ClippedGrowthStep" /> growth before the shrink-to-target pass can even run.
-    /// </summary>
-    private const int MaxRefitPasses = 4;
-
-    /// <summary>
-    ///     Minimum box growth applied when content is clipped at the image border. A clipped frame's
-    ///     measured fill saturates just below 1.0 however much is actually outside, so the
-    ///     proportional correction alone converges far too slowly to recover within the pass budget.
-    /// </summary>
-    private const float ClippedGrowthStep = 1.35f;
 
     /// <summary>
     ///     Renders one subject, auto-fits the framing to what was actually drawn, and saves the PNG.
@@ -474,7 +508,6 @@ internal sealed class TopDownBatchCapture(
             }
 
             render = second.Render;
-            coverage = Coverage(render.Bgra);
         }
 
         // Save-time trim: the auto-fit frames with deliberate padding and a target-fill tolerance,
@@ -566,27 +599,6 @@ internal sealed class TopDownBatchCapture(
     }
 
     /// <summary>
-    ///     Fraction of drawn pixels the auto-fit box may discard from each edge.
-    ///     <para>
-    ///         A strict min/max box is at the mercy of a single outlier. Cells routinely contain one
-    ///         stray reference sitting far outside the room — a lone door panel below Benny's floor
-    ///         pushed the box down until the actual suite occupied the top 30% of a 2048² image.
-    ///         Trimming a thin tail off each edge frames what is actually there.
-    ///     </para>
-    /// </summary>
-    private const float OutlierTrimFraction = 0.005f;
-
-    /// <summary>
-    ///     Minimum drawn pixels in an edge row/column for it to count as clipped, as a fraction of
-    ///     the perpendicular image dimension. 2% of a 2000-px edge is 40 px — well above any orphan
-    ///     blob, well below a wall face running off the frame.
-    /// </summary>
-    private const float EdgeClipFraction = 0.02f;
-
-    /// <summary>Absolute floor for the edge-clip test, for very small renders.</summary>
-    private const float EdgeClipMinPixels = 24f;
-
-    /// <summary>
     ///     Whether <paramref name="candidate" /> frames the subject better than <paramref name="current" />.
     ///     <para>
     ///         Ranked on CLIPPING first, not on coverage. Coverage is the wrong yardstick and was
@@ -664,15 +676,6 @@ internal sealed class TopDownBatchCapture(
 
         return (minX, minY, maxX, maxY, clippedEdges);
     }
-
-    /// <summary>Transparent border kept around the content by the save-time trim, in pixels.</summary>
-    private const int TrimMarginPixels = 16;
-
-    /// <summary>Manifest column header — shared by fresh writes and partial-run merges.</summary>
-    private const string ManifestHeader =
-        "file,kind,name,formid,cells,placements,width_px,height_px," +
-        "world_min_x,world_max_x,world_min_y,world_max_y," +
-        "settled,coverage,ref_drawn,ref_instances,attempts,seconds,angle";
 
     /// <summary>Extracts the <paramref name="index" />th field of a CSV row, quote-aware.</summary>
     private static string CsvField(string line, int index)
@@ -882,26 +885,26 @@ internal sealed class TopDownBatchCapture(
             var pass = await provider.RenderTopDownAsync(
                 subject.MinX, subject.MaxX, subject.MinY, subject.MaxY,
                 pxW, pxH,
-                showDisabled: true,
+                true,
                 // Driven by the subject's own water flag. Outdoors that is always true; indoors it
                 // is the CELL's water bit, so only cells that actually declared water (flooded
                 // vaults, sewers) get a plane. Rendering one unconditionally laid an opaque sheet
                 // over every interior floor plan the ceiling clip had just exposed.
-                showWater: subject.HasWater,
+                subject.HasWater,
                 worldspaceFormId,
                 [],
                 // Full-bright by default: these are inventory documents, and directional shading
                 // fights legibility — interiors have no sun and half of every exterior mesh faces
                 // away from a fixed noon light. --capture-batch-lit restores the lit path.
-                enableLighting: !options.CaptureBatchFullBright,
-                gameHour: 12f,
+                !options.CaptureBatchFullBright,
+                12f,
                 interiorFormId,
                 // Self-contained image: nothing composites underneath these PNGs, so terrain has to
                 // be drawn in colour rather than depth-only.
-                includeTerrainColor: true,
+                true,
                 options.CaptureBatchProjection,
-                contentWorldZ: (subject.MinZ, subject.MaxZ),
-                trimetricYawDegrees: yawDegrees,
+                (subject.MinZ, subject.MaxZ),
+                yawDegrees,
                 ct);
 
             if (pass is null)
@@ -963,18 +966,22 @@ internal sealed class TopDownBatchCapture(
         return (Math.Max(pxW, 16), Math.Max(pxH, 16));
     }
 
-    private string Prefix() =>
-        string.IsNullOrEmpty(options.CaptureNamePrefix) ? "" : options.CaptureNamePrefix + "_";
+    private string Prefix()
+    {
+        return string.IsNullOrEmpty(options.CaptureNamePrefix) ? "" : options.CaptureNamePrefix + "_";
+    }
 
     /// <summary>
     ///     Output filename for one subject at one angle. The single-angle set uses an empty angle
     ///     name, keeping the un-suffixed filenames earlier corpus runs produced so
     ///     <c>--capture-batch-resume</c> still recognises them.
     /// </summary>
-    private string BuildFileName(TopDownCaptureSubject subject, string angleName) =>
-        angleName.Length == 0
+    private string BuildFileName(TopDownCaptureSubject subject, string angleName)
+    {
+        return angleName.Length == 0
             ? $"{Prefix()}{SanitizeFileNameComponent(subject.Name)}.png"
             : $"{Prefix()}{SanitizeFileNameComponent(subject.Name)}_{angleName}.png";
+    }
 
     /// <summary>
     ///     Makes an EditorID safe as a filename component. EditorIDs are authored strings and a few
@@ -994,8 +1001,10 @@ internal sealed class TopDownBatchCapture(
         return sb.ToString();
     }
 
-    private static string Csv(string value) =>
-        value.Contains(',', StringComparison.Ordinal) ? $"\"{value}\"" : value;
+    private static string Csv(string value)
+    {
+        return value.Contains(',', StringComparison.Ordinal) ? $"\"{value}\"" : value;
+    }
 
     private static double Coverage(byte[] bgra)
     {
@@ -1029,7 +1038,10 @@ internal sealed class TopDownBatchCapture(
     ///     nothing at all — no PNG and no manifest row, but the subject is still accounted for.
     /// </summary>
     private sealed record SubjectOutcome(
-        bool Settled, string ManifestRow, string ConsoleLine, bool Empty = false)
+        bool Settled,
+        string ManifestRow,
+        string ConsoleLine,
+        bool Empty = false)
     {
         internal static SubjectOutcome EmptySubject { get; } = new(true, "", "", true);
     }

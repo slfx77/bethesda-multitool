@@ -144,7 +144,7 @@ public sealed class StarfieldCloudFormProjectorTests
     [Fact]
     public void Decode_RejectsDiffAndMissingOutOfLineList()
     {
-        var diff = BuildCloudFormStream(objectChunk: "DIFF");
+        var diff = BuildCloudFormStream("DIFF");
 
         Assert.False(StarfieldCloudFormDecoder.TryDecode(
             diff, out var diffDefinition, out var diffError));
@@ -289,10 +289,23 @@ public sealed class StarfieldCloudFormProjectorTests
                 (BethesdaReflectionValue)new BethesdaReflectionObjectValue(value)).ToArray()));
     }
 
-    private static BethesdaReflectionReferenceValue Reference(uint value) =>
-        new("UInt32", new BethesdaReflectionUnsignedValue(value));
+    private static BethesdaReflectionReferenceValue Reference(uint value)
+    {
+        return new BethesdaReflectionReferenceValue("UInt32", new BethesdaReflectionUnsignedValue(value));
+    }
 
-    private static BethesdaReflectionStringValue S(string value) => new(value);
-    private static BethesdaReflectionFloatValue F(double value) => new(value);
-    private static BethesdaReflectionUnsignedValue U(ulong value) => new(value);
+    private static BethesdaReflectionStringValue S(string value)
+    {
+        return new BethesdaReflectionStringValue(value);
+    }
+
+    private static BethesdaReflectionFloatValue F(double value)
+    {
+        return new BethesdaReflectionFloatValue(value);
+    }
+
+    private static BethesdaReflectionUnsignedValue U(ulong value)
+    {
+        return new BethesdaReflectionUnsignedValue(value);
+    }
 }

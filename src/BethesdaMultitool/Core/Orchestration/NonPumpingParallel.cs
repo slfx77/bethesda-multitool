@@ -99,6 +99,7 @@ internal static class NonPumpingParallel
         }
 
         var cursor = -1;
+
         void Drain()
         {
             while (true)

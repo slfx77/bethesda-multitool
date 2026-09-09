@@ -133,7 +133,7 @@ public sealed class SkyMoonProfileTests
             .HalfSizeFractionFromGmst(size, unrelatedSunRadius);
 
         Assert.NotNull(fraction);
-        Assert.Equal(expected, fraction!.Value, 7);
+        Assert.Equal(expected, fraction.Value, 7);
     }
 
     [Theory]
@@ -144,7 +144,7 @@ public sealed class SkyMoonProfileTests
         var fraction = SkyMoonProfile.ForGame(game).HalfSizeFractionFromGmst(75, 600f);
 
         Assert.NotNull(fraction);
-        Assert.Equal(0.125f, fraction!.Value, 7);
+        Assert.Equal(0.125f, fraction.Value, 7);
     }
 
     [Theory]

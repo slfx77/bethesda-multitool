@@ -74,17 +74,21 @@ public sealed class WorldMapOverlayBuilderStarfieldCelestialDataTests
         Assert.Same(sun, world.SunPresetsByFormId[sun.FormId]);
     }
 
-    private static StarfieldStarDataRecord Star(uint formId, uint systemId) =>
-        new()
+    private static StarfieldStarDataRecord Star(uint formId, uint systemId)
+    {
+        return new StarfieldStarDataRecord
         {
             FormId = formId,
             Routing = new StarfieldStarDataRouting { SystemId = systemId }
         };
+    }
 
-    private static StarfieldSunPresetRecord Sun(uint formId, string editorId) =>
-        new()
+    private static StarfieldSunPresetRecord Sun(uint formId, string editorId)
+    {
+        return new StarfieldSunPresetRecord
         {
             FormId = formId,
             EditorId = editorId
         };
+    }
 }

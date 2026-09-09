@@ -20,12 +20,12 @@ public sealed class NpcMaterialAdapterParityTests
         var exportSubmesh = CreateBaseHeadTriangle();
 
         NpcBaseHeadGeometryPolicy.PrepareForMaterial(
-            [cpuSubmesh], positionsWereMorphed: true, deferTangentRebuildToMaterialResolver: true);
+            [cpuSubmesh], true, true);
         NpcBaseHeadGeometryPolicy.PrepareForMaterial(
-            [exportSubmesh], positionsWereMorphed: true, deferTangentRebuildToMaterialResolver: true);
+            [exportSubmesh], true, true);
 
-        Assert.Equal<float>(cpuSubmesh.Normals!, exportSubmesh.Normals!);
-        Assert.Equal<float>([0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f], cpuSubmesh.Normals!);
+        Assert.Equal(cpuSubmesh.Normals!, exportSubmesh.Normals!);
+        Assert.Equal([0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f], cpuSubmesh.Normals!);
         Assert.Null(cpuSubmesh.Tangents);
         Assert.Null(exportSubmesh.Tangents);
         Assert.Null(cpuSubmesh.Bitangents);
@@ -42,8 +42,8 @@ public sealed class NpcMaterialAdapterParityTests
 
         Assert.Equal(cpuSubmesh.DiffuseTexturePath, exportSubmesh.DiffuseTexturePath);
         Assert.Equal(cpuSubmesh.NormalMapTexturePath, exportSubmesh.NormalMapTexturePath);
-        Assert.Equal<float>(cpuSubmesh.Tangents!, exportSubmesh.Tangents!);
-        Assert.Equal<float>(cpuSubmesh.Bitangents!, exportSubmesh.Bitangents!);
+        Assert.Equal(cpuSubmesh.Tangents!, exportSubmesh.Tangents!);
+        Assert.Equal(cpuSubmesh.Bitangents!, exportSubmesh.Bitangents!);
         Assert.True(cpuSubmesh.IsFaceGen);
         Assert.True(exportSubmesh.IsFaceGen);
     }
@@ -56,8 +56,8 @@ public sealed class NpcMaterialAdapterParityTests
 
         NpcBaseHeadGeometryPolicy.PrepareForMaterial(
             [submesh],
-            positionsWereMorphed: true,
-            deferTangentRebuildToMaterialResolver: false);
+            true,
+            false);
 
         Assert.Equal(@"textures\actors\character\facegendata\facetint\head_n.dds",
             submesh.NormalMapTexturePath);
@@ -102,7 +102,7 @@ public sealed class NpcMaterialAdapterParityTests
     [Fact]
     public void OblivionHairPolicyMarksClassicMaterialAndKeepsNormalRelief()
     {
-        var submesh = CreateBaseHeadTriangle(withSpecularMaterial: true);
+        var submesh = CreateBaseHeadTriangle(true);
         var model = new NifRenderableModel();
         model.Submeshes.Add(submesh);
 
@@ -136,9 +136,9 @@ public sealed class NpcMaterialAdapterParityTests
         NpcHairSubmeshPolicy.Apply(
             model,
             BethesdaGame.Skyrim,
-            tint: null,
+            null,
             textureResolver,
-            diffuseTexturePath: null);
+            null);
 
         Assert.Single(model.Submeshes);
         Assert.Null(submesh.TintColor);

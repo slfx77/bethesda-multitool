@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Threading;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Orchestration;
 
@@ -26,7 +25,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 ///         the executable alone; it changes the stochastic realization, not the authored spectrum.
 ///     </para>
 /// </remarks>
-internal static class OblivionWaterSurfaceSynthesizer
+internal static partial class OblivionWaterSurfaceSynthesizer
 {
     // Oblivion_default.ini [Water]. The application targets the installed retail profile recorded
     // in RendererInfo.txt ("Water high res : yes"); callers can select low resolution for a
@@ -71,21 +70,30 @@ internal static class OblivionWaterSurfaceSynthesizer
     ///     but do not mutate them, so retaining one 8 MiB sequence avoids rebuilding 32 FFTs on each
     ///     worldspace load.
     /// </summary>
-    public static byte[][] GenerateFrames() => GenerateFrames(DefaultSettings);
+    public static byte[][] GenerateFrames()
+    {
+        return GenerateFrames(DefaultSettings);
+    }
 
     /// <summary>
     ///     Generates (or retrieves) the sequence for the active TES4 WATR. FUN_00499570 copies
     ///     these four DATA fields into the HMAP globals and rebuilds the spectrum when any changes;
     ///     constructor defaults apply only when no water material is available.
     /// </summary>
-    public static byte[][] GenerateFrames(WaterSurfaceParams? surface) =>
-        GenerateFrames(surface, DefaultUseHighResolution);
+    public static byte[][] GenerateFrames(WaterSurfaceParams? surface)
+    {
+        return GenerateFrames(surface, DefaultUseHighResolution);
+    }
 
-    internal static byte[][] GenerateFrames(WaterSurfaceParams? surface, bool useHighResolution) =>
-        GenerateFrames(ResolveSettings(surface, useHighResolution));
+    internal static byte[][] GenerateFrames(WaterSurfaceParams? surface, bool useHighResolution)
+    {
+        return GenerateFrames(ResolveSettings(surface, useHighResolution));
+    }
 
-    internal static string GetSettingsKey(WaterSurfaceParams? surface) =>
-        GetSettingsKey(surface, DefaultUseHighResolution);
+    internal static string GetSettingsKey(WaterSurfaceParams? surface)
+    {
+        return GetSettingsKey(surface, DefaultUseHighResolution);
+    }
 
     internal static string GetSettingsKey(WaterSurfaceParams? surface, bool useHighResolution)
     {
@@ -97,8 +105,10 @@ internal static class OblivionWaterSurfaceSynthesizer
                $"{BitConverter.SingleToUInt32Bits(settings.WaveFrequency):X8}";
     }
 
-    internal static int GetTextureSize(bool useHighResolution) =>
-        useHighResolution ? HighResolutionTextureSize : LowResolutionTextureSize;
+    internal static int GetTextureSize(bool useHighResolution)
+    {
+        return useHighResolution ? HighResolutionTextureSize : LowResolutionTextureSize;
+    }
 
     internal static byte[] GenerateFrame(int frame)
     {
@@ -147,7 +157,7 @@ internal static class OblivionWaterSurfaceSynthesizer
         var directional = windDotK * windDotK;
         var longWaveCutoff = MathF.Exp(-1f / (kSquared * largeWaveLength * largeWaveLength));
         var shortWaveCutoff = MathF.Exp(-kSquared * shortWaveLength * shortWaveLength);
-        return (waveAmplitude / AmplitudeDivisor) *
+        return waveAmplitude / AmplitudeDivisor *
                longWaveCutoff * directional * shortWaveCutoff /
                (kSquared * kSquared * kSquared);
     }
@@ -185,12 +195,14 @@ internal static class OblivionWaterSurfaceSynthesizer
         return (x * inverseLength, y * inverseLength, inverseLength);
     }
 
-    private static byte[][] GenerateFrames(SurfaceSettings settings) =>
-        FramesBySettings.GetOrAdd(
+    private static byte[][] GenerateFrames(SurfaceSettings settings)
+    {
+        return FramesBySettings.GetOrAdd(
             settings,
             static key => new Lazy<byte[][]>(
                 () => GenerateFramesUncached(key),
                 LazyThreadSafetyMode.ExecutionAndPublication)).Value;
+    }
 
     private static byte[][] GenerateFramesUncached(SurfaceSettings settings)
     {
@@ -342,14 +354,14 @@ internal static class OblivionWaterSurfaceSynthesizer
 
     private static void ValidateHighResolutionCoordinate(int x, int y)
     {
-        if ((uint)x > (uint)HighResolutionTextureSize)
+        if ((uint)x > HighResolutionTextureSize)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(x), x,
                 $"Coordinate must be on the inclusive 0..{HighResolutionTextureSize} seed lattice.");
         }
 
-        if ((uint)y > (uint)HighResolutionTextureSize)
+        if ((uint)y > HighResolutionTextureSize)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(y), y,
@@ -553,8 +565,10 @@ internal static class OblivionWaterSurfaceSynthesizer
         return TransformSpectrumSample(standardNormal);
     }
 
-    internal static float TransformSpectrumSample(float standardNormal) =>
-        standardNormal < 0f ? 1f + standardNormal : standardNormal;
+    internal static float TransformSpectrumSample(float standardNormal)
+    {
+        return standardNormal < 0f ? 1f + standardNormal : standardNormal;
+    }
 
     private static SurfaceSettings ResolveSettings(
         WaterSurfaceParams? surface,
@@ -587,6 +601,14 @@ internal static class OblivionWaterSurfaceSynthesizer
         return BitConverter.SingleToUInt32Bits(value) == 0x80000000u ? 0f : value;
     }
 
+    internal static byte EncodeUnorm8(float component)
+    {
+        return (byte)Math.Clamp(
+            (int)MathF.Round((component * 0.5f + 0.5f) * byte.MaxValue),
+            byte.MinValue,
+            byte.MaxValue);
+    }
+
     private readonly record struct SurfaceSettings(
         float WindVelocity,
         float WindDirectionDegrees,
@@ -599,10 +621,4 @@ internal static class OblivionWaterSurfaceSynthesizer
         int SeedStride,
         float[] Amplitudes,
         byte[] LoopCycles);
-
-    internal static byte EncodeUnorm8(float component) =>
-        (byte)Math.Clamp(
-            (int)MathF.Round((component * 0.5f + 0.5f) * byte.MaxValue),
-            byte.MinValue,
-            byte.MaxValue);
 }

@@ -62,8 +62,7 @@ public sealed class ProfileEndCaptureSourceContractTests
         Assert.Equal(
             1,
             source.Split(
-                "BethesdaRendererProfiler: duration elapsed ({0}s); exiting.",
-                StringSplitOptions.None).Length - 1);
+                "BethesdaRendererProfiler: duration elapsed ({0}s); exiting.").Length - 1);
         Assert.Contains("catch (Exception ex)", handler, StringComparison.Ordinal);
 
         var capture = SourceContract.Extract(

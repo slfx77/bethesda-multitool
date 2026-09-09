@@ -59,6 +59,7 @@ internal static class NifKeyGroupReader
         {
             return false;
         }
+
         interpolation = (NifKeyInterpolation)rawType;
 
         if (interpolation == NifKeyInterpolation.XyzEuler)
@@ -144,6 +145,7 @@ internal static class NifKeyGroupReader
         {
             return false;
         }
+
         interpolation = (NifKeyInterpolation)rawType;
 
         var stride = interpolation switch
@@ -177,6 +179,7 @@ internal static class NifKeyGroupReader
                 keys = [];
                 return false;
             }
+
             pos += stride;
         }
 
@@ -213,6 +216,7 @@ internal static class NifKeyGroupReader
         {
             return false;
         }
+
         interpolation = (NifKeyInterpolation)rawType;
 
         var stride = interpolation switch
@@ -238,10 +242,13 @@ internal static class NifKeyGroupReader
         return true;
     }
 
-    private static Vector3 ReadVector(byte[] data, int pos, bool be) => new(
-        BinaryUtils.ReadFloat(data, pos, be),
-        BinaryUtils.ReadFloat(data, pos + 4, be),
-        BinaryUtils.ReadFloat(data, pos + 8, be));
+    private static Vector3 ReadVector(byte[] data, int pos, bool be)
+    {
+        return new Vector3(
+            BinaryUtils.ReadFloat(data, pos, be),
+            BinaryUtils.ReadFloat(data, pos + 4, be),
+            BinaryUtils.ReadFloat(data, pos + 8, be));
+    }
 
     private static bool IsScalarInterpolation(uint rawType)
     {

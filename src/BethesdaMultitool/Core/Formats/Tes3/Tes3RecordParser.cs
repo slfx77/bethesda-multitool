@@ -299,7 +299,7 @@ internal sealed class Tes3RecordParser(RecordParserContext context)
 
                 if (baseFormId != 0 && !string.IsNullOrEmpty(model))
                 {
-                    modelPathIndex[baseFormId] = model!;
+                    modelPathIndex[baseFormId] = model;
                 }
 
                 placed.Add(new PlacedReference

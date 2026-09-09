@@ -179,6 +179,7 @@ internal static class NpcBodyBuilder
             {
                 OblivionNpcBodySkinMaterialResolver.ApplyTextureOverride(sub, npc, textureResolver, resolvedTexture);
             }
+
             sub.RenderOrder = renderOrder;
             sub.SourceNifPath = nifPath;
             targetModel.Submeshes.Add(sub);

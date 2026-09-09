@@ -32,7 +32,7 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
             Assert.NotNull(topic);
 
             var inspector = new DialogueProvenanceInspector(parser._context, parsed.Dialogues);
-            return (Info: info!, TopicReport: inspector.InspectTopic(topic!));
+            return (Info: info, TopicReport: inspector.InspectTopic(topic));
         });
 
         Assert.Contains(0x00147493u, result.Info.LinkToTopics);
@@ -51,7 +51,7 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
             Assert.NotNull(info);
 
             var inspector = new DialogueProvenanceInspector(parser._context, parsed.Dialogues);
-            return inspector.InspectInfo(info!);
+            return inspector.InspectInfo(info);
         });
 
         Assert.True(report.Dialogue.TesFileOffset > 0);
@@ -67,7 +67,7 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
         const ushort opcode = 0x1173;
         var command = ScriptFunctionTable.Get(opcode);
         Assert.NotNull(command);
-        Assert.Equal("ShowBarterMenu", command!.Name);
+        Assert.Equal("ShowBarterMenu", command.Name);
         Assert.Equal("sbm", command.ShortName);
 
         var dialogue = await WithParsedEsmAsync(_samples.Xbox360ProtoEsm!,
@@ -75,7 +75,7 @@ public sealed class DialogueProvenanceIntegrationTests(SampleFileFixture samples
 
         Assert.NotNull(dialogue);
         Assert.Contains(
-            dialogue!.ResultScripts,
+            dialogue.ResultScripts,
             script => ContainsCommandSpelling(script.SourceText, command.Name) ||
                       ContainsCommandSpelling(script.SourceText, command.ShortName) ||
                       ContainsCommandSpelling(script.DecompiledText, command.Name) ||

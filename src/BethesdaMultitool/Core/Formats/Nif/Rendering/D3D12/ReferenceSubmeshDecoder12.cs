@@ -1,11 +1,9 @@
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Skinning;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
@@ -40,7 +38,7 @@ internal static class ReferenceSubmeshDecoder12
 
         var diffusePath = options.DiffuseTexturePath;
         var normalPath = options.NormalMapTexturePath;
-        var alphaState = NifAlphaClassifier.Classify(submesh, diffuseTexture: null);
+        var alphaState = NifAlphaClassifier.Classify(submesh, null);
         var alphaRenderMode = alphaState.RenderMode == NifAlphaRenderMode.AlphaToCoverage
             ? NifAlphaRenderMode.Blend
             : alphaState.RenderMode;
@@ -80,7 +78,7 @@ internal static class ReferenceSubmeshDecoder12
             // pixel alpha test.
             GpuMeshUploader.BuildVertices(
                 submesh,
-                preserveAuthoredVertexAlpha: isTallGrass || submesh.IsTreeAnimation),
+                isTallGrass || submesh.IsTreeAnimation),
             submesh.Triangles,
             diffusePath,
             hasBump ? normalPath : null,
@@ -119,39 +117,38 @@ internal static class ReferenceSubmeshDecoder12
                     falloff.StartOpacity,
                     falloff.StopOpacity)
                 : default,
-            HasEffectFalloff: submesh.EffectFalloff is not null,
-            EnvironmentMapTexturePath: hasEnvironmentMap
+            submesh.EffectFalloff is not null,
+            hasEnvironmentMap
                 ? submesh.EnvironmentMapTexturePath
                 : null,
-            EnvironmentMapScale: hasEnvironmentMap ? submesh.EnvironmentMapScale : 0f,
-            EnvironmentMapSmoothness: hasEnvironmentMap
+            hasEnvironmentMap ? submesh.EnvironmentMapScale : 0f,
+            hasEnvironmentMap
                 ? submesh.EnvironmentMapSmoothness
                 : 0f,
-            UvScrollVelocity: submesh.UvScrollVelocity,
-            Skin: options.Skin,
-            IsSpeedTreeBranch: submesh.IsSpeedTreeBranch,
-            SpeedTreeWindSpeeds: submesh.SpeedTreeWindSpeeds,
-            ClampTextureU: submesh.ClampTextureU,
-            ClampTextureV: submesh.ClampTextureV,
-            IsParticleCloud: submesh.IsParticleCloud,
-            SoftParticleFalloffDepth: submesh.SoftParticleFalloffDepth,
-            MaterialAlphaController: submesh.MaterialAlphaController,
-            PhysicsLiteSway: options.PhysicsLiteSway,
-            RigidNodeAnimation: options.RigidNodeAnimation,
-            ParticleRuntime: options.IncludeParticleRuntime ? submesh.ParticleRuntime : null,
-            SpeedTreeLod: submesh.SpeedTreeLod,
-            IsLighting30: submesh.IsLighting30,
-            Lighting30GlowMapTexturePath: submesh.Lighting30GlowMapTexturePath,
-            Lighting30EmissionColor: submesh.Lighting30EmissionColor is { } lighting30Emission
+            submesh.UvScrollVelocity,
+            options.Skin,
+            submesh.IsSpeedTreeBranch,
+            submesh.SpeedTreeWindSpeeds,
+            submesh.ClampTextureU,
+            submesh.ClampTextureV,
+            submesh.IsParticleCloud,
+            submesh.SoftParticleFalloffDepth,
+            submesh.MaterialAlphaController,
+            options.PhysicsLiteSway,
+            options.RigidNodeAnimation,
+            options.IncludeParticleRuntime ? submesh.ParticleRuntime : null,
+            submesh.SpeedTreeLod,
+            submesh.IsLighting30,
+            submesh.Lighting30GlowMapTexturePath,
+            submesh.Lighting30EmissionColor is { } lighting30Emission
                 ? new Vector3(lighting30Emission.R, lighting30Emission.G, lighting30Emission.B)
                 : Vector3.Zero,
-            Lighting30EmissionMultiplier: submesh.Lighting30EmissionMultiplier,
-            IsTallGrass: isTallGrass,
-            ClassicEnvironmentMapTexturePath: submesh.ClassicEnvironmentMapTexturePath,
-            ClassicEnvironmentMaskTexturePath: submesh.ClassicEnvironmentMaskTexturePath,
-            ClassicEnvironmentMapScale: submesh.ClassicEnvironmentMapScale,
-            ClassicEnvironmentMapUsesWindowReflection:
-                submesh.ClassicEnvironmentMapUsesWindowReflection,
+            submesh.Lighting30EmissionMultiplier,
+            isTallGrass,
+            submesh.ClassicEnvironmentMapTexturePath,
+            submesh.ClassicEnvironmentMaskTexturePath,
+            submesh.ClassicEnvironmentMapScale,
+            submesh.ClassicEnvironmentMapUsesWindowReflection,
             ClassicEnvironmentMapIsSphereMap: submesh.ClassicEnvironmentMapIsSphereMap,
             ClassicParallaxHeightMapTexturePath: submesh.ClassicParallaxHeightMapTexturePath,
             ClassicBasicShaderMode: options.Nif is not null
@@ -169,7 +166,7 @@ internal static class ReferenceSubmeshDecoder12
             // legacy diffuse lane too would incorrectly multiply that output.
             MaterialDiffuse: !submesh.IsEmissive && submesh.MaterialDiffuse is { } materialDiffuse
                 ? new Vector3(materialDiffuse.R, materialDiffuse.G, materialDiffuse.B)
-                : (Vector3?)null,
+                : null,
             StarfieldMaterialColor: submesh.StarfieldMaterialColor,
             StarfieldMaterialAlpha: submesh.StarfieldMaterialAlpha,
             BgsmGlowMapTexturePath: submesh.BgsmGlowMapTexturePath,
@@ -178,8 +175,8 @@ internal static class ReferenceSubmeshDecoder12
             ExternalEmittanceInfluence: submesh.ExternalEmittanceInfluence,
             IsTreeAnimation: submesh.IsTreeAnimation,
             UsesOblivionOrdinarySpecularPolicy:
-                OblivionOrdinarySpecularPolicy.IsEligible(submesh, diffusePath, normalPath),
+            OblivionOrdinarySpecularPolicy.IsEligible(submesh, diffusePath, normalPath),
             OblivionHairLayerTexturePath:
-                OblivionHairLayerPolicy.ResolveTexturePath(submesh, diffusePath));
+            OblivionHairLayerPolicy.ResolveTexturePath(submesh, diffusePath));
     }
 }

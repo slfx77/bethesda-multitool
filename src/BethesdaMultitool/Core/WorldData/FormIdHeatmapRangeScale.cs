@@ -1,4 +1,5 @@
 using System.Globalization;
+
 namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>
@@ -20,6 +21,9 @@ internal static class FormIdHeatmapRangeScale
 
     /// <summary>Slider travel reserved for the unlimited top stop (≈ log₂ 1.25, one keyboard step).</summary>
     private const double UnlimitedStopWidth = 0.32;
+
+    /// <summary>Shown at the top stop, where the range is uncapped.</summary>
+    public const string UnlimitedLabel = "Unlimited";
 
     public static double SliderMinimum => Math.Log2(MinCells);
     public static double SliderMaximum => Math.Log2(MaxFiniteCells) + UnlimitedStopWidth;
@@ -66,7 +70,4 @@ internal static class FormIdHeatmapRangeScale
             ? UnlimitedLabel
             : string.Format(provider ?? CultureInfo.CurrentCulture, "{0:0} c", cells);
     }
-
-    /// <summary>Shown at the top stop, where the range is uncapped.</summary>
-    public const string UnlimitedLabel = "Unlimited";
 }

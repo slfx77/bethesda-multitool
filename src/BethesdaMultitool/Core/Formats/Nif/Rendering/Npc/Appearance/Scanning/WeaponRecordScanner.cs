@@ -112,7 +112,7 @@ internal static class WeaponRecordScanner
                         shotsPerSec = MathF.Max(BinaryUtils.ReadFloat(subrecord.Data, 4, bigEndian), 0.1f);
                         health = (int)Math.Min(
                             BinaryUtils.ReadUInt32(subrecord.Data, 20, bigEndian),
-                            (uint)int.MaxValue);
+                            int.MaxValue);
                         damage = (short)Math.Min(
                             BinaryUtils.ReadUInt16(subrecord.Data, 28, bigEndian),
                             (ushort)short.MaxValue);

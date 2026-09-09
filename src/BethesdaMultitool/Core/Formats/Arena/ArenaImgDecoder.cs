@@ -82,7 +82,7 @@ internal static class ArenaImgDecoder
             ["SLIDER.IMG"] = (289, 7),
             ["TOWN.IMG"] = (9, 10),
             ["UPDOWN.IMG"] = (8, 16),
-            ["VILLAGE.IMG"] = (8, 8),
+            ["VILLAGE.IMG"] = (8, 8)
         };
 
     /// <summary>
@@ -242,7 +242,7 @@ internal static class ArenaImgDecoder
             {
                 for (var x = 0; x < width; x++)
                 {
-                    canvas[x + 32 + (y * WallDimension)] = file[x + (y * width)];
+                    canvas[x + 32 + y * WallDimension] = file[x + y * width];
                 }
             }
 

@@ -308,7 +308,6 @@ internal static class NpcBrowserWorkflowService
         var selected = items.Where(n => n.IsSelected).Select(n => n.FormId).ToList();
         return selected.Count > 0 ? selected : null;
     }
-
 }
 
 /// <summary>

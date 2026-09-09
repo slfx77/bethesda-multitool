@@ -22,17 +22,17 @@ public sealed class Fo4BendableSplineWindTests
 
         var resolved = Fo4BendableSplineWind.ResolveWeather(
             weather,
-            outgoing: null,
-            currentWeight: 1f,
-            isInterior: false,
+            null,
+            1f,
+            false,
             HostFallback);
         var constants = Fo4BendableSplineWind.BuildConstants(
             resolved.Direction,
             resolved.NormalizedSpeed,
             resolved.NormalizedTurbulence,
-            flexibility: 0.8f,
-            animationSeconds: 6d,
-            animationsEnabled: true);
+            0.8f,
+            6d,
+            true);
 
         // Sky::UpdateWind normalizes via the float reciprocal 0x3B808081 and retains
         // intermediate float rounding. The oracle README records the operation trace.
@@ -77,7 +77,7 @@ public sealed class Fo4BendableSplineWindTests
         var deformed = Fo4BendableSplineWind.DeformWorldPosition(
             new Vector3(100f, 200f, 300f),
             new Vector3(12.5f, -4f, 8.25f),
-            packedAlpha: 0.6f,
+            0.6f,
             constants);
 
         Assert.Equal(113.9203f, deformed.X, 3);
@@ -96,11 +96,11 @@ public sealed class Fo4BendableSplineWindTests
         var north = east with { WindVector = east.WindVector with { X = MathF.PI * 0.5f } };
 
         Assert.Equal(rest, Fo4BendableSplineWind.DeformWorldPosition(
-            rest, placement, packedAlpha: 0f, east));
+            rest, placement, 0f, east));
         var eastResult = Fo4BendableSplineWind.DeformWorldPosition(
-            rest, placement, packedAlpha: 1f, east);
+            rest, placement, 1f, east);
         var northResult = Fo4BendableSplineWind.DeformWorldPosition(
-            rest, placement, packedAlpha: 1f, north);
+            rest, placement, 1f, north);
 
         Assert.Equal(rest.Y, eastResult.Y, 4);
         Assert.Equal(rest.X, northResult.X, 4);
@@ -122,19 +122,19 @@ public sealed class Fo4BendableSplineWindTests
         };
         var disabled = Fo4BendableSplineWind.BuildConstants(
             Vector2.UnitX,
-            normalizedSpeed: 1f,
-            normalizedTurbulence: 1f,
-            flexibility: 1f,
-            animationSeconds: 6d,
-            animationsEnabled: false);
+            1f,
+            1f,
+            1f,
+            6d,
+            false);
 
         Assert.Equal(rest, Fo4BendableSplineWind.DeformWorldPosition(
-            rest, placement, packedAlpha: 1f, zeroFrequency));
+            rest, placement, 1f, zeroFrequency));
         Assert.Equal(rest, Fo4BendableSplineWind.DeformWorldPosition(
-            rest, placement, packedAlpha: 1f, nonFinite));
+            rest, placement, 1f, nonFinite));
         Assert.Equal(Vector4.Zero, disabled.WindVectorEx);
         Assert.Equal(rest, Fo4BendableSplineWind.DeformWorldPosition(
-            rest, placement, packedAlpha: 1f, disabled));
+            rest, placement, 1f, disabled));
     }
 
     [Fact]
@@ -156,7 +156,7 @@ public sealed class Fo4BendableSplineWindTests
         };
 
         var resolved = Fo4BendableSplineWind.ResolveWeather(
-            current, outgoing, currentWeight: 0.25f, isInterior: false, HostFallback);
+            current, outgoing, 0.25f, false, HostFallback);
 
         Assert.Equal(0x3EA0A0A2, BitConverter.SingleToInt32Bits(resolved.NormalizedSpeed));
         Assert.Equal(0x3E20A0A2, BitConverter.SingleToInt32Bits(resolved.NormalizedTurbulence));
@@ -174,7 +174,7 @@ public sealed class Fo4BendableSplineWindTests
         var outgoing = new WeatherData { WindSpeed = 48, WindTurbulence = 100 };
 
         var resolved = Fo4BendableSplineWind.ResolveWeather(
-            current, outgoing, currentWeight: 0.25f, isInterior: false, HostFallback);
+            current, outgoing, 0.25f, false, HostFallback);
 
         // Difference-form lerp produces 0x3E1F9FA0 and 0x3E9E1E1F for these inputs.
         Assert.Equal(0x3E1F9FA1, BitConverter.SingleToInt32Bits(resolved.NormalizedSpeed));
@@ -188,18 +188,18 @@ public sealed class Fo4BendableSplineWindTests
     {
         var resolved = Fo4BendableSplineWind.ResolveWeather(
             new WeatherData { WindSpeed = 120, WindTurbulence = turbulence },
-            outgoing: null,
-            currentWeight: 1f,
-            isInterior: false,
+            null,
+            1f,
+            false,
             HostFallback);
 
         var constants = Fo4BendableSplineWind.BuildConstants(
             resolved.Direction,
             resolved.NormalizedSpeed,
             resolved.NormalizedTurbulence,
-            flexibility: 0.8f,
-            animationSeconds: 6d,
-            animationsEnabled: true);
+            0.8f,
+            6d,
+            true);
 
         // Difference-form lerp rounds down for byte 39 and up for byte 73.
         Assert.Equal(expectedBits, BitConverter.SingleToInt32Bits(constants.WindVectorEx.Z));
@@ -210,15 +210,15 @@ public sealed class Fo4BendableSplineWindTests
     {
         var legacy = Fo4BendableSplineWind.ResolveWeather(
             new WeatherData { WindSpeed = 255 },
-            outgoing: null,
-            currentWeight: 1f,
-            isInterior: false,
+            null,
+            1f,
+            false,
             HostFallback);
         var outgoingFallback = Fo4BendableSplineWind.ResolveWeather(
             new WeatherData { WindSpeed = 255 },
             new WeatherData { WindDirection = 128, WindDirectionRange = 64 },
-            currentWeight: 1f,
-            isInterior: false,
+            1f,
+            false,
             HostFallback);
         var interior = Fo4BendableSplineWind.ResolveWeather(
             new WeatherData
@@ -228,9 +228,9 @@ public sealed class Fo4BendableSplineWindTests
                 WindDirection = 128,
                 WindDirectionRange = 255
             },
-            outgoing: null,
-            currentWeight: 1f,
-            isInterior: true,
+            null,
+            1f,
+            true,
             HostFallback);
 
         Assert.Equal(HostFallback, legacy.Direction);

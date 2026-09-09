@@ -190,7 +190,7 @@ public class LandSubrecordParserTests
         var visual = LandSubrecordParser.ParseVisualOnly(data, data.Length, false);
 
         Assert.NotNull(visual);
-        Assert.True(visual!.HasVertexColors);
+        Assert.True(visual.HasVertexColors);
         Assert.Equal(VisualDataSource.MasterEsm, visual.Source);
     }
 
@@ -218,9 +218,9 @@ public class LandSubrecordParserTests
 
         var subs = LandEncoder.Encode(heightmap, visual);
         Assert.NotNull(subs);
-        var encodedVnml = subs!.SingleOrDefault(s => s.Signature == "VNML");
+        var encodedVnml = subs.SingleOrDefault(s => s.Signature == "VNML");
         Assert.NotNull(encodedVnml);
-        Assert.Equal(runtimeVnml, encodedVnml!.Bytes);
+        Assert.Equal(runtimeVnml, encodedVnml.Bytes);
     }
 
     [Fact]
@@ -241,9 +241,9 @@ public class LandSubrecordParserTests
 
         var subs = LandEncoder.Encode(heightmap, visualNoNormals);
         Assert.NotNull(subs);
-        var encodedVnml = subs!.SingleOrDefault(s => s.Signature == "VNML");
+        var encodedVnml = subs.SingleOrDefault(s => s.Signature == "VNML");
         Assert.NotNull(encodedVnml);
-        Assert.Equal(VnmlSize, encodedVnml!.Bytes.Length);
+        Assert.Equal(VnmlSize, encodedVnml.Bytes.Length);
         // Height-derived normals for a perfectly flat heightmap point straight up:
         // nx = 0, ny = 0, nz = 1 → bytes (0, 0, 127).
         Assert.Equal(0, encodedVnml.Bytes[0]);
@@ -282,7 +282,7 @@ public class LandSubrecordParserTests
         var merged = LandVisualData.MergeCategories(runtime, master);
 
         Assert.NotNull(merged);
-        Assert.Equal(VisualDataSource.MasterEsm, merged!.TextureLayersSource);
+        Assert.Equal(VisualDataSource.MasterEsm, merged.TextureLayersSource);
         Assert.Equal(0x999u, merged.TextureLayers[0].TextureFormId);
         Assert.Equal(VisualDataSource.MasterEsm, merged.VertexColorsSource);
         Assert.Equal(VisualDataSource.MasterEsm, merged.Source);
@@ -306,7 +306,7 @@ public class LandSubrecordParserTests
         var merged = LandVisualData.MergeCategories(null, master);
 
         Assert.NotNull(merged);
-        Assert.Equal(VisualDataSource.MasterEsm, merged!.Source);
+        Assert.Equal(VisualDataSource.MasterEsm, merged.Source);
     }
 
     [Fact]
@@ -336,9 +336,9 @@ public class LandSubrecordParserTests
         var subs = LandEncoder.Encode(heightmap, visual);
 
         Assert.NotNull(subs);
-        var encodedVclr = subs!.SingleOrDefault(s => s.Signature == "VCLR");
+        var encodedVclr = subs.SingleOrDefault(s => s.Signature == "VCLR");
         Assert.NotNull(encodedVclr);
-        Assert.Equal(vclr, encodedVclr!.Bytes);
+        Assert.Equal(vclr, encodedVclr.Bytes);
 
         var encodedBtxts = subs.Where(s => s.Signature == "BTXT").ToList();
         Assert.Single(encodedBtxts);

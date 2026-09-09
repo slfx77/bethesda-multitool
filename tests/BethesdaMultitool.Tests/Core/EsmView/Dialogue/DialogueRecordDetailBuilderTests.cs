@@ -1,7 +1,5 @@
 using BethesdaMultitool.Core.EsmView.Dialogue;
-using BethesdaMultitool.Core.Games;
 using Xunit;
-
 // This test namespace ends in `.Dialogue`, which shadows the models namespace of the same leaf
 // name; alias the two record types rather than fully qualifying them at every use site.
 using DialogueCondition = BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest.DialogueCondition;
@@ -96,7 +94,7 @@ public class DialogueRecordDetailBuilderTests
             Conditions = [MakeGlobalComparison(GlobalFormId)]
         };
 
-        var row = Single(Build(info, resolveFormName: _ => "VegasVictoryFlag"), "Condition Ref");
+        var row = Single(Build(info, _ => "VegasVictoryFlag"), "Condition Ref");
 
         Assert.Contains("VegasVictoryFlag", row.Value!, StringComparison.Ordinal);
     }
@@ -295,13 +293,12 @@ public class DialogueRecordDetailBuilderTests
     {
         return DialogueRecordDetailBuilder.BuildRecordDetailRows(
             info,
-            csvSubtitle: null,
+            null,
             resolveFormName ?? (id => $"Form{id:X8}"),
-            resolveSpeakerName: _ => "Speaker",
-            topicEditorId: null,
+            _ => "Speaker",
+            null,
             resolveEditorId,
-            resolveQuestVariable,
-            BethesdaGame.FalloutNewVegas);
+            resolveQuestVariable);
     }
 
     private static DialogueRecordDetailBuilder.DetailRow Single(

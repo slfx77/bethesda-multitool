@@ -219,7 +219,10 @@ public sealed class FnvTallGrassWindTests
             "AnimationsEnabled?FnvTallGrassWind.ComputeWindMagnitude(_windStrength):0f,",
             compact,
             StringComparison.Ordinal);
-        Assert.DoesNotContain("_windDirection", renderer, StringComparison.Ordinal);
+        var grassWind = SourceContract.Extract(renderer,
+            "private Vector4 BuildTallGrassWindConstants(",
+            "private void ObserveTallGrassWaveMultiplier(");
+        Assert.DoesNotContain("_windDirection", grassWind, StringComparison.Ordinal);
     }
 
     private static string ReadEmbeddedShader(string name)

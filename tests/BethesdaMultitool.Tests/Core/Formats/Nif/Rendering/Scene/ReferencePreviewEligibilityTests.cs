@@ -1,6 +1,4 @@
-using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
@@ -46,7 +44,7 @@ public class ReferencePreviewEligibilityTests
     [Fact]
     public void CanPreview_NoWorldData_IsNotEligible()
     {
-        Assert.False(ReferencePreviewEligibility.CanPreview(MakeReference(), data: null));
+        Assert.False(ReferencePreviewEligibility.CanPreview(MakeReference(), null));
     }
 
     /// <summary>v3 renders static meshes only, so skinned actors have no renderable output.</summary>
@@ -78,9 +76,9 @@ public class ReferencePreviewEligibilityTests
     public void CanPreview_ModellessRefBackedByAnEmittingLight_IsEligible()
     {
         var reference = MakeReference() with { ModelPath = null };
-        var data = MakeData(lights: new Dictionary<uint, LightRecord>
+        var data = MakeData(new Dictionary<uint, LightRecord>
         {
-            [BaseFormId] = MakeLight(radius: 512u, flags: 0u)
+            [BaseFormId] = MakeLight(512u, 0u)
         });
 
         Assert.True(ReferencePreviewEligibility.CanPreview(reference, data));
@@ -94,9 +92,9 @@ public class ReferencePreviewEligibilityTests
     public void CanPreview_ModellessRefBackedByANonEmittingLight_IsNotEligible()
     {
         var reference = MakeReference() with { ModelPath = null };
-        var data = MakeData(lights: new Dictionary<uint, LightRecord>
+        var data = MakeData(new Dictionary<uint, LightRecord>
         {
-            [BaseFormId] = MakeLight(radius: 0u, flags: 0u)
+            [BaseFormId] = MakeLight(0u, 0u)
         });
 
         Assert.False(ReferencePreviewEligibility.CanPreview(reference, data));
@@ -132,9 +130,9 @@ public class ReferencePreviewEligibilityTests
     [Fact]
     public void IsAuthoredEnabled_IgnoresTheBaseLightsOffByDefaultBit()
     {
-        var data = MakeData(lights: new Dictionary<uint, LightRecord>
+        var data = MakeData(new Dictionary<uint, LightRecord>
         {
-            [BaseFormId] = MakeLight(radius: 512u, flags: PlacedLight.OffByDefaultFlag)
+            [BaseFormId] = MakeLight(512u, PlacedLight.OffByDefaultFlag)
         });
 
         Assert.True(ReferencePreviewEligibility.IsAuthoredEnabled(MakeReference(), data));
@@ -150,9 +148,9 @@ public class ReferencePreviewEligibilityTests
     [Fact]
     public void IsBaseLightAuthoredEnabled_LightWithoutTheOffBit_IsEnabled()
     {
-        var data = MakeData(lights: new Dictionary<uint, LightRecord>
+        var data = MakeData(new Dictionary<uint, LightRecord>
         {
-            [BaseFormId] = MakeLight(radius: 512u, flags: 0u)
+            [BaseFormId] = MakeLight(512u, 0u)
         });
 
         Assert.True(ReferencePreviewEligibility.IsBaseLightAuthoredEnabled(MakeReference(), data));

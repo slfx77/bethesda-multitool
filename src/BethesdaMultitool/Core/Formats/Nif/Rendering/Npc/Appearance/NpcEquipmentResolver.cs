@@ -68,8 +68,8 @@ internal sealed class NpcEquipmentResolver
         var emittedArmorFormIds = new HashSet<uint>();
         IEnumerable<ResolvedArmorChoice> choicesToEmit =
             useOblivionDefaultWornSelection || mode == ResolutionMode.AuthoritativeWorn
-            ? armorChoices
-            : slotToArmor.Values;
+                ? armorChoices
+                : slotToArmor.Values;
 
         foreach (var armorChoice in choicesToEmit)
         {

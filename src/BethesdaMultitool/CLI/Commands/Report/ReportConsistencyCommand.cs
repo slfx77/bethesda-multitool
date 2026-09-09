@@ -197,7 +197,7 @@ internal static class ReportConsistencyCommand
         CrossDumpProjectionAggregator.ReleaseLateEnrichment(projections);
 
         var index = CrossDumpProjectionAggregator.AggregateFromProjections(
-            projections, virtualCanon, null);
+            projections, virtualCanon);
 
         // AggregateFromProjections sorts by build date — re-derive labels from the index's
         // dump order so they line up with StructuredRecords' dump indices.

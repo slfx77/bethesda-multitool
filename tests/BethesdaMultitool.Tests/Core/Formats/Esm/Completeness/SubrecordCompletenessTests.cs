@@ -52,7 +52,7 @@ public class SubrecordCompletenessTests
         Assert.SkipUnless(esm is not null,
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or place it under Sample/ESM/pc_final).");
 
-        var result = EsmCoverageAnalyzer.AnalyzeFile(esm!);
+        var result = EsmCoverageAnalyzer.AnalyzeFile(esm);
         var gaps = result.Subrecords
             .Where(r => r.UsesRawByteArray && !r.IsIntentionalRaw)
             .OrderByDescending(r => r.Count)
@@ -76,7 +76,7 @@ public class SubrecordCompletenessTests
         Assert.SkipUnless(esm is not null,
             "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim LE).");
 
-        var result = EsmCoverageAnalyzer.AnalyzeFile(esm!);
+        var result = EsmCoverageAnalyzer.AnalyzeFile(esm);
         var gaps = result.Subrecords
             .Where(r => r.UsesRawByteArray && !r.IsIntentionalRaw)
             .OrderByDescending(r => r.Count)

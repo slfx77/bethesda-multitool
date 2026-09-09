@@ -21,7 +21,7 @@ internal static class StarfieldCloudFormDecoder
         if (!StarfieldCloudFormReflectionSchema.TryValidate(data, out error) ||
             !BethesdaReflectionReader.TryReadObject(
                 data,
-                expectDiff: false,
+                false,
                 StarfieldCloudFormProjector.RootType,
                 out var reflected,
                 out error))
@@ -50,7 +50,7 @@ internal static class StarfieldCloudFormReflectionSchema
     private const int HeaderSize = 24;
 
     private static readonly Dictionary<string, ExpectedClass> ExpectedClasses =
-        new Dictionary<string, ExpectedClass>(StringComparer.Ordinal)
+        new(StringComparer.Ordinal)
         {
             ["BGSCloudForm::ShadowParams"] = Class(0,
                 ("Enabled", "Bool"),
@@ -330,7 +330,7 @@ internal static class StarfieldCloudFormReflectionSchema
 
         var flags = BinaryPrimitives.ReadUInt16LittleEndian(body[8..]);
         var fieldCount = BinaryPrimitives.ReadUInt16LittleEndian(body[10..]);
-        if (body.Length != 12 + (fieldCount * 12))
+        if (body.Length != 12 + fieldCount * 12)
         {
             error = $"CLDF CLAS '{className}' has a malformed field table.";
             return false;
@@ -339,7 +339,7 @@ internal static class StarfieldCloudFormReflectionSchema
         var fields = new List<ExpectedField>(fieldCount);
         for (var fieldIndex = 0; fieldIndex < fieldCount; fieldIndex++)
         {
-            var field = body.Slice(12 + (fieldIndex * 12), 12);
+            var field = body.Slice(12 + fieldIndex * 12, 12);
             if (!strings.TryGetValue(BinaryPrimitives.ReadUInt32LittleEndian(field), out var fieldName) ||
                 !TryResolveType(
                     BinaryPrimitives.ReadUInt32LittleEndian(field[4..]), strings, out var fieldType))
@@ -389,12 +389,16 @@ internal static class StarfieldCloudFormReflectionSchema
         return type is not null;
     }
 
-    private static ExpectedClass Class(ushort flags, params (string Name, string Type)[] fields) =>
-        new(flags, Array.AsReadOnly(fields.Select(field =>
+    private static ExpectedClass Class(ushort flags, params (string Name, string Type)[] fields)
+    {
+        return new ExpectedClass(flags, Array.AsReadOnly(fields.Select(field =>
             new ExpectedField(field.Name, field.Type)).ToArray()));
+    }
 
     private sealed record ExpectedClass(ushort Flags, IReadOnlyList<ExpectedField> Fields);
+
     private sealed record ActualClass(ushort Flags, IReadOnlyList<ExpectedField> Fields);
+
     private readonly record struct ExpectedField(string Name, string Type);
 }
 

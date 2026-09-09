@@ -597,6 +597,7 @@ internal static class GlbWriter
         {
             preparedAlpha = NpcGlbAlphaTexturePacker.Prepare(submesh, diffuseTexture);
         }
+
         // A standalone Starfield water NIF has no WATR record from which to select authored noise
         // layers. Reuse only the shipped primary global normal already named by the source-backed
         // World Viewer approximation; portable GLB viewers receive it statically and the embedded
@@ -877,6 +878,7 @@ internal static class GlbWriter
             var image = ImageBuilder.From(
                 new MemoryImage(NpcGlbTextureEncoder.EncodePng(normalTexture)),
                 BuildDerivedTextureName(normalTexturePath, "normal"));
+            // ReSharper disable once RedundantArgumentDefaultValue -- Follow the shared policy if its value changes.
             material.WithNormal(image, NifNormalMapStrengthPolicy.GenericDefault);
 
             if (!isStarfieldWater && !hasStaticStarfieldOrm)
@@ -971,7 +973,7 @@ internal static class GlbWriter
             {
                 // glTF reads occlusion from R and metallic-roughness from B/G, so one packed image
                 // can back both texture slots without changing CE2's individual red-channel values.
-                material.WithOcclusion(ormImage, 1f);
+                material.WithOcclusion(ormImage);
             }
         }
 
@@ -1139,8 +1141,8 @@ internal static class GlbWriter
     private static (
         StarfieldMaterialAlphaRenderState State,
         string? MaterialPath) ResolveStarfieldAlpha(
-        RenderableSubmesh submesh,
-        NifTextureResolver textureResolver)
+            RenderableSubmesh submesh,
+            NifTextureResolver textureResolver)
     {
         // Water's explicit physical-preview coverage/no-cutout state is authoritative. Re-resolving
         // the .mat here could otherwise replace it with an ordinary CE2 opacity cutout.

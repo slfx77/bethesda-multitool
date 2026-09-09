@@ -23,8 +23,8 @@ public class MapExportSizeEstimateTests
     {
         // 32 cells across, 8192 px long edge -> 256 px/cell, well inside the tile ceiling.
         var size = MapExportSizeEstimate.Plan(
-            cellsWide: 32, cellsTall: 16, maxGridDimension: 32,
-            requestedLongEdgePx: 8_192, maxTileDimension: MaxTile, tiled: false);
+            32, 16, 32,
+            8_192, MaxTile, false);
 
         Assert.Equal(256, size.EffectivePxPerCell);
         Assert.Equal(32L * 256, size.ImageWidth);
@@ -42,8 +42,8 @@ public class MapExportSizeEstimateTests
     public void Plan_SingleImageOverTheCeiling_ClampsAndReportsCapped()
     {
         var size = MapExportSizeEstimate.Plan(
-            cellsWide: 64, cellsTall: 64, maxGridDimension: 64,
-            requestedLongEdgePx: 1_000_000, maxTileDimension: MaxTile, tiled: false);
+            64, 64, 64,
+            1_000_000, MaxTile, false);
 
         Assert.True(size.Capped);
         Assert.Equal(MaxTile / 64, size.EffectivePxPerCell);
@@ -56,8 +56,8 @@ public class MapExportSizeEstimateTests
     public void Plan_TiledOverTheCeiling_SplitsInsteadOfClamping()
     {
         var size = MapExportSizeEstimate.Plan(
-            cellsWide: 64, cellsTall: 32, maxGridDimension: 64,
-            requestedLongEdgePx: 65_536, maxTileDimension: MaxTile, tiled: true);
+            64, 32, 64,
+            65_536, MaxTile, true);
 
         Assert.False(size.Capped);
         Assert.Equal(1_024, size.EffectivePxPerCell);
@@ -73,8 +73,8 @@ public class MapExportSizeEstimateTests
     {
         // 16384/1024 = 16 cells per tile; 33 cells needs 3 columns, not 2.
         var size = MapExportSizeEstimate.Plan(
-            cellsWide: 33, cellsTall: 17, maxGridDimension: 64,
-            requestedLongEdgePx: 65_536, maxTileDimension: MaxTile, tiled: true);
+            33, 17, 64,
+            65_536, MaxTile, true);
 
         Assert.Equal(3, size.Columns);
         Assert.Equal(2, size.Rows);
@@ -95,8 +95,8 @@ public class MapExportSizeEstimateTests
     public void Plan_CellSpanLargerThanTheScaleReference_DoesNotWrapIntoNegativeDimensions()
     {
         var size = MapExportSizeEstimate.Plan(
-            cellsWide: 2_000_000, cellsTall: 2_000_000, maxGridDimension: 10,
-            requestedLongEdgePx: 100_000, maxTileDimension: MaxTile, tiled: true);
+            2_000_000, 2_000_000, 10,
+            100_000, MaxTile, true);
 
         Assert.True(size.ImageWidth > int.MaxValue,
             $"Expected a width past int.MaxValue, got {size.ImageWidth}.");
@@ -117,8 +117,8 @@ public class MapExportSizeEstimateTests
         const int cells = 20_000; // > MaxTile
 
         var size = MapExportSizeEstimate.Plan(
-            cellsWide: cells, cellsTall: cells, maxGridDimension: cells,
-            requestedLongEdgePx: int.MaxValue, maxTileDimension: MaxTile, tiled: false);
+            cells, cells, cells,
+            int.MaxValue, MaxTile, false);
 
         Assert.True(size.Capped);
         Assert.Equal(1, size.EffectivePxPerCell);
@@ -134,8 +134,8 @@ public class MapExportSizeEstimateTests
     public void Plan_HugeRequestOnAModestGrid_StaysWithinTheTileCeiling()
     {
         var size = MapExportSizeEstimate.Plan(
-            cellsWide: 512, cellsTall: 512, maxGridDimension: 512,
-            requestedLongEdgePx: int.MaxValue, maxTileDimension: MaxTile, tiled: false);
+            512, 512, 512,
+            int.MaxValue, MaxTile, false);
 
         Assert.True(size.Capped);
         Assert.True(size.ImageWidth is > 0 and <= MaxTile);
@@ -155,8 +155,8 @@ public class MapExportSizeEstimateTests
         _ = because;
 
         var size = MapExportSizeEstimate.Plan(
-            cellsWide: 64, cellsTall: 64, maxGridDimension: 64,
-            requestedLongEdgePx, maxTileDimension: MaxTile, tiled: false);
+            64, 64, 64,
+            requestedLongEdgePx, MaxTile, false);
 
         Assert.Equal(1, size.EffectivePxPerCell);
         Assert.Equal(64, size.ImageWidth);
@@ -168,8 +168,8 @@ public class MapExportSizeEstimateTests
     public void Plan_ZeroGridDimension_DoesNotThrow()
     {
         var size = MapExportSizeEstimate.Plan(
-            cellsWide: 0, cellsTall: 0, maxGridDimension: 0,
-            requestedLongEdgePx: 4_096, maxTileDimension: MaxTile, tiled: false);
+            0, 0, 0,
+            4_096, MaxTile, false);
 
         Assert.True(size.EffectivePxPerCell >= 1);
         Assert.Equal(0, size.ImageWidth);
@@ -187,9 +187,9 @@ public class MapExportSizeEstimateTests
         const int longEdge = 262_144;
 
         var single = MapExportSizeEstimate.Plan(
-            cellsWide, cellsWide, cellsWide, longEdge, MaxTile, tiled: false);
+            cellsWide, cellsWide, cellsWide, longEdge, MaxTile, false);
         var tiled = MapExportSizeEstimate.Plan(
-            cellsWide, cellsWide, cellsWide, longEdge, MaxTile, tiled: true);
+            cellsWide, cellsWide, cellsWide, longEdge, MaxTile, true);
 
         Assert.True(tiled.EffectivePxPerCell >= single.EffectivePxPerCell);
     }

@@ -29,7 +29,7 @@ public sealed class NifRefractionSkipTests
 
         Assert.SkipWhen(nifPath is null, "FNV TrapGasFire01 NIF not available");
 
-        var data = File.ReadAllBytes(nifPath!);
+        var data = File.ReadAllBytes(nifPath);
         var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
 
         using var textureResolver = new NifTextureResolver();
@@ -52,7 +52,7 @@ public sealed class NifRefractionSkipTests
 
         Assert.SkipWhen(nifPath is null, "FNV NVStripLightPollution NIF not available");
 
-        var data = File.ReadAllBytes(nifPath!);
+        var data = File.ReadAllBytes(nifPath);
         var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
 
         using var textureResolver = new NifTextureResolver();

@@ -4,8 +4,8 @@ Comprehensive documentation of all C++ runtime structures identified from the Fa
 
 **PDB Sources:**
 
-- **Proto Debug PDB:** `Sample/PDB/Proto/Fallout_Debug/types_full.txt` (Jul 2010, TESForm = 24 bytes) — used for base object types (NPC, WEAP, etc.)
-- **Final Debug PDB:** `Sample/PDB/Final/Fallout_Debug_Final/types_full.txt` (TESForm = 40 bytes) — used for TESObjectREFR and related types
+- **Proto Debug PDB:** `Sample/DebugSymbols/Fallout - New Vegas (X360)/Proto/Fallout_Debug/types_full.txt` (Jul 2010, TESForm = 24 bytes) — used for base object types (NPC, WEAP, etc.)
+- **Final Debug PDB:** `Sample/DebugSymbols/Fallout - New Vegas (X360)/Final/Fallout_Debug_Final/types_full.txt` (TESForm = 40 bytes) — used for TESObjectREFR and related types
   **Key Files:** `RuntimeStructReader.cs`, `RecordParser.cs`, `Models/`
 
 ---
@@ -608,7 +608,7 @@ Current parity conclusion:
 
 ## Placed Reference Structures
 
-> **PDB Source:** Final Debug PDB (`Sample/PDB/Final/Fallout_Debug_Final/types_full.txt`)
+> **PDB Source:** Final Debug PDB (`Sample/DebugSymbols/Fallout - New Vegas (X360)/Final/Fallout_Debug_Final/types_full.txt`)
 > Final PDB offsets match dump offsets directly — no shift needed.
 > All offsets verified against Ghidra decompilation of `TESObjectREFR::SaveGame_v2` / `LoadGame_v2`.
 

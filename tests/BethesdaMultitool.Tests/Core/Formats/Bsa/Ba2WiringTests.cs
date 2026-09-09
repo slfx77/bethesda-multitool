@@ -1,6 +1,7 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using BethesdaMultitool.Core.Vfs;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Bsa;
@@ -56,10 +57,10 @@ public class Ba2WiringTests
                 Assert.Equal(archiveInfo.LastWriteTimeUtc.Ticks, metadata.SourceLastWriteUtcTicks);
                 Assert.Equal<ulong?>(60, metadata.EntryOffset);
                 Assert.Equal<ulong?>(0, metadata.EntryRawSize);
-                Assert.Equal<ulong?>((ulong)payload.Length, metadata.EntrySize);
+                Assert.Equal((ulong)payload.Length, metadata.EntrySize);
                 Assert.Equal<ulong?>(0x1111, metadata.EntryNameHash);
                 Assert.Equal<uint?>(0x2222, metadata.EntryDirectoryHash);
-                Assert.Equal<int?>(0, metadata.EntryIndex);
+                Assert.Equal(0, metadata.EntryIndex);
                 Assert.False(source.TryGetAssetMetadata("textures\\missing.dds", out _));
 
                 Assert.Equal(payload, source.TryLoadRaw("textures\\test.dds"));
@@ -86,7 +87,7 @@ public class Ba2WiringTests
         var payload = "shared-index"u8.ToArray();
         var ba2 = Path.Combine(Path.GetTempPath(), $"ba2shared_{Guid.NewGuid():N}.ba2");
         File.WriteAllBytes(ba2, BuildGnrlBa2WithTexture("textures\\shared.dds", payload));
-        var registry = new BethesdaMultitool.Core.Vfs.ArchiveHandleRegistry();
+        var registry = new ArchiveHandleRegistry();
         try
         {
             var firstSources = NifTextureArchiveSourceFactory.Create(registry, ba2);

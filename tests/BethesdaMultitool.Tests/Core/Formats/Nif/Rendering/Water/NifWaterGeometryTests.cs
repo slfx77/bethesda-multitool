@@ -153,7 +153,7 @@ public sealed class NifWaterGeometryTests
         [
             new(0f, 0f, 10f),
             new(10f, 0f, 20f),
-            new(0f, 10f, 30f),
+            new(0f, 10f, 30f)
         ];
         Assert.True(NifWaterGeometry.TryCreate(positions, [0, 1, 2], out var geometry));
 
@@ -170,7 +170,7 @@ public sealed class NifWaterGeometryTests
         Vector3[] positions =
         [
             new(0f, 0f, 5f), new(4f, 0f, 5f), new(0f, 4f, 5f),
-            new(0f, 0f, 12f), new(4f, 0f, 12f), new(0f, 4f, 12f),
+            new(0f, 0f, 12f), new(4f, 0f, 12f), new(0f, 4f, 12f)
         ];
         Assert.True(NifWaterGeometry.TryCreate(positions, [0, 1, 2, 3, 4, 5], out var geometry));
 

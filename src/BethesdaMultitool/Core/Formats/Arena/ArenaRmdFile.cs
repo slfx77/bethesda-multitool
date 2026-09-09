@@ -81,7 +81,7 @@ internal sealed class ArenaRmdFile
                 ReadLayer(bytes[..BytesPerLayer]),
                 ReadLayer(bytes.Slice(BytesPerLayer, BytesPerLayer)),
                 ReadLayer(bytes.Slice(BytesPerLayer * 2, BytesPerLayer)),
-                wasCompressed: false);
+                false);
         }
 
         var decompressed = RleCodec.DecompressWords(bytes[2..], uncompressedWords);
@@ -96,7 +96,7 @@ internal sealed class ArenaRmdFile
             ReadLayer(decompressed.AsSpan(0, BytesPerLayer)),
             ReadLayer(decompressed.AsSpan(BytesPerLayer, BytesPerLayer)),
             ReadLayer(decompressed.AsSpan(BytesPerLayer * 2, BytesPerLayer)),
-            wasCompressed: true);
+            true);
     }
 
     private static ushort[] ReadLayer(ReadOnlySpan<byte> bytes)

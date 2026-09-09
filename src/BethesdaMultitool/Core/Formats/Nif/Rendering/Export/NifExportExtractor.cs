@@ -253,6 +253,7 @@ internal static class NifExportExtractor
             {
                 continue;
             }
+
             submesh.SourceBlockIndex = shapeIndex;
             submesh.AuthoredOblivionOrdinaryDiffusePath = ordinarySources?.ReadDiffusePath(shapeIndex);
             submesh.HasAuthoredOblivionOrdinaryInputs = submesh.AuthoredOblivionOrdinaryDiffusePath is not null;
@@ -379,47 +380,47 @@ internal static class NifExportExtractor
                 dataBlock,
                 nif.IsBigEndian,
                 Matrix4x4.Identity,
-                skinning: null,
-                useDualQuaternionSkinning: false,
+                null,
+                false,
                 preSkinMorphDeltas,
                 shapeName)
             : dataBlock.TypeName switch
-        {
-            "NiTriShapeData" => NifSubmeshExtractor.ExtractTriShapeData(
-                data,
-                dataBlock,
-                nif.IsBigEndian,
-                nif.BsVersion,
-                nif.BinaryVersion,
-                Matrix4x4.Identity,
-                null,
-                false,
-                preSkinMorphDeltas,
-                sourceNif: nif,
-                sourceShapeIndex: shapeIndex),
-            "NiTriStripsData" => NifSubmeshExtractor.ExtractTriStripsData(
-                data,
-                dataBlock,
-                nif.IsBigEndian,
-                nif.BsVersion,
-                nif.BinaryVersion,
-                Matrix4x4.Identity,
-                null,
-                false,
-                preSkinMorphDeltas,
-                sourceNif: nif,
-                sourceShapeIndex: shapeIndex),
-            "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape" =>
-                NifSubmeshExtractor.ExtractBsTriShape(
+            {
+                "NiTriShapeData" => NifSubmeshExtractor.ExtractTriShapeData(
                     data,
                     dataBlock,
                     nif.IsBigEndian,
                     nif.BsVersion,
                     nif.BinaryVersion,
                     Matrix4x4.Identity,
-                    shapeName),
-            _ => null
-        };
+                    null,
+                    false,
+                    preSkinMorphDeltas,
+                    sourceNif: nif,
+                    sourceShapeIndex: shapeIndex),
+                "NiTriStripsData" => NifSubmeshExtractor.ExtractTriStripsData(
+                    data,
+                    dataBlock,
+                    nif.IsBigEndian,
+                    nif.BsVersion,
+                    nif.BinaryVersion,
+                    Matrix4x4.Identity,
+                    null,
+                    false,
+                    preSkinMorphDeltas,
+                    sourceNif: nif,
+                    sourceShapeIndex: shapeIndex),
+                "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape" =>
+                    NifSubmeshExtractor.ExtractBsTriShape(
+                        data,
+                        dataBlock,
+                        nif.IsBigEndian,
+                        nif.BsVersion,
+                        nif.BinaryVersion,
+                        Matrix4x4.Identity,
+                        shapeName),
+                _ => null
+            };
 
         if (raw == null)
         {

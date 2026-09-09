@@ -16,7 +16,7 @@ public sealed class BethesdaViewerPresentationPolicyTests
     {
         var orbit = BethesdaViewerPresentationPolicy.ResolveInitialOrbit(
             (BethesdaViewerScenePurpose)purposeValue,
-            dedicatedRawSky: false);
+            false);
 
         Assert.Equal(0f, orbit.AzimuthDegrees);
         Assert.Equal(0f, orbit.ElevationDegrees);
@@ -38,7 +38,7 @@ public sealed class BethesdaViewerPresentationPolicyTests
     {
         var orbit = BethesdaViewerPresentationPolicy.ResolveInitialOrbit(
             (BethesdaViewerScenePurpose)purposeValue,
-            dedicatedRawSky: false);
+            false);
 
         Assert.Equal(315f, orbit.AzimuthDegrees);
         Assert.Equal(30f, orbit.ElevationDegrees);
@@ -49,7 +49,7 @@ public sealed class BethesdaViewerPresentationPolicyTests
     {
         var orbit = BethesdaViewerPresentationPolicy.ResolveInitialOrbit(
             BethesdaViewerScenePurpose.RawNif,
-            dedicatedRawSky: true);
+            true);
 
         Assert.Equal(315f, orbit.AzimuthDegrees);
         Assert.Equal(-30f, orbit.ElevationDegrees);
@@ -63,7 +63,7 @@ public sealed class BethesdaViewerPresentationPolicyTests
         var purpose = (BethesdaViewerScenePurpose)purposeValue;
         var initial = BethesdaViewerPresentationPolicy.ResolveInitialOrbit(
             purpose,
-            dedicatedRawSky: false);
+            false);
         var degrees = BethesdaViewerPresentationPolicy.OrbitDegreesForPointerDelta(
             new Vector2(20f, 10f),
             purpose);

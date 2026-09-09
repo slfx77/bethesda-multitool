@@ -12,6 +12,7 @@ using BethesdaMultitool.Core.Formats.SaveGame;
 using BethesdaMultitool.Core.Formats.Subtitles;
 using BethesdaMultitool.Core.RuntimeBuffer;
 using BethesdaMultitool.Core.Strings;
+using BethesdaMultitool.Core.Ui;
 using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
@@ -134,6 +135,19 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
     public bool IsAnalyzed => AnalysisResult != null;
     public bool HasAccessor => Accessor != null;
     public bool HasEsmRecords => AnalysisResult?.EsmRecords != null;
+
+    /// <summary>
+    ///     True when this source has records the Summary, Records and Dialogue tabs can browse.
+    ///     <para>
+    ///         Wider than <see cref="HasEsmRecords" /> on purpose: that one means "an ESM
+    ///         byte-scan produced offset-addressed descriptors", which a classic install never
+    ///         has. The tabs that only need something to display use this; the ones that
+    ///         genuinely need the byte stream — the NPC browser, the world map, reports — keep
+    ///         the strict test.
+    ///     </para>
+    /// </summary>
+    public bool HasBrowsableRecords =>
+        AnalysisRecordAvailability.SupportsRecordBrowsing(FileType, HasEsmRecords);
 
     /// <summary>True if analyzing a standalone ESM/ESP file (not a memory dump).</summary>
     public bool IsEsmFile => FileType == AnalysisFileType.EsmFile;

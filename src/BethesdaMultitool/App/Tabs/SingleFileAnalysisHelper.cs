@@ -167,6 +167,15 @@ internal static class SingleFileAnalysisHelper
             return $"Save file loaded \u2014 {formCount:N0} changed forms";
         }
 
+        // A classic install carves nothing: its records are synthesized from game tables
+        // rather than scanned out of a byte stream, so the carved-file list below is empty
+        // by construction and reported "Found 0 records" after a load that had in fact just
+        // parsed thousands of them.
+        if (session.FileType == AnalysisFileType.ClassicGameData)
+        {
+            return Strings.Status_ParsedRecords(session.SemanticResult?.TotalRecordsParsed ?? 0);
+        }
+
         var totalCount = allCarvedFiles.Count;
         var fileCount = allCarvedFiles.Count(f => !f.IsEsmRecord);
         var recordCount = allCarvedFiles.Count(f => f.IsEsmRecord);

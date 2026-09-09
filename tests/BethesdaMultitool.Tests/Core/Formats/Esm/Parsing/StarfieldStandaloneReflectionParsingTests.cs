@@ -53,7 +53,7 @@ public sealed class StarfieldStandaloneReflectionParsingTests
         Assert.Equal(cloudOpacityTextureLength, clouds.Definition.Shadows.OpacityTexture.Length);
         Assert.Empty(clouds.Definition.Layers);
         Assert.Empty(clouds.Definition.Planes);
-        Assert.Equal((long)voliBytes.Length, clouds.Offset);
+        Assert.Equal(voliBytes.Length, clouds.Offset);
         Assert.Equal(2, parsed.TotalRecordsParsed);
     }
 
@@ -93,7 +93,7 @@ public sealed class StarfieldStandaloneReflectionParsingTests
         Assert.Equal("CloudsEarth", clouds.EditorId);
         Assert.Null(clouds.Definition);
         Assert.NotNull(clouds.DecodeFailure);
-        Assert.Equal((long)voliBytes.Length, clouds.Offset);
+        Assert.Equal(voliBytes.Length, clouds.Offset);
         Assert.False(clouds.IsBigEndian);
 
         Assert.Equal(2, parsed.TotalRecordsParsed);
@@ -172,7 +172,7 @@ public sealed class StarfieldStandaloneReflectionParsingTests
         Assert.Equal("UnknownOuterCldf", clouds.EditorId);
         Assert.Null(clouds.Definition);
         Assert.Contains("XTRA", clouds.DecodeFailure, StringComparison.Ordinal);
-        Assert.Equal((long)voliBytes.Length, clouds.Offset);
+        Assert.Equal(voliBytes.Length, clouds.Offset);
     }
 
     [Fact]
@@ -342,5 +342,8 @@ public sealed class StarfieldStandaloneReflectionParsingTests
         return new RecordParser(scanResult, accessor: accessor, fileSize: allBytes.Length).ParseAll();
     }
 
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 }

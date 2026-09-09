@@ -1,3 +1,4 @@
+using System.Globalization;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export.Csv;
@@ -242,6 +243,37 @@ public class ReportGeneratorTests
 
         Assert.Contains("TestNpc", csv);
         Assert.Contains("0x00100000", csv);
+    }
+
+    [Fact]
+    public void GenerateNpcsCsv_KeepsFractionalKarmaInOneColumnUnderCommaDecimalCulture()
+    {
+        var records = MinimalRecords();
+        records.Npcs[0] = records.Npcs[0] with
+        {
+            Stats = new ActorBaseSubrecord(0, 0, 0, 1, 0, 0, 100, -125.5f, 0, 0, 0, false)
+        };
+        var previousCulture = CultureInfo.CurrentCulture;
+        string csv;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+            csv = CsvActorWriter.GenerateNpcsCsv(records.Npcs, records.CreateResolver());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = previousCulture;
+        }
+
+        // The fixture contains no quoted commas, so any extra column is a decimal separator leak.
+        var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(2, lines.Length);
+        var header = lines[0].TrimEnd('\r').Split(',');
+        var row = lines[1].TrimEnd('\r').Split(',');
+        Assert.Equal(header.Length, row.Length);
+        var karmaIndex = Array.IndexOf(header, "Karma");
+        Assert.NotEqual(-1, karmaIndex);
+        Assert.Equal("-125.5", row[karmaIndex]);
     }
 
     [Fact]

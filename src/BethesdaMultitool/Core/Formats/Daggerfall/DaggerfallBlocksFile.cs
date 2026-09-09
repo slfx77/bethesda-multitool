@@ -50,7 +50,8 @@ internal sealed class DaggerfallBlocksFile
         var archive = XnGineBsaParser.Parse(path);
         if (archive.IsNumbered)
         {
-            throw new InvalidDataException($"'{Path.GetFileName(path)}' is a number-record BSA; BLOCKS.BSA is name-record.");
+            throw new InvalidDataException(
+                $"'{Path.GetFileName(path)}' is a number-record BSA; BLOCKS.BSA is name-record.");
         }
 
         return new DaggerfallBlocksFile(File.ReadAllBytes(path), archive.Entries);
@@ -71,7 +72,9 @@ internal sealed class DaggerfallBlocksFile
             return DaggerfallBlockType.Rdb;
         }
 
-        return name.EndsWith(".RDI", StringComparison.OrdinalIgnoreCase) ? DaggerfallBlockType.Rdi : DaggerfallBlockType.Unknown;
+        return name.EndsWith(".RDI", StringComparison.OrdinalIgnoreCase)
+            ? DaggerfallBlockType.Rdi
+            : DaggerfallBlockType.Unknown;
     }
 
     public string Name(int index)
@@ -95,7 +98,8 @@ internal sealed class DaggerfallBlocksFile
         var entry = _entries[index];
         if (entry.Offset < 0 || entry.Size < 0 || entry.Offset + entry.Size > _bytes.Length)
         {
-            throw new InvalidDataException($"BLOCKS record {index} ({entry.Offset}+{entry.Size}) lies outside the {_bytes.Length}-byte archive.");
+            throw new InvalidDataException(
+                $"BLOCKS record {index} ({entry.Offset}+{entry.Size}) lies outside the {_bytes.Length}-byte archive.");
         }
 
         return new ReadOnlyMemory<byte>(_bytes, (int)entry.Offset, entry.Size);

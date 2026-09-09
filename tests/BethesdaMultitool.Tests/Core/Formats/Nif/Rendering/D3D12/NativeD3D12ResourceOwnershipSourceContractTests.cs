@@ -5,8 +5,11 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.D3D12;
 
 public sealed class NativeD3D12ResourceOwnershipSourceContractTests
 {
-    private static string D3D12Source(params string[] path) => SourceContract.ReadSource(
-        ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", .. path]);
+    private static string D3D12Source(params string[] path)
+    {
+        return SourceContract.ReadSource(
+            ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", .. path]);
+    }
 
     [Fact]
     public void PipelineFactoryOwnsConstructionFailuresAndDisposesUniqueMirrorTwins()

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
@@ -14,22 +11,33 @@ namespace BethesdaMultitool.Tests.Core.Formats.Daggerfall;
 /// </summary>
 public sealed class DaggerfallBlockSceneAssemblerTests
 {
-    private static XnGineTriangleMesh Mesh() =>
-        new(1, 1f, Vector3.One, [new XnGineSubMesh(0, 0,
-            [new XnGineVertex(Vector3.Zero, Vector3.UnitY, Vector2.Zero)], [0, 0, 0])]);
+    private static XnGineTriangleMesh Mesh()
+    {
+        return new XnGineTriangleMesh(1, 1f, Vector3.One, [
+            new XnGineSubMesh(0, 0,
+                [new XnGineVertex(Vector3.Zero, Vector3.UnitY, Vector2.Zero)], [0, 0, 0])
+        ]);
+    }
 
-    private static DaggerfallRmbBlockData Data(params DaggerfallRmbModel[] models) =>
-        new([], models, [], [], [], []);
+    private static DaggerfallRmbBlockData Data(params DaggerfallRmbModel[] models)
+    {
+        return new DaggerfallRmbBlockData([], models, [], [], [], []);
+    }
 
-    private static DaggerfallRmbModel Model(uint id, int x, int y, int z, short rotation = 0) =>
-        new((short)(id / 100), (byte)(id % 100), 0, 0, 0, 0, 0, 0, 0, x, y, z, rotation, 0, 0);
+    private static DaggerfallRmbModel Model(uint id, int x, int y, int z, short rotation = 0)
+    {
+        return new DaggerfallRmbModel((short)(id / 100), (byte)(id % 100), 0, 0, 0, 0, 0, 0, 0, x, y, z, rotation, 0,
+            0);
+    }
 
-    private static DaggerfallRmbSubRecord Sub(int x, int z, int rotation, params DaggerfallRmbModel[] models) =>
-        new()
+    private static DaggerfallRmbSubRecord Sub(int x, int z, int rotation, params DaggerfallRmbModel[] models)
+    {
+        return new DaggerfallRmbSubRecord
         {
             Index = 0, XPos = x, ZPos = z, YRotation = rotation, DeclaredSize = 0,
             Exterior = Data(models), Interior = Data(), TrailingByte = null
         };
+    }
 
 
     [Fact]
@@ -85,26 +93,51 @@ public sealed class DaggerfallBlockSceneAssemblerTests
         // ⚠ System.Numerics is row-vector: A * B applies A THEN B. A model offset along +X, inside
         // a sub-block rotated a quarter turn, must swing to the sub-block's axis — which only
         // happens if the model transform comes FIRST in the product.
-        var quarterTurn = (short)Math.Round(90.0 / DaggerfallBlockSceneAssembler.RotationDegreesPerUnit);
+        // ⚠ 512 is written as a LITERAL, not derived from the assembler's own constant. Deriving it
+        // (this test did until 2026-09-06, as Math.Round(90 / RotationDegreesPerUnit)) makes the
+        // test agree with whatever the constant says and it can no longer fail — it passed happily
+        // while the assembler was multiplying by 5.68889 instead of dividing.
         var transform = DaggerfallBlockSceneAssembler.TransformFor(
-            Sub(0, 0, quarterTurn), Model(1, 100, 0, 0));
+            Sub(0, 0, 512), Model(1, 100, 0, 0));
 
         // Rotating (100, 0, 0) a quarter turn about Y sends it onto the Z axis; the mirror then
         // flips that Z. If the sub-block rotation were applied FIRST the model would stay on X.
-        Assert.True(Math.Abs(transform.Translation.X) < 5, $"x was {transform.Translation.X}");
-        Assert.True(
-            Math.Abs(Math.Abs(transform.Translation.Z - DaggerfallBlockSceneAssembler.BlockSideUnits) - 100) < 5,
-            $"z was {transform.Translation.Z}");
+        // Exact values, not magnitudes: |z| would also pass with the rotation sign reversed.
+        Assert.Equal(0f, transform.Translation.X, 3);
+        Assert.Equal(DaggerfallBlockSceneAssembler.BlockSideUnits + 100f, transform.Translation.Z, 3);
     }
 
     [Fact]
-    public void RotationDegreesPerUnit_IsNotAWholeNumberOfUnitsPerTurn()
+    public void AngleUnitsPerTurn_IsTwoThousandAndFortyEight()
     {
-        // 360 / 5.68889 is 63.28…, NOT 64. Rounding to 360/64 skews long terraces visibly.
-        var unitsPerTurn = 360.0 / DaggerfallBlockSceneAssembler.RotationDegreesPerUnit;
+        // ⚠⚠ The unit is 2,048 per TURN — a stored unit is 360/2048 of a degree, so the value is
+        // DIVIDED by 5.68889, never multiplied by it. Retail settles this three ways: the 9,005 RMB
+        // sub-block rotations take exactly the four values 0/512/1024/1536 and nothing else; 92.07%
+        // of the 236,250 per-model rotations lie in [0, 2048); and 96.0% of the 22,961 RDB rotations
+        // are multiples of 512. Multiplying skews a quarter turn to 32.7 degrees.
+        Assert.Equal(2048f, DaggerfallBlockSceneAssembler.AngleUnitsPerTurn);
+        Assert.Equal(512, DaggerfallBlockSceneAssembler.QuarterTurnUnits);
+        Assert.Equal(
+            90.0,
+            DaggerfallBlockSceneAssembler.QuarterTurnUnits * 360.0 / DaggerfallBlockSceneAssembler.AngleUnitsPerTurn,
+            6);
+    }
 
-        Assert.InRange(unitsPerTurn, 63.2, 63.3);
-        Assert.NotEqual(64, (int)Math.Round(unitsPerTurn));
+    [Theory]
+    [InlineData(0, 100f, 0f)]
+    [InlineData(512, 0f, -100f)]
+    [InlineData(1024, -100f, 0f)]
+    [InlineData(1536, 0f, 100f)]
+    public void TransformFor_TurnsTheFourCardinalsIntoRightAngles(int rotation, float expectedX, float expectedZ)
+    {
+        // The four values retail actually stores, each pinned to the position it must produce.
+        // Under the old multiply-by-5.68889 reading these come out at 32.7/65.4/98.1 degrees and
+        // every one of these expectations fails.
+        var transform = DaggerfallBlockSceneAssembler.TransformFor(
+            Sub(0, 0, rotation), Model(1, 100, 0, 0));
+
+        Assert.Equal(expectedX, transform.Translation.X, 3);
+        Assert.Equal(DaggerfallBlockSceneAssembler.BlockSideUnits - expectedZ, transform.Translation.Z, 3);
     }
 
     [Fact]
@@ -119,7 +152,7 @@ public sealed class DaggerfallBlockSceneAssemblerTests
         };
 
         Assert.Equal(1, DaggerfallBlockSceneAssembler.Assemble("T", [sub], _ => Mesh()).Resolved);
-        Assert.Equal(2, DaggerfallBlockSceneAssembler.Assemble("T", [sub], _ => Mesh(), interior: true).Resolved);
+        Assert.Equal(2, DaggerfallBlockSceneAssembler.Assemble("T", [sub], _ => Mesh(), true).Resolved);
     }
 
     [Fact]

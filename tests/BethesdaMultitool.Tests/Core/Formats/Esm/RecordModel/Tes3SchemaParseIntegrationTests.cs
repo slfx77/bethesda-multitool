@@ -25,7 +25,7 @@ public class Tes3SchemaParseIntegrationTests
             "Morrowind.esm not found (set BETHESDA_TEST_DATA_ROOT or install Morrowind).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         var npcs = result.Records.GenericRecords.Where(r => r.RecordType == "NPC_").ToList();
         Assert.True(npcs.Count > 1000,
@@ -51,7 +51,7 @@ public class Tes3SchemaParseIntegrationTests
             "Morrowind.esm not found (set BETHESDA_TEST_DATA_ROOT or install Morrowind).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         // DIAL topics and INFO responses must be built so the Dialogue tab has data.
         Assert.True(result.Records.DialogTopics.Count > 1000,

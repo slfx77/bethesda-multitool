@@ -137,7 +137,7 @@ public class KeyboardShortcutRegistryTests
             .SingleOrDefault(s => s.Keys == "R");
 
         Assert.True(reset is not null, $"`{group}` does not document the R reset-view chord.");
-        Assert.Contains("Reset view", reset!.Action, StringComparison.Ordinal);
+        Assert.Contains("Reset view", reset.Action, StringComparison.Ordinal);
     }
 
     [Fact]

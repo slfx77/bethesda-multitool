@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 

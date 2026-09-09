@@ -364,9 +364,9 @@ internal static class NifModelFamilyAnimationResolver
     private static bool IsStrictDescendant(string path, string directory)
     {
         return directory.Length == 0 ||
-               path.Length > directory.Length &&
-               path.StartsWith(directory, StringComparison.OrdinalIgnoreCase) &&
-               path[directory.Length] == '\\';
+               (path.Length > directory.Length &&
+                path.StartsWith(directory, StringComparison.OrdinalIgnoreCase) &&
+                path[directory.Length] == '\\');
     }
 
     private static bool IsCanonicalSkeleton(string path)

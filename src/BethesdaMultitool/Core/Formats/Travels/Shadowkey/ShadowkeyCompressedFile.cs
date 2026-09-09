@@ -82,7 +82,7 @@ internal static class ShadowkeyCompressedFile
         byte[] payload;
         try
         {
-            using var source = new MemoryStream(bytes, HeaderLength, bytes.Length - HeaderLength, writable: false);
+            using var source = new MemoryStream(bytes, HeaderLength, bytes.Length - HeaderLength, false);
             using var inflater = new ZLibStream(source, CompressionMode.Decompress);
             using var target = new MemoryStream(declared <= 64 * 1024 * 1024 ? (int)declared : 0);
             inflater.CopyTo(target);

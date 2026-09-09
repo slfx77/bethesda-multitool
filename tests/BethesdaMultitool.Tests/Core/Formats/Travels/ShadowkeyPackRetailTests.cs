@@ -1,6 +1,3 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -22,7 +19,7 @@ public sealed class ShadowkeyPackRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Travels.ShadowkeyRoot();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Shadowkey (system/apps/6R51)"));
-        return root!;
+        return root;
     }
 
     private static ShadowkeyModelPack LoadModelPack(string root)
@@ -78,7 +75,7 @@ public sealed class ShadowkeyPackRetailTests
 
             Assert.NotNull(mesh);
             meshes++;
-            if (mesh!.FrameCount > 1)
+            if (mesh.FrameCount > 1)
             {
                 animated++;
             }
@@ -220,7 +217,7 @@ public sealed class ShadowkeyPackRetailTests
 
             var image = sprite.ToImage();
             Assert.Equal(sprite.Width * sprite.Height, image.Bitmap.Indices.Length);
-            Assert.Equal(0, (int)image.Palette.GetEntry(image.TransparentIndex).A);
+            Assert.Equal(0, image.Palette.GetEntry(image.TransparentIndex).A);
             if (image.TransparentIndexAliasesPixels)
             {
                 aliasing++;
@@ -289,8 +286,8 @@ public sealed class ShadowkeyPackRetailTests
         Assert.All(products.Products, p => Assert.NotEqual(ShadowkeyClasses.None, p.UsableBy));
 
         // Ids are the entities.txt ids and rise strictly.
-        Assert.Equal(50, (int)products.Products[0].Id);
-        Assert.Equal(4905, (int)products.Products[^1].Id);
+        Assert.Equal(50, products.Products[0].Id);
+        Assert.Equal(4905, products.Products[^1].Id);
         Assert.All(
             products.Products.Zip(products.Products.Skip(1)),
             pair => Assert.True(pair.First.Id < pair.Second.Id));
@@ -298,6 +295,6 @@ public sealed class ShadowkeyPackRetailTests
         // Armour is the only type carrying a slot.
         Assert.All(
             products.Products.Where(p => p.Type != ShadowkeyProductType.Armor),
-            p => Assert.Equal(0, (int)p.ArmorSlot));
+            p => Assert.Equal(0, p.ArmorSlot));
     }
 }

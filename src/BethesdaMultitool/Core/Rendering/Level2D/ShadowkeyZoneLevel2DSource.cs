@@ -43,9 +43,10 @@ internal sealed class ShadowkeyZoneLevel2DSource : ILevel2DSource
     private static readonly Level2DLayer[] LayerOrder =
         [Level2DLayer.Floor, Level2DLayer.Walls, Level2DLayer.Ceiling, Level2DLayer.Overlay];
 
+    private readonly IReadOnlyList<ShadowkeyEntity> _entities;
+
     private readonly ShadowkeyZoneMap _map;
     private readonly ShadowkeyCellPrototypes _prototypes;
-    private readonly IReadOnlyList<ShadowkeyEntity> _entities;
 
     private ShadowkeyZoneLevel2DSource(
         string displayName,
@@ -61,15 +62,44 @@ internal sealed class ShadowkeyZoneLevel2DSource : ILevel2DSource
         Scale = scale;
     }
 
-    /// <inheritdoc />
-    public string DisplayName { get; }
-
     /// <summary>Effective pixels per tile, after clamping to <see cref="MaxRasterEdge" />.</summary>
     public int Scale { get; }
 
     /// <inheritdoc />
+    public string DisplayName { get; }
+
+    /// <inheritdoc />
     public IReadOnlyList<Level2DLayer> Layers =>
         [.. LayerOrder.Where(layer => layer != Level2DLayer.Overlay || _entities.Count > 0)];
+
+    /// <inheritdoc />
+    public Level2DRender? Render(Level2DLayer layer)
+    {
+        if (layer == Level2DLayer.Overlay && _entities.Count == 0)
+        {
+            return null;
+        }
+
+        var width = _map.Width * Scale;
+        var height = _map.Height * Scale;
+        var rgba = new byte[width * height * 4];
+
+        var (low, high) = HeightRange(layer == Level2DLayer.Ceiling);
+        for (var y = 0; y < _map.Height; y++)
+        {
+            for (var x = 0; x < _map.Width; x++)
+            {
+                PaintCell(rgba, width, x, y, layer, low, high);
+            }
+        }
+
+        if (layer == Level2DLayer.Overlay)
+        {
+            PaintEntities(rgba, width, height);
+        }
+
+        return new Level2DRender(width, height, rgba);
+    }
 
     /// <summary>
     ///     Wraps a zone. <paramref name="entities" /> is optional — without it the overlay layer is
@@ -105,35 +135,6 @@ internal sealed class ShadowkeyZoneLevel2DSource : ILevel2DSource
         return Math.Clamp(scale, 1, ceiling);
     }
 
-    /// <inheritdoc />
-    public Level2DRender? Render(Level2DLayer layer)
-    {
-        if (layer == Level2DLayer.Overlay && _entities.Count == 0)
-        {
-            return null;
-        }
-
-        var width = _map.Width * Scale;
-        var height = _map.Height * Scale;
-        var rgba = new byte[width * height * 4];
-
-        var (low, high) = HeightRange(layer == Level2DLayer.Ceiling);
-        for (var y = 0; y < _map.Height; y++)
-        {
-            for (var x = 0; x < _map.Width; x++)
-            {
-                PaintCell(rgba, width, x, y, layer, low, high);
-            }
-        }
-
-        if (layer == Level2DLayer.Overlay)
-        {
-            PaintEntities(rgba, width, height);
-        }
-
-        return new Level2DRender(width, height, rgba);
-    }
-
     /// <summary>
     ///     Paints one cell. Height layers interpolate the four corners bilinearly; the wall layer
     ///     is a flat solid/open mask, which is the one thing a reader wants unshaded.
@@ -148,11 +149,15 @@ internal sealed class ShadowkeyZoneLevel2DSource : ILevel2DSource
         {
             for (var px = 0; px < Scale; px++)
             {
-                var offset = ((((y * Scale) + py) * width) + (x * Scale) + px) * 4;
+                var offset = ((y * Scale + py) * width + x * Scale + px) * 4;
                 var (r, g, b) = layer switch
                 {
-                    Level2DLayer.Walls => cell.IsBlocked ? ((byte)32, (byte)34, (byte)46) : ((byte)214, (byte)212, (byte)205),
-                    Level2DLayer.Overlay => cell.IsBlocked ? ((byte)46, (byte)48, (byte)58) : ((byte)86, (byte)90, (byte)96),
+                    Level2DLayer.Walls => cell.IsBlocked
+                        ? ((byte)32, (byte)34, (byte)46)
+                        : ((byte)214, (byte)212, (byte)205),
+                    Level2DLayer.Overlay => cell.IsBlocked
+                        ? ((byte)46, (byte)48, (byte)58)
+                        : ((byte)86, (byte)90, (byte)96),
                     _ => Shade(cell, prototype, px, py, low, high, ceiling)
                 };
 
@@ -221,12 +226,12 @@ internal sealed class ShadowkeyZoneLevel2DSource : ILevel2DSource
                 {
                     var x = cx + dx;
                     var y = cy + dy;
-                    if (x < 0 || y < 0 || x >= width || y >= height || (dx * dx) + (dy * dy) > radius * radius)
+                    if (x < 0 || y < 0 || x >= width || y >= height || dx * dx + dy * dy > radius * radius)
                     {
                         continue;
                     }
 
-                    var offset = ((y * width) + x) * 4;
+                    var offset = (y * width + x) * 4;
                     rgba[offset] = 255;
                     rgba[offset + 1] = 96;
                     rgba[offset + 2] = 64;
@@ -266,6 +271,8 @@ internal sealed class ShadowkeyZoneLevel2DSource : ILevel2DSource
         return low <= high ? (low, high) : (0f, 0f);
     }
 
-    private static byte Lerp(byte from, byte to, float ramp) =>
-        (byte)Math.Clamp((int)MathF.Round(from + ((to - from) * ramp)), 0, 255);
+    private static byte Lerp(byte from, byte to, float ramp)
+    {
+        return (byte)Math.Clamp((int)MathF.Round(from + (to - from) * ramp), 0, 255);
+    }
 }

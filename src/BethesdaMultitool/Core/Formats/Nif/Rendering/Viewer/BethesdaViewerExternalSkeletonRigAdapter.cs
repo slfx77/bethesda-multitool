@@ -36,10 +36,10 @@ internal static class BethesdaViewerExternalSkeletonRigAdapter
             return TryApply(source, extracted.Nodes, out result, out diagnostic);
         }
         catch (Exception exception) when (exception is InvalidDataException or
-                                               ArgumentException or
-                                               OverflowException or
-                                               IndexOutOfRangeException or
-                                               EndOfStreamException)
+                                              ArgumentException or
+                                              OverflowException or
+                                              IndexOutOfRangeException or
+                                              EndOfStreamException)
         {
             diagnostic = $"The canonical skeleton could not be decoded ({exception.GetType().Name}).";
             return false;
@@ -105,7 +105,7 @@ internal static class BethesdaViewerExternalSkeletonRigAdapter
                 GlbNodeKind.Skeleton,
                 node.LookupName,
                 // A skeleton.nif block number is not an identity in the selected model NIF.
-                sourceBlockIndex: null);
+                null);
             skeletonSceneIndexByBlock.Add(node.BlockIndex, sceneIndex);
             if (!string.IsNullOrWhiteSpace(node.LookupName))
             {

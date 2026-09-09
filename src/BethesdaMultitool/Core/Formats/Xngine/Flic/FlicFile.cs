@@ -184,9 +184,6 @@ internal sealed class FlicFile
                             case ChunkDeltaFlc:
                                 DecodeDeltaFrame(data, canvas, width, height, name);
                                 break;
-                            default:
-                                // Thumbnails and other metadata chunks carry no picture data.
-                                break;
                         }
 
                         chunkOffset += chunkSize;
@@ -302,7 +299,7 @@ internal sealed class FlicFile
 
                     var pixel = data[offset + 1];
                     var run = Math.Min(type, width - column);
-                    canvas.AsSpan((row * width) + column, run).Fill(pixel);
+                    canvas.AsSpan(row * width + column, run).Fill(pixel);
                     column += type;
                     offset += 2;
                 }
@@ -315,7 +312,7 @@ internal sealed class FlicFile
                     }
 
                     var copy = Math.Min(count, width - column);
-                    data.Slice(offset + 1, copy).CopyTo(canvas.AsSpan((row * width) + column));
+                    data.Slice(offset + 1, copy).CopyTo(canvas.AsSpan(row * width + column));
                     column += count;
                     offset += 1 + count;
                 }
@@ -377,7 +374,7 @@ internal sealed class FlicFile
                     // Bit 15 alone: the low byte is the row's final pixel.
                     if ((uint)y < (uint)height)
                     {
-                        canvas[(y * width) + width - 1] = (byte)(packet & 0xFF);
+                        canvas[y * width + width - 1] = (byte)(packet & 0xFF);
                     }
 
                     y++;
@@ -398,7 +395,7 @@ internal sealed class FlicFile
 
                 if (count > 0)
                 {
-                    if (offset + (count * 2) > data.Length)
+                    if (offset + count * 2 > data.Length)
                     {
                         throw new InvalidDataException($"'{name}' has a truncated delta literal run.");
                     }
@@ -447,13 +444,13 @@ internal sealed class FlicFile
 
         if (x < width)
         {
-            canvas[(y * width) + x] = first;
+            canvas[y * width + x] = first;
             x++;
         }
 
         if (x < width)
         {
-            canvas[(y * width) + x] = second;
+            canvas[y * width + x] = second;
             x++;
         }
     }

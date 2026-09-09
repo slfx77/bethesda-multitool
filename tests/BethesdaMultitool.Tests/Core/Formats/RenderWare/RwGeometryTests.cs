@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.RenderWare;
 using BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
@@ -23,38 +19,92 @@ namespace BethesdaMultitool.Tests.Core.Formats.RenderWare;
 /// </summary>
 public sealed class RwGeometryTests
 {
+    private static readonly Vector3[] ThreePositions =
+        [new(0, 0, 0), new(1, 0, 0), new(0, 1, 0)];
+
     private static byte[] GeometryStruct(
         uint flags, (ushort V0, ushort V1, ushort V2, ushort Material)[] triangles,
         Vector3[] positions, Vector3[]? normals, Vector2[]? uvs, byte[]? colours)
     {
         var body = new List<byte>();
 
-        void U32(uint v) { var w = new byte[4]; BinaryPrimitives.WriteUInt32LittleEndian(w, v); body.AddRange(w); }
-        void U16(ushort v) { var w = new byte[2]; BinaryPrimitives.WriteUInt16LittleEndian(w, v); body.AddRange(w); }
-        void F32(float v) { var w = new byte[4]; BinaryPrimitives.WriteSingleLittleEndian(w, v); body.AddRange(w); }
-        void V3(Vector3 v) { F32(v.X); F32(v.Y); F32(v.Z); }
+        void U32(uint v)
+        {
+            var w = new byte[4];
+            BinaryPrimitives.WriteUInt32LittleEndian(w, v);
+            body.AddRange(w);
+        }
+
+        void U16(ushort v)
+        {
+            var w = new byte[2];
+            BinaryPrimitives.WriteUInt16LittleEndian(w, v);
+            body.AddRange(w);
+        }
+
+        void F32(float v)
+        {
+            var w = new byte[4];
+            BinaryPrimitives.WriteSingleLittleEndian(w, v);
+            body.AddRange(w);
+        }
+
+        void V3(Vector3 v)
+        {
+            F32(v.X);
+            F32(v.Y);
+            F32(v.Z);
+        }
 
         U32(flags);
         U32((uint)triangles.Length);
         U32((uint)positions.Length);
         U32(1);
 
-        if (colours is not null) { body.AddRange(colours); }
-        if (uvs is not null) { foreach (var uv in uvs) { F32(uv.X); F32(uv.Y); } }
+        if (colours is not null)
+        {
+            body.AddRange(colours);
+        }
+
+        if (uvs is not null)
+        {
+            foreach (var uv in uvs)
+            {
+                F32(uv.X);
+                F32(uv.Y);
+            }
+        }
 
         // File order: v1, v0, material, v2 — deliberately swapped, as on disk.
-        foreach (var (v0, v1, v2, material) in triangles) { U16(v1); U16(v0); U16(material); U16(v2); }
+        foreach (var (v0, v1, v2, material) in triangles)
+        {
+            U16(v1);
+            U16(v0);
+            U16(material);
+            U16(v2);
+        }
 
-        F32(1); F32(2); F32(3); F32(4);   // bounding sphere
-        U32(1); U32(normals is null ? 0u : 1u);
-        foreach (var p in positions) { V3(p); }
-        if (normals is not null) { foreach (var n in normals) { V3(n); } }
+        F32(1);
+        F32(2);
+        F32(3);
+        F32(4); // bounding sphere
+        U32(1);
+        U32(normals is null ? 0u : 1u);
+        foreach (var p in positions)
+        {
+            V3(p);
+        }
+
+        if (normals is not null)
+        {
+            foreach (var n in normals)
+            {
+                V3(n);
+            }
+        }
 
         return [.. body];
     }
-
-    private static readonly Vector3[] ThreePositions =
-        [new(0, 0, 0), new(1, 0, 0), new(0, 1, 0)];
 
     // ---------------------------------------------------------------- the swapped-index trap
 
@@ -74,7 +124,7 @@ public sealed class RwGeometryTests
         var geometry = RwGeometry.TryParse(body);
 
         Assert.NotNull(geometry);
-        var triangle = Assert.Single(geometry!.Triangles);
+        var triangle = Assert.Single(geometry.Triangles);
         Assert.Equal(10, triangle.V0);
         Assert.Equal(20, triangle.V1);
         Assert.Equal(30, triangle.V2);
@@ -96,7 +146,7 @@ public sealed class RwGeometryTests
             GeometryStruct(flags, [(0, 1, 2, 0)], ThreePositions, normals, uvs, colours));
 
         Assert.NotNull(geometry);
-        Assert.Equal(ThreePositions, geometry!.Positions);
+        Assert.Equal(ThreePositions, geometry.Positions);
         Assert.Equal(normals, geometry.Normals);
         Assert.Equal(uvs, Assert.Single(geometry.UvSets));
         Assert.Equal(colours, geometry.Colours);
@@ -110,7 +160,7 @@ public sealed class RwGeometryTests
             GeometryStruct(RwGeometry.PositionsFlag, [(0, 1, 2, 0)], ThreePositions, null, null, null));
 
         Assert.NotNull(geometry);
-        Assert.Null(geometry!.Normals);
+        Assert.Null(geometry.Normals);
         Assert.Null(geometry.Colours);
         Assert.Empty(geometry.UvSets);
     }
@@ -163,8 +213,8 @@ public sealed class RwGeometryTests
         var flags = RwGeometry.PositionsFlag | RwGeometry.NormalsFlag | RwGeometry.TexturedFlag;
         var body = GeometryStruct(
             flags, [(0, 1, 2, 0), (2, 1, 0, 1)], ThreePositions,
-            [new(0, 0, 1), new(0, 1, 0), new(1, 0, 0)],
-            [new(0, 0), new(1, 0), new(0, 1)], null);
+            [new Vector3(0, 0, 1), new Vector3(0, 1, 0), new Vector3(1, 0, 0)],
+            [new Vector2(0, 0), new Vector2(1, 0), new Vector2(0, 1)], null);
 
         Assert.Equal(body.Length, RwGeometry.PredictStructSize(flags, 2, 3, 1));
     }
@@ -237,7 +287,7 @@ public sealed class RwGeometryRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Travels.OblivionPspBuildsRoot();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP (cancelled betas)"));
-        var packs = Directory.EnumerateFiles(root!, "GR.ARC", SearchOption.AllDirectories)
+        var packs = Directory.EnumerateFiles(root, "GR.ARC", SearchOption.AllDirectories)
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
         Assert.SkipWhen(packs.Length == 0, "No GR.ARC packs are staged.");
         return packs;

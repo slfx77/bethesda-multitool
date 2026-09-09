@@ -52,7 +52,7 @@ public sealed class RuntimeMemoryContextSparseStraddleTests
         // are NOT contiguous in the address space. This is the silent-wrong-read hazard on a sparse capture.
         var viaFileOffset = context.ReadBytes(straddleFileOffset, count);
         Assert.NotNull(viaFileOffset);
-        Assert.Equal((byte)0xAA, viaFileOffset![0]); // last bytes of region A
+        Assert.Equal((byte)0xAA, viaFileOffset[0]); // last bytes of region A
         Assert.Equal((byte)0xBB, viaFileOffset[^1]); // spilled into region B — wrong across the VA gap
 
         // VA-range path: refuses the same straddle because the VA span is not fully captured.

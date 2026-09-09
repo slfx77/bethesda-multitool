@@ -3,10 +3,9 @@
 // src/AweMultitool/App/Tabs/ThumbnailLoader.cs. Retargeted onto AssetBrowseSession + ThumbnailCache.
 
 using System.Collections.Concurrent;
-
 using BethesdaMultitool.Core.AssetBrowse;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Imaging;
-
 using Microsoft.UI.Dispatching;
 
 namespace BethesdaMultitool;
@@ -137,7 +136,7 @@ internal sealed class AssetThumbnailLoader : IDisposable
 
         try
         {
-            var key = new ThumbnailKey(session.Source.SourceLabel, item.Node.VirtualPath, _cellPixels);
+            var key = new ThumbnailKey(session.Source.SourcePath, item.Node.VirtualPath, _cellPixels);
             var fitted = _cache.GetOrAdd(
                 key, () => AssetThumbnailSource.TryRender(session.Source, item.Node, _cellPixels, session.Token));
 
@@ -153,7 +152,7 @@ internal sealed class AssetThumbnailLoader : IDisposable
             return;
         }
         catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException
-                                     or IOException or IndexOutOfRangeException or ArgumentOutOfRangeException)
+                                      or IOException or IndexOutOfRangeException or ArgumentOutOfRangeException)
         {
             // One unreadable asset must not end the session; the tile shows a broken marker. Over a
             // retail install some formats are simply not decoded yet, so this is expected traffic.
@@ -176,7 +175,8 @@ internal sealed class AssetThumbnailLoader : IDisposable
             }
 
             item.SetCaption(caption);
-            item.SetThumbnail(bgra is null ? null : AssetBitmapFactory.FromPremultipliedBgra(width, height, bgra), _deviceScale);
+            item.SetThumbnail(bgra is null ? null : AssetBitmapFactory.FromPremultipliedBgra(width, height, bgra),
+                _deviceScale);
         });
     }
 
@@ -184,10 +184,13 @@ internal sealed class AssetThumbnailLoader : IDisposable
     private sealed class Session : IDisposable
     {
         private readonly CancellationTokenSource _cts = new();
+        private bool _disposed;
+        private Task? _worker;
 
         public Session(AssetBrowseSession source)
         {
             Source = source;
+            Token = _cts.Token;
         }
 
         public AssetBrowseSession Source { get; }
@@ -196,21 +199,49 @@ internal sealed class AssetThumbnailLoader : IDisposable
 
         public SemaphoreSlim Signal { get; } = new(0);
 
-        public CancellationToken Token => _cts.Token;
+        public CancellationToken Token { get; }
 
         public void Dispose()
         {
-            _cts.Cancel();
+            if (_disposed)
+            {
+                return;
+            }
 
-            // Releasing wakes the worker so it observes cancellation instead of blocking forever.
-            Signal.Release();
-            _cts.Dispose();
+            _disposed = true;
+            try
+            {
+                try
+                {
+                    _cts.Cancel();
+                    Signal.Release();
+                }
+                finally
+                {
+                    // The worker only posts UI callbacks; it never waits for them. Drain it before
+                    // the caller can release its file system or thumbnail cache.
+                    _worker?.GetAwaiter().GetResult();
+                }
+            }
+            catch (OperationCanceledException) when (Token.IsCancellationRequested)
+            {
+                // Cancellation is the normal way this worker stops.
+            }
+            catch (Exception ex)
+            {
+                Logger.Instance.Warn("[AssetBrowser] Thumbnail worker failed during shutdown: {0}", ex.Message);
+            }
+            finally
+            {
+                Signal.Dispose();
+                _cts.Dispose();
+            }
         }
 
         public void Start(AssetThumbnailLoader owner)
         {
-            Task.Factory.StartNew(
-                () => owner.Work(this), _cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+            _worker = Task.Factory.StartNew(
+                () => owner.Work(this), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
         }
     }
 }

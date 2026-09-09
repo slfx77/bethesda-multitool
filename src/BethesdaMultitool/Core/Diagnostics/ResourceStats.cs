@@ -94,7 +94,10 @@ internal sealed class RegistrySnapshot
     ///         double-count a pool that also reports its own attributed size.
     ///     </para>
     /// </summary>
-    public long TotalBytes(ResourceCategory category) => _totalsByCategory[(int)category];
+    public long TotalBytes(ResourceCategory category)
+    {
+        return _totalsByCategory[(int)category];
+    }
 
     /// <summary>
     ///     Bytes under <paramref name="category" /> restricted to one physical GPU pool. This is the

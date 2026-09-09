@@ -72,7 +72,8 @@ public sealed class Fo4SplineShadowDiagnosticSourceContractTests
         var frame = SourceContract.ReadAppSource("WorldView3DControl.Frame.cs");
         var capture = SourceContract.ReadAppSource("WorldView3DControl.ShadowCapture.cs");
         var profiling = SourceContract.ReadAppSource("WorldView3DControl.Profiling.cs");
-        foreach (var name in new[] { "OmittedSplineDraw", "OmittedSplineInstance", "SubmittedSplineDraw", "SubmittedSplineInstance" })
+        foreach (var name in new[]
+                     { "OmittedSplineDraw", "OmittedSplineInstance", "SubmittedSplineDraw", "SubmittedSplineInstance" })
         {
             Assert.Contains($"Array.Clear(_lastShadow{name}sByCascade);", frame, StringComparison.Ordinal);
             Assert.Contains($"_lastShadow{name}sByCascade[i] = _references.LastShadow{name}Count;",
@@ -87,9 +88,15 @@ public sealed class Fo4SplineShadowDiagnosticSourceContractTests
         Assert.Contains("fields[\"diagnosticOmitFo4SplineShadows\"]", profiling, StringComparison.Ordinal);
     }
 
-    private static string RendererSource() => SourceContract.ReadSource("src", "BethesdaMultitool", "Core",
-        "Formats", "Nif", "Rendering", "D3D12", "ReferenceRenderer12.cs");
+    private static string RendererSource()
+    {
+        return SourceContract.ReadSource("src", "BethesdaMultitool", "Core",
+            "Formats", "Nif", "Rendering", "D3D12", "ReferenceRenderer12.cs");
+    }
 
-    private static string Replay(string renderer) => SourceContract.Extract(renderer,
-        "public bool RenderShadowDepth(", "public bool RenderMirrorColor(");
+    private static string Replay(string renderer)
+    {
+        return SourceContract.Extract(renderer,
+            "public bool RenderShadowDepth(", "public bool RenderMirrorColor(");
+    }
 }

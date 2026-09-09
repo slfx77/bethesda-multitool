@@ -1,4 +1,3 @@
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.PlannedWriter;
 using BethesdaMultitool.Core.Formats.Esm.Planner.Catalog;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Pipeline;
@@ -50,6 +49,45 @@ public sealed class PlannerRoutingConsistencyTests
         ["ACRE"] = "Cell child: emits under CELL Children GRUPs, never a top-level GRUP.",
         ["DIAL"] = "DialogGrupBuilder owns DIAL/INFO emission; the plan is consumed only as preallocatedNewFormIds.",
         ["INFO"] = "DialogGrupBuilder owns DIAL/INFO emission; the plan is consumed only as preallocatedNewFormIds."
+    };
+
+    /// <summary>
+    ///     Types the generic runtime sweep (<c>RecordParserContext.MergeRuntimeGenericRecords</c>
+    ///     via <c>RuntimeGenericReader</c>) reads out of dumps but that the pipeline's top-level
+    ///     loop does not yield, each with the reason it is allowed to stay unrouted. Every entry
+    ///     is a captured record class that today silently never reaches the output ESM — the M1
+    ///     guard below keeps this set explicit instead of silent.
+    /// </summary>
+    private static readonly Dictionary<string, string> GenericSweepEmissionExemptions = new(StringComparer.Ordinal)
+    {
+        // LSCR / CHIP / IDLM / CAMS / MSET left this list 2026-08-26: all five now have an encoder,
+        // a DmpRecordSource row, a planned-encoder row, a registry row, and an
+        // EnumerateModelsByType yield. MSET additionally gained RuntimeMediaSetReader so its six
+        // pointer-backed layer names can be recovered at all.
+        // EFSH / RGDL / CSNO left this list 2026-08-26 (round 3): each carries its payload in one
+        // block whose runtime size matches the file schema exactly, so the existing BE→LE registry
+        // converts it and no new decode was needed.
+        //
+        // IPDS and DOBJ left this list once pdb_layouts.json was regenerated with LF_ARRAY leaves
+        // resolved: their sole payload fields (BGSImpactDataSet.ppImpactData @44,
+        // BGSDefaultObjectManager.pObjectArray @40) used to export as size:0 / kind:"unknown" and
+        // were dropped by GetReadableFields before any reader ran. Both are now inline pointer
+        // arrays whose slot counts match their file schemas exactly (12 materials, 34 defaults).
+        ["AMEF"] =
+            "zero records corpus-wide across all 32 dumps (census2026-08-25) — nothing to route",
+        ["SKIL"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
+        ["CLOT"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
+        ["LVSP"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
+        // TLOD (0x44) left this list 2026-08-25: I4c PDB-verified that the engine registers
+        // TESObjectLAND (runtime terrain) under TLOD_ID, so 0x44 is now a SpecializedFormType
+        // (RuntimeWorldReader) and no longer flows through the generic sweep.
+        ["TES4"] = "file header form — Tes4HeaderBuilder synthesizes the plugin header; never routed as a record",
+        ["NAVI"] = "emitted outside the top-level loop — EsmAssembler's NAVI fallback builds it from emitted NAVMs",
+        ["NAVM"] = "cell child: emits under CELL Children GRUPs via the NAVM byte-rewriter, never a top-level GRUP",
+        ["PMIS"] = "placed-ref type — routes through cell children, not top-level yields",
+        ["PGRE"] = "placed-ref type — routes through cell children, not top-level yields",
+        ["PBEA"] = "placed-ref type — routes through cell children, not top-level yields",
+        ["PFLA"] = "placed-ref type — routes through cell children, not top-level yields"
     };
 
     [Fact]
@@ -124,45 +162,6 @@ public sealed class PlannerRoutingConsistencyTests
     }
 
     /// <summary>
-    ///     Types the generic runtime sweep (<c>RecordParserContext.MergeRuntimeGenericRecords</c>
-    ///     via <c>RuntimeGenericReader</c>) reads out of dumps but that the pipeline's top-level
-    ///     loop does not yield, each with the reason it is allowed to stay unrouted. Every entry
-    ///     is a captured record class that today silently never reaches the output ESM — the M1
-    ///     guard below keeps this set explicit instead of silent.
-    /// </summary>
-    private static readonly Dictionary<string, string> GenericSweepEmissionExemptions = new(StringComparer.Ordinal)
-    {
-        // LSCR / CHIP / IDLM / CAMS / MSET left this list 2026-08-26: all five now have an encoder,
-        // a DmpRecordSource row, a planned-encoder row, a registry row, and an
-        // EnumerateModelsByType yield. MSET additionally gained RuntimeMediaSetReader so its six
-        // pointer-backed layer names can be recovered at all.
-        // EFSH / RGDL / CSNO left this list 2026-08-26 (round 3): each carries its payload in one
-        // block whose runtime size matches the file schema exactly, so the existing BE→LE registry
-        // converts it and no new decode was needed.
-        //
-        // IPDS and DOBJ left this list once pdb_layouts.json was regenerated with LF_ARRAY leaves
-        // resolved: their sole payload fields (BGSImpactDataSet.ppImpactData @44,
-        // BGSDefaultObjectManager.pObjectArray @40) used to export as size:0 / kind:"unknown" and
-        // were dropped by GetReadableFields before any reader ran. Both are now inline pointer
-        // arrays whose slot counts match their file schemas exactly (12 materials, 34 defaults).
-        ["AMEF"] =
-            "zero records corpus-wide across all 32 dumps (census2026-08-25) — nothing to route",
-        ["SKIL"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
-        ["CLOT"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
-        ["LVSP"] = "not part of the FNV file format — xEdit wbDefinitionsFNV has no record block",
-        // TLOD (0x44) left this list 2026-08-25: I4c PDB-verified that the engine registers
-        // TESObjectLAND (runtime terrain) under TLOD_ID, so 0x44 is now a SpecializedFormType
-        // (RuntimeWorldReader) and no longer flows through the generic sweep.
-        ["TES4"] = "file header form — Tes4HeaderBuilder synthesizes the plugin header; never routed as a record",
-        ["NAVI"] = "emitted outside the top-level loop — EsmAssembler's NAVI fallback builds it from emitted NAVMs",
-        ["NAVM"] = "cell child: emits under CELL Children GRUPs via the NAVM byte-rewriter, never a top-level GRUP",
-        ["PMIS"] = "placed-ref type — routes through cell children, not top-level yields",
-        ["PGRE"] = "placed-ref type — routes through cell children, not top-level yields",
-        ["PBEA"] = "placed-ref type — routes through cell children, not top-level yields",
-        ["PFLA"] = "placed-ref type — routes through cell children, not top-level yields"
-    };
-
-    /// <summary>
     ///     M1 guard: every FormType the generic runtime sweep can read out of a dump must
     ///     either be yielded by the pipeline's top-level loop or sit on
     ///     <see cref="GenericSweepEmissionExemptions" /> with a written reason. The oracle
@@ -202,8 +201,8 @@ public sealed class PlannerRoutingConsistencyTests
                 "ENUM_FORM_ID signature in RuntimeBuildOffsets.GetRecordTypeCode — extend the " +
                 "mapping so its routing can be audited.");
 
-            if (PluginConversionPipeline.EmittableTopLevelRecordTypes.Contains(signature!)
-                || GenericSweepEmissionExemptions.ContainsKey(signature!))
+            if (PluginConversionPipeline.EmittableTopLevelRecordTypes.Contains(signature)
+                || GenericSweepEmissionExemptions.ContainsKey(signature))
             {
                 continue;
             }

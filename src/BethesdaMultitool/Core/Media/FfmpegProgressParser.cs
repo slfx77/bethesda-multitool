@@ -44,7 +44,7 @@ internal static partial class FfmpegProgressParser
         var fraction = int.Parse(fractionText, CultureInfo.InvariantCulture)
                        / Math.Pow(10, fractionText.Length);
 
-        return (hours * 3600) + (minutes * 60) + seconds + fraction;
+        return hours * 3600 + minutes * 60 + seconds + fraction;
     }
 
     /// <summary>

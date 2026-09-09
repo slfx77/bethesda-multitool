@@ -185,13 +185,13 @@ internal static class Tes3SubrecordDecoder
     {
         return
         [
-            new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()), new("Type", c.ReadInt16()),
-            new("Health", c.ReadUInt16()), new("Speed", c.ReadFloat()), new("Reach", c.ReadFloat()),
-            new("EnchantPts", c.ReadUInt16()),
-            new("ChopMin", c.ReadByte()), new("ChopMax", c.ReadByte()),
-            new("SlashMin", c.ReadByte()), new("SlashMax", c.ReadByte()),
-            new("ThrustMin", c.ReadByte()), new("ThrustMax", c.ReadByte()),
-            new("Flags", Flag(c.ReadUInt32()))
+            new Field("Weight", c.ReadFloat()), new Field("Value", c.ReadInt32()), new Field("Type", c.ReadInt16()),
+            new Field("Health", c.ReadUInt16()), new Field("Speed", c.ReadFloat()), new Field("Reach", c.ReadFloat()),
+            new Field("EnchantPts", c.ReadUInt16()),
+            new Field("ChopMin", c.ReadByte()), new Field("ChopMax", c.ReadByte()),
+            new Field("SlashMin", c.ReadByte()), new Field("SlashMax", c.ReadByte()),
+            new Field("ThrustMin", c.ReadByte()), new Field("ThrustMax", c.ReadByte()),
+            new Field("Flags", Flag(c.ReadUInt32()))
         ];
     }
 
@@ -199,8 +199,9 @@ internal static class Tes3SubrecordDecoder
     {
         return
         [
-            new("Type", c.ReadInt32()), new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()),
-            new("Health", c.ReadInt32()), new("EnchantPts", c.ReadInt32()), new("Armour", c.ReadInt32())
+            new Field("Type", c.ReadInt32()), new Field("Weight", c.ReadFloat()), new Field("Value", c.ReadInt32()),
+            new Field("Health", c.ReadInt32()), new Field("EnchantPts", c.ReadInt32()),
+            new Field("Armour", c.ReadInt32())
         ];
     }
 
@@ -208,8 +209,8 @@ internal static class Tes3SubrecordDecoder
     {
         return
         [
-            new("Type", c.ReadInt32()), new("Weight", c.ReadFloat()), new("Value", c.ReadInt16()),
-            new("EnchantPts", c.ReadInt16())
+            new Field("Type", c.ReadInt32()), new Field("Weight", c.ReadFloat()), new Field("Value", c.ReadInt16()),
+            new Field("EnchantPts", c.ReadInt16())
         ];
     }
 
@@ -217,8 +218,9 @@ internal static class Tes3SubrecordDecoder
     {
         return
         [
-            new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()), new("Time", c.ReadInt32()),
-            new("Radius", c.ReadInt32()), new("Color", Flag(c.ReadUInt32())), new("Flags", Flag(c.ReadUInt32()))
+            new Field("Weight", c.ReadFloat()), new Field("Value", c.ReadInt32()), new Field("Time", c.ReadInt32()),
+            new Field("Radius", c.ReadInt32()), new Field("Color", Flag(c.ReadUInt32())),
+            new Field("Flags", Flag(c.ReadUInt32()))
         ];
     }
 
@@ -226,13 +228,13 @@ internal static class Tes3SubrecordDecoder
     {
         return
         [
-            new("Weight", c.ReadFloat()), new("Value", c.ReadInt32()),
-            new("Effect1", c.ReadInt32()), new("Effect2", c.ReadInt32()),
-            new("Effect3", c.ReadInt32()), new("Effect4", c.ReadInt32()),
-            new("Skill1", c.ReadInt32()), new("Skill2", c.ReadInt32()),
-            new("Skill3", c.ReadInt32()), new("Skill4", c.ReadInt32()),
-            new("Attribute1", c.ReadInt32()), new("Attribute2", c.ReadInt32()),
-            new("Attribute3", c.ReadInt32()), new("Attribute4", c.ReadInt32())
+            new Field("Weight", c.ReadFloat()), new Field("Value", c.ReadInt32()),
+            new Field("Effect1", c.ReadInt32()), new Field("Effect2", c.ReadInt32()),
+            new Field("Effect3", c.ReadInt32()), new Field("Effect4", c.ReadInt32()),
+            new Field("Skill1", c.ReadInt32()), new Field("Skill2", c.ReadInt32()),
+            new Field("Skill3", c.ReadInt32()), new Field("Skill4", c.ReadInt32()),
+            new Field("Attribute1", c.ReadInt32()), new Field("Attribute2", c.ReadInt32()),
+            new Field("Attribute3", c.ReadInt32()), new Field("Attribute4", c.ReadInt32())
         ];
     }
 
@@ -240,9 +242,9 @@ internal static class Tes3SubrecordDecoder
     {
         return
         [
-            new("Effect", c.ReadInt16()), new("Skill", c.ReadInt8()), new("Attribute", c.ReadInt8()),
-            new("Range", c.ReadInt32()), new("Area", c.ReadInt32()), new("Duration", c.ReadInt32()),
-            new("MagMin", c.ReadInt32()), new("MagMax", c.ReadInt32())
+            new Field("Effect", c.ReadInt16()), new Field("Skill", c.ReadInt8()), new Field("Attribute", c.ReadInt8()),
+            new Field("Range", c.ReadInt32()), new Field("Area", c.ReadInt32()), new Field("Duration", c.ReadInt32()),
+            new Field("MagMin", c.ReadInt32()), new Field("MagMax", c.ReadInt32())
         ];
     }
 
@@ -328,9 +330,9 @@ internal static class Tes3SubrecordDecoder
     {
         return
         [
-            new("Attribute", c.ReadInt32()), new("Specialization", c.ReadInt32()),
-            new("UseValue1", c.ReadFloat()), new("UseValue2", c.ReadFloat()),
-            new("UseValue3", c.ReadFloat()), new("UseValue4", c.ReadFloat())
+            new Field("Attribute", c.ReadInt32()), new Field("Specialization", c.ReadInt32()),
+            new Field("UseValue1", c.ReadFloat()), new Field("UseValue2", c.ReadFloat()),
+            new Field("UseValue3", c.ReadFloat()), new Field("UseValue4", c.ReadFloat())
         ];
     }
 
@@ -338,9 +340,10 @@ internal static class Tes3SubrecordDecoder
     {
         return
         [
-            new("School", c.ReadInt32()), new("BaseCost", c.ReadFloat()), new("Flags", Flag(c.ReadUInt32())),
-            new("Red", c.ReadInt32()), new("Green", c.ReadInt32()), new("Blue", c.ReadInt32()),
-            new("SpeedX", c.ReadFloat()), new("SizeX", c.ReadFloat()), new("SizeCap", c.ReadFloat())
+            new Field("School", c.ReadInt32()), new Field("BaseCost", c.ReadFloat()),
+            new Field("Flags", Flag(c.ReadUInt32())),
+            new Field("Red", c.ReadInt32()), new Field("Green", c.ReadInt32()), new Field("Blue", c.ReadInt32()),
+            new Field("SpeedX", c.ReadFloat()), new Field("SizeX", c.ReadFloat()), new Field("SizeCap", c.ReadFloat())
         ];
     }
 
@@ -381,9 +384,9 @@ internal static class Tes3SubrecordDecoder
     {
         return
         [
-            new("Unknown", c.ReadInt32()), new("Disposition", c.ReadInt32()),
-            new("Rank", c.ReadByte()), new("Gender", c.ReadByte()),
-            new("PCRank", c.ReadByte()), new("Unknown2", c.ReadByte())
+            new Field("Unknown", c.ReadInt32()), new Field("Disposition", c.ReadInt32()),
+            new Field("Rank", c.ReadByte()), new Field("Gender", c.ReadByte()),
+            new Field("PCRank", c.ReadByte()), new Field("Unknown2", c.ReadByte())
         ];
     }
 

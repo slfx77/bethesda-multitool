@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Arena;
 using Xunit;
 
@@ -179,7 +177,7 @@ public class ArenaCfaDecoderTests
     {
         // Two 4-pixel frames at 4bpp: all frames are packed into a single RLE stream.
         var frames = ArenaCfaDecoder.Decode(
-            BuildCfa(4, 1, 4, [0xAB, 0xCD, 0x12, 0x34], frameCount: 2), "T.CFA");
+            BuildCfa(4, 1, 4, [0xAB, 0xCD, 0x12, 0x34], 2), "T.CFA");
 
         Assert.Equal(2, frames.Count);
         Assert.Equal([10, 11, 12, 13], frames[0].Indices);

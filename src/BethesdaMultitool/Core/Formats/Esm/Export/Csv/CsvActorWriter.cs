@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
@@ -78,7 +79,7 @@ internal static class CsvActorWriter
                 s?.FatigueBase.ToString() ?? "",
                 s?.BarterGold.ToString() ?? "",
                 s?.SpeedMultiplier.ToString() ?? "",
-                s?.KarmaAlignment.ToString() ?? "",
+                s?.KarmaAlignment.ToString(CultureInfo.InvariantCulture) ?? "",
                 s?.DispositionBase.ToString() ?? "",
                 s?.CalcMin.ToString() ?? "",
                 s?.CalcMax.ToString() ?? "",

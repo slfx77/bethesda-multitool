@@ -14,13 +14,13 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 public sealed class FnvGeometryArtifactRetailTests
 {
     private const string MeshesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+        @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa";
 
     private const string TexturesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures.bsa";
+        @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Textures.bsa";
 
     private const string Textures2BsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures2.bsa";
+        @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Textures2.bsa";
 
     [Fact]
     public void CampGolfCourse_RetailDecalStackRemainsClassifiedAndTopologicallyValid()
@@ -229,7 +229,7 @@ public sealed class FnvGeometryArtifactRetailTests
     {
         var path = SampleFileFixture.FindSamplePath(relativePath);
         Assert.SkipWhen(path is null, $"FNV PC-final {label} BSA not available");
-        return path!;
+        return path;
     }
 
     private sealed record ComponentSummary(int VertexCount, int TriangleCount);

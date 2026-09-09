@@ -1,6 +1,11 @@
 using System.CommandLine;
 using System.CommandLine.Help;
 using System.Text;
+using BethesdaMultitool.CLI.Commands.Audio;
+using BethesdaMultitool.CLI.Commands.Classic;
+using BethesdaMultitool.CLI.Commands.Diagnostics;
+using BethesdaMultitool.CLI.Commands.Sprite;
+using BethesdaMultitool.CLI.Commands.Video;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Diagnostics;
 using Spectre.Console;
@@ -68,6 +73,14 @@ public static class Program
     public static string? AutoOpenActor { get; internal set; }
 
     /// <summary>
+    ///     Folder, archive or classic game root to open in the Asset Browser at startup (set via
+    ///     <c>--asset-source</c>). Every one of the Asset Browser's own open routes ends in a native
+    ///     picker, which scripted verification must never drive: that means synthetic input into
+    ///     whatever window happens to have focus. This is the picker-free equivalent of <c>--file</c>.
+    /// </summary>
+    public static string? AutoAssetSource { get; internal set; }
+
+    /// <summary>
     ///     Worldspace name substring to auto-select on the world map (set via --worldspace, e.g.
     ///     <c>--worldspace WastelandNV</c>). When unset, the auto-open picks the densest worldspace
     ///     (most cells) so it never lands on an empty test worldspace.
@@ -104,6 +117,7 @@ public static class Program
             AutoLoadFile = GetAutoLoadFile(args);
             AutoOpenView = GetFlagValue(args, "--view");
             AutoOpenActor = GetFlagValue(args, "--actor");
+            AutoAssetSource = GetFlagValue(args, "--asset-source");
             AutoOpenWorldspace = GetFlagValue(args, "--worldspace");
             AutoOpenLayer = GetFlagValue(args, "--layer");
             AutoRenderedModels = args.Any(a => a.Equals("--rendered-models", StringComparison.OrdinalIgnoreCase));
@@ -178,16 +192,16 @@ public static class Program
         rootCommand.Subcommands.Add(SaveCommand.Create());
         rootCommand.Subcommands.Add(DmpCommand.Create());
         rootCommand.Subcommands.Add(RenderCommand.Create());
-        rootCommand.Subcommands.Add(CLI.Commands.Sprite.SpriteCommand.Create());
-        rootCommand.Subcommands.Add(CLI.Commands.Classic.ClassicCommand.Create());
-        rootCommand.Subcommands.Add(CLI.Commands.Audio.AudioCommand.Create());
-        rootCommand.Subcommands.Add(CLI.Commands.Video.VideoCommand.Create());
+        rootCommand.Subcommands.Add(SpriteCommand.Create());
+        rootCommand.Subcommands.Add(ClassicCommand.Create());
+        rootCommand.Subcommands.Add(AudioCommand.Create());
+        rootCommand.Subcommands.Add(VideoCommand.Create());
         rootCommand.Subcommands.Add(ExportCommand.Create());
         rootCommand.Subcommands.Add(AnalyzeCommand.Create());
         rootCommand.Subcommands.Add(ReportCommand.Create());
         rootCommand.Subcommands.Add(VersionTrackCommand.Create());
         rootCommand.Subcommands.Add(
-            CLI.Commands.Diagnostics.BuildShaderBytecodePackCommand.Create());
+            BuildShaderBytecodePackCommand.Create());
 
         var exitCode = rootCommand.Parse(args).Invoke();
 

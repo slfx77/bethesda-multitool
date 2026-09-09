@@ -19,24 +19,6 @@ internal sealed class SynchronizedLazyDisposable<T> : IDisposable where T : clas
         _factory = factory;
     }
 
-    internal TResult Use<TResult>(Func<T, TResult> action)
-    {
-        ArgumentNullException.ThrowIfNull(action);
-
-        lock (_gate)
-        {
-            ObjectDisposedException.ThrowIf(_disposed, typeof(SynchronizedLazyDisposable<T>));
-
-            if (!_isValueCreated)
-            {
-                _value = _factory();
-                _isValueCreated = true;
-            }
-
-            return action(_value!);
-        }
-    }
-
     public void Dispose()
     {
         T? value;
@@ -53,5 +35,23 @@ internal sealed class SynchronizedLazyDisposable<T> : IDisposable where T : clas
         }
 
         value?.Dispose();
+    }
+
+    internal TResult Use<TResult>(Func<T, TResult> action)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        lock (_gate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, typeof(SynchronizedLazyDisposable<T>));
+
+            if (!_isValueCreated)
+            {
+                _value = _factory();
+                _isValueCreated = true;
+            }
+
+            return action(_value!);
+        }
     }
 }

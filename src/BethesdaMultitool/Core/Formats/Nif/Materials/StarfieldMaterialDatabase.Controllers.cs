@@ -362,7 +362,8 @@ internal sealed partial class StarfieldMaterialDatabase
         IReadOnlyDictionary<uint, string> strings,
         out ControllerValue value)
     {
-        value = new ControllerValue { ClassName = className, Fields = new(StringComparer.Ordinal) };
+        value = new ControllerValue
+            { ClassName = className, Fields = new Dictionary<string, ControllerValue>(StringComparer.Ordinal) };
         if (!isDiff)
         {
             foreach (var field in definition.Fields)

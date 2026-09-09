@@ -17,9 +17,6 @@ namespace BethesdaMultitool.CLI.Rendering.Map;
 /// </summary>
 internal static class ArenaMapRenderer
 {
-    /// <summary>One rendered layer image.</summary>
-    internal sealed record RenderedLayer(string Path, string Layer, int Width, int Height, int DistinctVoxels);
-
     /// <summary>Renders every layer of every level in a .MIF.</summary>
     public static IReadOnlyList<RenderedLayer> RenderMif(ArenaMifFile map, string outputDir, int scale)
     {
@@ -98,4 +95,6 @@ internal static class ArenaMapRenderer
         return new RenderedLayer(path, layerName, outWidth, outHeight, distinct);
     }
 
+    /// <summary>One rendered layer image.</summary>
+    internal sealed record RenderedLayer(string Path, string Layer, int Width, int Height, int DistinctVoxels);
 }

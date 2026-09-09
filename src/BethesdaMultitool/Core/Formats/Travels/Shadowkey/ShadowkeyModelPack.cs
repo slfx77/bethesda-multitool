@@ -33,9 +33,17 @@ internal sealed record ShadowkeyModelPackEntry(
 ///     optionally named by <c>models.txt</c>. N-Gage, <b>little-endian</b>. Original RE 2026-09-05
 ///     from the retail files.
 ///     <para>
-///         <c>models.idx</c> is <c>u32 count</c> then <c>count</c> pairs of <c>u32 offset,
-///         u32 size</c> — no magic, no header beyond the count. The entries <b>tile the blob
-///         contiguously</b>: <c>offset[0] == 0</c>, <c>offset[i+1] == offset[i] + size[i]</c>, and
+///         <c>models.idx</c> is <c>u32 count</c> then <c>count</c> pairs of
+///         <c>
+///             u32 offset,
+///             u32 size
+///         </c>
+///         — no magic, no header beyond the count. The entries
+///         <b>
+///             tile the blob
+///             contiguously
+///         </b>
+///         : <c>offset[0] == 0</c>, <c>offset[i+1] == offset[i] + size[i]</c>, and
 ///         the last entry ends exactly at the end of <c>models.huge</c>. That tiling is the only
 ///         structural check the format offers, so it is enforced rather than assumed.
 ///     </para>
@@ -64,8 +72,9 @@ internal sealed class ShadowkeyModelPack
     /// <summary>Fields on a <c>models.txt</c> line: index, flag, width, height, file name.</summary>
     public const int ModelsTxtFieldCount = 5;
 
-    private readonly byte[] _pack;
     private readonly ShadowkeyMesh?[] _meshes;
+
+    private readonly byte[] _pack;
     private readonly bool[] _parsed;
 
     private ShadowkeyModelPack(string name, byte[] pack, IReadOnlyList<ShadowkeyModelPackEntry> entries)
@@ -108,7 +117,7 @@ internal sealed class ShadowkeyModelPack
         }
 
         var declared = BinaryPrimitives.ReadUInt32LittleEndian(indexBytes);
-        var expectedLength = IndexHeaderLength + ((long)declared * IndexEntryLength);
+        var expectedLength = IndexHeaderLength + (long)declared * IndexEntryLength;
         if (expectedLength != indexBytes.Length)
         {
             throw new InvalidDataException(
@@ -122,7 +131,7 @@ internal sealed class ShadowkeyModelPack
         long running = 0;
         for (var i = 0; i < count; i++)
         {
-            var entryOffset = IndexHeaderLength + (i * IndexEntryLength);
+            var entryOffset = IndexHeaderLength + i * IndexEntryLength;
             var offset = BinaryPrimitives.ReadUInt32LittleEndian(indexBytes.AsSpan(entryOffset));
             var size = BinaryPrimitives.ReadUInt32LittleEndian(indexBytes.AsSpan(entryOffset + 4));
 
@@ -176,7 +185,8 @@ internal sealed class ShadowkeyModelPack
 
         var mesh = entry.IsEmpty
             ? null
-            : ShadowkeyMesh.Parse(_pack.AsSpan((int)entry.Offset, (int)entry.Size), entry.FileName ?? $"{Name}[{index}]");
+            : ShadowkeyMesh.Parse(_pack.AsSpan((int)entry.Offset, (int)entry.Size),
+                entry.FileName ?? $"{Name}[{index}]");
 
         _meshes[index] = mesh;
         _parsed[index] = true;
@@ -189,7 +199,7 @@ internal sealed class ShadowkeyModelPack
     ///     what proves the table is a parallel array of the pack index rather than a lookup keyed
     ///     by the number.
     /// </summary>
-    private static IReadOnlyList<ModelsTxtLine>? ParseModelsTxt(string? text, int count, string name)
+    private static List<ModelsTxtLine>? ParseModelsTxt(string? text, int count, string name)
     {
         if (text is null)
         {

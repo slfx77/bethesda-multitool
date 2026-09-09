@@ -1,5 +1,4 @@
 using System.Numerics;
-
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
@@ -20,13 +19,6 @@ internal static class OblivionWaterDisplacementComposition
     internal const int ProbeTextureSize = 256;
     internal const float ProbeBlendRadius = 1f;
 
-    internal enum ProbeMode
-    {
-        Disabled,
-        NeutralZeroBlend,
-        RadialImpulse,
-    }
-
     internal static ProbeMode ParseProbeMode(string? raw)
     {
         if (string.Equals(raw, "neutral-zero", StringComparison.OrdinalIgnoreCase))
@@ -39,18 +31,25 @@ internal static class OblivionWaterDisplacementComposition
             : ProbeMode.Disabled;
     }
 
-    internal static float GetProbeBlendAmount(ProbeMode mode) =>
-        mode == ProbeMode.RadialImpulse ? 1f : 0f;
-
-    internal static string GetProbeKey(ProbeMode mode) => mode switch
+    internal static float GetProbeBlendAmount(ProbeMode mode)
     {
-        ProbeMode.NeutralZeroBlend => "neutral-zero",
-        ProbeMode.RadialImpulse => "radial-impulse",
-        _ => "disabled",
-    };
+        return mode == ProbeMode.RadialImpulse ? 1f : 0f;
+    }
 
-    internal static bool IsSourceBound(BethesdaGame game, uint sourceIndex) =>
-        game == BethesdaGame.Oblivion && sourceIndex != uint.MaxValue;
+    internal static string GetProbeKey(ProbeMode mode)
+    {
+        return mode switch
+        {
+            ProbeMode.NeutralZeroBlend => "neutral-zero",
+            ProbeMode.RadialImpulse => "radial-impulse",
+            _ => "disabled"
+        };
+    }
+
+    internal static bool IsSourceBound(BethesdaGame game, uint sourceIndex)
+    {
+        return game == BethesdaGame.Oblivion && sourceIndex != uint.MaxValue;
+    }
 
     // Zero blend is a valid binding control. It must retain the descriptor/radius/route while
     // contributing no displacement, so amount deliberately does not participate in this gate.
@@ -58,15 +57,19 @@ internal static class OblivionWaterDisplacementComposition
         BethesdaGame game,
         bool ripplesEnabled,
         uint sourceIndex,
-        float radius) =>
-        IsSourceBound(game, sourceIndex) && ripplesEnabled && radius > 0f;
+        float radius)
+    {
+        return IsSourceBound(game, sourceIndex) && ripplesEnabled && radius > 0f;
+    }
 
     /// <summary>
     ///     Viewer adaptation of the retail player-centred quad: the camera is the only available
     ///     player stand-in. It maps the camera to (0.5, 0.5) and +/-512 world units to the quad edge.
     /// </summary>
-    internal static Vector2 GetWadingUv(Vector2 worldPosition, Vector2 cameraPosition) =>
-        (worldPosition - cameraPosition) / WadingQuadWorldSize + new Vector2(0.5f);
+    internal static Vector2 GetWadingUv(Vector2 worldPosition, Vector2 cameraPosition)
+    {
+        return (worldPosition - cameraPosition) / WadingQuadWorldSize + new Vector2(0.5f);
+    }
 
     /// <summary>
     ///     WATER007.pso package 013 lines 612-633:
@@ -86,16 +89,21 @@ internal static class OblivionWaterDisplacementComposition
         return (1f - ramp) * amount;
     }
 
-    internal static Vector3 DecodeNormal(Vector3 encoded) => encoded * 2f - Vector3.One;
+    internal static Vector3 DecodeNormal(Vector3 encoded)
+    {
+        return encoded * 2f - Vector3.One;
+    }
 
     internal static Vector3 ComposeNormal(
         Vector3 globalNormal,
         Vector3 encodedDisplacementNormal,
-        float blendWeight) =>
-        Vector3.Normalize(Vector3.Lerp(
+        float blendWeight)
+    {
+        return Vector3.Normalize(Vector3.Lerp(
             globalNormal,
             DecodeNormal(encodedDisplacementNormal),
             blendWeight));
+    }
 
     /// <summary>
     ///     Produces either the flat encoded normal used by the zero-blend binding control, or one
@@ -136,5 +144,12 @@ internal static class OblivionWaterDisplacementComposition
             (y + 0.5f) / ProbeTextureSize);
         var signedPosition = (uv - new Vector2(0.5f)) * 2f;
         return Vector3.Normalize(new Vector3(signedPosition, 1f));
+    }
+
+    internal enum ProbeMode
+    {
+        Disabled,
+        NeutralZeroBlend,
+        RadialImpulse
     }
 }

@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -21,7 +19,7 @@ public sealed class DaggerfallWorldRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Classics.Daggerfall();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Daggerfall (ARENA2)"));
-        return root!;
+        return root;
     }
 
     [Fact]
@@ -68,7 +66,8 @@ public sealed class DaggerfallWorldRetailTests
         var root = RequireArena2();
         var climatePath = Path.Combine(root, "CLIMATE.PAK");
         var politicPath = Path.Combine(root, "POLITIC.PAK");
-        Assert.SkipWhen(!File.Exists(climatePath) || !File.Exists(politicPath), RealAssetPaths.SkipMessage("PAK overlays"));
+        Assert.SkipWhen(!File.Exists(climatePath) || !File.Exists(politicPath),
+            RealAssetPaths.SkipMessage("PAK overlays"));
 
         var climate = DaggerfallPakFile.Parse(File.ReadAllBytes(climatePath), "CLIMATE.PAK");
         var politic = DaggerfallPakFile.Parse(File.ReadAllBytes(politicPath), "POLITIC.PAK");
@@ -95,19 +94,15 @@ public sealed class DaggerfallWorldRetailTests
 
         // Header + offset table + heightmap + 500,000 x 47-byte cells is exactly the file.
         Assert.Equal(2_001_168, woods.HeightMapOffset);
-        Assert.Equal(bytes.Length, woods.HeightMapOffset + DaggerfallWoodsFile.PixelCount + (DaggerfallWoodsFile.PixelCount * 47));
+        Assert.Equal(bytes.Length,
+            woods.HeightMapOffset + DaggerfallWoodsFile.PixelCount + DaggerfallWoodsFile.PixelCount * 47);
 
         // The map is mostly ocean (elevation below the 3-byte sea threshold), and every cell grid
         // must be reachable — sample the corners and centre of the map.
-        var land = 0;
         foreach (var (x, y) in new[] { (0, 0), (999, 0), (0, 499), (999, 499), (500, 250), (600, 200) })
         {
             var grid = woods.GetCellGrid(x, y);
             Assert.Equal(25, grid.Length);
-            if (woods.GetHeight(x, y) > 3)
-            {
-                land++;
-            }
         }
 
         var heights = woods.HeightMap.Span;

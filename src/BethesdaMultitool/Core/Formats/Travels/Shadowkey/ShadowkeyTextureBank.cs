@@ -11,7 +11,7 @@ namespace BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 ///     <code>
 ///     +0  u8              texture count N
 ///     +1  u8[N * 16384]   N textures, each 128 x 128 8-bit palette indices, row-major,
-///                         top row first, with NO per-texture header
+///                         BOTTOM row first, with NO per-texture header
 ///     </code>
 ///     <para>
 ///         Measured on all 21 retail zones 2026-09-05: <c>1 + N * 16384</c> equals the inflated
@@ -19,7 +19,17 @@ namespace BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 ///         exact tiling is what proves every texture is 128x128 — a single 64x64 slot anywhere
 ///         would break the arithmetic in every file — and the 128-wide row-major arrangement is
 ///         confirmed by autocorrelation (mean row-difference 37.3 at stride 128 vs 48.3 at 256 and
-///         72-78 at every other candidate) as well as visually.
+///         72-78 at every other candidate).
+///     </para>
+///     <para>
+///         ⚠ The rows are stored BOTTOM-UP, and <see cref="Parse" /> reverses them so every
+///         <see cref="IndexedBitmap" /> it hands out is top-down like the rest of the catalogue.
+///         Autocorrelation cannot see orientation, and this class claimed "top row first" until
+///         2026-09-08, when the user saw the gallery mirrored. Settled by the textures that have
+///         an unambiguous up: read top-down, the window vistas (twilite 20, crypt1 16, broken1 17,
+///         raiders 1, drgnfld 11) put the sky under the treetops, the stouttp 12 doorway opens at
+///         the ceiling with a wall band beneath it, and the palisade posts (dstar_e 18, dstar_w 4)
+///         hang from the top edge. Every orientable texture in the 326 agrees.
 ///     </para>
 ///     <para>
 ///         Pixels are indices into the zone's own 768-byte <c>.pal</c>, read through
@@ -75,7 +85,7 @@ internal sealed class ShadowkeyTextureBank
         }
 
         int count = bytes[0];
-        var expected = HeaderLength + ((long)count * TextureLength);
+        var expected = HeaderLength + (long)count * TextureLength;
         if (expected != bytes.Length)
         {
             throw new InvalidDataException(
@@ -85,9 +95,16 @@ internal sealed class ShadowkeyTextureBank
         var textures = new IndexedBitmap[count];
         for (var i = 0; i < count; i++)
         {
-            var offset = HeaderLength + (i * TextureLength);
-            textures[i] = new IndexedBitmap(
-                TextureWidth, TextureHeight, bytes.Slice(offset, TextureLength).ToArray());
+            var offset = HeaderLength + i * TextureLength;
+            var indices = new byte[TextureLength];
+            for (var row = 0; row < TextureHeight; row++)
+            {
+                // File row 0 is the bottom of the picture; land it on the bitmap's last row.
+                bytes.Slice(offset + row * TextureWidth, TextureWidth)
+                    .CopyTo(indices.AsSpan((TextureHeight - 1 - row) * TextureWidth, TextureWidth));
+            }
+
+            textures[i] = new IndexedBitmap(TextureWidth, TextureHeight, indices);
         }
 
         return new ShadowkeyTextureBank(name, textures);

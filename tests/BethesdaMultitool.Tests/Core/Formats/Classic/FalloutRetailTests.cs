@@ -1,12 +1,10 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using System.Globalization;
+using System.Text;
+using System.Text.RegularExpressions;
+using BethesdaMultitool.Core.Formats.Archives;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Fallout;
 using BethesdaMultitool.Core.Formats.Interplay;
-using BethesdaMultitool.Core.Formats.Archives;
 using BethesdaMultitool.Core.Imaging;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -27,7 +25,78 @@ public sealed class FalloutRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = resolve();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage(label));
-        return root!;
+        return root;
+    }
+
+    [Fact]
+    public void EveryGamFileDeclaresVariablesWhoseCommentIndexMatchesItsPosition()
+    {
+        // ⚑ THE ORACLE IS IN THE DATA: scripts address a global by DECLARATION ORDER, and the
+        // authors wrote that index into each trailing comment as "// (n)". A parse that drops or
+        // invents a declaration shows up as an off-by-one from that point on — which is exactly
+        // how the missing-semicolon trap below was found.
+        var root = Require(RealAssetPaths.Classics.Fallout1, "Fallout");
+
+        var master = Dat1Archive.Parse(Path.Combine(root, "MASTER.DAT"));
+        using var backend = new Dat1Backend(master);
+        var gam = backend.ListFiles()
+            .Where(e => e.FullPath.EndsWith(".GAM", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => e.FullPath, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        Assert.SkipWhen(gam.Count == 0, RealAssetPaths.SkipMessage("Fallout .GAM files"));
+
+        var declarations = 0;
+        var commented = 0;
+        var matching = 0;
+        var missingSemicolon = 0;
+        var mapScoped = 0;
+
+        foreach (var entry in gam)
+        {
+            var text = Encoding.Latin1.GetString(backend.Extract(entry));
+            var vars = FalloutGameVariables.Parse(text, entry.FullPath);
+            declarations += vars.Variables.Count;
+            if (vars.Scope == FalloutVariableScope.Map)
+            {
+                mapScoped++;
+            }
+
+            foreach (var v in vars.Variables)
+            {
+                var m = Regex.Match(v.Comment, @"^\s*\((\d+)\)");
+                if (!m.Success)
+                {
+                    continue;
+                }
+
+                commented++;
+                if (int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture) == v.Index)
+                {
+                    matching++;
+                }
+            }
+
+            foreach (var line in text.Split('\n'))
+            {
+                var code = line.Split("//")[0];
+                if (code.Contains(":=", StringComparison.Ordinal) && !code.TrimEnd().EndsWith(';'))
+                {
+                    missingSemicolon++;
+                }
+            }
+        }
+
+        // ⚠ The install is MODDED, so these assert the INVARIANT rather than exact counts.
+        Assert.True(declarations > 500, $"expected hundreds of declarations, saw {declarations}");
+        Assert.True(commented > 300, $"expected most to carry an index comment, saw {commented}");
+
+        // ⚑ The gate: every commented index equals its declaration position.
+        Assert.Equal(commented, matching);
+
+        // ⚠⚠ Retail declarations DO omit the terminating semicolon. Requiring it drops them and
+        // shifts every later index — which the equality above would then fail on.
+        Assert.True(missingSemicolon > 0, "expected retail declarations missing their semicolon");
+        Assert.True(mapScoped > 20, $"expected most .GAM files to be map-scoped, saw {mapScoped}");
     }
 
     [Fact]
@@ -289,7 +358,8 @@ public sealed class FalloutRetailTests
 
         var tileList = FalloutProList.Parse(
             backend.Extract(backend.ListFiles().First(e =>
-                e.FullPath.Replace('\\', '/').Equals(FalloutProList.PathFor(FalloutProType.Tile), StringComparison.OrdinalIgnoreCase))),
+                e.FullPath.Replace('\\', '/').Equals(FalloutProList.PathFor(FalloutProType.Tile),
+                    StringComparison.OrdinalIgnoreCase))),
             "TILES.LST");
         Assert.Equal(1622, tileList.Count);
 
@@ -341,7 +411,8 @@ public sealed class FalloutRetailTests
 
         var master = Dat1Archive.Parse(Path.Combine(root, "MASTER.DAT"));
         using var backend = new Dat1Backend(master);
-        var files = backend.ListFiles().ToDictionary(e => e.FullPath.Replace('\\', '/'), StringComparer.OrdinalIgnoreCase);
+        var files = backend.ListFiles()
+            .ToDictionary(e => e.FullPath.Replace('\\', '/'), StringComparer.OrdinalIgnoreCase);
 
         var resolved = 0;
         var nameWouldHaveWorked = 0;
@@ -354,15 +425,16 @@ public sealed class FalloutRetailTests
             var directory = FalloutProList.DirectoryFor(type);
             foreach (var entry in files.Values.Where(e =>
                          e.Name.EndsWith(".PRO", StringComparison.OrdinalIgnoreCase) &&
-                         e.FullPath.Replace('\\', '/').StartsWith($"PROTO/{directory}/", StringComparison.OrdinalIgnoreCase)))
+                         e.FullPath.Replace('\\', '/')
+                             .StartsWith($"PROTO/{directory}/", StringComparison.OrdinalIgnoreCase)))
             {
                 var pro = FalloutProFile.Parse(backend.Extract(entry), entry.Name);
                 var named = list.Resolve(pro.ProtoId);
                 Assert.Equal(entry.Name, named, StringComparer.OrdinalIgnoreCase);
                 resolved++;
 
-                if (pro.ListIndex.ToString("D8", System.Globalization.CultureInfo.InvariantCulture) + ".PRO" ==
-                    entry.Name.ToUpperInvariant())
+                if (string.Equals(pro.ListIndex.ToString("D8", CultureInfo.InvariantCulture) + ".PRO",
+                        entry.Name, StringComparison.OrdinalIgnoreCase))
                 {
                     nameWouldHaveWorked++;
                 }
@@ -506,7 +578,8 @@ public sealed class FalloutRetailTests
 
         var master = Dat1Archive.Parse(Path.Combine(root, "MASTER.DAT"));
         using var backend = new Dat1Backend(master);
-        var entry = backend.ListFiles().Single(e => e.Name.Equals(FalloutPalette.FileName, StringComparison.OrdinalIgnoreCase));
+        var entry = backend.ListFiles()
+            .Single(e => e.Name.Equals(FalloutPalette.FileName, StringComparison.OrdinalIgnoreCase));
         var bytes = backend.Extract(entry);
 
         // 768 palette bytes plus a 32x32x32 RGB-to-index lookup cube.
@@ -557,13 +630,16 @@ public sealed class FalloutRetailTests
         // ⚠ Reading a slide through COLOR.PAL is not a near miss, it is speckle: the sky dithers
         // across indices that DEATH.PAL makes near-identical and COLOR.PAL makes wildly different.
         var death = FalloutFrmFile.Parse(
-            backend.Extract(files.Single(e => e.FullPath.EndsWith("INTRFACE/DEATH.FRM", StringComparison.OrdinalIgnoreCase))),
+            backend.Extract(files.Single(e =>
+                e.FullPath.EndsWith("INTRFACE/DEATH.FRM", StringComparison.OrdinalIgnoreCase))),
             "DEATH.FRM");
         var own = FalloutPalette.Parse(
-            backend.Extract(files.Single(e => e.FullPath.EndsWith("INTRFACE/DEATH.PAL", StringComparison.OrdinalIgnoreCase))),
+            backend.Extract(files.Single(e =>
+                e.FullPath.EndsWith("INTRFACE/DEATH.PAL", StringComparison.OrdinalIgnoreCase))),
             "DEATH.PAL");
         var global = FalloutPalette.Parse(
-            backend.Extract(files.Single(e => e.Name.Equals(FalloutPalette.FileName, StringComparison.OrdinalIgnoreCase))),
+            backend.Extract(
+                files.Single(e => e.Name.Equals(FalloutPalette.FileName, StringComparison.OrdinalIgnoreCase))),
             FalloutPalette.FileName);
 
         var frame = death.DistinctFrames.First();
@@ -590,8 +666,8 @@ public sealed class FalloutRetailTests
         {
             for (var x = 0; x < bitmap.Width - 1; x++)
             {
-                var a = palette.GetEntry(bitmap.Indices[(y * bitmap.Width) + x]);
-                var b = palette.GetEntry(bitmap.Indices[(y * bitmap.Width) + x + 1]);
+                var a = palette.GetEntry(bitmap.Indices[y * bitmap.Width + x]);
+                var b = palette.GetEntry(bitmap.Indices[y * bitmap.Width + x + 1]);
                 total += Math.Max(Math.Abs(a.R - b.R), Math.Max(Math.Abs(a.G - b.G), Math.Abs(a.B - b.B)));
                 count++;
             }

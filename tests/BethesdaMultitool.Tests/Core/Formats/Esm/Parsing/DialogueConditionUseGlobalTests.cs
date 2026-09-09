@@ -75,7 +75,7 @@ public sealed class DialogueConditionUseGlobalTests
             ref voiceType);
 
         Assert.NotNull(condition);
-        Assert.Equal(GlobalFormId, condition!.ComparisonGlobalFormId);
+        Assert.Equal(GlobalFormId, condition.ComparisonGlobalFormId);
         Assert.Null(speaker);
         Assert.Equal((ushort)0x48, Assert.Single(functions));
     }
@@ -101,7 +101,7 @@ public sealed class DialogueConditionUseGlobalTests
             ref voiceType);
 
         Assert.NotNull(condition);
-        Assert.Equal(-42, condition!.Parameter3);
+        Assert.Equal(-42, condition.Parameter3);
         Assert.Equal((ushort)0x48, Assert.Single(functions));
     }
 

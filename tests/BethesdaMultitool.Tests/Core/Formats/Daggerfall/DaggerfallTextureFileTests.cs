@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
@@ -194,7 +191,7 @@ public class DaggerfallTextureFileTests
         var rawRow = new byte[] { 6, 7, 8, 9 };
 
         // Row offsets are measured from the RECORD position, not the data offset.
-        var rowsStart = dataOffset + (height * 4);
+        var rowsStart = dataOffset + height * 4;
         WriteI16(rowHeaders, rowsStart);
         WriteI16(rowHeaders, unchecked((short)0x8000));
         WriteI16(rowHeaders, rowsStart + rleRow.Count);
@@ -233,8 +230,7 @@ public class DaggerfallTextureFileTests
     public void Parse_TheThreeMalformedRetailFiles_AreRefusedByName(string name)
     {
         Assert.True(DaggerfallTextureFile.IsUnsupported(name));
-        Assert.Throws<NotSupportedException>(
-            () => DaggerfallTextureFile.Parse(new byte[64], name));
+        Assert.Throws<NotSupportedException>(() => DaggerfallTextureFile.Parse(new byte[64], name));
     }
 
     [Fact]

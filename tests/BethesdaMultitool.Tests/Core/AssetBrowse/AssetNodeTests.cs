@@ -112,7 +112,7 @@ public sealed class AssetNodeTests
         b.IsChecked = true; // sub goes true; root stays mixed (c unchecked) so no root event
         Assert.True(sub.IsChecked);
         Assert.Null(root.IsChecked);
-        Assert.Equal(2, counts[sub]);  // false → null → true
+        Assert.Equal(2, counts[sub]); // false → null → true
         Assert.Equal(1, counts[root]); // false → null only
 
         c.IsChecked = true;

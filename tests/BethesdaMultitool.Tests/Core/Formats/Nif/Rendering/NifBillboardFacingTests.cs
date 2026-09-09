@@ -170,10 +170,10 @@ public sealed class NifBillboardFacingTests
         var path = SampleFileFixture.FindSamplePath(FxFireMeshSmall);
         Assert.SkipWhen(path is null, "FNV PC FXFireMeshSmall NIF not available");
 
-        var data = File.ReadAllBytes(path!);
+        var data = File.ReadAllBytes(path);
         var nif = NifParser.Parse(data);
         Assert.NotNull(nif);
-        Assert.False(nif!.IsBigEndian);
+        Assert.False(nif.IsBigEndian);
 
         var model = NifGeometryExtractor.Extract(
             data,
@@ -184,7 +184,7 @@ public sealed class NifBillboardFacingTests
             dropBoneAttachedShapes: true);
         Assert.NotNull(model);
 
-        var fireShapes = model!.Submeshes
+        var fireShapes = model.Submeshes
             .Where(sub => sub.ShapeName is "FireBall09:0" or "FireBall09:1")
             .ToArray();
         Assert.Equal(2, fireShapes.Length);

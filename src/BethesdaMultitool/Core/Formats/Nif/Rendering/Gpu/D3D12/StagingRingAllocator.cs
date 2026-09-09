@@ -140,5 +140,8 @@ internal sealed class StagingRingAllocator
         return charge;
     }
 
-    private static long AlignUp(long value, int alignment) => (value + alignment - 1) & ~((long)alignment - 1);
+    private static long AlignUp(long value, int alignment)
+    {
+        return (value + alignment - 1) & ~((long)alignment - 1);
+    }
 }

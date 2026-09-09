@@ -15,11 +15,15 @@ namespace BethesdaMultitool.Core.Formats.Audio;
 ///     <para>
 ///         Three differences from SMF, each confirmed on that corpus:
 ///         <list type="number">
-///             <item>A delay is a RUN of bytes below 0x80 whose values ADD — not a variable-length
-///             quantity. Runs of 1 byte dominate (19,815) but reach 9,398.</item>
-///             <item><b>NOTE ON carries its duration and there are no NOTE OFF events at all</b> —
-///             measured 24,130 note-ons and ZERO note-offs. The converter has to schedule the
-///             releases itself.</item>
+///             <item>
+///                 A delay is a RUN of bytes below 0x80 whose values ADD — not a variable-length
+///                 quantity. Runs of 1 byte dominate (19,815) but reach 9,398.
+///             </item>
+///             <item>
+///                 <b>NOTE ON carries its duration and there are no NOTE OFF events at all</b> —
+///                 measured 24,130 note-ons and ZERO note-offs. The converter has to schedule the
+///                 releases itself.
+///             </item>
 ///             <item>Events always carry a status byte; running status never appears.</item>
 ///         </list>
 ///     </para>
@@ -144,11 +148,13 @@ internal sealed class XmidiFile
         var midi = new List<byte>(track.Count + 22);
         midi.AddRange("MThd"u8);
         midi.AddRange([0, 0, 0, 6]);
-        midi.AddRange([0, 0]);                                   // format 0
-        midi.AddRange([0, 1]);                                   // one track
-        midi.AddRange([(byte)(TicksPerQuarterNote >> 8), (byte)TicksPerQuarterNote]);
+        midi.AddRange([0, 0]); // format 0
+        midi.AddRange([0, 1]); // one track
+        midi.AddRange([TicksPerQuarterNote >> 8, TicksPerQuarterNote]);
         midi.AddRange("MTrk"u8);
-        midi.AddRange([(byte)(track.Count >> 24), (byte)(track.Count >> 16), (byte)(track.Count >> 8), (byte)track.Count]);
+        midi.AddRange([
+            (byte)(track.Count >> 24), (byte)(track.Count >> 16), (byte)(track.Count >> 8), (byte)track.Count
+        ]);
         midi.AddRange(track);
         return [.. midi];
     }

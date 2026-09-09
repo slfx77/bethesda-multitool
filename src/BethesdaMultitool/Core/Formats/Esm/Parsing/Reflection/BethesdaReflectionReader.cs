@@ -77,7 +77,7 @@ internal static class BethesdaReflectionReader
                     break;
                 case ChunkObjt:
                 case ChunkDiff:
-                    if (objectChunkIndex >= 0 || (chunk.Type == ChunkDiff) != expectDiff)
+                    if (objectChunkIndex >= 0 || chunk.Type == ChunkDiff != expectDiff)
                     {
                         error = "Reflection stream has an unexpected or duplicate object chunk.";
                         return false;
@@ -278,7 +278,7 @@ internal static class BethesdaReflectionReader
 
         var flags = BinaryPrimitives.ReadUInt16LittleEndian(body[8..]);
         var count = BinaryPrimitives.ReadUInt16LittleEndian(body[10..]);
-        if (body.Length != 12 + (count * 12))
+        if (body.Length != 12 + count * 12)
         {
             error = "CLAS field count does not match its body length.";
             return false;
@@ -288,7 +288,7 @@ internal static class BethesdaReflectionReader
         var names = new HashSet<string>(StringComparer.Ordinal);
         for (var index = 0; index < count; index++)
         {
-            var field = body.Slice(12 + (index * 12), 12);
+            var field = body.Slice(12 + index * 12, 12);
             if (!TryResolveNamedType(
                     BinaryPrimitives.ReadUInt32LittleEndian(field), strings, out var fieldName) ||
                 !TryResolveType(
@@ -551,7 +551,8 @@ internal static class BethesdaReflectionReader
                     value = new BethesdaReflectionSignedValue((short)int16);
                     return true;
                 case BuiltInType.UInt16:
-                    if (!TryReadUInt16(source, ref position, out var uint16)) return Fail("Truncated UInt16.", out error);
+                    if (!TryReadUInt16(source, ref position, out var uint16))
+                        return Fail("Truncated UInt16.", out error);
                     value = new BethesdaReflectionUnsignedValue(uint16);
                     return true;
                 case BuiltInType.Int32:
@@ -559,7 +560,8 @@ internal static class BethesdaReflectionReader
                     value = new BethesdaReflectionSignedValue((int)int32);
                     return true;
                 case BuiltInType.UInt32:
-                    if (!TryReadUInt32(source, ref position, out var uint32)) return Fail("Truncated UInt32.", out error);
+                    if (!TryReadUInt32(source, ref position, out var uint32))
+                        return Fail("Truncated UInt32.", out error);
                     value = new BethesdaReflectionUnsignedValue(uint32);
                     return true;
                 case BuiltInType.Int64:
@@ -567,7 +569,8 @@ internal static class BethesdaReflectionReader
                     value = new BethesdaReflectionSignedValue((long)int64);
                     return true;
                 case BuiltInType.UInt64:
-                    if (!TryReadUInt64(source, ref position, out var uint64)) return Fail("Truncated UInt64.", out error);
+                    if (!TryReadUInt64(source, ref position, out var uint64))
+                        return Fail("Truncated UInt64.", out error);
                     value = new BethesdaReflectionUnsignedValue(uint64);
                     return true;
                 case BuiltInType.Bool:
@@ -576,13 +579,15 @@ internal static class BethesdaReflectionReader
                     value = new BethesdaReflectionBoolValue(boolean != 0);
                     return true;
                 case BuiltInType.Float:
-                    if (!TryReadUInt32(source, ref position, out var floatBits)) return Fail("Truncated Float.", out error);
+                    if (!TryReadUInt32(source, ref position, out var floatBits))
+                        return Fail("Truncated Float.", out error);
                     var single = BitConverter.UInt32BitsToSingle(floatBits);
                     if (!float.IsFinite(single)) return Fail("Reflected Float is non-finite.", out error);
                     value = new BethesdaReflectionFloatValue(single);
                     return true;
                 case BuiltInType.Double:
-                    if (!TryReadUInt64(source, ref position, out var doubleBits)) return Fail("Truncated Double.", out error);
+                    if (!TryReadUInt64(source, ref position, out var doubleBits))
+                        return Fail("Truncated Double.", out error);
                     var doubleValue = BitConverter.UInt64BitsToDouble(doubleBits);
                     if (!double.IsFinite(doubleValue)) return Fail("Reflected Double is non-finite.", out error);
                     value = new BethesdaReflectionFloatValue(doubleValue);

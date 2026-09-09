@@ -14,9 +14,9 @@ namespace BethesdaMultitool.Core.Rendering.Level2D;
 /// </summary>
 internal sealed class DaggerfallMapLevel2DSource : ILevel2DSource
 {
-    private readonly DaggerfallWoodsFile? _woods;
     private readonly DaggerfallPakFile? _overlay;
     private readonly int _scale;
+    private readonly DaggerfallWoodsFile? _woods;
 
     /// <summary>Wraps a heightmap, an overlay, or both; at least one must be supplied.</summary>
     public DaggerfallMapLevel2DSource(DaggerfallWoodsFile? woods, DaggerfallPakFile? overlay, int scale = 1)

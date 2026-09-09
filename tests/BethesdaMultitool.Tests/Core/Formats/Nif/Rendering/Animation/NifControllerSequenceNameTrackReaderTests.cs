@@ -28,7 +28,7 @@ public sealed class NifControllerSequenceNameTrackReaderTests
         fixture.WriteTransformInterpolator(
             transformInterpolatorRef,
             transformDataRef,
-            translation: (16.985f, -12.076f, 4.451f));
+            (16.985f, -12.076f, 4.451f));
         fixture.WriteTransformInterpolator(
             baseOnlyInterpolatorRef,
             -1,
@@ -45,24 +45,24 @@ public sealed class NifControllerSequenceNameTrackReaderTests
         fixture.WriteTextKeyBlock(textKeysRef, 2f, 2);
         fixture.WriteSequence(
             idleSequenceRef,
-            nameIndex: 0,
+            0,
             [(transformInterpolatorRef, 1), (bsplineInterpolatorRef, 4)],
             textKeysRef,
             NifCycleType.Loop,
-            frequency: 2f,
-            start: 0f,
-            stop: 4f,
-            accumRootIndex: 4);
+            2f,
+            0f,
+            4f,
+            4);
         fixture.WriteSequence(
             aimSequenceRef,
-            nameIndex: 3,
+            3,
             [(baseOnlyInterpolatorRef, 4)],
-            textKeysRef: -1,
+            -1,
             NifCycleType.Clamp,
-            frequency: 1f,
-            start: 1f,
-            stop: 3f,
-            accumRootIndex: -1);
+            1f,
+            1f,
+            3f,
+            -1);
 
         var clips = NifControllerSequenceNameTrackReader.ReadAll(fixture.Data, fixture.Nif);
 
@@ -205,9 +205,9 @@ public sealed class NifControllerSequenceNameTrackReaderTests
         fixture.WriteTransformInterpolator(
             interpolatorRef,
             -1,
-            translation: (1f, 2f, 3f),
-            rotationWxyz: (1f, 0f, 0f, 0f),
-            scale: 1f);
+            (1f, 2f, 3f),
+            (1f, 0f, 0f, 0f),
+            1f);
         fixture.WriteSequence(
             sequenceRef,
             0,
@@ -300,7 +300,7 @@ public sealed class NifControllerSequenceNameTrackReaderTests
         fixture.WriteSequenceCoreWithoutAnimNotes(
             noTailRef,
             1,
-            cycleRaw: (int)NifCycleType.Clamp);
+            (int)NifCycleType.Clamp);
 
         Assert.Empty(NifControllerSequenceNameTrackReader.ReadAll(fixture.Data, fixture.Nif));
     }
@@ -320,12 +320,12 @@ public sealed class NifControllerSequenceNameTrackReaderTests
 
         fixture.WriteTransformInterpolator(
             headInterpolatorRef,
-            translation: (1f, 2f, 3f),
-            rotationWxyz: (1f, 0f, 0f, 0f));
+            (1f, 2f, 3f),
+            (1f, 0f, 0f, 0f));
         fixture.WriteTransformInterpolator(
             handInterpolatorRef,
-            translation: (4f, 5f, 6f),
-            rotationWxyz: (1f, 0f, 0f, 0f));
+            (4f, 5f, 6f),
+            (1f, 0f, 0f, 0f));
         fixture.WriteSequence(
             sequenceRef,
             "Idle",
@@ -470,8 +470,8 @@ public sealed class NifControllerSequenceNameTrackReaderTests
         var sequenceRef = fixture.AddSequenceBlock("Idle", "", 1);
         fixture.WriteTransformInterpolator(
             interpolatorRef,
-            translation: (7f, 8f, 9f),
-            rotationWxyz: (1f, 0f, 0f, 0f));
+            (7f, 8f, 9f),
+            (1f, 0f, 0f, 0f));
         fixture.WriteSequence(
             sequenceRef,
             "Idle",

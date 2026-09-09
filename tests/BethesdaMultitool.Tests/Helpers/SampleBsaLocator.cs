@@ -11,18 +11,19 @@ internal static class SampleBsaLocator
 {
     /// <summary>
     ///     The FNV PC Final meshes BSA
-    ///     (Sample/Full_Builds/Fallout New Vegas (PC Final)/Data/Fallout - Meshes.bsa).
+    ///     (Sample/Builds/Fallout - New Vegas (2022-5-24, Steam - Final)/Data/Fallout - Meshes.bsa).
     /// </summary>
     public static string ResolveFnvMeshesBsa()
     {
         return Resolve(
             "Fallout - Meshes.bsa",
-            Path.Combine("Sample", "Full_Builds", "Fallout New Vegas (PC Final)", "Data", "Fallout - Meshes.bsa"));
+            Path.Combine("Sample", "Builds", "Fallout - New Vegas (2022-5-24, Steam - Final)", "Data",
+                "Fallout - Meshes.bsa"));
     }
 
     /// <summary>
     ///     The FO3 PC Final meshes BSA
-    ///     (Sample/Full_Builds/Fallout 3 (PC Final)/Data/Fallout - Meshes.bsa).
+    ///     (Sample/Builds/Fallout 3 (2026-2-15, Steam - Final)/Data/Fallout - Meshes.bsa).
     ///     The env-root probe uses an <c>fo3\</c> subdirectory because FO3's BSA file name
     ///     collides with FNV's ("Fallout - Meshes.bsa").
     /// </summary>
@@ -30,7 +31,8 @@ internal static class SampleBsaLocator
     {
         return Resolve(
             Path.Combine("fo3", "Fallout - Meshes.bsa"),
-            Path.Combine("Sample", "Full_Builds", "Fallout 3 (PC Final)", "Data", "Fallout - Meshes.bsa"));
+            Path.Combine("Sample", "Builds", "Fallout 3 (2026-2-15, Steam - Final)", "Data",
+                "Fallout - Meshes.bsa"));
     }
 
     private static string Resolve(string fileName, string repoRelativePath)
@@ -41,13 +43,17 @@ internal static class SampleBsaLocator
             return Path.Combine(root, fileName);
         }
 
+        var candidates = SampleCorpus.Candidates(repoRelativePath).ToArray();
         var dir = AppContext.BaseDirectory;
         for (var i = 0; i < 12 && dir is not null; i++)
         {
-            var candidate = Path.Combine(dir, repoRelativePath);
-            if (File.Exists(candidate))
+            foreach (var relative in candidates)
             {
-                return candidate;
+                var candidate = Path.Combine(dir, relative);
+                if (File.Exists(candidate))
+                {
+                    return candidate;
+                }
             }
 
             dir = Path.GetDirectoryName(dir);

@@ -1,4 +1,3 @@
-using System;
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Audio;
 using Xunit;
@@ -16,7 +15,7 @@ public class WavWriterTests
     {
         byte[] pcm = [1, 2, 3, 4, 5, 6, 7, 8];
 
-        var wav = WavWriter.BuildPcm(pcm, sampleRate: 8000, bitsPerSample: 8, channels: 1);
+        var wav = WavWriter.BuildPcm(pcm, 8000, 8, 1);
 
         Assert.Equal(WavWriter.HeaderLength + pcm.Length, wav.Length);
         Assert.Equal("RIFF"u8.ToArray(), wav[..4]);

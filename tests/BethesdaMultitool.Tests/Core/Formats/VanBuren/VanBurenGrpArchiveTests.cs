@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.VanBuren;
 using Xunit;
 
@@ -25,7 +22,7 @@ public sealed class VanBurenGrpArchiveTests
         // null means "the default two"; an EMPTY array must stay empty, or the 12-byte case below
         // would silently test something else.
         payloads ??= [[.. "B3D "u8, 1, 2], [.. "RIFF"u8, 9]];
-        var directory = VanBurenGrpArchive.HeaderLength + (payloads.Length * VanBurenGrpArchive.EntryLength);
+        var directory = VanBurenGrpArchive.HeaderLength + payloads.Length * VanBurenGrpArchive.EntryLength;
         var body = payloads.Sum(p => p.Length);
         var b = new byte[directory + body + gap];
 
@@ -36,7 +33,7 @@ public sealed class VanBurenGrpArchiveTests
         var cursor = directory;
         for (var i = 0; i < payloads.Length; i++)
         {
-            var at = VanBurenGrpArchive.HeaderLength + (i * VanBurenGrpArchive.EntryLength);
+            var at = VanBurenGrpArchive.HeaderLength + i * VanBurenGrpArchive.EntryLength;
             BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(at), (uint)cursor);
             BinaryPrimitives.WriteUInt32LittleEndian(b.AsSpan(at + 4), (uint)payloads[i].Length);
             payloads[i].CopyTo(b.AsSpan(cursor));
@@ -56,7 +53,7 @@ public sealed class VanBurenGrpArchiveTests
         Assert.Equal("RIFF", archive.Entries[1].Tag);
 
         // The first payload begins exactly where the directory ends.
-        Assert.Equal(VanBurenGrpArchive.HeaderLength + (2 * VanBurenGrpArchive.EntryLength), archive.Entries[0].Offset);
+        Assert.Equal(VanBurenGrpArchive.HeaderLength + 2 * VanBurenGrpArchive.EntryLength, archive.Entries[0].Offset);
     }
 
     [Fact]
@@ -76,7 +73,7 @@ public sealed class VanBurenGrpArchiveTests
     {
         // ⚠ The container has NO magic string, so the tiling is the only thing separating a real
         // archive from anything else that opens with 2 and 1. A trailing gap must fail.
-        var error = Assert.Throws<InvalidDataException>(() => VanBurenGrpArchive.Parse(Archive(gap: 4), "BAD.grp"));
+        var error = Assert.Throws<InvalidDataException>(() => VanBurenGrpArchive.Parse(Archive(4), "BAD.grp"));
         Assert.Contains("entries end at", error.Message, StringComparison.Ordinal);
     }
 
@@ -122,7 +119,7 @@ public sealed class VanBurenGrpArchiveTests
     public void IsGrpArchive_AcceptsOnlyWhatTiles()
     {
         Assert.True(VanBurenGrpArchive.IsGrpArchive(Archive()));
-        Assert.False(VanBurenGrpArchive.IsGrpArchive(Archive(gap: 1)));
+        Assert.False(VanBurenGrpArchive.IsGrpArchive(Archive(1)));
         Assert.False(VanBurenGrpArchive.IsGrpArchive("not an archive"u8.ToArray()));
     }
 

@@ -26,7 +26,7 @@ public class SkyrimSchemaParseIntegrationTests
             "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
         var cell = Assert.Single(result.Records.Cells,
             candidate => candidate.FormId == 0x000165A3 && candidate.EditorId == "WhiterunDragonsreach");
         var sky = SkySceneContextResolver.Resolve(cell, null, null);
@@ -64,7 +64,7 @@ public class SkyrimSchemaParseIntegrationTests
             "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         var npcs = result.Records.GenericRecords.Where(r => r.RecordType == "NPC_").ToList();
         Assert.True(npcs.Count > 1000,
@@ -92,7 +92,7 @@ public class SkyrimSchemaParseIntegrationTests
             "Skyrim.esm not found (set BETHESDA_TEST_DATA_ROOT or install Skyrim).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         // DIAL topics and INFO responses must be built game-aware so the Dialogue tab has data.
         Assert.True(result.Records.DialogTopics.Count > 1000,

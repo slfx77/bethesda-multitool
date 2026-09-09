@@ -50,7 +50,7 @@ public sealed class NifGeometryVersionExtractionTests
             blockBytes, block, false, bsVersion, binaryVersion, Matrix4x4.Identity);
 
         Assert.NotNull(submesh);
-        Assert.Equal(3, submesh!.VertexCount);
+        Assert.Equal(3, submesh.VertexCount);
         Assert.Equal(1, submesh.TriangleCount);
     }
 
@@ -74,7 +74,7 @@ public sealed class NifGeometryVersionExtractionTests
             blockBytes, block, false, bsVersion, binaryVersion, Matrix4x4.Identity);
 
         Assert.NotNull(submesh);
-        Assert.Equal(3, submesh!.VertexCount);
+        Assert.Equal(3, submesh.VertexCount);
         Assert.Equal(1, submesh.TriangleCount);
     }
 
@@ -116,7 +116,7 @@ public sealed class NifGeometryVersionExtractionTests
                 blockBytes, block, bigEndian, bsVersion, binaryVersion, transform);
 
         Assert.NotNull(submesh);
-        Assert.True(submesh!.LocalBounds.HasValue);
+        Assert.True(submesh.LocalBounds.HasValue);
         var bound = submesh.LocalBounds.Value;
         AssertVector3Close(Vector3.Transform(new Vector3(authored.X, authored.Y, authored.Z), transform), bound.Center);
         Assert.Equal(8f, bound.Radius, 5);
@@ -141,7 +141,7 @@ public sealed class NifGeometryVersionExtractionTests
             malformedBytes, block, false, bsVersion, binaryVersion, Matrix4x4.Identity);
 
         Assert.NotNull(malformed);
-        Assert.Null(malformed!.LocalBounds);
+        Assert.Null(malformed.LocalBounds);
         var fallback = NifLocalBoundsResolver.Resolve(malformed);
         Assert.Equal(new Vector3(0.5f, 0.5f, 0f), fallback.Center);
         Assert.Equal(MathF.Sqrt(0.5f), fallback.Radius, 5);
@@ -159,7 +159,7 @@ public sealed class NifGeometryVersionExtractionTests
             preSkinMorphDeltas: morphDeltas);
 
         Assert.NotNull(deformed);
-        Assert.Null(deformed!.LocalBounds);
+        Assert.Null(deformed.LocalBounds);
         var deformedFallback = NifLocalBoundsResolver.Resolve(deformed);
         Assert.Equal(new Vector3(1f, 1.5f, 0f), deformedFallback.Center);
         Assert.Equal(MathF.Sqrt(3.25f), deformedFallback.Radius, 5);
@@ -175,7 +175,7 @@ public sealed class NifGeometryVersionExtractionTests
             (influences, [Matrix4x4.CreateScale(2f)]));
 
         Assert.NotNull(skinned);
-        Assert.Null(skinned!.LocalBounds);
+        Assert.Null(skinned.LocalBounds);
         var skinnedFallback = NifLocalBoundsResolver.Resolve(skinned);
         Assert.Equal(new Vector3(1f, 1f, 0f), skinnedFallback.Center);
         Assert.Equal(MathF.Sqrt(2f), skinnedFallback.Radius, 5);

@@ -53,7 +53,7 @@ internal static class StarfieldGlbColorLerpBaker
             baked,
             diffuseTexture.Width,
             diffuseTexture.Height,
-            generateMipChain: false);
+            false);
     }
 
     internal static Vector4 BuildBaseColor(

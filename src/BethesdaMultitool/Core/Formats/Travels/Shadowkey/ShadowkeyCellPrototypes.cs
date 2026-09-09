@@ -63,7 +63,7 @@ internal sealed class ShadowkeyCellPrototypes
         }
 
         var count = BinaryPrimitives.ReadUInt32LittleEndian(bytes);
-        var expected = HeaderLength + ((long)count * ShadowkeyCellPrototype.RecordLength);
+        var expected = HeaderLength + (long)count * ShadowkeyCellPrototype.RecordLength;
         if (expected != bytes.Length)
         {
             throw new InvalidDataException(
@@ -73,7 +73,7 @@ internal sealed class ShadowkeyCellPrototypes
         var records = new ShadowkeyCellPrototype[count];
         for (var i = 0; i < records.Length; i++)
         {
-            var offset = HeaderLength + (i * ShadowkeyCellPrototype.RecordLength);
+            var offset = HeaderLength + i * ShadowkeyCellPrototype.RecordLength;
             records[i] = ReadRecord(bytes.Slice(offset, ShadowkeyCellPrototype.RecordLength));
         }
 
@@ -96,7 +96,7 @@ internal sealed class ShadowkeyCellPrototypes
             var index = map.Cells[i].PrototypeIndex;
             if (index >= _records.Length)
             {
-                var offset = ShadowkeyZoneMap.HeaderLength + (i * ShadowkeyZoneMap.CellLength);
+                var offset = ShadowkeyZoneMap.HeaderLength + i * ShadowkeyZoneMap.CellLength;
                 throw new InvalidDataException(
                     $"'{name}': cell {i % map.Width},{i / map.Width} at map byte {offset + 4} indexes prototype {index}, but the table holds {_records.Length}.");
             }
@@ -139,8 +139,8 @@ internal sealed class ShadowkeyCellPrototypes
         var ceiling = new short[ShadowkeyCellPrototype.CornerCount];
         for (var i = 0; i < ShadowkeyCellPrototype.CornerCount; i++)
         {
-            floor[i] = BinaryPrimitives.ReadInt16LittleEndian(record[(6 + (i * 2))..]);
-            ceiling[i] = BinaryPrimitives.ReadInt16LittleEndian(record[(14 + (i * 2))..]);
+            floor[i] = BinaryPrimitives.ReadInt16LittleEndian(record[(6 + i * 2)..]);
+            ceiling[i] = BinaryPrimitives.ReadInt16LittleEndian(record[(14 + i * 2)..]);
         }
 
         return new ShadowkeyCellPrototype(

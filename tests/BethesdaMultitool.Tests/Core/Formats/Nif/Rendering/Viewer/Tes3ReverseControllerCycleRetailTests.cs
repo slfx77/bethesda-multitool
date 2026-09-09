@@ -1,7 +1,6 @@
 using System.Numerics;
 using System.Security.Cryptography;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -17,10 +16,13 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Viewer;
 public sealed class Tes3ReverseControllerCycleRetailTests
 {
     private const string ModelPath = @"meshes\r\atronach_storm.nif";
+
     private const string ModelSha256 =
         "C78C249A38EFCB13A386609FA2538E6A4CB3F3EE466B9ECE8D741FE0EF6A700B";
+
     private static readonly string[] ExpectedControllerTargets =
         ["Rock_1", "Rock_2", "Rock_3", "Rock_4", "Rock_5"];
+
     private static readonly string? Bsa =
         RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.bsa");
 
@@ -30,7 +32,7 @@ public sealed class Tes3ReverseControllerCycleRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(File.Exists(Bsa), "Morrowind.bsa not present (dev-machine-only asset).");
 
-        using var service = NifBrowserService.CreateFromBsa(Bsa!);
+        using var service = NifBrowserService.CreateFromBsa(Bsa);
         var data = Assert.IsType<byte[]>(service.ReadNifData(ModelPath));
         Assert.Equal(640_391, data.Length);
         Assert.Equal(ModelSha256, Convert.ToHexString(SHA256.HashData(data)));
@@ -90,8 +92,8 @@ public sealed class Tes3ReverseControllerCycleRetailTests
         Assert.Contains(
             fullCycle.NodeTracks,
             track => Vector3.Distance(
-                         forward[track.NodeIndex].Translation,
-                         control[track.NodeIndex].Translation) > 80f);
+                forward[track.NodeIndex].Translation,
+                control[track.NodeIndex].Translation) > 80f);
     }
 
     private static void AssertVectorNear(Vector3 expected, Vector3 actual, float tolerance)

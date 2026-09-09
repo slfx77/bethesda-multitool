@@ -43,7 +43,7 @@ internal static class NifControllerSequenceNameTrackReader
         ArgumentNullException.ThrowIfNull(nif);
 
         var modern = nif.BinaryVersion == NifVersions.Gamebryo202007 && nif.BsVersion != 0;
-        var oblivion = (nif.BinaryVersion is NifVersions.Gamebryo20004 or NifVersions.Gamebryo20005) &&
+        var oblivion = nif.BinaryVersion is NifVersions.Gamebryo20004 or NifVersions.Gamebryo20005 &&
                        nif.BsVersion == OblivionBsVersion &&
                        nif.UserVersion is 10 or 11 &&
                        nif.HasInlineStrings &&
@@ -246,7 +246,7 @@ internal static class NifControllerSequenceNameTrackReader
         var pos = sequenceStart;
         if (!TryReadSizedString(data, ref pos, sequenceEnd, false, out var name) ||
             string.IsNullOrWhiteSpace(name) ||
-            (long)pos + 8L > sequenceEnd)
+            pos + 8L > sequenceEnd)
         {
             return false;
         }
@@ -259,7 +259,7 @@ internal static class NifControllerSequenceNameTrackReader
         }
 
         var controlledStart = pos;
-        var tailLong = (long)controlledStart +
+        var tailLong = controlledStart +
                        (long)controlledBlockCount * OblivionControlledBlockStride;
         // Weight through Manager (28), the AccumRoot SizedString length (4), and palette ref (4).
         if (tailLong < controlledStart || tailLong + 36L > sequenceEnd)
@@ -284,7 +284,7 @@ internal static class NifControllerSequenceNameTrackReader
 
         pos = tail + 28;
         if (!TryReadSizedString(data, ref pos, sequenceEnd, false, out var accumRootValue) ||
-            (long)pos + 4L > sequenceEnd)
+            pos + 4L > sequenceEnd)
         {
             return false;
         }
@@ -521,7 +521,7 @@ internal static class NifControllerSequenceNameTrackReader
     {
         if (nif.BsVersion is >= 24 and <= 28)
         {
-            return (long)coreEnd + 4L == sequenceEnd;
+            return coreEnd + 4L == sequenceEnd;
         }
 
         if (nif.BsVersion <= 28)
@@ -535,7 +535,7 @@ internal static class NifControllerSequenceNameTrackReader
         }
 
         var count = BinaryUtils.ReadUInt16(data, coreEnd, nif.IsBigEndian);
-        return (long)coreEnd + 2L + (long)count * 4L == sequenceEnd;
+        return coreEnd + 2L + count * 4L == sequenceEnd;
     }
 
     private static bool TryReadSizedString(
@@ -546,14 +546,14 @@ internal static class NifControllerSequenceNameTrackReader
         out string value)
     {
         value = string.Empty;
-        if (pos < 0 || (long)pos + 4L > end || end > data.Length)
+        if (pos < 0 || pos + 4L > end || end > data.Length)
         {
             return false;
         }
 
         var length = BinaryUtils.ReadUInt32(data, pos, be);
         pos += 4;
-        if (length > MaxInlineStringBytes || (long)pos + length > end)
+        if (length > MaxInlineStringBytes || pos + length > end)
         {
             return false;
         }
@@ -566,8 +566,8 @@ internal static class NifControllerSequenceNameTrackReader
     private static bool IsOptionalStringPaletteRef(NifInfo nif, int paletteRef)
     {
         return paletteRef == -1 ||
-               paletteRef >= 0 && paletteRef < nif.Blocks.Count &&
-               nif.Blocks[paletteRef].TypeName == "NiStringPalette";
+               (paletteRef >= 0 && paletteRef < nif.Blocks.Count &&
+                nif.Blocks[paletteRef].TypeName == "NiStringPalette");
     }
 
     private static bool TryResolvePaletteString(
@@ -600,7 +600,7 @@ internal static class NifControllerSequenceNameTrackReader
         }
 
         var payloadStart = paletteStart + 4;
-        var payloadEndLong = (long)payloadStart + paletteLength;
+        var payloadEndLong = payloadStart + paletteLength;
         var repeatedLengthPosLong = payloadEndLong;
         // NiStringPalette has no padding or trailing fields: SizedString bytes followed by the
         // repeated uint length must consume the block exactly.
@@ -612,7 +612,7 @@ internal static class NifControllerSequenceNameTrackReader
 
         var payloadEnd = (int)payloadEndLong;
         var repeatedLengthPos = (int)repeatedLengthPosLong;
-        if ((long)repeatedLengthPos + 4L > data.Length ||
+        if (repeatedLengthPos + 4L > data.Length ||
             BinaryUtils.ReadUInt32(data, repeatedLengthPos, false) != paletteLength ||
             stringOffset >= paletteLength)
         {
@@ -682,7 +682,7 @@ internal static class NifControllerSequenceNameTrackReader
             !Enum.IsDefined(track.RotationInterpolation) ||
             !Enum.IsDefined(track.TranslationInterpolation) ||
             !Enum.IsDefined(track.ScaleInterpolation) ||
-            (track.RotationInterpolation == NifKeyInterpolation.XyzEuler) != track.HasEulerRotation ||
+            track.RotationInterpolation == NifKeyInterpolation.XyzEuler != track.HasEulerRotation ||
             track.TranslationInterpolation == NifKeyInterpolation.XyzEuler ||
             track.ScaleInterpolation == NifKeyInterpolation.XyzEuler ||
             (track.RotationKeys.Length > 0 && track.HasEulerRotation))

@@ -56,16 +56,18 @@ public sealed class BethesdaViewerExternalSkeletonRigAdapterTests
             BethesdaViewerScenePurpose.RawNif);
         var binding = BethesdaViewerKfAnimationBinder.Bind(
             viewerScene,
-            [new NifNameTargetedAnimationClip(
-                "Idle",
-                1f,
-                0f,
-                2f,
-                NifCycleType.Loop,
-                null,
-                [Track("Bip01 Head"), Track("Bip01 R Hand")],
-                [],
-                0)],
+            [
+                new NifNameTargetedAnimationClip(
+                    "Idle",
+                    1f,
+                    0f,
+                    2f,
+                    NifCycleType.Loop,
+                    null,
+                    [Track("Bip01 Head"), Track("Bip01 R Hand")],
+                    [],
+                    0)
+            ],
             "idle.kf");
 
         var clip = Assert.Single(binding.AcceptedClips);

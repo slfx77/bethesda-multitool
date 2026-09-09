@@ -4,7 +4,7 @@ internal enum BethesdaViewerAlphaToCoverageMode
 {
     Hardware,
     BlendFallbackSingleSample,
-    BlendFallbackDisabled,
+    BlendFallbackDisabled
 }
 
 /// <summary>
@@ -30,12 +30,15 @@ internal static class BethesdaViewerAlphaToCoveragePolicy
             : BethesdaViewerAlphaToCoverageMode.Hardware;
     }
 
-    internal static string? DescribeFallback(BethesdaViewerAlphaToCoverageMode mode) => mode switch
+    internal static string? DescribeFallback(BethesdaViewerAlphaToCoverageMode mode)
     {
-        BethesdaViewerAlphaToCoverageMode.BlendFallbackSingleSample =>
-            "the scene target is single-sampled",
-        BethesdaViewerAlphaToCoverageMode.BlendFallbackDisabled =>
-            $"native A2C is disabled by {EnvironmentVariable}=0",
-        _ => null,
-    };
+        return mode switch
+        {
+            BethesdaViewerAlphaToCoverageMode.BlendFallbackSingleSample =>
+                "the scene target is single-sampled",
+            BethesdaViewerAlphaToCoverageMode.BlendFallbackDisabled =>
+                $"native A2C is disabled by {EnvironmentVariable}=0",
+            _ => null
+        };
+    }
 }

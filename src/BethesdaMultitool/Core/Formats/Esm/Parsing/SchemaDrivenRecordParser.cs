@@ -37,6 +37,10 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
     private readonly RecordParserContext _context = context;
     private readonly List<DialogueRecord> _infos = [];
 
+    // Typed dialogue, built game-aware from DIAL/INFO so the Dialogue tab works (the shared
+    // DialogueTreeBuilder consumes these). Populated as a side effect while decoding records.
+    private readonly List<DialogTopicRecord> _topics = [];
+
     /// <summary>
     ///     The lazy decoder every parsed record points at, or null when the record set has no file
     ///     behind it (synthesized DMP records, hand-built test fixtures) and trees must therefore be
@@ -44,10 +48,6 @@ internal sealed class SchemaDrivenRecordParser(RecordParserContext context, IRea
     /// </summary>
     private readonly DecodedTreeSource? _treeSource =
         DecodedTreeSource.CanServe(context) ? new DecodedTreeSource(context, BuildIndex(schema)) : null;
-
-    // Typed dialogue, built game-aware from DIAL/INFO so the Dialogue tab works (the shared
-    // DialogueTreeBuilder consumes these). Populated as a side effect while decoding records.
-    private readonly List<DialogTopicRecord> _topics = [];
 
     // INFO FormID -> (parent topic FormID, ordering index within the topic), from the GRUP-based
     // TopicToInfoMap the analyzer already built (structural, game-agnostic).

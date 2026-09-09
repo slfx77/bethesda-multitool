@@ -6,7 +6,6 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
-using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
@@ -16,9 +15,10 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 using Vortice.Direct3D12;
 using Vortice.Mathematics;
-using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaRendererProfiler;
 
@@ -198,7 +198,7 @@ internal static class NifHeadlessRenderer
             $"EmissiveMult={emissiveMult.ToString("G9", CultureInfo.InvariantCulture)}");
 
         var gpu = GpuDevice12.Create(
-            enableDebugLayer: EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.D3D12Debug));
+            EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.D3D12Debug));
         if (gpu is null)
         {
             Console.Error.WriteLine("D3D12 device unavailable.");
@@ -272,8 +272,8 @@ internal static class NifHeadlessRenderer
             {
                 leafTextures = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
-                    [nifPath!] = leafTextureOverride!,
-                    ["trees\\" + Path.GetFileName(nifPath!)] = leafTextureOverride!
+                    [nifPath] = leafTextureOverride,
+                    ["trees\\" + Path.GetFileName(nifPath)] = leafTextureOverride
                 };
             }
 
@@ -285,8 +285,8 @@ internal static class NifHeadlessRenderer
                 var pair = new SpeedTreeDimming(leafDimming ?? 0f, branchDimming ?? 0f);
                 dimming = new Dictionary<string, SpeedTreeDimming>(StringComparer.OrdinalIgnoreCase)
                 {
-                    [nifPath!] = pair,
-                    ["trees\\" + Path.GetFileName(nifPath!)] = pair
+                    [nifPath] = pair,
+                    ["trees\\" + Path.GetFileName(nifPath)] = pair
                 };
             }
 
@@ -338,7 +338,7 @@ internal static class NifHeadlessRenderer
             };
             var cell = new CellRecord { FormId = 1, GridX = 0, GridY = 0, PlacedObjects = [placement] };
             var cells = new Dictionary<(int gx, int gy), CellRecord> { [(0, 0)] = cell };
-            references.LoadData(new WorldRenderCache { Game = game }, cells, spatialIndex: null);
+            references.LoadData(new WorldRenderCache { Game = game }, cells, null);
 
             target = new GpuOffscreenSceneTarget12(gpu, size, size);
             Console.WriteLine($"[nif-render] scene samples={target.SampleCount}");
@@ -514,19 +514,19 @@ internal static class NifHeadlessRenderer
                 // the first quiesced legacy frame while the repeated-frame packet candidate is
                 // still being established. A negative expectation remains fail-closed as well.
                 var staticOpaquePacketMatches = expectedStaticOpaquePacketSpec is null ||
-                    (expectedStaticOpaquePacketSpec == "1"
-                        ? s.ReferenceStaticOpaquePacketActive &&
-                          s.ReferenceStaticOpaquePacketHit &&
-                          s.ReferenceStaticOpaquePacketBatches > 0 &&
-                          s.ReferenceStaticOpaquePacketInstances > 0 &&
-                          s.ReferenceStaticOpaquePacketRuns > 0 &&
-                          s.ReferenceStaticOpaquePacketBytes > 0
-                        : !s.ReferenceStaticOpaquePacketActive &&
-                          !s.ReferenceStaticOpaquePacketHit &&
-                          s.ReferenceStaticOpaquePacketBatches == 0 &&
-                          s.ReferenceStaticOpaquePacketInstances == 0 &&
-                          s.ReferenceStaticOpaquePacketRuns == 0 &&
-                          s.ReferenceStaticOpaquePacketBytes == 0);
+                                                (expectedStaticOpaquePacketSpec == "1"
+                                                    ? s.ReferenceStaticOpaquePacketActive &&
+                                                      s.ReferenceStaticOpaquePacketHit &&
+                                                      s.ReferenceStaticOpaquePacketBatches > 0 &&
+                                                      s.ReferenceStaticOpaquePacketInstances > 0 &&
+                                                      s.ReferenceStaticOpaquePacketRuns > 0 &&
+                                                      s.ReferenceStaticOpaquePacketBytes > 0
+                                                    : !s.ReferenceStaticOpaquePacketActive &&
+                                                      !s.ReferenceStaticOpaquePacketHit &&
+                                                      s.ReferenceStaticOpaquePacketBatches == 0 &&
+                                                      s.ReferenceStaticOpaquePacketInstances == 0 &&
+                                                      s.ReferenceStaticOpaquePacketRuns == 0 &&
+                                                      s.ReferenceStaticOpaquePacketBytes == 0);
                 if (complete && it > 0 && renderedContent && staticOpaquePacketMatches)
                 {
                     Console.WriteLine(
@@ -971,6 +971,7 @@ internal static class NifHeadlessRenderer
         {
             var nif = NifParser.Parse(bytes);
             if (nif is null) return false;
+
             byte[]? LoadExternalGeometry(string meshPath)
             {
                 var normalized = meshPath.Replace('/', '\\').Trim().TrimStart('\\');
@@ -1016,7 +1017,7 @@ internal static class NifHeadlessRenderer
         // A single ready submesh can increment ReferenceDrawn while another submesh is still
         // texture-withheld. Headless captures are acceptance artifacts, so require the strict
         // predicate that also gates ReferenceTexturePending before declaring the NIF settled.
-        return StreamingQuiescence.IsQuiesced(r, terrain: null, strict: true);
+        return StreamingQuiescence.IsQuiesced(r, null, true);
     }
 
     private static void WaitForFence(ID3D12Fence fence, ulong value)
@@ -1118,7 +1119,7 @@ internal static class NifHeadlessRenderer
             return true;
         }
 
-        return Enum.TryParse(value, ignoreCase: true, out game) && Enum.IsDefined(game);
+        return Enum.TryParse(value, true, out game) && Enum.IsDefined(game);
     }
 
     private static string? Next(string[] args, ref int i)

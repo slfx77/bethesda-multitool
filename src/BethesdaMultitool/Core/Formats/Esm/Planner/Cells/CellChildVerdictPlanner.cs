@@ -10,22 +10,6 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
 namespace BethesdaMultitool.Core.Formats.Esm.Planner.Cells;
 
 /// <summary>
-///     Inputs for the plan-time per-ref verdict pass: the master index (child locations,
-///     ref→cell parents, EditorID stems), the DMP base-type map, and the option switches
-///     the decision chain consults. Deliberately NOT the whole options bag — the planner
-///     stays decoupled from the writer's configuration surface.
-/// </summary>
-public sealed record CellVerdictInputs
-{
-    public required MasterRecordIndex MasterIndex { get; init; }
-    public IReadOnlyDictionary<uint, string>? DmpBaseTypes { get; init; }
-    public bool RecoverLeveledSpawnActors { get; init; }
-    public bool EnableRefrBaseEditorIdRemap { get; init; }
-    public bool DiagnosticSkipCellNewRefs { get; init; }
-    public bool DiagnosticSkipCellNavm { get; init; }
-}
-
-/// <summary>
 ///     Phase F for cells: settle every placed-ref (REFR/ACHR/ACRE) emit-or-drop verdict at
 ///     plan time — base remap/validation, leveled-spawn recovery, EditorID-stem rescue,
 ///     marker drops, sparse-cell preservation, parent-cell guard, and child-GRUP routing —
@@ -268,8 +252,10 @@ public static class CellChildVerdictPlanner
         };
     }
 
-    /// <summary>Mirrors the writer's new-ref chain: structural-marker drop, render-culling
-    /// drop, sparse-cell gate, then remap→validate→recover→rescue on the NAME base.</summary>
+    /// <summary>
+    ///     Mirrors the writer's new-ref chain: structural-marker drop, render-culling
+    ///     drop, sparse-cell gate, then remap→validate→recover→rescue on the NAME base.
+    /// </summary>
     private static PlacedRefDecision DecideNew(
         RecordPlan child,
         PlacedReference placed,
@@ -368,9 +354,11 @@ public static class CellChildVerdictPlanner
         };
     }
 
-    /// <summary>Mirrors the writer's override chain: temp-actor suppression, render-culling
-    /// drop, sparse-cell preservation, cross-cell-move deferral, then master-bucket routing.
-    /// Returns null for a deferred cross-cell move (phase 2 settles it).</summary>
+    /// <summary>
+    ///     Mirrors the writer's override chain: temp-actor suppression, render-culling
+    ///     drop, sparse-cell preservation, cross-cell-move deferral, then master-bucket routing.
+    ///     Returns null for a deferred cross-cell move (phase 2 settles it).
+    /// </summary>
     private static PlacedRefDecision? DecideOverride(
         RecordPlan child,
         PlacedReference placed,
@@ -481,14 +469,16 @@ public static class CellChildVerdictPlanner
         };
     }
 
-    private static PlacedRefDecision Drop(string reason, string? aux = null, bool marksMasterCovered = false) =>
-        new()
+    private static PlacedRefDecision Drop(string reason, string? aux = null, bool marksMasterCovered = false)
+    {
+        return new PlacedRefDecision
         {
             Verdict = PlacedRefEmitVerdict.Drop,
             DropReason = reason,
             AuxStatCode = aux,
             MarksMasterCovered = marksMasterCovered
         };
+    }
 
     /// <summary>
     ///     A captured master ref parented to a master-anchored cell that is NOT its master
@@ -496,5 +486,8 @@ public static class CellChildVerdictPlanner
     ///     so home-cell captures win the FormID before any cross-cell move claims it.
     /// </summary>
     private sealed record CrossCellMoveCandidate(
-        uint CellFormId, uint ChildFormId, int TargetGroupType, bool? OverrideInitiallyDisabled);
+        uint CellFormId,
+        uint ChildFormId,
+        int TargetGroupType,
+        bool? OverrideInitiallyDisabled);
 }

@@ -41,6 +41,10 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     private readonly CpuDescriptorHandle _dsvHandle;
     private readonly ID3D12DescriptorHeap _dsvHeap;
 
+    // Fixed-footprint accounting: ctor-created targets under one handle; the lazily created
+    // water-copy / resolved-depth textures get their own so create/release cycles stay balanced.
+    private readonly IDisposable _footprint;
+
     private readonly GpuDevice12 _gpu;
 
     // 1-sample HDR resolve target (null when not MSAA): the MSAA scene color resolves into this, which
@@ -59,6 +63,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     private ID3D12Resource? _readback;
     private PlacedSubresourceFootPrint _readbackFootprint;
     private uint _readbackRowPitch;
+    private IDisposable? _resolvedDepthFootprint;
     private bool _resolvedDepthPrepared;
 
     private ID3D12Resource? _resolvedDepthTex;
@@ -68,12 +73,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
     // Dedicated 1-sample opaque-scene snapshot when MSAA is disabled. The MSAA path reuses
     // _hdrResolveTex, whose size/format/sample layout already matches WATER001's sampling contract.
     private ID3D12Resource? _waterOpaqueCopy;
-
-    // Fixed-footprint accounting: ctor-created targets under one handle; the lazily created
-    // water-copy / resolved-depth textures get their own so create/release cycles stay balanced.
-    private readonly IDisposable _footprint;
     private IDisposable? _waterOpaqueFootprint;
-    private IDisposable? _resolvedDepthFootprint;
 
     public GpuOffscreenSceneTarget12(GpuDevice12 gpu, int width, int height)
     {
@@ -168,9 +168,6 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
             AllocationBytes(device, _ldrOutputTex));
     }
 
-    private static long AllocationBytes(ID3D12Device device, ID3D12Resource resource) =>
-        (long)device.GetResourceAllocationInfo(0, resource.Description).SizeInBytes;
-
     /// <summary>
     ///     Tonemap operator + parameters for this target. Defaults to gamma-corrected ACES; world-aware
     ///     callers (frame/capture paths) override per game + active imagespace before rendering.
@@ -246,6 +243,11 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
         _colorTex.Dispose();
     }
 
+    private static long AllocationBytes(ID3D12Device device, ID3D12Resource resource)
+    {
+        return (long)device.GetResourceAllocationInfo(0, resource.Description).SizeInBytes;
+    }
+
     /// <summary>
     ///     Ensures the single-sample snapshot exists. MSAA reuses its existing resolve resource; a
     ///     1x target allocates the full-resolution copy only after WATER001 eligibility succeeds.
@@ -261,7 +263,7 @@ internal sealed unsafe class GpuOffscreenSceneTarget12 : IDisposable
             _waterOpaqueCopy = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
                 HeapProperties.DefaultHeapProperties, HeapFlags.None,
                 ResourceDescription.Texture2D(ColorFormat, (uint)Width, (uint)Height,
-                    arraySize: 1, mipLevels: 1, sampleCount: 1, sampleQuality: 0),
+                    1, 1, 1, 0),
                 ResourceStates.CopyDest);
             _waterOpaqueFootprint = GpuFixedFootprintTracker12.LocalInstance.Add(
                 "offscreen-water-copy", AllocationBytes(_gpu.Device, _waterOpaqueCopy));

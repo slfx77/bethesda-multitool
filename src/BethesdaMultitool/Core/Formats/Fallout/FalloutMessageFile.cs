@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 
 namespace BethesdaMultitool.Core.Formats.Fallout;
@@ -11,16 +12,24 @@ namespace BethesdaMultitool.Core.Formats.Fallout;
 ///     </para>
 ///     <para>
 ///         ⚠⚠ <b>Entries DO span lines, so the reader must not be line-oriented.</b> None of the
-///         13,189 entries in the 27 <c>TEXT\ENGLISH\GAME</c> files does — but <b>3,962 of the
-///         23,126 in the 621 <c>TEXT\ENGLISH\DIALOG</c> files do</b>, because spoken lines are
+///         13,189 entries in the 27 <c>TEXT\ENGLISH\GAME</c> files does — but
+///         <b>
+///             3,962 of the
+///             23,126 in the 621 <c>TEXT\ENGLISH\DIALOG</c> files do
+///         </b>
+///         , because spoken lines are
 ///         wrapped in the source. A line-oriented parse looks perfect on the game text and silently
 ///         drops or truncates a sixth of the dialogue. This scans brace triples instead, which
 ///         reproduces both populations exactly.
 ///     </para>
 ///     <para>
 ///         ⚠ <b>Ids are not unique.</b> 14 are duplicated across the corpus, and the copies carry
-///         DIFFERENT text, so a policy is required rather than optional. <b>The last occurrence
-///         wins</b>, which the one case that touches prototype naming settles: <c>PRO_SCEN.MSG</c>
+///         DIFFERENT text, so a policy is required rather than optional.
+///         <b>
+///             The last occurrence
+///             wins
+///         </b>
+///         , which the one case that touches prototype naming settles: <c>PRO_SCEN.MSG</c>
 ///         gives 85400 = "Sign" and then 85401 twice — "Maltese Falcon" and "This is a neon sign for
 ///         the Maltese Falcon." Since a prototype's description is its name's id plus one, 85401 is
 ///         the description of "Sign", and only the second entry reads as one. Taking the first would
@@ -71,7 +80,7 @@ internal sealed class FalloutMessageFile
             if (!messages.TryAdd(id, value))
             {
                 duplicates++;
-                messages[id] = value;   // last wins — see the type remarks
+                messages[id] = value; // last wins — see the type remarks
             }
         }
 
@@ -126,8 +135,8 @@ internal sealed class FalloutMessageFile
             }
 
             if (complete &&
-                int.TryParse(fields[0].Trim(), System.Globalization.NumberStyles.None,
-                    System.Globalization.CultureInfo.InvariantCulture, out id))
+                int.TryParse(fields[0].Trim(), NumberStyles.None,
+                    CultureInfo.InvariantCulture, out id))
             {
                 value = fields[2].Trim();
                 position = cursor;

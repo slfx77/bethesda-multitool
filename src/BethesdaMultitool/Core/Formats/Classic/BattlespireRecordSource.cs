@@ -38,7 +38,8 @@ internal static class BattlespireRecordSource
     private const string LevelArchiveName = "BS6.BSA";
 
     /// <summary>Reads <paramref name="dataRoot" /> (GAMEDATA) and appends every synthesized record.</summary>
-    public static void Populate(string dataRoot, RecordCollection records, CancellationToken cancellationToken = default)
+    public static void Populate(string dataRoot, RecordCollection records,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dataRoot);
         ArgumentNullException.ThrowIfNull(records);
@@ -245,6 +246,28 @@ internal static class BattlespireRecordSource
             ["Bytes"] = bytes?.Length ?? 0,
             ["Lines"] = lines.Count
         };
+
+        // ⚑ Four of the 253 text entries are the magical-item TABLE rather than prose or a dated
+        // developer log, so those get their records parsed into fields instead of only lines.
+        // ⚠ The gate is the item KEYS, not the presence of tabs: nine entries are dev logs whose
+        // keys are dates, and gating on tabs would surface changelog lines as game data.
+        if (BattlespireItemTable.LooksLikeItemTable(text))
+        {
+            var items = BattlespireItemTable.Parse(text);
+            fields["Items"] = items.Count;
+            for (var i = 0; i < items.Count; i++)
+            {
+                var item = items[i];
+                fields[$"Item{i:D3}"] = item.Name;
+
+                // ⚠ 13 of the 457 retail records carry NO id — the whole of ITEML2 and SITEML2 —
+                // so the id is emitted only when present rather than defaulted to 0 or -1.
+                if (item.Id is { } id)
+                {
+                    fields[$"Item{i:D3}Id"] = id;
+                }
+            }
+        }
 
         for (var i = 0; i < lines.Count; i++)
         {

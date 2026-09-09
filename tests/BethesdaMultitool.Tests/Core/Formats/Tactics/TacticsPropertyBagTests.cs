@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Tactics;
 using Xunit;
@@ -52,7 +48,7 @@ public sealed class TacticsPropertyBagTests
             Bag("Actor",
             [
                 ("Display Name", 4, Encoding.ASCII.GetBytes("Raider")),
-                ("XP Reward", 3, [10, 0, 0, 0]),
+                ("XP Reward", 3, [10, 0, 0, 0])
             ]), "raider.ent");
 
         Assert.Equal("Actor", bag.Kind);
@@ -83,7 +79,7 @@ public sealed class TacticsPropertyBagTests
     public void Parse_AcceptsTheCharacterTagToo()
     {
         var bag = TacticsPropertyBag.Parse(
-            Bag("Player", [("Race Type", 3, [1, 0, 0, 0])], tag: "<character>"), "hero.chr");
+            Bag("Player", [("Race Type", 3, [1, 0, 0, 0])], "<character>"), "hero.chr");
 
         Assert.Equal("Player", bag.Kind);
         Assert.Equal("Race Type", bag.Properties[0].Name);
@@ -93,8 +89,8 @@ public sealed class TacticsPropertyBagTests
     public void Parse_RejectsTrailingBytes()
     {
         // The properties must consume the file exactly — that is what makes the walk a proof.
-        var error = Assert.Throws<InvalidDataException>(
-            () => TacticsPropertyBag.Parse(Bag("Actor", [("A", 3, [1, 2, 3, 4])], trailing: 4), "bad.ent"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            TacticsPropertyBag.Parse(Bag("Actor", [("A", 3, [1, 2, 3, 4])], trailing: 4), "bad.ent"));
         Assert.Contains("end at", error.Message, StringComparison.Ordinal);
     }
 
@@ -102,7 +98,7 @@ public sealed class TacticsPropertyBagTests
     public void Parse_RejectsAPayloadThatRunsPastTheFile()
     {
         var bytes = Bag("Actor", [("A", 3, [1, 2, 3, 4])]);
-        bytes[^8] = 0xFF;   // inflate the declared size
+        bytes[^8] = 0xFF; // inflate the declared size
 
         Assert.Throws<InvalidDataException>(() => TacticsPropertyBag.Parse(bytes, "bad.ent"));
     }
@@ -127,7 +123,7 @@ public sealed class TacticsPropertyBagTests
     public void IsPropertyBag_RecognisesBothTags()
     {
         Assert.True(TacticsPropertyBag.IsPropertyBag(Bag("A", [])));
-        Assert.True(TacticsPropertyBag.IsPropertyBag(Bag("A", [], tag: "<character>")));
+        Assert.True(TacticsPropertyBag.IsPropertyBag(Bag("A", [], "<character>")));
         Assert.False(TacticsPropertyBag.IsPropertyBag("<zar>"u8.ToArray()));
     }
 }

@@ -30,7 +30,7 @@ public sealed class RaceFaceGenSectionIntegrationTests(ITestOutputHelper output)
         var parsedRace = pipeline.ParsedRecords.FirstOrDefault(r =>
             r.Header.Signature == "RACE" && r.Header.FormId == formId);
         Assert.NotNull(parsedRace);
-        Assert.Equal(editorId, parsedRace!.EditorId);
+        Assert.Equal(editorId, parsedRace.EditorId);
 
         var signatures = parsedRace.Subrecords.Select(s => s.Signature).ToArray();
         Assert.Contains("NAM2", signatures);
@@ -41,7 +41,7 @@ public sealed class RaceFaceGenSectionIntegrationTests(ITestOutputHelper output)
         // Verify semantic parsing
         var semanticRace = pipeline.Collection.Races.FirstOrDefault(r => r.FormId == formId);
         Assert.NotNull(semanticRace);
-        Assert.Equal(editorId, semanticRace!.EditorId);
+        Assert.Equal(editorId, semanticRace.EditorId);
 
         Assert.NotNull(semanticRace.MaleFaceGenGeometrySymmetric);
         Assert.NotNull(semanticRace.FemaleFaceGenGeometrySymmetric);

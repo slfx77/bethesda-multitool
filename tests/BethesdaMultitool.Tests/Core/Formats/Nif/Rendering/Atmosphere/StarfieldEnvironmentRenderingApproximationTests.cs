@@ -116,18 +116,24 @@ public sealed class StarfieldEnvironmentRenderingApproximationTests
         float y,
         float z,
         float w,
-        float blendAmount) => new()
+        float blendAmount)
     {
-        Operation = "Set",
-        Value = new StarfieldFloat4Patch { X = x, Y = y, Z = z, W = w },
-        BlendAmount = blendAmount
-    };
+        return new StarfieldBlendableColorPatch
+        {
+            Operation = "Set",
+            Value = new StarfieldFloat4Patch { X = x, Y = y, Z = z, W = w },
+            BlendAmount = blendAmount
+        };
+    }
 
-    private static StarfieldSunPresetFloat4Patch Color(float x, float y, float z, float w) => new()
+    private static StarfieldSunPresetFloat4Patch Color(float x, float y, float z, float w)
     {
-        X = x,
-        Y = y,
-        Z = z,
-        W = w
-    };
+        return new StarfieldSunPresetFloat4Patch
+        {
+            X = x,
+            Y = y,
+            Z = z,
+            W = w
+        };
+    }
 }

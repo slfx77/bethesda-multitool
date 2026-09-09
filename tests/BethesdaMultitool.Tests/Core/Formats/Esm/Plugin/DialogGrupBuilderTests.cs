@@ -78,14 +78,25 @@ public sealed class DialogGrupBuilderTests
         Assert.Equal("0x01000B2D", warning.Metadata["script-variable-target-owner-form-id"]);
     }
 
-    [Fact]
-    public void BuildDialogSection_RetainsInfoWhenAliasedScriptVariableOwnerWasActuallyEmitted()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildDialogSection_RetainsInfoWhenAliasedScriptVariableOwnerWasActuallyEmitted(bool streamFormIds)
     {
         const uint sourceTopic = 0x00120010;
         const uint sourceInfo = 0x00120011;
         const uint sourceOwner = 0x00115C3B;
         const uint emittedOwner = 0x01000B2D;
         var stats = new ConversionPipelineStats();
+        var masterIds = new Queue<uint>([ProducerQuest]);
+        var additionalIds = new Queue<uint>([emittedOwner]);
+        // Dequeuing makes these streams fail if a conversion phase tries to read either twice.
+        IEnumerable<uint> masterFormIds = streamFormIds
+            ? Enumerable.Range(0, 1).Select(_ => masterIds.Dequeue())
+            : [ProducerQuest];
+        IEnumerable<uint> additionalFormIds = streamFormIds
+            ? Enumerable.Range(0, 1).Select(_ => additionalIds.Dequeue())
+            : [emittedOwner];
 
         var result = DialogGrupBuilder.BuildDialogSection(
             [
@@ -117,12 +128,12 @@ public sealed class DialogGrupBuilderTests
             ],
             new NewVsOverrideClassifier([ProducerQuest]),
             new FormIdAllocator(),
-            [ProducerQuest],
+            masterFormIds,
             new Dictionary<uint, ParsedMainRecord>(),
             stats,
             NullConversionProgressSink.Instance,
             new Dictionary<uint, uint> { [sourceOwner] = emittedOwner },
-            [emittedOwner],
+            additionalFormIds,
             liveScriptVariableOwnerFormIds: new HashSet<uint> { emittedOwner });
 
         Assert.True(result.NewInfoSourceToAllocated.ContainsKey(sourceInfo));

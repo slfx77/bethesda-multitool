@@ -9,13 +9,19 @@ namespace BethesdaMultitool.Core.Formats.Fallout;
 ///     footer-indexed DAT2. Layout, from the fodev documentation and measured 2026-09-05 on the
 ///     retail Steam install:
 ///     <list type="bullet">
-///         <item>Header: BE u32 directory count, then three BE u32 words this reader does not
-///         interpret (retail: 94, 0, 33691024 on MASTER.DAT; 10, 0, 33755200 on CRITTER.DAT).</item>
-///         <item>Directory names: <c>count</c> Pascal strings (u8 length + bytes), backslash paths
-///         with <c>"."</c> for the root.</item>
-///         <item>Per directory: BE u32 file count, three BE u32 words, then that many entries of
-///         Pascal name + BE u32 attributes + BE u32 offset + BE u32 size + BE u32 packed size.
-///         Attributes are 0x20 (stored; packed size 0) or 0x40 (Fallout's block-framed LZSS).</item>
+///         <item>
+///             Header: BE u32 directory count, then three BE u32 words this reader does not
+///             interpret (retail: 94, 0, 33691024 on MASTER.DAT; 10, 0, 33755200 on CRITTER.DAT).
+///         </item>
+///         <item>
+///             Directory names: <c>count</c> Pascal strings (u8 length + bytes), backslash paths
+///             with <c>"."</c> for the root.
+///         </item>
+///         <item>
+///             Per directory: BE u32 file count, three BE u32 words, then that many entries of
+///             Pascal name + BE u32 attributes + BE u32 offset + BE u32 size + BE u32 packed size.
+///             Attributes are 0x20 (stored; packed size 0) or 0x40 (Fallout's block-framed LZSS).
+///         </item>
 ///     </list>
 ///     <para>
 ///         Exact-tiling proof: every entry lies inside the file, no entry starts before the
@@ -69,7 +75,8 @@ internal static class Dat1Archive
     {
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
         return TryRead(stream, path) ??
-               throw new InvalidDataException($"'{Path.GetFileName(path)}' is not a Fallout DAT1 archive: its directory does not tile the file.");
+               throw new InvalidDataException(
+                   $"'{Path.GetFileName(path)}' is not a Fallout DAT1 archive: its directory does not tile the file.");
     }
 
     private static Dat1Directory? TryRead(FileStream stream, string path)
@@ -191,7 +198,8 @@ internal static class Dat1Archive
 /// <summary>A parsed DAT1 directory: the archive path, its directory names and every entry.</summary>
 internal sealed class Dat1Directory
 {
-    public Dat1Directory(string filePath, IReadOnlyList<string> directories, IReadOnlyList<Dat1Entry> entries, int directoryEnd)
+    public Dat1Directory(string filePath, IReadOnlyList<string> directories, IReadOnlyList<Dat1Entry> entries,
+        int directoryEnd)
     {
         FilePath = filePath;
         Directories = directories;
@@ -214,7 +222,13 @@ internal sealed class Dat1Directory
 ///     One DAT1 entry. <see cref="PackedSize" /> is 0 on stored entries, so
 ///     <see cref="StoredLength" /> is what actually occupies the archive.
 /// </summary>
-internal readonly record struct Dat1Entry(string Directory, string Name, uint Attributes, uint Offset, uint Size, uint PackedSize)
+internal readonly record struct Dat1Entry(
+    string Directory,
+    string Name,
+    uint Attributes,
+    uint Offset,
+    uint Size,
+    uint PackedSize)
 {
     public bool IsCompressed => Attributes == Dat1Archive.CompressedAttribute;
 

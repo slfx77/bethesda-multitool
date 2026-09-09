@@ -46,7 +46,7 @@ dotnet build -c Release -p:BuildTestsOnly=true -p:SkipAnalyzers=true      # fast
 RUN_BUCKET_B=1 ./tests/BethesdaMultitool.Tests/bin/Release/net10.0/BethesdaMultitool.Tests.exe
 dotnet restore && dotnet build -c Release                                  # both TFMs, before "green"
 dotnet run --project src/BethesdaMultitool -f net10.0 -c Release --no-build -- \
-    dmp to-esm Sample/MemoryDump/Fallout_Release_Beta.xex44.dmp \
+    dmp to-esm Sample/MemoryDumps/Fallout_Release_Beta.xex44.dmp \
     -o <out>/out.esm --pc-esm Sample/ESM/pc_final/FalloutNV.esm
 pwsh -NoProfile -File artifacts/dmp-audit/round4-t1/Invoke-T1TopologyAudit.ps1
 ```
@@ -235,7 +235,7 @@ Nothing from the original 7-phase plan remains. These are the follow-ons it gene
 
 - ⚠⚠ `IsVaRangeCaptured` is a **residency** predicate, not a contiguity one. Guard-then-flat-read
   still splices foreign bytes.
-- ⚠⚠ `pdb_layouts.json`'s real source is `Sample/PDB/Aug_22_MemDebug/types_full.txt`, **not**
+- ⚠⚠ `pdb_layouts.json`'s real source is `Sample/DebugSymbols/Fallout - New Vegas (X360)/Aug_22_MemDebug/types_full.txt`, **not**
   `Proto/` — regenerating from Proto moves WEAP 920→924 and breaks pinned tests. The exporter now
   records the actual source file, so check the `source` / `sourcePath` fields.
 - ⚠⚠ Always diff-gate a layout regeneration on **"the 116 `types` entries do not move"**. Additive

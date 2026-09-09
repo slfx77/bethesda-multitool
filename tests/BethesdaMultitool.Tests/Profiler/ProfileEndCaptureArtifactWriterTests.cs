@@ -49,7 +49,7 @@ public sealed class ProfileEndCaptureArtifactWriterTests
         {
             if (Directory.Exists(directory))
             {
-                Directory.Delete(directory, recursive: true);
+                Directory.Delete(directory, true);
             }
         }
     }

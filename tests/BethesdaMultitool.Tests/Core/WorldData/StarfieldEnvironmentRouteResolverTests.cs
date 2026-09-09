@@ -92,8 +92,10 @@ public sealed class StarfieldEnvironmentRouteResolverTests
         Assert.Null(route.Climate);
     }
 
-    private static StarfieldPlanetWorldspaceIndexResult PlanetIndex() =>
-        StarfieldPlanetWorldspaceIndex.Build([PlanetRecord(Planet)]);
+    private static StarfieldPlanetWorldspaceIndexResult PlanetIndex()
+    {
+        return StarfieldPlanetWorldspaceIndex.Build([PlanetRecord(Planet)]);
+    }
 
     private static StarfieldPlanetDataRecord PlanetRecord(uint formId)
     {
@@ -106,8 +108,9 @@ public sealed class StarfieldEnvironmentRouteResolverTests
         return record with { FormId = formId };
     }
 
-    private static IReadOnlyDictionary<uint, StarfieldAtmosphereRecord> Atmospheres() =>
-        new Dictionary<uint, StarfieldAtmosphereRecord>
+    private static Dictionary<uint, StarfieldAtmosphereRecord> Atmospheres()
+    {
+        return new Dictionary<uint, StarfieldAtmosphereRecord>
         {
             [Atmosphere] = new()
             {
@@ -121,10 +124,12 @@ public sealed class StarfieldEnvironmentRouteResolverTests
                 }
             }
         };
+    }
 
-    private static IReadOnlyDictionary<uint, ClimateRecord> Climates(
-        params ClimateWeatherSettingsEntry[] choices) =>
-        new Dictionary<uint, ClimateRecord>
+    private static Dictionary<uint, ClimateRecord> Climates(
+        params ClimateWeatherSettingsEntry[] choices)
+    {
+        return new Dictionary<uint, ClimateRecord>
         {
             [Climate] = new()
             {
@@ -132,9 +137,11 @@ public sealed class StarfieldEnvironmentRouteResolverTests
                 WeatherSettingsTypes = choices
             }
         };
+    }
 
-    private static IReadOnlyDictionary<uint, StarfieldWeatherSettingsRecord> WeatherSettingsRecords() =>
-        new Dictionary<uint, StarfieldWeatherSettingsRecord>
+    private static Dictionary<uint, StarfieldWeatherSettingsRecord> WeatherSettingsRecords()
+    {
+        return new Dictionary<uint, StarfieldWeatherSettingsRecord>
         {
             [WeatherSettings] = new()
             {
@@ -148,4 +155,5 @@ public sealed class StarfieldEnvironmentRouteResolverTests
                 }
             }
         };
+    }
 }

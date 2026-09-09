@@ -1,9 +1,15 @@
+using System.Buffers.Binary;
+using System.IO.Compression;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Comparison;
 using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
@@ -11,19 +17,12 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Presentation;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.VersionTracking.Extraction;
 using BethesdaMultitool.Core.VersionTracking.Models;
 using BethesdaMultitool.Tests.Helpers;
-using System.Buffers.Binary;
-using System.IO.Compression;
-using System.Text.Json;
-using System.Text.RegularExpressions;
-using System.Text;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Semantic;
@@ -160,7 +159,7 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
 
         Assert.NotNull(mergedResolver);
         Assert.NotNull(mergedRecords);
-        Assert.Equal("StatOverlay", mergedResolver!.GetEditorId(0x00002000));
+        Assert.Equal("StatOverlay", mergedResolver.GetEditorId(0x00002000));
         Assert.Equal("Overlay Name", mergedResolver.GetDisplayName(0x00002000));
     }
 
@@ -900,7 +899,7 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
 
         var page = ComparisonBlobReader.Read(outputFile!);
         Assert.NotNull(page);
-        Assert.Contains(0x00005000u, page!.Records.Keys);
+        Assert.Contains(0x00005000u, page.Records.Keys);
         Assert.Contains(0x00005001u, page.Records.Keys);
     }
 

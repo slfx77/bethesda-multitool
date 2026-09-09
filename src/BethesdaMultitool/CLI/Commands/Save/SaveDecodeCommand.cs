@@ -41,7 +41,7 @@ internal static class SaveDecodeCommand
             var save = SaveCommand.ParseFile(path);
             var formIdArray = save.FormIdArray.ToArray();
 
-            int totalForms = 0, decoded = 0, fullyDecoded = 0, partiallyDecoded = 0, failed = 0, unsupported = 0;
+            int totalForms = 0, fullyDecoded = 0, partiallyDecoded = 0, failed = 0, unsupported = 0;
             long totalBytes = 0, decodedBytes = 0;
             var typeStats =
                 new Dictionary<string, (int Total, int Full, int Partial, int Fail, long TotalBytes, long DecodedBytes
@@ -75,7 +75,6 @@ internal static class SaveDecodeCommand
                     continue;
                 }
 
-                decoded++;
                 decodedBytes += result.BytesConsumed;
                 s.DecodedBytes += result.BytesConsumed;
 

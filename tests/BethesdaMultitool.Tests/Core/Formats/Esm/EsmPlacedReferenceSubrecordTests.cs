@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
+using System.Numerics;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -218,7 +219,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
                 new ParsedSubrecord
                 {
                     Signature = "XBSD",
-                    Data = BuildBendableSplinePlacement(bigEndian, includeWindAndTrailingData: true),
+                    Data = BuildBendableSplinePlacement(bigEndian, true),
                     BigEndian = bigEndian
                 }
             ]
@@ -229,9 +230,9 @@ public sealed class EsmPlacedReferenceSubrecordTests
 
         var placement = Assert.Single(scanResult.RefrRecords).BendableSpline;
         Assert.NotNull(placement);
-        Assert.Equal(24.5f, placement!.Slack);
+        Assert.Equal(24.5f, placement.Slack);
         Assert.Equal(1.5f, placement.Thickness);
-        Assert.Equal(new System.Numerics.Vector3(128f, 16f, 32f), placement.HalfExtents);
+        Assert.Equal(new Vector3(128f, 16f, 32f), placement.HalfExtents);
         Assert.Equal((byte)2, placement.WindDetachedEndRaw);
         Assert.True(placement.WindDetachedEnd is true);
         Assert.Equal(new byte[] { 0xAA, 0xBB, 0xCC }, placement.TrailingData.ToArray());
@@ -251,7 +252,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
                 new ParsedSubrecord
                 {
                     Signature = "XBSD",
-                    Data = BuildBendableSplinePlacement(false, includeWindAndTrailingData: false)
+                    Data = BuildBendableSplinePlacement(false, false)
                 }
             ]
         };
@@ -261,7 +262,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
 
         var placement = Assert.Single(scanResult.RefrRecords).BendableSpline;
         Assert.NotNull(placement);
-        Assert.Null(placement!.WindDetachedEndRaw);
+        Assert.Null(placement.WindDetachedEndRaw);
         Assert.Null(placement.WindDetachedEnd);
         Assert.Empty(placement.TrailingData);
     }
@@ -298,7 +299,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
             "REFR",
             bigEndian,
             ("NAME", BuildUInt32(baseFormId, bigEndian)),
-            ("XBSD", BuildBendableSplinePlacement(bigEndian, includeWindAndTrailingData: true)));
+            ("XBSD", BuildBendableSplinePlacement(bigEndian, true)));
         var scanResult = EsmTestRecordBuilder.MakeScanResult(
         [
             new DetectedMainRecord(
@@ -328,7 +329,7 @@ public sealed class EsmPlacedReferenceSubrecordTests
             "REFR",
             false,
             ("NAME", BuildUInt32(baseFormId, false)),
-            ("XBSD", BuildBendableSplinePlacement(false, includeWindAndTrailingData: true)));
+            ("XBSD", BuildBendableSplinePlacement(false, true)));
         var fileData = new EsmTestFileBuilder()
             .AddTopLevelGrup("REFR", refrBytes)
             .Build();

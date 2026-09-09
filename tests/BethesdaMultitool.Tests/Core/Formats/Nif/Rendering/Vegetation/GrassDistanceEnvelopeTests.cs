@@ -182,11 +182,10 @@ public sealed class GrassDistanceEnvelopeTests
             2,
             SourceContract.CountOccurrences(
                 compactRenderer,
-                // The batch key gained usesModernStandardShader as its final argument, so the
-                // modern-shader and classic routes of one submesh cannot alias a single batch.
+                // Shader family and external emittance are both part of the batch identity.
                 "state.Target.OpaqueBatches.GetOrCreate(sub,pso," +
                 "usesGrassDistanceEnvelope,usesTallGrassWind," +
-                "r.GrassWaveMultiplier,usesModernStandardShader)"));
+                "r.GrassWaveMultiplier,usesModernStandardShader,externalEmittanceFormId)"));
 
         // Both shared-ring and fallback-ring opaque copies route envelope batches through an exact
         // per-instance predicate even when generic/frustum refiltering is false. The generic exact

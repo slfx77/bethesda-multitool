@@ -28,19 +28,17 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
 
     private const int RegionAlignment = 16;
     private readonly GeometryArenaAllocator _allocator;
+
     private readonly List<IntPtr> _blockPointers = new();
 
     // Nullable and never compacted: a slot is null while its memory is released (see
     // ReleaseEmptyBlocks) and is re-backed in place on demand. ArenaAllocation.BlockIndex indexes
     // this list, so removing an entry would invalidate every live allocation after it.
     private readonly List<ID3D12Resource?> _blockResources = new();
-
-    private readonly GpuGeometryArenaBackingMode _backingMode;
     private readonly GpuDevice12 _gpu;
     private readonly List<int> _pendingBlockCopies = new();
     private readonly GpuGeometryStagingRing12? _stagingRing;
     private long _committedBytes;
-    private int _pendingCopyCount;
     private bool _disposed;
     private ResourceRegistration? _registration;
 
@@ -52,11 +50,12 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         if (backingMode is not GpuGeometryArenaBackingMode.UploadHeap and
             not GpuGeometryArenaBackingMode.DefaultHeap)
         {
-            throw new ArgumentOutOfRangeException(nameof(backingMode), backingMode, "Unknown geometry arena backing mode.");
+            throw new ArgumentOutOfRangeException(nameof(backingMode), backingMode,
+                "Unknown geometry arena backing mode.");
         }
 
         _gpu = gpu;
-        _backingMode = backingMode;
+        BackingMode = backingMode;
         _stagingRing = backingMode == GpuGeometryArenaBackingMode.DefaultHeap
             ? new GpuGeometryStagingRing12(gpu)
             : null;
@@ -72,7 +71,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     public int BlockCount => _blockResources.Count;
 
     /// <summary>The heap class selected at construction; it never changes while allocations live.</summary>
-    public GpuGeometryArenaBackingMode BackingMode => _backingMode;
+    public GpuGeometryArenaBackingMode BackingMode { get; }
 
     /// <summary>Permanent UPLOAD staging committed for DEFAULT backing, otherwise 0.</summary>
     public long StagingCapacityBytes => _stagingRing?.CapacityBytes ?? 0;
@@ -85,7 +84,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     public long StagingOverflowCount => _stagingRing?.OverflowCount ?? 0;
 
     /// <summary>Recorded DEFAULT-heap copies not yet retired by the frame deletion queue.</summary>
-    public int PendingCopyCount => _pendingCopyCount;
+    public int PendingCopyCount { get; private set; }
 
     /// <summary>
     ///     Monotonic signal that allocator or copy-retirement state changed in a way that can make an
@@ -119,7 +118,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
                 continue;
             }
 
-            if (_backingMode == GpuGeometryArenaBackingMode.UploadHeap)
+            if (BackingMode == GpuGeometryArenaBackingMode.UploadHeap)
             {
                 resource.Unmap(0);
             }
@@ -130,7 +129,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         _blockResources.Clear();
         _blockPointers.Clear();
         _pendingBlockCopies.Clear();
-        _pendingCopyCount = 0;
+        PendingCopyCount = 0;
     }
 
     public string ResourceName => nameof(GpuGeometryArena12);
@@ -158,7 +157,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         {
             EstimatedBytes = _committedBytes,
             EntryCount = _blockResources.Count,
-            Segment = _backingMode == GpuGeometryArenaBackingMode.DefaultHeap
+            Segment = BackingMode == GpuGeometryArenaBackingMode.DefaultHeap
                 ? GpuMemorySegment.Local
                 : GpuMemorySegment.NonLocal
         };
@@ -185,7 +184,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         ReadOnlySpan<byte> vertexBytes, ReadOnlySpan<byte> indexBytes, string? debugTag = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_backingMode != GpuGeometryArenaBackingMode.UploadHeap)
+        if (BackingMode != GpuGeometryArenaBackingMode.UploadHeap)
         {
             throw new InvalidOperationException(
                 "DEFAULT-heap geometry must be uploaded through the command-list overload.");
@@ -266,7 +265,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         ReadOnlySpan<byte> indexBytes,
         string? debugTag = null)
     {
-        if (_backingMode == GpuGeometryArenaBackingMode.UploadHeap)
+        if (BackingMode == GpuGeometryArenaBackingMode.UploadHeap)
         {
             return Upload(vertexBytes, indexBytes, debugTag);
         }
@@ -356,7 +355,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         cmd.CopyBufferRegion(block, (ulong)allocation.Offset, stagingResource, stagingOffset, (ulong)totalBytes);
         cmd.ResourceBarrierTransition(block, ResourceStates.CopyDest, ResourceStates.Common);
         MarkCopyPending(allocation.BlockIndex);
-        deletionQueue.EnqueueDispose(new CopyRetirement(this, allocation.BlockIndex, stagingRelease!));
+        deletionQueue.EnqueueDispose(new CopyRetirement(this, allocation.BlockIndex, stagingRelease));
 
         EmitAudit("alloc", allocation, debugTag);
         var gpuBase = block.GPUVirtualAddress + (ulong)allocation.Offset;
@@ -415,7 +414,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
                 continue;
             }
 
-            if (_backingMode == GpuGeometryArenaBackingMode.UploadHeap)
+            if (BackingMode == GpuGeometryArenaBackingMode.UploadHeap)
             {
                 resource.Unmap(0);
             }
@@ -465,7 +464,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     {
         fnv1a64 = 0;
         var blockIndex = allocation.Allocation.BlockIndex;
-        if (_disposed || _backingMode != GpuGeometryArenaBackingMode.UploadHeap ||
+        if (_disposed || BackingMode != GpuGeometryArenaBackingMode.UploadHeap ||
             (uint)blockIndex >= (uint)_blockResources.Count)
         {
             return false;
@@ -536,7 +535,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         // block is exactly as large as the allocation that forced it.
         var blockBytes = _allocator.BlockSizeOf(requiredBlockIndex);
         ID3D12Resource resource;
-        if (_backingMode == GpuGeometryArenaBackingMode.DefaultHeap)
+        if (BackingMode == GpuGeometryArenaBackingMode.DefaultHeap)
         {
             // Buffers created on DEFAULT heap must begin in COMMON. Each upload promotes to
             // COPY_DEST and explicitly transitions back; the resource is never CPU-mapped.
@@ -594,7 +593,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
     private void MarkCopyPending(int blockIndex)
     {
         _pendingBlockCopies[blockIndex]++;
-        _pendingCopyCount++;
+        PendingCopyCount++;
     }
 
     private void CompleteCopy(int blockIndex)
@@ -616,7 +615,7 @@ internal sealed unsafe class GpuGeometryArena12 : ITrackableResource, IDisposabl
         }
 
         _pendingBlockCopies[blockIndex]--;
-        _pendingCopyCount--;
+        PendingCopyCount--;
         AdvanceReclamationGeneration();
     }
 

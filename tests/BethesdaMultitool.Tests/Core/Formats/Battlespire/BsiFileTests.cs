@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Battlespire;
 using Xunit;
@@ -72,7 +68,7 @@ public class BsiFileTests
             .. Chunk("BSIF"),
             .. Chunk("IFHD", new byte[44]),
             .. Chunk("NAME", "TERRAIN\0"u8.ToArray()),
-            .. Chunk("BHDR", Header(2, 2, 2, 0, xOffset: 260, yOffset: 262)),
+            .. Chunk("BHDR", Header(2, 2, 2, 0, 260, 262)),
             .. Chunk("HICL", HighColor()),
             .. Chunk("CMAP", ColorMap()),
             .. Chunk("HTBL", new byte[8192]),
@@ -144,10 +140,10 @@ public class BsiFileTests
         [
             .. Chunk("BHDR", Header(2, 1, 1, 0)),
             .. Chunk("CMAP", ColorMap()),
-            .. Chunk("DATA", [10, 11]),
+            .. Chunk("DATA", 10, 11),
             .. Chunk("BHDR", Header(1, 2, 1, 0)),
             .. Chunk("CMAP", second),
-            .. Chunk("DATA", [12, 13]),
+            .. Chunk("DATA", 12, 13),
             .. Chunk("END ")
         ];
 
@@ -177,7 +173,8 @@ public class BsiFileTests
     public void Parse_RejectsWhatIsNotAnImage()
     {
         // A DOS batch file, like the six stray entries inside the retail BSI.BSA.
-        Assert.Throws<InvalidDataException>(() => BsiFile.Parse("@echo off\r\ncopy a b\r\n"u8.ToArray(), "SMP_BAK.BAT"));
+        Assert.Throws<InvalidDataException>(() =>
+            BsiFile.Parse("@echo off\r\ncopy a b\r\n"u8.ToArray(), "SMP_BAK.BAT"));
 
         // A chunk whose declared length runs past the file.
         byte[] truncated = [.. Chunk("BHDR", Header(2, 2, 1, 0)), .. Chunk("DATA", 1, 2, 3)];
@@ -185,7 +182,10 @@ public class BsiFileTests
         Assert.Throws<InvalidDataException>(() => BsiFile.Parse(truncated, "X.BSI"));
 
         // Data that does not fill the declared geometry.
-        byte[] short_ = [.. Chunk("BHDR", Header(4, 4, 1, 0)), .. Chunk("CMAP", ColorMap()), .. Chunk("DATA", 1, 2), .. Chunk("END ")];
+        byte[] short_ =
+        [
+            .. Chunk("BHDR", Header(4, 4, 1, 0)), .. Chunk("CMAP", ColorMap()), .. Chunk("DATA", 1, 2), .. Chunk("END ")
+        ];
         Assert.Throws<InvalidDataException>(() => BsiFile.Parse(short_, "X.BSI"));
 
         // A well-formed file that carries no image is legal, not an error: retail's BIP.BSI is
@@ -197,7 +197,8 @@ public class BsiFileTests
         // A run-length line that overruns its width.
         var lineTable = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(lineTable, 0x8000_0000u | 4u);
-        byte[] overrun = [.. Chunk("BHDR", Header(2, 1, 1, 6)), .. Chunk("DATA", [.. lineTable, 0x85, 3]), .. Chunk("END ")];
+        byte[] overrun =
+            [.. Chunk("BHDR", Header(2, 1, 1, 6)), .. Chunk("DATA", [.. lineTable, 0x85, 3]), .. Chunk("END ")];
         Assert.Throws<InvalidDataException>(() => BsiFile.Parse(overrun, "X.BSI"));
     }
 }

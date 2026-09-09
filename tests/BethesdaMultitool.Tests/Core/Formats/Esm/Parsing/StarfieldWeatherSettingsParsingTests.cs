@@ -121,7 +121,7 @@ public sealed class StarfieldWeatherSettingsParsingTests
         using var partialAccessor = partialMmf.CreateViewAccessor(0, partialBytes.Length);
         partialAccessor.WriteArray(0, partialBytes, 0, partialBytes.Length);
         var partialContext = new RecordParserContext(
-            partialScan, null, partialAccessor, partialBytes.Length, null);
+            partialScan, null, partialAccessor, partialBytes.Length);
         partialContext.PartiallyRecoveredFormIds.Add(partialFormId);
         var partial = Assert.Single(
             new MiscEnvironmentHandler(partialContext).ParseStarfieldWeatherSettings());
@@ -131,8 +131,10 @@ public sealed class StarfieldWeatherSettingsParsingTests
 
     private static RecordCollection ParseSingle(
         uint formId,
-        params (string Signature, byte[] Data)[] subrecords) =>
-        ParseSingle(formId, false, subrecords);
+        params (string Signature, byte[] Data)[] subrecords)
+    {
+        return ParseSingle(formId, false, subrecords);
+    }
 
     private static RecordCollection ParseSingle(
         uint formId,
@@ -186,9 +188,15 @@ public sealed class StarfieldWeatherSettingsParsingTests
         return Concat(Encoding.ASCII.GetBytes(signature), U32((uint)body.Length), body);
     }
 
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {

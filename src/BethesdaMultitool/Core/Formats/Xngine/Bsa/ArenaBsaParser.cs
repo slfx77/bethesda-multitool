@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 
 namespace BethesdaMultitool.Core.Formats.Xngine.Bsa;
 
@@ -132,7 +133,7 @@ internal static class ArenaBsaParser
             }
         }
 
-        return System.Text.Encoding.ASCII.GetString(raw[..length]);
+        return Encoding.ASCII.GetString(raw[..length]);
     }
 }
 

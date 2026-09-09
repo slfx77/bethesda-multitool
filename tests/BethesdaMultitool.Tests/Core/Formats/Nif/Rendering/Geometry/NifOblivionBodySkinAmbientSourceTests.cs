@@ -143,8 +143,11 @@ public sealed class NifOblivionBodySkinAmbientSourceTests
             fixture.Data, fixture.Info, bindPoseOnly: true));
         var rendered = Assert.Single(cpu.Submeshes);
         var exported = Assert.Single(NifExportExtractor.Extract(fixture.Data, fixture.Info).MeshParts).Submesh;
-        foreach (var part in new[] { rendered, exported, RenderableSubmeshCloner.DeepClone(exported),
-                     RenderableSubmeshCloner.CloneGeometryWithRenderState(rendered, exported) })
+        foreach (var part in new[]
+                 {
+                     rendered, exported, RenderableSubmeshCloner.DeepClone(exported),
+                     RenderableSubmeshCloner.CloneGeometryWithRenderState(rendered, exported)
+                 })
         {
             Assert.True(part.HasAuthoredOblivionBodySkinInputs);
             Assert.Equal((0.588f, 0.25f, 0.75f), part.AuthoredOblivionBodySkinAmbientColor);
@@ -153,6 +156,7 @@ public sealed class NifOblivionBodySkinAmbientSourceTests
             Assert.False(part.IsFaceGen);
             Assert.Equal(3, part.VertexCount);
         }
+
         Assert.Equal(before, fixture.Data);
     }
 
@@ -163,8 +167,10 @@ public sealed class NifOblivionBodySkinAmbientSourceTests
         Assert.False(Read(fixture));
     }
 
-    private static bool Read(NifOblivionBodySkinSceneTestData fixture) =>
-        NifOblivionBodySkinSourceReader.IsEligible(fixture.Data, fixture.Info, 0);
+    private static bool Read(NifOblivionBodySkinSceneTestData fixture)
+    {
+        return NifOblivionBodySkinSourceReader.IsEligible(fixture.Data, fixture.Info, 0);
+    }
 
     private static void SetAmbient(NifOblivionBodySkinSceneTestData fixture, float red, float green, float blue)
     {

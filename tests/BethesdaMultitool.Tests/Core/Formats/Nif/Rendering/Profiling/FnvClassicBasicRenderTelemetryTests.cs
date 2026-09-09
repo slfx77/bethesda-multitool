@@ -172,7 +172,7 @@ public sealed class FnvClassicBasicRenderTelemetryTests
             StringComparison.Ordinal);
         Assert.Contains(
             "_references?.SetFnvActiveAdtBaseState(" +
-            "lightingOn,projectedSunShadowActive,fogEnabled);",
+            "lightingOn,projectedSunShadowActive,fogEnabled,finiteAdtFogSupported);",
             compactFrame,
             StringComparison.Ordinal);
     }

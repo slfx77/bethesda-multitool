@@ -29,7 +29,10 @@ internal enum TopDownSubjectKind
 ///     </para>
 /// </summary>
 /// <param name="Kind">Which renderer argument drives this subject.</param>
-/// <param name="FormId">Worldspace or interior cell FormID; ignored for <see cref="TopDownSubjectKind.UnlinkedExterior" />.</param>
+/// <param name="FormId">
+///     Worldspace or interior cell FormID; ignored for <see cref="TopDownSubjectKind.UnlinkedExterior" />
+///     .
+/// </param>
 /// <param name="Name">EditorID where available, else FullName, else the hex FormID. Used for the output filename.</param>
 /// <param name="MinX">West edge of the framed rectangle, world units.</param>
 /// <param name="MaxX">East edge.</param>

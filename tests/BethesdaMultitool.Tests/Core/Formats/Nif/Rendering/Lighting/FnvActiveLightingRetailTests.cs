@@ -25,7 +25,7 @@ public sealed class FnvActiveLightingRetailTests(
     ITestOutputHelper output)
 {
     private const string MeshesBsaRelative =
-        @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa";
+        @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa";
 
     private const string PrimmGatedWallModelPath =
         @"meshes\architecture\urban\civicspace\gatedwall\urbangatedwallstrstone01_nv.nif";
@@ -53,7 +53,7 @@ public sealed class FnvActiveLightingRetailTests(
         Assert.SkipWhen(meshesBsa is null, "FNV PC-final meshes BSA not available");
 
         using var archives = MeshArchiveSet.Open(
-            meshesBsa!, null, false);
+            meshesBsa, null, false);
         Assert.True(
             archives.TryExtractFile(PrimmGatedWallModelPath, out var data, out _),
             $"Retail NIF missing: {PrimmGatedWallModelPath}");
@@ -111,7 +111,7 @@ public sealed class FnvActiveLightingRetailTests(
                 candidate.Submesh.MaterialAlpha,
                 candidate.Submesh.MaterialAlphaController is not null,
                 candidate.Mode,
-                AlphaTestFunction: candidate.Submesh.AlphaTestFunction)))
+                candidate.Submesh.AlphaTestFunction)))
             .ToArray();
         Assert.Equal([15, 21, 25], active.Select(static candidate => candidate.Submesh.SourceBlockIndex));
         var activeFixture = Assert.Single(active, static candidate => !candidate.Submesh.HasAlphaTest);

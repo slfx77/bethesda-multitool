@@ -24,7 +24,7 @@ public class ConditionDecodeTests
         Assert.SkipWhen(esm is null, RealAssetPaths.SkipMessage(Path.GetFileName(relativePath)));
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         // A condition node has the signature CTDA and the structural members; collect them across every
         // record type that carries conditions (INFO, QUST, ...).

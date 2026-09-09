@@ -1,6 +1,5 @@
 using System.CommandLine;
 using BethesdaMultitool.Core.Analysis;
-using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using Spectre.Console;
 
@@ -184,7 +183,8 @@ public static class StatsCommand
         // useless wherever the generic bucket IS the file: Morrowind routes every base record
         // through it, and a classic-game install is nothing but synthesized generic records.
         foreach (var (type, count) in records.GenericRecords
-                     .GroupBy(r => string.IsNullOrEmpty(r.RecordType) ? "Generic" : r.RecordType, StringComparer.Ordinal)
+                     .GroupBy(r => string.IsNullOrEmpty(r.RecordType) ? "Generic" : r.RecordType,
+                         StringComparer.Ordinal)
                      .Select(g => (Type: g.Key, Count: g.Count()))
                      .OrderByDescending(x => x.Count)
                      .ThenBy(x => x.Type, StringComparer.Ordinal))

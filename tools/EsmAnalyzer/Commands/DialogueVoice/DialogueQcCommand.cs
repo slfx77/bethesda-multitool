@@ -87,7 +87,7 @@ public static class DialogueQcCommand
         }
 
         // ── 1. Build vocabulary from ESM ───────────────────────────────────────
-        var esm = EsmFileLoader.Load(esmPath, true);
+        var esm = EsmFileLoader.Load(esmPath);
         if (esm == null)
         {
             return 1;
@@ -263,7 +263,6 @@ public static class DialogueQcCommand
             }
 
             vocab.FullStringsScanned++;
-            vocab.FullStrings.Add(full);
 
             switch (sig)
             {
@@ -621,7 +620,6 @@ public static class DialogueQcCommand
         public Dictionary<char, List<string>> ByFirstChar { get; } = new();
 
         // Full-string set of FULL display strings for context in reports.
-        public HashSet<string> FullStrings { get; } = new(StringComparer.Ordinal);
 
         public int FullStringsScanned { get; set; }
         public int NpcCount { get; set; }

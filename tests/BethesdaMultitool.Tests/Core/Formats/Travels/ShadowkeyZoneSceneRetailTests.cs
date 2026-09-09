@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -56,16 +51,20 @@ public sealed class ShadowkeyZoneSceneRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Travels.ShadowkeyRoot();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Shadowkey (system/apps/6R51)"));
-        return root!;
+        return root;
     }
 
-    private static byte[] Inflate(string root, string zone, string extension) =>
-        ShadowkeyCompressedFile.Inflate(
+    private static byte[] Inflate(string root, string zone, string extension)
+    {
+        return ShadowkeyCompressedFile.Inflate(
             File.ReadAllBytes(Path.Combine(root, zone + extension)), zone + extension);
+    }
 
-    private static (ShadowkeyZoneMap Map, ShadowkeyCellPrototypes Prototypes) Load(string root, string zone) =>
-        (ShadowkeyZoneMap.Parse(Inflate(root, zone, ".zmp"), zone + ".zmp"),
+    private static (ShadowkeyZoneMap Map, ShadowkeyCellPrototypes Prototypes) Load(string root, string zone)
+    {
+        return (ShadowkeyZoneMap.Parse(Inflate(root, zone, ".zmp"), zone + ".zmp"),
             ShadowkeyCellPrototypes.Parse(Inflate(root, zone, ".zcp"), zone + ".zcp"));
+    }
 
     /// <summary>
     ///     Scores one slot-to-corner assignment: over every pair of adjacent OPEN cells where at
@@ -80,10 +79,13 @@ public sealed class ShadowkeyZoneSceneRetailTests
         var slotOf = new int[4];
         for (var slot = 0; slot < 4; slot++)
         {
-            slotOf[(Corners[permutation[slot]].Dx * 2) + Corners[permutation[slot]].Dy] = slot;
+            slotOf[Corners[permutation[slot]].Dx * 2 + Corners[permutation[slot]].Dy] = slot;
         }
 
-        int Slot(int dx, int dy) => slotOf[(dx * 2) + dy];
+        int Slot(int dx, int dy)
+        {
+            return slotOf[dx * 2 + dy];
+        }
 
         long agree = 0;
         long total = 0;
@@ -138,8 +140,10 @@ public sealed class ShadowkeyZoneSceneRetailTests
         return (agree, total);
     }
 
-    private static bool IsLevel(IReadOnlyList<short> corners) =>
-        corners[0] == corners[1] && corners[1] == corners[2] && corners[2] == corners[3];
+    private static bool IsLevel(IReadOnlyList<short> corners)
+    {
+        return corners[0] == corners[1] && corners[1] == corners[2] && corners[2] == corners[3];
+    }
 
     private static IEnumerable<int[]> Permutations(int[] items)
     {
@@ -297,7 +301,7 @@ public sealed class ShadowkeyZoneSceneRetailTests
             map, prototypes,
             options: new ShadowkeyZoneSceneOptions { IncludeCeilings = false, IncludeWalls = false });
 
-        var open = (map.Width * map.Height) - map.BlockedCellCount;
+        var open = map.Width * map.Height - map.BlockedCellCount;
         Assert.Equal(open, scene.MeshParts.Sum(part => part.Submesh.Triangles.Length / 6));
     }
 

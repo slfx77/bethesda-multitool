@@ -1,4 +1,3 @@
-using System;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Imaging;
 using Xunit;
@@ -32,7 +31,8 @@ public class DaggerfallSkyFileTests
         // Frame i's first pixel carries its frame index.
         for (var f = 0; f < DaggerfallSkyFile.FrameCount; f++)
         {
-            file[DaggerfallSkyFile.ImageDataOffset + (f * DaggerfallSkyFile.FrameWidth * DaggerfallSkyFile.FrameHeight)] = (byte)f;
+            file[DaggerfallSkyFile.ImageDataOffset + f * DaggerfallSkyFile.FrameWidth * DaggerfallSkyFile.FrameHeight] =
+                (byte)f;
         }
 
         return file;

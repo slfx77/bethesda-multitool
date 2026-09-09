@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
+using BethesdaMultitool.Core.WorldData;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Export;
@@ -61,7 +62,7 @@ public class ExportTileCaptureDecisionTests
     {
         var policy = ExportTileCaptureDecision.ResolveCapturePolicy(looseGraceElapsed, settleTimedOut);
 
-        Assert.True(ExportTileCaptureDecision.ShouldCapture(policy, isComplete: false, isFullySettled: true));
+        Assert.True(ExportTileCaptureDecision.ShouldCapture(policy, false, true));
     }
 
     [Theory]
@@ -96,7 +97,7 @@ public class ExportTileCaptureDecisionTests
     public void ShouldWarnPartialStreaming_FullySettled_NeverWarns(bool looseGraceElapsed, bool settleTimedOut)
     {
         Assert.False(ExportTileCaptureDecision.ShouldWarnPartialStreaming(
-            isFullySettled: true, isComplete: true, looseGraceElapsed, settleTimedOut));
+            true, true, looseGraceElapsed, settleTimedOut));
     }
 
     [Fact]
@@ -106,7 +107,7 @@ public class ExportTileCaptureDecisionTests
         // the ladder would be unreachable.
         Assert.True(
             ExportTileCaptureDecision.LooseCompleteSettleGrace
-            < BethesdaMultitool.Core.WorldData.StreamingQuiescence.DefaultSettleTimeout,
+            < StreamingQuiescence.DefaultSettleTimeout,
             "The loose-complete grace must mature before the hard settle timeout.");
     }
 

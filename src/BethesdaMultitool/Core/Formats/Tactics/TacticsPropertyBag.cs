@@ -146,7 +146,7 @@ internal sealed class TacticsPropertyBag
             var type = BinaryPrimitives.ReadUInt32LittleEndian(span[position..]);
             var size = BinaryPrimitives.ReadUInt32LittleEndian(span[(position + 4)..]);
             position += 8;
-            if (position + (long)size > span.Length)
+            if (position + size > span.Length)
             {
                 error = $"{name}: property {i} ('{propertyName}') runs {size} bytes past the file.";
                 return false;

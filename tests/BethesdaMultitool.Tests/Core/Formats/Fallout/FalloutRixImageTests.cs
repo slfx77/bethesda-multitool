@@ -1,6 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Fallout;
 using BethesdaMultitool.Core.Imaging;
@@ -16,7 +14,7 @@ public sealed class FalloutRixImageTests
 {
     private static byte[] Rix(ushort width = 4, ushort height = 3, byte paletteValue = 63, int sizeBias = 0)
     {
-        var b = new byte[FalloutRixImage.HeaderLength + Palette.RgbByteCount + (width * height) + sizeBias];
+        var b = new byte[FalloutRixImage.HeaderLength + Palette.RgbByteCount + width * height + sizeBias];
         Encoding.ASCII.GetBytes(FalloutRixImage.Magic).CopyTo(b, 0);
         BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(4), width);
         BinaryPrimitives.WriteUInt16LittleEndian(b.AsSpan(6), height);
@@ -66,7 +64,7 @@ public sealed class FalloutRixImageTests
     [Fact]
     public void Parse_CarriesEveryPixelThrough()
     {
-        var b = Rix(4, 3);
+        var b = Rix();
         var start = FalloutRixImage.HeaderLength + Palette.RgbByteCount;
         for (var i = 0; i < 12; i++)
         {

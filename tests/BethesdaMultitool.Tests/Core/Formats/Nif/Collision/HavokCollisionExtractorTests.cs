@@ -43,7 +43,7 @@ public sealed class HavokCollisionExtractorTests
 
         Assert.Equal(HavokCollisionProvenance.AuthoredMesh, extraction.Provenance);
         Assert.True(soup.HasValue);
-        Assert.Equal(SingleTriangleIndices, soup!.Value.Triangles);
+        Assert.Equal(SingleTriangleIndices, soup.Value.Triangles);
         VectorAssert.Equal(new Vector3(7, 0, 0), soup.Value.Positions[0], Tol);
         VectorAssert.Equal(new Vector3(0, 7, 0), soup.Value.Positions[1], Tol);
         VectorAssert.Equal(new Vector3(0, 0, 7), soup.Value.Positions[2], Tol);
@@ -62,7 +62,7 @@ public sealed class HavokCollisionExtractorTests
         var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
-        VectorAssert.Equal(new Vector3(14, 0, 0), soup!.Value.Positions[0], Tol);
+        VectorAssert.Equal(new Vector3(14, 0, 0), soup.Value.Positions[0], Tol);
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public sealed class HavokCollisionExtractorTests
         var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
-        VectorAssert.Equal(new Vector3(7, 0, 0), soup!.Value.Positions[0], Tol);
+        VectorAssert.Equal(new Vector3(7, 0, 0), soup.Value.Positions[0], Tol);
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public sealed class HavokCollisionExtractorTests
 
         Assert.True(soup.HasValue);
         // Half-float precision → looser tolerance.
-        Assert.Equal(7f, soup!.Value.Positions[0].X, 0.05f);
+        Assert.Equal(7f, soup.Value.Positions[0].X, 0.05f);
         Assert.Equal(14f, soup.Value.Positions[1].Y, 0.05f);
     }
 
@@ -121,7 +121,7 @@ public sealed class HavokCollisionExtractorTests
         var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
-        Assert.Equal(6, soup!.Value.Positions.Length);
+        Assert.Equal(6, soup.Value.Positions.Length);
         // Second sub-shape's indices must be re-based by the first's vertex count (3).
         Assert.Equal(RebasedTriangleIndices, soup.Value.Triangles);
         VectorAssert.Equal(new Vector3(14, 0, 0), soup.Value.Positions[3], Tol);
@@ -141,7 +141,7 @@ public sealed class HavokCollisionExtractorTests
 
         Assert.True(soup.HasValue);
         // Vertex ×7 = (7,0,0); translation ×7 = (70,0,0); rotate-then-translate → (77,0,0).
-        VectorAssert.Equal(new Vector3(77, 0, 0), soup!.Value.Positions[0], Tol);
+        VectorAssert.Equal(new Vector3(77, 0, 0), soup.Value.Positions[0], Tol);
     }
 
     [Fact]
@@ -338,7 +338,7 @@ public sealed class HavokCollisionExtractorTests
         var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
-        Assert.Equal(SingleTriangleIndices, soup!.Value.Triangles);
+        Assert.Equal(SingleTriangleIndices, soup.Value.Triangles);
         // Same world result as the FNV-layout twin: ×7 Havok scale ×2 shape scale.
         VectorAssert.Equal(new Vector3(14, 0, 0), soup.Value.Positions[0], Tol);
         VectorAssert.Equal(new Vector3(0, 14, 0), soup.Value.Positions[1], Tol);
@@ -365,7 +365,7 @@ public sealed class HavokCollisionExtractorTests
         var soup = HavokCollisionExtractor.Extract(data, nif, false).Soup;
 
         Assert.True(soup.HasValue);
-        Assert.Equal(SingleTriangleIndices, soup!.Value.Triangles);
+        Assert.Equal(SingleTriangleIndices, soup.Value.Triangles);
         VectorAssert.Equal(new Vector3(7, 0, 0), soup.Value.Positions[0], Tol);
         VectorAssert.Equal(new Vector3(0, 7, 0), soup.Value.Positions[1], Tol);
         VectorAssert.Equal(new Vector3(0, 0, 7), soup.Value.Positions[2], Tol);
@@ -389,7 +389,7 @@ public sealed class HavokCollisionExtractorTests
 
         Assert.True(soup.HasValue);
         // Vertex ×7 = (7,0,0); translation ×7 = (70,0,0); rotate-then-translate → (77,0,0).
-        VectorAssert.Equal(new Vector3(77, 0, 0), soup!.Value.Positions[0], Tol);
+        VectorAssert.Equal(new Vector3(77, 0, 0), soup.Value.Positions[0], Tol);
     }
 
     [Fact]

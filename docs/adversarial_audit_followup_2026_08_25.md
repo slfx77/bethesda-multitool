@@ -466,10 +466,10 @@ applied by diffing old against new:
 - **0 existing fields changed, 0 removed, 0 added. 54 previously-`unknown` fields resolved.**
 
 ⚠ **The first regeneration attempt failed that gate, and the reason is worth recording.** Run
-against `Sample/PDB/Proto/Fallout_Release_MemDebug/types_full.txt` — the obvious choice, since the
+against `Sample/DebugSymbols/Fallout - New Vegas (X360)/Proto/Fallout_Release_MemDebug/types_full.txt` — the obvious choice, since the
 JSON's `source` field says `Fallout_Release_MemDebug.pdb` — it reported WEAP growing 920 to 924 with
 a new trailing `pLastAmmo`. That is a real difference between two builds that share a PDB *name*.
-The database was actually generated from **`Sample/PDB/Aug_22_MemDebug/types_full.txt`**, confirmed
+The database was actually generated from **`Sample/DebugSymbols/Fallout - New Vegas (X360)/Aug_22_MemDebug/types_full.txt`**, confirmed
 by the type indices: the old JSON's unresolved `0x0001A023` / `0x0002227B` exist verbatim in the
 Aug-22 dump and not in the Proto one. Regenerating from that source gave the clean diff above.
 `StaticLayoutOffsetParityTests` catches the mistake immediately (it pins WEAP at 920 with a comment
@@ -2459,7 +2459,7 @@ claim carries a confidence tier so a later ruling can promote strong claims with
 type. Nothing in this round changes what gets emitted, and no string's ownership status changes
 because of it.
 
-All numbers below are measured on `Sample/MemoryDump/Fallout_Release_Beta.xex44.dmp`
+All numbers below are measured on `Sample/MemoryDumps/Fallout_Release_Beta.xex44.dmp`
 (231,173,620 bytes) on 2026-09-04.
 
 ### The gate: 10.4%
@@ -2661,8 +2661,8 @@ layout database — only their bases are present.
 
 ### ⛔⚠⚠ THE RULING I BROKE: the PDBs POSTDATE every dump
 
-**USER RULING, previously stated more than once.** `Sample/PDB/**` comes from a prototype and the
-final game and postdates the whole `Sample/MemoryDump/` corpus. It fits the **newest** dumps and
+**USER RULING, previously stated more than once.** `Sample/DebugSymbols/Fallout - New Vegas (X360)/**` comes from a prototype and the
+final game and postdates the whole `Sample/MemoryDumps/` corpus. It fits the **newest** dumps and
 **drifts on older ones, which sit nearer Fallout 3's layout.** So a struct size or offset from
 `pdb_layouts.json` describes an Aug-2010 build, not necessarily the dump being analysed. Same
 principle as the standing "FormType MUST stay empirical" ruling: **the dump is the authority, the

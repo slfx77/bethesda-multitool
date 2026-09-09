@@ -36,6 +36,18 @@ internal static class FalloutPalette
     /// <summary>The global palette, used by everything that does not ship its own.</summary>
     public const string FileName = "COLOR.PAL";
 
+    /// <summary>Bytes of the retail palette file: 768 palette + a 32x32x32 lookup cube.</summary>
+    public const int RetailFileLength = Palette.RgbByteCount + LookupCubeLength;
+
+    /// <summary>Bytes of the trailing RGB-to-index lookup cube (32 * 32 * 32).</summary>
+    public const int LookupCubeLength = 32 * 32 * 32;
+
+    /// <summary>First index of the runtime colour-cycling range.</summary>
+    public const int CycleStart = 229;
+
+    /// <summary>Highest component value a genuine 6-bit entry can hold.</summary>
+    public const byte SixBitMaximum = 63;
+
     /// <summary>
     ///     Palette files to try for an image, best first. Fallout's full-screen slides each ship
     ///     their OWN palette beside the art under the same stem — <c>DEATH.FRM</c> takes
@@ -58,18 +70,6 @@ internal static class FalloutPalette
         return string.IsNullOrEmpty(stem) ? [FileName] : [stem + ".PAL", FileName];
     }
 
-    /// <summary>Bytes of the retail palette file: 768 palette + a 32x32x32 lookup cube.</summary>
-    public const int RetailFileLength = Palette.RgbByteCount + LookupCubeLength;
-
-    /// <summary>Bytes of the trailing RGB-to-index lookup cube (32 * 32 * 32).</summary>
-    public const int LookupCubeLength = 32 * 32 * 32;
-
-    /// <summary>First index of the runtime colour-cycling range.</summary>
-    public const int CycleStart = 229;
-
-    /// <summary>Highest component value a genuine 6-bit entry can hold.</summary>
-    public const byte SixBitMaximum = 63;
-
     /// <summary>
     ///     Reads a palette from <c>COLOR.PAL</c>'s bytes (the 768-byte block, or the whole retail
     ///     file). Index 0 is transparent; 1..228 are promoted from 6-bit.
@@ -79,7 +79,8 @@ internal static class FalloutPalette
         ArgumentNullException.ThrowIfNull(name);
         if (bytes.Length < Palette.RgbByteCount)
         {
-            throw new InvalidDataException($"'{name}' is {bytes.Length} bytes, shorter than the {Palette.RgbByteCount}-byte palette.");
+            throw new InvalidDataException(
+                $"'{name}' is {bytes.Length} bytes, shorter than the {Palette.RgbByteCount}-byte palette.");
         }
 
         var rgb = bytes[..Palette.RgbByteCount];

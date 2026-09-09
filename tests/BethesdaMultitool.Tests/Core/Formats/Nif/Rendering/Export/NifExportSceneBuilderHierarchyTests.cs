@@ -11,8 +11,8 @@ public sealed class NifExportSceneBuilderHierarchyTests
     {
         var nodes = new[]
         {
-            Node(blockIndex: 4, parentBlockIndex: 8, "Child"),
-            Node(blockIndex: 8, parentBlockIndex: null, "Parent")
+            Node(4, 8, "Child"),
+            Node(8, null, "Parent")
         };
         var scene = new GlbScene();
 
@@ -29,8 +29,8 @@ public sealed class NifExportSceneBuilderHierarchyTests
     {
         var nodes = new[]
         {
-            Node(blockIndex: 4, parentBlockIndex: 8, "First"),
-            Node(blockIndex: 8, parentBlockIndex: 4, "Second")
+            Node(4, 8, "First"),
+            Node(8, 4, "Second")
         };
         var scene = new GlbScene();
 

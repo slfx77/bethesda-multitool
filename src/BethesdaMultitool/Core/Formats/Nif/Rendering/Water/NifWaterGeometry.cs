@@ -202,17 +202,17 @@ internal sealed class NifWaterGeometry
             var a = _positions[_indices[index]];
             var b = _positions[_indices[index + 1]];
             var c = _positions[_indices[index + 2]];
-            var denominator = ((b.Y - c.Y) * (a.X - c.X)) +
-                              ((c.X - b.X) * (a.Y - c.Y));
+            var denominator = (b.Y - c.Y) * (a.X - c.X) +
+                              (c.X - b.X) * (a.Y - c.Y);
             if (!float.IsFinite(denominator) || MathF.Abs(denominator) <= float.Epsilon)
             {
                 // Edge-on/degenerate in XY covers no surface area for a point-height query.
                 continue;
             }
 
-            var wa = (((b.Y - c.Y) * (x - c.X)) + ((c.X - b.X) * (y - c.Y))) /
+            var wa = ((b.Y - c.Y) * (x - c.X) + (c.X - b.X) * (y - c.Y)) /
                      denominator;
-            var wb = (((c.Y - a.Y) * (x - c.X)) + ((a.X - c.X) * (y - c.Y))) /
+            var wb = ((c.Y - a.Y) * (x - c.X) + (a.X - c.X) * (y - c.Y)) /
                      denominator;
             var wc = 1f - wa - wb;
             if (wa < -barycentricEpsilon || wb < -barycentricEpsilon || wc < -barycentricEpsilon)
@@ -220,7 +220,7 @@ internal sealed class NifWaterGeometry
                 continue;
             }
 
-            var surface = (wa * a.Z) + (wb * b.Z) + (wc * c.Z);
+            var surface = wa * a.Z + wb * b.Z + wc * c.Z;
             if (!float.IsFinite(surface))
             {
                 continue;
@@ -234,6 +234,7 @@ internal sealed class NifWaterGeometry
         {
             height = 0f;
         }
+
         return found;
     }
 

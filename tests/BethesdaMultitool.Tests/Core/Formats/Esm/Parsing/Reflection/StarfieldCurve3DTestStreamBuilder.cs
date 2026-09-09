@@ -198,7 +198,11 @@ internal static class StarfieldCurve3DTestStreamBuilder
             stringTable.Add(0);
         }
 
-        uint Named(string name) => tokens[name];
+        uint Named(string name)
+        {
+            return tokens[name];
+        }
+
         var curve3DFields = new[]
         {
             new Field("XCurve", Named(FloatCurveType), 4_194_304),
@@ -278,7 +282,7 @@ internal static class StarfieldCurve3DTestStreamBuilder
     }
 
     private static ChunkData ClassChunk(
-        IReadOnlyDictionary<string, uint> tokens,
+        Dictionary<string, uint> tokens,
         string className,
         uint formToken,
         ushort flags,
@@ -364,12 +368,25 @@ internal static class StarfieldCurve3DTestStreamBuilder
         return Concat(U16(checked((ushort)(bytes.Length + 1))), bytes, [0]);
     }
 
-    private static byte[] Chunk(string signature, byte[] body) =>
-        Concat(Encoding.ASCII.GetBytes(signature), U32(checked((uint)body.Length)), body);
+    private static byte[] Chunk(string signature, byte[] body)
+    {
+        return Concat(Encoding.ASCII.GetBytes(signature), U32(checked((uint)body.Length)), body);
+    }
 
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
-    private static byte[] F32(float value) => BitConverter.GetBytes(value);
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] F32(float value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {
@@ -388,6 +405,7 @@ internal static class StarfieldCurve3DTestStreamBuilder
         IReadOnlyList<ChunkData> Chunks);
 
     private sealed record ChunkData(string Signature, byte[] Body);
+
     private sealed record Field(string Name, uint Type, uint RuntimeOffset);
 
     private sealed record Axis(

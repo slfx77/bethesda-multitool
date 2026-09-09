@@ -12,7 +12,7 @@ public sealed class OpaqueIndirectSubmissionPolicyTests
     {
         Assert.Equal(
             OpaqueIndirectFallbackReason.Disabled,
-            Resolve(requested: false));
+            Resolve(false));
         Assert.Equal(
             OpaqueIndirectFallbackReason.SignatureUnavailable,
             Resolve(signatureAvailable: false));
@@ -127,8 +127,9 @@ public sealed class OpaqueIndirectSubmissionPolicyTests
         bool haveSharedInstanceBlock = true,
         bool geometryValidationEnabled = false,
         ulong remainingRingBytes = 512,
-        ulong requiredRingBytes = 512) =>
-        OpaqueIndirectSubmissionPolicy.ResolvePreallocationFallback(
+        ulong requiredRingBytes = 512)
+    {
+        return OpaqueIndirectSubmissionPolicy.ResolvePreallocationFallback(
             requested,
             signatureAvailable,
             ordinaryDrawCapacity,
@@ -136,6 +137,7 @@ public sealed class OpaqueIndirectSubmissionPolicyTests
             geometryValidationEnabled,
             remainingRingBytes,
             requiredRingBytes);
+    }
 
     private static int Count(string source, string value)
     {

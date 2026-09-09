@@ -13,8 +13,12 @@ namespace BethesdaMultitool.Core.Formats.Travels.OblivionMobile;
 ///         <item>
 ///             an RLE stream of <b>k consecutive layers</b>, each exactly <c>W*H</c> cells, running
 ///             to EOF. <c>0xFF cnt val</c> emits <c>val</c> <c>cnt</c> times; any other byte is a
-///             literal cell. A literal therefore can never be 0xFF, so <b>tile id 255 is
-///             unrepresentable</b> — a trap for anyone tempted to use 255 as a sentinel.
+///             literal cell. A literal therefore can never be 0xFF, so
+///             <b>
+///                 tile id 255 is
+///                 unrepresentable
+///             </b>
+///             — a trap for anyone tempted to use 255 as a sentinel.
 ///         </item>
 ///     </list>
 ///     <para>
@@ -241,7 +245,7 @@ internal sealed class OblivionMobileTileMap
         ArgumentOutOfRangeException.ThrowIfGreaterThanOrEqual(j, Height);
 
         var cells = layer == 0 ? _passability : _tileLayers[layer - 1];
-        return cells[(j * Width) + i];
+        return cells[j * Width + i];
     }
 
     /// <summary>How many cells carry each passability value, indexed by that value (0..255).</summary>

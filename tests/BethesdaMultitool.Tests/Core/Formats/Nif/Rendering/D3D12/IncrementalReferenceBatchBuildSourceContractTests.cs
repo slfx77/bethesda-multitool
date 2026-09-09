@@ -10,13 +10,19 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.D3D12;
 /// </summary>
 public sealed class IncrementalReferenceBatchBuildSourceContractTests
 {
-    private static string RendererSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "ReferenceRenderer12.cs");
+    private static string RendererSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferenceRenderer12.cs");
+    }
 
-    private static string RegistrySource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "OpaqueBatchRegistry12.cs");
+    private static string RegistrySource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "OpaqueBatchRegistry12.cs");
+    }
 
     [Fact]
     public void Published_and_staging_aggregates_are_distinct_and_swap_only_at_publication()
@@ -38,14 +44,18 @@ public sealed class IncrementalReferenceBatchBuildSourceContractTests
         var source = RendererSource();
 
         Assert.Contains("ReferenceBatchBuildPolicy.CanAmortize(", source, StringComparison.Ordinal);
-        Assert.Contains("refreshOnlyBlocker: refreshOnlyBlocker || validStagedContinuation", source, StringComparison.Ordinal);
+        Assert.Contains("refreshOnlyBlocker: refreshOnlyBlocker || validStagedContinuation", source,
+            StringComparison.Ordinal);
         Assert.Contains("cullEpochMatches: validStagedContinuation", source, StringComparison.Ordinal);
         Assert.Contains("|| _lastBuildCullEpoch == _cullEpoch", source, StringComparison.Ordinal);
         Assert.Contains("var meshBoundsOnlyCullRefresh = !meshBoundsCurrent && cullCacheStructureValid;",
             source, StringComparison.Ordinal);
-        Assert.Contains("renderOriginMatches: _lastBuildRenderOrigin == renderOrigin", source, StringComparison.Ordinal);
-        Assert.Contains("evictionGenerationMatches: _lastBuildEvictionGen == _meshCache.EvictionGeneration", source, StringComparison.Ordinal);
-        Assert.Contains("streamRoutingMatches: _lastBuildStreamActive == _transparencyStreamActive", source, StringComparison.Ordinal);
+        Assert.Contains("renderOriginMatches: _lastBuildRenderOrigin == renderOrigin", source,
+            StringComparison.Ordinal);
+        Assert.Contains("evictionGenerationMatches: _lastBuildEvictionGen == _meshCache.EvictionGeneration", source,
+            StringComparison.Ordinal);
+        Assert.Contains("streamRoutingMatches: _lastBuildStreamActive == _transparencyStreamActive", source,
+            StringComparison.Ordinal);
     }
 
     [Fact]

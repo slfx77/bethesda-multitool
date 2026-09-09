@@ -180,4 +180,3 @@ internal static class NifOpenUniformCubicBspline
         };
     }
 }
-

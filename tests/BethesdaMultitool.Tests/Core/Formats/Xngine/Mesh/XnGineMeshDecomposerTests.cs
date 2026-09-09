@@ -1,4 +1,3 @@
-using System.Linq;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
 using Xunit;
@@ -19,7 +18,10 @@ public class XnGineMeshDecomposerTests
     {
         var bytes = XnGineMeshFixture.Build("v2.7",
             [(0, 0, 0), (256, 0, 0), (256, -256, 0)],
-            [new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(24, 3), [(0, 16, 32), (1, 1008, 0), (2, 0, 992)], (0, 0, -256))]);
+            [
+                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(24, 3), [(0, 16, 32), (1, 1008, 0), (2, 0, 992)],
+                    (0, 0, -256))
+            ]);
 
         var mesh = XnGineMeshDecomposer.Decompose(XnGineMesh.Parse(bytes, 5000));
 
@@ -63,7 +65,10 @@ public class XnGineMeshDecomposerTests
         // A quad with an extra point in the middle of its first edge.
         var bytes = XnGineMeshFixture.Build("v2.7",
             [(0, 0, 0), (128, 0, 0), (256, 0, 0), (256, 0, 256), (0, 0, 256)],
-            [new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(1, 0), [(0, 0, 0), (1, 512, 0), (2, 512, 0), (3, 0, 1024), (4, 0, 0)], (0, -256, 0))]);
+            [
+                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(1, 0),
+                    [(0, 0, 0), (1, 512, 0), (2, 512, 0), (3, 0, 1024), (4, 0, 0)], (0, -256, 0))
+            ]);
 
         var mesh = XnGineMeshDecomposer.Decompose(XnGineMesh.Parse(bytes, 5000));
 
@@ -79,16 +84,21 @@ public class XnGineMeshDecomposerTests
         var bytes = XnGineMeshFixture.Build("v2.7",
             [(0, 0, 0), (256, 0, 0), (256, 0, 256), (0, 0, 256)],
             [
-                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(24, 0), [(0, 0, 0), (1, 0, 0), (2, 0, 0)], (0, -256, 0)),
-                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(321, 4), [(0, 0, 0), (2, 0, 0), (3, 0, 0)], (0, -256, 0)),
-                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(24, 0), [(1, 0, 0), (2, 0, 0), (3, 0, 0)], (0, -256, 0))
+                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(24, 0), [(0, 0, 0), (1, 0, 0), (2, 0, 0)],
+                    (0, -256, 0)),
+                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(321, 4), [(0, 0, 0), (2, 0, 0), (3, 0, 0)],
+                    (0, -256, 0)),
+                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(24, 0), [(1, 0, 0), (2, 0, 0), (3, 0, 0)],
+                    (0, -256, 0))
             ]);
 
         var mesh = XnGineMeshDecomposer.Decompose(XnGineMesh.Parse(bytes, 5000));
 
         Assert.Equal(2, mesh.SubMeshes.Count);
-        Assert.Equal((24, 0, 2), (mesh.SubMeshes[0].TextureArchive, mesh.SubMeshes[0].TextureRecord, mesh.SubMeshes[0].TriangleCount));
-        Assert.Equal((321, 4, 1), (mesh.SubMeshes[1].TextureArchive, mesh.SubMeshes[1].TextureRecord, mesh.SubMeshes[1].TriangleCount));
+        Assert.Equal((24, 0, 2),
+            (mesh.SubMeshes[0].TextureArchive, mesh.SubMeshes[0].TextureRecord, mesh.SubMeshes[0].TriangleCount));
+        Assert.Equal((321, 4, 1),
+            (mesh.SubMeshes[1].TextureArchive, mesh.SubMeshes[1].TextureRecord, mesh.SubMeshes[1].TriangleCount));
         Assert.Equal(3, mesh.TriangleCount);
         Assert.Equal(9, mesh.VertexCount);
     }

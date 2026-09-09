@@ -497,11 +497,15 @@ internal static class Fo76BsSkinBindingExtractor
         Fo76BsSkinInstanceData? Instance,
         string Diagnostic)
     {
-        internal static Fo76InstanceReadResult Succeeded(Fo76BsSkinInstanceData instance) =>
-            new(Fo76BsSkinBindingStatus.Success, instance, string.Empty);
+        internal static Fo76InstanceReadResult Succeeded(Fo76BsSkinInstanceData instance)
+        {
+            return new Fo76InstanceReadResult(Fo76BsSkinBindingStatus.Success, instance, string.Empty);
+        }
 
-        internal static Fo76InstanceReadResult Failed(Fo76BsSkinBindingStatus status, string diagnostic) =>
-            new(status, null, diagnostic);
+        internal static Fo76InstanceReadResult Failed(Fo76BsSkinBindingStatus status, string diagnostic)
+        {
+            return new Fo76InstanceReadResult(status, null, diagnostic);
+        }
     }
 }
 
@@ -560,17 +564,25 @@ internal readonly record struct Fo76BsSkinBindingResult(
             Fo76BsSkinBindingStatus.NotApplicable or
             Fo76BsSkinBindingStatus.NotSkinned);
 
-    internal static Fo76BsSkinBindingResult Succeeded(Fo76BsSkinBinding binding) =>
-        new(Fo76BsSkinBindingStatus.Success, binding, string.Empty);
+    internal static Fo76BsSkinBindingResult Succeeded(Fo76BsSkinBinding binding)
+    {
+        return new Fo76BsSkinBindingResult(Fo76BsSkinBindingStatus.Success, binding, string.Empty);
+    }
 
-    internal static Fo76BsSkinBindingResult NotApplicable() =>
-        new(Fo76BsSkinBindingStatus.NotApplicable, null, string.Empty);
+    internal static Fo76BsSkinBindingResult NotApplicable()
+    {
+        return new Fo76BsSkinBindingResult(Fo76BsSkinBindingStatus.NotApplicable, null, string.Empty);
+    }
 
-    internal static Fo76BsSkinBindingResult NotSkinned() =>
-        new(Fo76BsSkinBindingStatus.NotSkinned, null, string.Empty);
+    internal static Fo76BsSkinBindingResult NotSkinned()
+    {
+        return new Fo76BsSkinBindingResult(Fo76BsSkinBindingStatus.NotSkinned, null, string.Empty);
+    }
 
-    internal static Fo76BsSkinBindingResult Failed(Fo76BsSkinBindingStatus status, string diagnostic) =>
-        new(status, null, diagnostic);
+    internal static Fo76BsSkinBindingResult Failed(Fo76BsSkinBindingStatus status, string diagnostic)
+    {
+        return new Fo76BsSkinBindingResult(status, null, diagnostic);
+    }
 }
 
 internal readonly record struct Fo76PackedInfluenceDecodeResult(
@@ -583,16 +595,20 @@ internal readonly record struct Fo76PackedInfluenceDecodeResult(
     internal static Fo76PackedInfluenceDecodeResult Succeeded(
         (int BoneIdx, float Weight)[][] influences,
         float maxStoredFourthWeightError,
-        float maxGltfNormalizationDelta) =>
-        new(
+        float maxGltfNormalizationDelta)
+    {
+        return new Fo76PackedInfluenceDecodeResult(
             Fo76BsSkinBindingStatus.Success,
             influences,
             maxStoredFourthWeightError,
             maxGltfNormalizationDelta,
             string.Empty);
+    }
 
     internal static Fo76PackedInfluenceDecodeResult Failed(
         Fo76BsSkinBindingStatus status,
-        string diagnostic) =>
-        new(status, null, 0f, 0f, diagnostic);
+        string diagnostic)
+    {
+        return new Fo76PackedInfluenceDecodeResult(status, null, 0f, 0f, diagnostic);
+    }
 }

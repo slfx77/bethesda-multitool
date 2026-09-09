@@ -116,7 +116,7 @@ internal sealed class ShadowkeyFogTable
 
         // At the highest level the fully saturated input still contributes 1/16, which makes
         // entry[15][0xFFF] equal the fog colour exactly rather than approximately.
-        var recovered = entries[((Levels - 1) * Colours) + MaxEntry];
+        var recovered = entries[(Levels - 1) * Colours + MaxEntry];
         var fogR = (recovered >> 8) & 0xF;
         var fogG = (recovered >> 4) & 0xF;
         var fogB = recovered & 0xF;
@@ -131,7 +131,7 @@ internal sealed class ShadowkeyFogTable
         return new ShadowkeyFogTable(name, entries, fogR, fogG, fogB)
         {
             IsLevelZeroIdentity = identity,
-            MatchesBlendRecipe = synthesized.Entries.Span.SequenceEqual(entries),
+            MatchesBlendRecipe = synthesized.Entries.Span.SequenceEqual(entries)
         };
     }
 
@@ -157,14 +157,14 @@ internal sealed class ShadowkeyFogTable
                 var blended = Blend((colour >> 8) & 0xF, fogR, level) << 8;
                 blended |= Blend((colour >> 4) & 0xF, fogG, level) << 4;
                 blended |= Blend(colour & 0xF, fogB, level);
-                entries[(level * Colours) + colour] = (ushort)blended;
+                entries[level * Colours + colour] = (ushort)blended;
             }
         }
 
         return new ShadowkeyFogTable(name, entries, fogR, fogG, fogB)
         {
             IsLevelZeroIdentity = true,
-            MatchesBlendRecipe = true,
+            MatchesBlendRecipe = true
         };
     }
 
@@ -182,11 +182,11 @@ internal sealed class ShadowkeyFogTable
                 nameof(rgb444), rgb444, $"'{Name}': an RGB444 colour is 0..{Colours - 1}.");
         }
 
-        return _entries[(level * Colours) + rgb444];
+        return _entries[level * Colours + rgb444];
     }
 
     private static int Blend(int value, int fog, int level)
     {
-        return ((value * (Levels - level)) + (fog * level)) >> 4;
+        return (value * (Levels - level) + fog * level) >> 4;
     }
 }

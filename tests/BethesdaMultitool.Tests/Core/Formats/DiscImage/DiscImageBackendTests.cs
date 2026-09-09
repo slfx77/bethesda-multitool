@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.DiscImage;
@@ -31,7 +27,7 @@ public sealed class DiscImageBackendTests : IDisposable
     {
         try
         {
-            Directory.Delete(_dir, recursive: true);
+            Directory.Delete(_dir, true);
         }
         catch (IOException)
         {
@@ -123,7 +119,8 @@ public sealed class DiscImageBackendTests : IDisposable
 
     private string WriteCueBin(out byte[] worldIni, out byte[] texbsi, out byte[] audio)
     {
-        File.WriteAllBytes(Path.Combine(_dir, "disc (Track 1).bin"), ToRawMode1(BuildLogicalImage(out worldIni, out texbsi)));
+        File.WriteAllBytes(Path.Combine(_dir, "disc (Track 1).bin"),
+            ToRawMode1(BuildLogicalImage(out worldIni, out texbsi)));
         audio = Enumerable.Range(0, 3 * 2352).Select(i => (byte)(i % 251)).ToArray();
         File.WriteAllBytes(Path.Combine(_dir, "disc (Track 2).bin"), audio);
         var cue = Path.Combine(_dir, "disc.cue");
@@ -135,7 +132,7 @@ public sealed class DiscImageBackendTests : IDisposable
             "FILE \"disc (Track 2).bin\" BINARY",
             "  TRACK 02 AUDIO",
             "    INDEX 00 00:00:00",
-            "    INDEX 01 00:02:00",
+            "    INDEX 01 00:02:00"
         ]);
         return cue;
     }
@@ -148,7 +145,8 @@ public sealed class DiscImageBackendTests : IDisposable
         using var reader = ArchiveReader.Open(path);
 
         Assert.Equal("CD image (ISO)", reader.FormatName);
-        Assert.Equal(["DATA/TEXBSI.000", "WORLD.INI"], reader.ListFiles().Select(e => e.FullPath).OrderBy(p => p, StringComparer.Ordinal));
+        Assert.Equal(["DATA/TEXBSI.000", "WORLD.INI"],
+            reader.ListFiles().Select(e => e.FullPath).OrderBy(p => p, StringComparer.Ordinal));
         Assert.Equal(worldIni, reader.ReadFile("WORLD.INI"));
         Assert.Equal(texbsi, reader.ReadFile("DATA/TEXBSI.000"));
     }
@@ -199,7 +197,8 @@ public sealed class DiscImageBackendTests : IDisposable
         Assert.False(DiscImageBackend.TryProbe(notBin));
 
         var cueWithMissingFile = Path.Combine(_dir, "broken.cue");
-        File.WriteAllLines(cueWithMissingFile, ["FILE \"missing.bin\" BINARY", "  TRACK 01 MODE1/2352", "    INDEX 01 00:00:00"]);
+        File.WriteAllLines(cueWithMissingFile,
+            ["FILE \"missing.bin\" BINARY", "  TRACK 01 MODE1/2352", "    INDEX 01 00:00:00"]);
         Assert.False(DiscImageBackend.TryProbe(cueWithMissingFile));
     }
 

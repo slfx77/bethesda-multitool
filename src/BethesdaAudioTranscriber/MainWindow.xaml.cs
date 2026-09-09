@@ -11,6 +11,9 @@ namespace BethesdaAudioTranscriber;
 
 public sealed partial class MainWindow : Window
 {
+    private bool _closeApproved;
+    private bool _closeInProgress;
+
     public MainWindow()
     {
         Instance = this;
@@ -39,9 +42,51 @@ public sealed partial class MainWindow : Window
 
         // Wire up the loading view's completion event
         LoadingViewContent.BuildLoaded += OnBuildLoaded;
+        AppWindow.Closing += AppWindow_Closing;
+        Closed += MainWindow_Closed;
     }
 
     public static MainWindow? Instance { get; private set; }
+
+    private async void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+    {
+        if (_closeApproved)
+        {
+            return;
+        }
+
+        args.Cancel = true;
+        if (_closeInProgress)
+        {
+            return;
+        }
+
+        _closeInProgress = true;
+        try
+        {
+            // Let the native Closing event observe Cancel even when there is nothing to await.
+            await Task.Yield();
+            await PlaylistViewContent.PrepareForCloseAsync();
+            _closeApproved = true;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Could not close: {ex.Message}");
+        }
+        finally
+        {
+            _closeInProgress = false;
+        }
+    }
+
+    private void MainWindow_Closed(object sender, WindowEventArgs args)
+    {
+        AppWindow.Closing -= AppWindow_Closing;
+        Closed -= MainWindow_Closed;
+        LoadingViewContent.BuildLoaded -= OnBuildLoaded;
+        Instance = null;
+    }
 
     private void TrySetMicaBackdrop()
     {
@@ -126,16 +171,27 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private void OnBuildLoaded(object? sender, EventArgs e)
+    private async void OnBuildLoaded(object? sender, EventArgs e)
     {
-        NavPlaylist.IsEnabled = true;
-        NavView.SelectedItem = NavPlaylist;
-
-        if (LoadingViewContent.LoadResult != null)
+        if (_closeInProgress || _closeApproved)
         {
-            PlaylistViewContent.SetBuildResult(
-                LoadingViewContent.LoadResult,
-                LoadingViewContent.DataDirectory);
+            return;
+        }
+
+        try
+        {
+            if (LoadingViewContent.LoadResult != null)
+            {
+                await PlaylistViewContent.SetBuildResultAsync(
+                    LoadingViewContent.LoadResult,
+                    LoadingViewContent.DataDirectory);
+                NavPlaylist.IsEnabled = true;
+                NavView.SelectedItem = NavPlaylist;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Could not load transcription project: {ex.Message}");
         }
     }
 

@@ -30,7 +30,7 @@ public sealed class CellTerrainTextureSetTests
         var set = CellTerrainTextureSet.Project(table);
 
         Assert.NotNull(set);
-        Assert.Equal(4, set!.ActiveSlotCount);
+        Assert.Equal(4, set.ActiveSlotCount);
         // Only the active slots hold the four BTXTs; unused slots stay 0 (don't include them).
         Assert.Equal(new[] { BtxtSw, BtxtSe, BtxtNw, BtxtNe }.ToHashSet(),
             set.SlotFormIds.Take(set.ActiveSlotCount).ToHashSet());
@@ -48,7 +48,7 @@ public sealed class CellTerrainTextureSetTests
 
         Assert.NotNull(set);
         // NW interior vertex (4, 4): full weight on the BtxtNw slot, 0 on every other slot.
-        var nwSlot = Array.IndexOf(set!.SlotFormIds, BtxtNw);
+        var nwSlot = Array.IndexOf(set.SlotFormIds, BtxtNw);
         Assert.InRange(nwSlot, 0, CellTerrainTextureSet.MaxSlots - 1);
 
         var w = ReadVertexWeights(set, 4, 4);
@@ -70,11 +70,11 @@ public sealed class CellTerrainTextureSetTests
         var set = CellTerrainTextureSet.Project(table);
 
         Assert.NotNull(set);
-        var w = ReadVertexWeights(set!, 16, 16); // cell center — all 4 quadrants meet
+        var w = ReadVertexWeights(set, 16, 16); // cell center — all 4 quadrants meet
         var total = 0f;
         foreach (var btxt in new[] { BtxtSw, BtxtSe, BtxtNw, BtxtNe })
         {
-            var slot = Array.IndexOf(set!.SlotFormIds, btxt);
+            var slot = Array.IndexOf(set.SlotFormIds, btxt);
             Assert.InRange(slot, 0, CellTerrainTextureSet.MaxSlots - 1);
             Assert.Equal(0.25f, w[slot], 4);
         }
@@ -108,7 +108,7 @@ public sealed class CellTerrainTextureSetTests
         var set = CellTerrainTextureSet.Project(table);
 
         Assert.NotNull(set);
-        Assert.Equal(5, set!.ActiveSlotCount);
+        Assert.Equal(5, set.ActiveSlotCount);
         Assert.Contains(0xDEADu, set.SlotFormIds);
         Assert.Equal(new[] { BtxtSw, BtxtSe, BtxtNw, BtxtNe, 0xDEADu }.ToHashSet(),
             set.SlotFormIds.Take(set.ActiveSlotCount).ToHashSet());

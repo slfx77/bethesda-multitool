@@ -35,7 +35,7 @@ public sealed class RuntimeNpcAutoDetectTests : RuntimeStructReaderTestBase
         var npc = reader.ReadRuntimeNpc(entry);
 
         Assert.NotNull(npc);
-        Assert.Equal(50, npc!.FaceGenGeometrySymmetric!.Length);
+        Assert.Equal(50, npc.FaceGenGeometrySymmetric!.Length);
         Assert.Equal(30, npc.FaceGenGeometryAsymmetric!.Length);
         Assert.Equal(50, npc.FaceGenTextureSymmetric!.Length);
         Assert.Equal(0x0000000Cu, npc.Race);
@@ -60,7 +60,7 @@ public sealed class RuntimeNpcAutoDetectTests : RuntimeStructReaderTestBase
         var npc = reader.ReadRuntimeNpc(entry);
 
         Assert.NotNull(npc);
-        Assert.Equal(50, npc!.FaceGenGeometrySymmetric!.Length);
+        Assert.Equal(50, npc.FaceGenGeometrySymmetric!.Length);
         Assert.Equal(30, npc.FaceGenGeometryAsymmetric!.Length);
         Assert.Equal(50, npc.FaceGenTextureSymmetric!.Length);
         Assert.NotNull(npc.HeadPartFormIds);
@@ -100,7 +100,7 @@ public sealed class RuntimeNpcAutoDetectTests : RuntimeStructReaderTestBase
         Assert.Equal(16, probe.Layout.CoreShift);
         Assert.Equal(0, probe.Layout.AppearanceShift);
         Assert.NotNull(npc);
-        Assert.Equal(50, npc!.FaceGenGeometrySymmetric!.Length);
+        Assert.Equal(50, npc.FaceGenGeometrySymmetric!.Length);
         Assert.Equal(30, npc.FaceGenGeometryAsymmetric!.Length);
         Assert.Equal(50, npc.FaceGenTextureSymmetric!.Length);
         Assert.Equal(0x0000000Au, npc.HairFormId);
@@ -127,7 +127,7 @@ public sealed class RuntimeNpcAutoDetectTests : RuntimeStructReaderTestBase
         var npc = reader.ReadRuntimeNpc(entry);
 
         Assert.NotNull(npc);
-        Assert.Null(npc!.FaceGenGeometrySymmetric);
+        Assert.Null(npc.FaceGenGeometrySymmetric);
         Assert.Null(npc.FaceGenGeometryAsymmetric);
         Assert.Null(npc.FaceGenTextureSymmetric);
         Assert.Equal(0x0000000Cu, npc.Race);

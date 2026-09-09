@@ -47,10 +47,9 @@ internal sealed class GpuVideoMemoryMonitor12 : IDisposable
 
     private readonly GpuDevice12 _gpu;
     private readonly GpuVideoMemoryBudgetWatcher? _watcher;
-    private long _reservedBytes = -1;
+    private bool _disposed;
     private int _framesSinceReservation;
     private bool _reservationUnavailableLogged;
-    private bool _disposed;
 
     public GpuVideoMemoryMonitor12(GpuDevice12 gpu)
     {
@@ -87,7 +86,18 @@ internal sealed class GpuVideoMemoryMonitor12 : IDisposable
     public double LastPollMicroseconds { get; private set; }
 
     /// <summary>Bytes currently reserved with the OS on the local segment, or -1 if none was set.</summary>
-    public long ReservedBytes => _reservedBytes;
+    public long ReservedBytes { get; private set; } = -1;
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _watcher?.Dispose();
+    }
 
     /// <summary>
     ///     Polls both segments and advances both signals. Cheap enough for every frame — the two
@@ -139,17 +149,6 @@ internal sealed class GpuVideoMemoryMonitor12 : IDisposable
         UpdateReservation(local, localOk, budgetChanged);
     }
 
-    public void Dispose()
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
-        _watcher?.Dispose();
-    }
-
     /// <summary>
     ///     Keeps the OS's picture of our minimum need current.
     ///     <para>
@@ -171,7 +170,7 @@ internal sealed class GpuVideoMemoryMonitor12 : IDisposable
 
         var due = budgetChanged || _framesSinceReservation >= ReservationRefreshFrames;
         var desired = Math.Min(local.CurrentUsageBytes, Math.Max(0, local.AvailableForReservationBytes));
-        if (!due && _reservedBytes >= 0 && Math.Abs(desired - _reservedBytes) < ReservationUpdateThresholdBytes)
+        if (!due && ReservedBytes >= 0 && Math.Abs(desired - ReservedBytes) < ReservationUpdateThresholdBytes)
         {
             return;
         }
@@ -179,7 +178,7 @@ internal sealed class GpuVideoMemoryMonitor12 : IDisposable
         _framesSinceReservation = 0;
         if (_gpu.TrySetVideoMemoryReservation(GpuMemorySegment.Local, desired))
         {
-            _reservedBytes = desired;
+            ReservedBytes = desired;
             return;
         }
 

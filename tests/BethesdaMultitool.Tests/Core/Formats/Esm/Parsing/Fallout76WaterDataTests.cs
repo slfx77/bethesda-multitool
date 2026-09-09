@@ -21,6 +21,7 @@ public sealed class Fallout76WaterDataTests
 {
     internal const uint RetailFormId = 0x0082F8B9;
     internal const string RetailEditorId = "Burn_ExtToxicAbraxoWaterBasin";
+
     internal const string RetailDnamHex =
         "FFFFAB4200000000000000000000803F8BD3AB3DDAFAA93C32924D3C33338B40" +
         "B76631000000803F003013C60000354403E78C3D0000803F2B186D3FA4707D3F" +

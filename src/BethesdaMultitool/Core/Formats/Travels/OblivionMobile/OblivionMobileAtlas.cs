@@ -12,8 +12,10 @@ namespace BethesdaMultitool.Core.Formats.Travels.OblivionMobile;
 ///         <c>DataInputStream</c>-shaped byte reader). Layout:
 ///     </para>
 ///     <list type="bullet">
-///         <item><c>u8 prefixLen</c> then that many bytes of path prefix, prepended to names that do
-///         not start with '/'. Empty on 21/21 retail files, so every name is already absolute.</item>
+///         <item>
+///             <c>u8 prefixLen</c> then that many bytes of path prefix, prepended to names that do
+///             not start with '/'. Empty on 21/21 retail files, so every name is already absolute.
+///         </item>
 ///         <item>
 ///             then image entries until EOF, each: <c>u8 defaultId</c>, <c>u8 nameLen</c>, the name
 ///             (a JAR resource path such as <c>/ts_lvl1.png</c>), an

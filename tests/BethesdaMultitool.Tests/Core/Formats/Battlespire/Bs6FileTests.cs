@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Battlespire;
 using Xunit;
@@ -50,21 +47,41 @@ public class Bs6FileTests
         byte[] objects =
         [
             .. Chunk("LFIL", NameList("7arch", "potion", "7torch")),
-            .. Chunk("OBJD", [.. Chunk("IDNB", Int32(0)), .. Chunk("IDFI", Int32(1)), .. Chunk("POSI", Vector(608, -2576, -4480)), .. Chunk("ANGS", Vector(0, 1024, 0)), .. Chunk("SELE", Int32(0))]),
-            .. Chunk("OBJD", [.. Chunk("IDNB", Int32(1)), .. Chunk("IDFI", Int32(2)), .. Chunk("POSI", Vector(1, 2, 3)), .. Chunk("ANGS", Vector(0, 0, 0)), .. Chunk("SELE", Int32(1))]),
+            .. Chunk("OBJD",
+            [
+                .. Chunk("IDNB", Int32(0)), .. Chunk("IDFI", Int32(1)), .. Chunk("POSI", Vector(608, -2576, -4480)),
+                .. Chunk("ANGS", Vector(0, 1024, 0)), .. Chunk("SELE", Int32(0))
+            ]),
+            .. Chunk("OBJD",
+            [
+                .. Chunk("IDNB", Int32(1)), .. Chunk("IDFI", Int32(2)), .. Chunk("POSI", Vector(1, 2, 3)),
+                .. Chunk("ANGS", Vector(0, 0, 0)), .. Chunk("SELE", Int32(1))
+            ]),
 
             // A placement that indexes past the list, as two retail placements do.
-            .. Chunk("OBJD", [.. Chunk("IDNB", Int32(2)), .. Chunk("IDFI", Int32(9)), .. Chunk("POSI", Vector(0, 0, 0)), .. Chunk("ANGS", Vector(0, 0, 0)), .. Chunk("SELE", Int32(0))])
+            .. Chunk("OBJD",
+            [
+                .. Chunk("IDNB", Int32(2)), .. Chunk("IDFI", Int32(9)), .. Chunk("POSI", Vector(0, 0, 0)),
+                .. Chunk("ANGS", Vector(0, 0, 0)), .. Chunk("SELE", Int32(0))
+            ])
         ];
 
         byte[] lights =
         [
-            .. Chunk("LITD", [.. Chunk("IDNB", Int32(7)), .. Chunk("POSI", Vector(9, 8, 7)), .. Chunk("BRIT", Int32(63)), .. Chunk("RADI", Int32(512))])
+            .. Chunk("LITD",
+            [
+                .. Chunk("IDNB", Int32(7)), .. Chunk("POSI", Vector(9, 8, 7)), .. Chunk("BRIT", Int32(63)),
+                .. Chunk("RADI", Int32(512))
+            ])
         ];
 
         byte[] flats =
         [
-            .. Chunk("FLAD", [.. Chunk("IDNB", Int32(3)), .. Chunk("FILN", [.. "monster1"u8, 0]), .. Chunk("POSI", Vector(4, 5, 6)), .. Chunk("SCAL", Int32(256))])
+            .. Chunk("FLAD",
+            [
+                .. Chunk("IDNB", Int32(3)), .. Chunk("FILN", [.. "monster1"u8, 0]), .. Chunk("POSI", Vector(4, 5, 6)),
+                .. Chunk("SCAL", Int32(256))
+            ])
         ];
 
         byte[] root =
@@ -96,7 +113,8 @@ public class Bs6FileTests
         Assert.Equal(["7arch", "potion", "7torch"], level.MeshNames);
 
         Assert.Equal(3, level.Objects.Count);
-        Assert.Equal(new Bs6Object(0, 1, new Bs6Vector(608, -2576, -4480), new Bs6Vector(0, 1024, 0), 0), level.Objects[0]);
+        Assert.Equal(new Bs6Object(0, 1, new Bs6Vector(608, -2576, -4480), new Bs6Vector(0, 1024, 0), 0),
+            level.Objects[0]);
         Assert.Equal("potion", level.MeshNames[level.Objects[0].MeshIndex]);
         Assert.Equal("7torch", level.MeshNames[level.Objects[1].MeshIndex]);
 
@@ -135,7 +153,7 @@ public class Bs6FileTests
         var level = Bs6File.Parse(Level(), "L8.BS6");
 
         // Groups nest; leaves do not.
-        var objects = Assert.Single(level.Root.Children.Where(c => c.Tag == "OBJS"));
+        var objects = Assert.Single(level.Root.Children, c => c.Tag == "OBJS");
         Assert.Equal(4, objects.Children.Count);
         Assert.Empty(objects.Children[0].Children);
 

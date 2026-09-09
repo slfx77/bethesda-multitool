@@ -37,6 +37,24 @@ internal static class CellWorldspaceAuthorityApplier
     private const int ExactGridReassignmentMinPlacements = 10;
 
     /// <summary>
+    ///     How much nearer the winning side must be when the bracketing anchors belong to two
+    ///     different cells. 2× keeps the measured run-tail case (≥1.5× observed margin, usually
+    ///     far more) while an orphan sitting mid-way between two runs stays unattached.
+    /// </summary>
+    private const int DisagreementGapRatio = 2;
+
+    /// <summary>
+    ///     Maximum gap for any attachment that is NOT corroborated by same-cell anchors on both
+    ///     sides. Runtime ref tables serialize a run's entries ~74 bytes apart, so genuine tail
+    ///     accretion advances in sub-KB steps (the accretion loop re-anchors each round, so long
+    ///     tails are still claimed in full); a multi-KB jump from a run's edge is how the frontier
+    ///     crossed into a NEIGHBOURING cell's unanchored run and grafted its head (the clinic
+    ///     regression). Same-cell-bracketed orphans keep the wide
+    ///     <see cref="AuthorityOffsetClusterWindowBytes" /> window.
+    /// </summary>
+    private const long MaxAccretionStepBytes = 2048;
+
+    /// <summary>
     ///     Applies authoritative CELL metadata to the semantic record model and rebuilds
     ///     worldspace child lists so reports and map views see the same ownership that
     ///     DMP to ESM conversion uses.
@@ -877,8 +895,7 @@ internal static class CellWorldspaceAuthorityApplier
             }
 
             moved += movedThisRound;
-        }
-        while (movedThisRound > 0 && ++rounds < 64);
+        } while (movedThisRound > 0 && ++rounds < 64);
 
         if (moved == 0)
         {
@@ -942,16 +959,6 @@ internal static class CellWorldspaceAuthorityApplier
             ? (above ?? below, false)
             : (null, false);
     }
-
-    /// <summary>
-    ///     How much nearer the winning side must be when the bracketing anchors belong to two
-    ///     different cells. 2× keeps the measured run-tail case (≥1.5× observed margin, usually
-    ///     far more) while an orphan sitting mid-way between two runs stays unattached.
-    /// </summary>
-    private const int DisagreementGapRatio = 2;
-
-    private readonly record struct InteriorSpatialBounds(
-        float MinX, float MaxX, float MinY, float MaxY, float MinZ, float MaxZ);
 
     /// <summary>
     ///     Percentile-trimmed, margin-expanded coordinate box of every interior's currently
@@ -1040,17 +1047,6 @@ internal static class CellWorldspaceAuthorityApplier
         var hi = (int)MathF.Ceiling(values.Count * 0.98f) - 1;
         return (values[lo], values[Math.Max(lo, hi)]);
     }
-
-    /// <summary>
-    ///     Maximum gap for any attachment that is NOT corroborated by same-cell anchors on both
-    ///     sides. Runtime ref tables serialize a run's entries ~74 bytes apart, so genuine tail
-    ///     accretion advances in sub-KB steps (the accretion loop re-anchors each round, so long
-    ///     tails are still claimed in full); a multi-KB jump from a run's edge is how the frontier
-    ///     crossed into a NEIGHBOURING cell's unanchored run and grafted its head (the clinic
-    ///     regression). Same-cell-bracketed orphans keep the wide
-    ///     <see cref="AuthorityOffsetClusterWindowBytes" /> window.
-    /// </summary>
-    private const long MaxAccretionStepBytes = 2048;
 
     private static IEnumerable<List<PlacedReference>> BuildPlacedOffsetClusters(
         IReadOnlyList<PlacedReference> placedReferences)
@@ -1383,6 +1379,14 @@ internal static class CellWorldspaceAuthorityApplier
 
         return synthesized;
     }
+
+    private readonly record struct InteriorSpatialBounds(
+        float MinX,
+        float MaxX,
+        float MinY,
+        float MaxY,
+        float MinZ,
+        float MaxZ);
 
     private readonly record struct ResolvedReferenceWindow(
         uint CellFormId,

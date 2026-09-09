@@ -172,14 +172,17 @@ internal static class ShadowkeyTextTables
         return new ShadowkeyModelResolution(entityId, entity, model);
     }
 
-    private static string[] SplitFields(string line) =>
-        line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+    private static string[] SplitFields(string line)
+    {
+        return line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+    }
 
     private static int ParseInt(string field, string name, int lineNumber, string what)
     {
         if (!int.TryParse(field, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
         {
-            throw new InvalidDataException($"'{name}' line {lineNumber}: the {what} field reads '{field}', not a number.");
+            throw new InvalidDataException(
+                $"'{name}' line {lineNumber}: the {what} field reads '{field}', not a number.");
         }
 
         return value;
@@ -189,7 +192,8 @@ internal static class ShadowkeyTextTables
     {
         if (!uint.TryParse(field, NumberStyles.None, CultureInfo.InvariantCulture, out var value))
         {
-            throw new InvalidDataException($"'{name}' line {lineNumber}: the {what} field reads '{field}', not a non-negative number.");
+            throw new InvalidDataException(
+                $"'{name}' line {lineNumber}: the {what} field reads '{field}', not a non-negative number.");
         }
 
         return value;

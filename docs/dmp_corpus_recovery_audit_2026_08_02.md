@@ -1,14 +1,14 @@
 # DMP Corpus Recovery Audit — 2026-08-02
 
-Corpus-wide audit of `Sample/MemoryDump` (50 dumps) asking three questions: what is
+Corpus-wide audit of `Sample/MemoryDumps` (50 dumps) asking three questions: what is
 recoverable, where are the identification/mapping gaps, and how does availability vary
 across the ~5 months of development the dumps span.
 
 Reproduce with:
 
 ```bash
-BethesdaMultitool.exe dmp formtype-census Sample\MemoryDump --csv artifacts\dmp-audit
-BethesdaMultitool.exe dmp gap-inventory   Sample\MemoryDump -o artifacts\dmp-audit\gaps-corpus --fast
+BethesdaMultitool.exe dmp formtype-census Sample\MemoryDumps --csv artifacts\dmp-audit
+BethesdaMultitool.exe dmp gap-inventory   Sample\MemoryDumps -o artifacts\dmp-audit\gaps-corpus --fast
 ```
 
 Artifacts: `artifacts/dmp-audit/{dump_inventory,formtype_by_dump,esm_record_by_dump,mapping_coverage}.csv`.

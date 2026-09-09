@@ -107,6 +107,6 @@ public sealed class OblivionLightDataTests
         var built = PlacedLight.TryBuild(placement, light);
 
         Assert.NotNull(built);
-        Assert.Equal(512f, built!.Value.Radius);
+        Assert.Equal(512f, built.Value.Radius);
     }
 }

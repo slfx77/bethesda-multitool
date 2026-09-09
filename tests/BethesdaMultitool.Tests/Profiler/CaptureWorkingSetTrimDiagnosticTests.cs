@@ -66,9 +66,8 @@ public sealed class CaptureWorkingSetTrimDiagnosticTests
         var source = SourceContract.ReadSource(
             "src", "BethesdaRendererProfiler", "CaptureWorkingSetTrimDiagnostic.cs");
 
-        Assert.Contains("GCCollectionMode.Forced", source, StringComparison.Ordinal);
-        Assert.Contains("blocking: true", source, StringComparison.Ordinal);
-        Assert.Contains("compacting: false", source, StringComparison.Ordinal);
+        SourceContract.AssertContainsIgnoringWhitespace(
+            "GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true, false);", source);
         Assert.Contains("K32EmptyWorkingSet(process.Handle)", source, StringComparison.Ordinal);
         Assert.Contains("AddSnapshotFields(fields, \"before\", before)", source, StringComparison.Ordinal);
         Assert.Contains("AddSnapshotFields(fields, \"after\", after)", source, StringComparison.Ordinal);

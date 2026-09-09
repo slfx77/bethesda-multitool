@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
 using BethesdaMultitool.Core.Vfs;
+using BethesdaMultitool.Tests.Core.Formats.Bsa;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Vfs;
@@ -74,7 +75,7 @@ public sealed class GameFileSystemTests : IDisposable
 
         var stat = fs.TryStat(@"textures\armor\foo.dds");
         Assert.NotNull(stat);
-        Assert.Equal(@"textures\armor\foo.dds", stat!.Path, true);
+        Assert.Equal(@"textures\armor\foo.dds", stat.Path, true);
     }
 
     [Fact]
@@ -154,7 +155,7 @@ public sealed class GameFileSystemTests : IDisposable
 
         var read = fs.TryReadAllBytesBounded(@"meshes\skeleton.nif", payload.Length);
         Assert.NotNull(read);
-        Assert.Equal(payload, read!.Data);
+        Assert.Equal(payload, read.Data);
         Assert.Equal(payload.Length, read.Entry.Size);
         Assert.Equal(loose, read.Entry.Source);
     }
@@ -164,7 +165,7 @@ public sealed class GameFileSystemTests : IDisposable
     {
         const string path = "meshes\\actors\\skeleton.nif";
         var payload = new byte[4096];
-        var bsa = WriteBsa("compressed-skeleton.bsa", [(path, payload)], compressed: true);
+        var bsa = WriteBsa("compressed-skeleton.bsa", [(path, payload)], true);
         using var fs = GameFileSystem.OpenArchive(bsa);
 
         var storedSize = Assert.IsType<GameFileEntry>(fs.TryStat(path)).Size;
@@ -173,7 +174,7 @@ public sealed class GameFileSystemTests : IDisposable
 
         var read = fs.TryReadAllBytesBounded(path, payload.LongLength);
         Assert.NotNull(read);
-        Assert.Equal(payload, read!.Data);
+        Assert.Equal(payload, read.Data);
         Assert.EndsWith(
             "compressed-skeleton.bsa",
             read.Entry.Source,
@@ -188,7 +189,7 @@ public sealed class GameFileSystemTests : IDisposable
         var ba2 = Path.Combine(_root, "skeletons.ba2");
         File.WriteAllBytes(
             ba2,
-            BethesdaMultitool.Tests.Core.Formats.Bsa.ArchiveReaderTests.BuildGnrlBa2(
+            ArchiveReaderTests.BuildGnrlBa2(
                 0x4242,
                 path,
                 payload));
@@ -197,7 +198,7 @@ public sealed class GameFileSystemTests : IDisposable
         Assert.Null(fs.TryReadAllBytesBounded(path, payload.Length - 1));
         var read = fs.TryReadAllBytesBounded(path, payload.Length);
         Assert.NotNull(read);
-        Assert.Equal(payload, read!.Data);
+        Assert.Equal(payload, read.Data);
         Assert.Equal(payload.Length, read.Entry.Size);
         Assert.EndsWith("skeletons.ba2", read.Entry.Source, StringComparison.OrdinalIgnoreCase);
     }
@@ -206,16 +207,16 @@ public sealed class GameFileSystemTests : IDisposable
     public void LayeredFileSystem_BoundedRead_ReturnsTheActualReadableFallbackSource()
     {
         const string path = "meshes\\actors\\skeleton.nif";
-        WriteBsa("aaa.bsa", [(path, new byte[4096])], compressed: true);
+        WriteBsa("aaa.bsa", [(path, new byte[4096])], true);
         var fallbackPayload = PayloadFor(37);
         WriteBsa("bbb.bsa", [(path, fallbackPayload)]);
 
-        using var fs = GameFileSystem.OpenDataFolder(_root, includeLooseFiles: false);
+        using var fs = GameFileSystem.OpenDataFolder(_root, false);
         Assert.EndsWith("aaa.bsa", fs.TryStat(path)!.Source, StringComparison.OrdinalIgnoreCase);
 
         var read = fs.TryReadAllBytesBounded(path, 256);
         Assert.NotNull(read);
-        Assert.Equal(fallbackPayload, read!.Data);
+        Assert.Equal(fallbackPayload, read.Data);
         Assert.EndsWith("bbb.bsa", read.Entry.Source, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -485,7 +486,7 @@ public sealed class GameFileSystemTests : IDisposable
             var index = i % fileCount;
             var bytes = reader.ReadFile($"textures\\race\\file{index:D2}.dds");
             Assert.NotNull(bytes);
-            Assert.Equal(PayloadFor(index), bytes!);
+            Assert.Equal(PayloadFor(index), bytes);
         });
     }
 }

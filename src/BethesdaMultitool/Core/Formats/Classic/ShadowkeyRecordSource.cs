@@ -204,19 +204,19 @@ internal static class ShadowkeyRecordSource
         CancellationToken cancellationToken)
     {
         var missing = new List<string>();
-        IReadOnlyList<ShadowkeyTriggerZone> triggers = ReadZoneFile(install, root, stem, ".zon", missing) is { } zon
+        var triggers = ReadZoneFile(install, root, stem, ".zon", missing) is { } zon
             ? ShadowkeyZoneFiles.ParseZon(zon, stem + ".zon")
             : [];
-        IReadOnlyList<ShadowkeyLockEntry> locks = ReadZoneFile(install, root, stem, ".stn", missing) is { } stn
+        var locks = ReadZoneFile(install, root, stem, ".stn", missing) is { } stn
             ? ShadowkeyZoneFiles.ParseStn(stn, stem + ".stn")
             : [];
-        IReadOnlyList<ShadowkeyPath> paths = ReadZoneFile(install, root, stem, ".pth", missing) is { } pth
+        var paths = ReadZoneFile(install, root, stem, ".pth", missing) is { } pth
             ? ShadowkeyZoneFiles.ParsePth(pth, stem + ".pth")
             : [];
-        IReadOnlyList<ShadowkeySurface> surfaces = ReadZoneFile(install, root, stem, ".sur", missing) is { } sur
+        var surfaces = ReadZoneFile(install, root, stem, ".sur", missing) is { } sur
             ? ShadowkeyZoneFiles.ParseSur(sur, stem + ".sur")
             : [];
-        IReadOnlyList<ShadowkeyEntity> placements = ReadZoneFile(install, root, stem, ".ent", missing) is { } ent
+        var placements = ReadZoneFile(install, root, stem, ".ent", missing) is { } ent
             ? ShadowkeyZoneFiles.ParseEnt(ent, stem + ".ent").Entities
             : [];
 
@@ -282,9 +282,9 @@ internal static class ShadowkeyRecordSource
         ShadowkeyTextureBank? textures,
         byte[]? paletteBytes,
         ShadowkeyModelTable? zoneModels,
-        IReadOnlyList<int>? spriteSlots,
+        List<int>? spriteSlots,
         int? stateRecords,
-        IReadOnlyList<string> missing)
+        List<string> missing)
     {
         var fields = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -344,7 +344,8 @@ internal static class ShadowkeyRecordSource
             fields["Paths"] = string.Join(", ", paths.Select(p => $"{p.Name} ({p.Points.Count} points)"));
             fields["PathPoints"] = string.Join("; ", paths
                 .Where(p => p.Points.Count > 0)
-                .Select(p => $"{p.Name}: {string.Join(" ", p.Points.Select(pt => Tiles(pt.TileX) + "," + Tiles(pt.TileY)))}"));
+                .Select(p =>
+                    $"{p.Name}: {string.Join(" ", p.Points.Select(pt => Tiles(pt.TileX) + "," + Tiles(pt.TileY)))}"));
         }
 
         if (stateRecords is { } state)
@@ -472,8 +473,8 @@ internal static class ShadowkeyRecordSource
         ShadowkeyEntity entity,
         InstallTables tables,
         ShadowkeyModelTable? zoneModels,
-        IReadOnlyDictionary<string, string> lockConditions,
-        IReadOnlyDictionary<string, int> nameCounts)
+        Dictionary<string, string> lockConditions,
+        Dictionary<string, int> nameCounts)
     {
         var fields = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -742,7 +743,8 @@ internal static class ShadowkeyRecordSource
             list.Add(entry.Condition);
         }
 
-        return grouped.ToDictionary(pair => pair.Key, pair => string.Join(", ", pair.Value), StringComparer.OrdinalIgnoreCase);
+        return grouped.ToDictionary(pair => pair.Key, pair => string.Join(", ", pair.Value),
+            StringComparer.OrdinalIgnoreCase);
     }
 
     /// <summary>How many placements of the zone carry each instance name.</summary>
@@ -775,7 +777,7 @@ internal static class ShadowkeyRecordSource
     ///     scripts — so there is no grammar to enforce and a line that is not a number is skipped
     ///     rather than treated as corruption.
     /// </summary>
-    private static IReadOnlyList<int>? ReadSpriteList(IGameFileSystem install, string root, string fileName)
+    private static List<int>? ReadSpriteList(IGameFileSystem install, string root, string fileName)
     {
         var bytes = install.TryReadAllBytes(Combine(root, fileName));
         if (bytes is null)

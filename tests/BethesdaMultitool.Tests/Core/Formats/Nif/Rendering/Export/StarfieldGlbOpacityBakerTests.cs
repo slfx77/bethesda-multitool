@@ -1,8 +1,8 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Tests.Helpers;
-using System.Numerics;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Export;
@@ -79,7 +79,7 @@ public sealed class StarfieldGlbOpacityBakerTests
         var baseColor = Texture(1, 1, [10, 20, 30, 17]);
         var state = new StarfieldMaterialEffectAlphaState(
             0.5f,
-            new StarfieldMaterialSlot(null, 0xFFFFFFFFu & ~0xFFu | 64u));
+            new StarfieldMaterialSlot(null, (0xFFFFFFFFu & ~0xFFu) | 64u));
 
         var result = StarfieldGlbOpacityBaker.BakeEffectAlpha(baseColor, null, state);
 
@@ -116,7 +116,7 @@ public sealed class StarfieldGlbOpacityBakerTests
         var opacityBake = StarfieldGlbOpacityBaker.Bake(lerpBakedTexture, opacity);
         var factor = StarfieldGlbColorLerpBaker.BuildBaseColor(
             Vector4.One,
-            hasDiffuseTexture: lerpBakedTexture is not null,
+            lerpBakedTexture is not null,
             state);
 
         Assert.True(opacityBake.Applied);

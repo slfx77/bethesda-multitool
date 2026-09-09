@@ -21,13 +21,13 @@ public sealed class NifBrowserDeferredTextureResolverTests
                 [missingTextureArchive]);
 
             Assert.Equal(missingTextureArchive, Assert.Single(service.TexturePaths));
-            var entry = Assert.Single(service.ListNifFiles());
+            var entry = Assert.Single(service.ListNifFiles(cancellationToken: TestContext.Current.CancellationToken));
             Assert.Equal("visible.nif", entry.DisplayName);
             Assert.False(entry.IsDirectory);
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 
@@ -50,7 +50,7 @@ public sealed class NifBrowserDeferredTextureResolverTests
                 meshArchive,
                 [missingTextureArchive]);
 
-            var directory = Assert.Single(service.ListNifFiles());
+            var directory = Assert.Single(service.ListNifFiles(cancellationToken: TestContext.Current.CancellationToken));
             Assert.True(directory.IsDirectory);
             Assert.Equal("visible.nif", Assert.Single(directory.Children).DisplayName);
 
@@ -61,7 +61,7 @@ public sealed class NifBrowserDeferredTextureResolverTests
         }
         finally
         {
-            Directory.Delete(tempRoot, recursive: true);
+            Directory.Delete(tempRoot, true);
         }
     }
 }

@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Redguard;
@@ -20,14 +16,6 @@ public sealed class RedguardRobArchiveTests : IDisposable
 {
     private readonly List<string> _tempFiles = [];
 
-    private string WriteTemp(byte[] bytes)
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"redguard-rob-{Guid.NewGuid():N}.rob");
-        File.WriteAllBytes(path, bytes);
-        _tempFiles.Add(path);
-        return path;
-    }
-
     public void Dispose()
     {
         foreach (var path in _tempFiles)
@@ -41,6 +29,14 @@ public sealed class RedguardRobArchiveTests : IDisposable
                 // Temp cleanup only.
             }
         }
+    }
+
+    private string WriteTemp(byte[] bytes)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"redguard-rob-{Guid.NewGuid():N}.rob");
+        File.WriteAllBytes(path, bytes);
+        _tempFiles.Add(path);
+        return path;
     }
 
     private static byte[] Build(params (string Name, uint Type, byte[] Data)[] segments)
@@ -79,7 +75,10 @@ public sealed class RedguardRobArchiveTests : IDisposable
     }
 
     /// <summary>A stand-in payload with the version tag every retail segment starts with.</summary>
-    private static byte[] Mesh(string version = "v2.7") => [.. Encoding.ASCII.GetBytes(version), 1, 2, 3, 4];
+    private static byte[] Mesh(string version = "v2.7")
+    {
+        return [.. Encoding.ASCII.GetBytes(version), 1, 2, 3, 4];
+    }
 
     [Fact]
     public void Parse_ReadsSegmentsInFileOrderWithPayloadsAfterEachHeader()

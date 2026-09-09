@@ -49,7 +49,7 @@ public sealed class DmpRecoveryProbeCommandTests
         Assert.Equal("dds", DmpRecoveryProbeCommand.SniffContent("DDS |\0\0\0"u8));
         Assert.Equal("bsa", DmpRecoveryProbeCommand.SniffContent("BSA\0h\0\0\0"u8));
         Assert.Equal("png", DmpRecoveryProbeCommand.SniffContent([0x89, (byte)'P', (byte)'N', (byte)'G', 0x0D, 0x0A]));
-        Assert.Equal("riff-wave-xma", DmpRecoveryProbeCommand.SniffContent("RIFF\x01\0\0\0WAVEfmt "u8));
+        Assert.Equal("riff-wave-xma", DmpRecoveryProbeCommand.SniffContent("RIFF\u0001\0\0\0WAVEfmt "u8));
         Assert.Equal("empty", DmpRecoveryProbeCommand.SniffContent([]));
     }
 
@@ -62,7 +62,7 @@ public sealed class DmpRecoveryProbeCommandTests
         var binary = new byte[64];
         for (var i = 0; i < binary.Length; i++)
         {
-            binary[i] = (byte)(0x80 + (i * 7 % 0x7F));
+            binary[i] = (byte)(0x80 + i * 7 % 0x7F);
         }
 
         Assert.Equal("other", DmpRecoveryProbeCommand.SniffContent(binary));

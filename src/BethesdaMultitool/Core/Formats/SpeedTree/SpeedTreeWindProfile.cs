@@ -61,6 +61,6 @@ public sealed record SpeedTreeWindProfile(
     /// <summary>The engine sway factor: <c>k·sway·0.5 + (1−k)</c>.</summary>
     public static float SwayFactor(float influence, float sway)
     {
-        return (influence * sway * 0.5f) + (1f - influence);
+        return influence * sway * 0.5f + (1f - influence);
     }
 }

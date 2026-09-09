@@ -17,8 +17,10 @@ internal static class NifQuadraticVectorCurve
         return earlier + fraction * (earlierBackward + fraction * (quadratic + fraction * cubic));
     }
 
-    internal static bool IsFiniteAuthored(Vector3 value) =>
-        float.IsFinite(value.X) && MathF.Abs(value.X) < 1e30f &&
-        float.IsFinite(value.Y) && MathF.Abs(value.Y) < 1e30f &&
-        float.IsFinite(value.Z) && MathF.Abs(value.Z) < 1e30f;
+    internal static bool IsFiniteAuthored(Vector3 value)
+    {
+        return float.IsFinite(value.X) && MathF.Abs(value.X) < 1e30f &&
+               float.IsFinite(value.Y) && MathF.Abs(value.Y) < 1e30f &&
+               float.IsFinite(value.Z) && MathF.Abs(value.Z) < 1e30f;
+    }
 }

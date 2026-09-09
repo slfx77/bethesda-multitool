@@ -13,7 +13,7 @@ public sealed class StarfieldMaterialUvAnimationTests
         var database = StarfieldMaterialDatabase.Parse(BuildControllerDatabase());
 
         Assert.NotNull(database);
-        var animation = database!.ResolveLayerUvAnimation(@"materials\test\animated.mat", 0);
+        var animation = database.ResolveLayerUvAnimation(@"materials\test\animated.mat", 0);
         Assert.True(animation.IsResolved);
         Assert.Equal(new Vector2(0f, 1f), animation.InitialOffset);
         Assert.Equal(new Vector2(0f, -0.2f), animation.Velocity);
@@ -32,17 +32,17 @@ public sealed class StarfieldMaterialUvAnimationTests
         var database = StarfieldMaterialDatabase.Parse(BuildControllerDatabase());
 
         Assert.NotNull(database);
-        Assert.False(database!.ResolveLayerUvAnimation(@"materials\test\animated.mat", 1).IsResolved);
+        Assert.False(database.ResolveLayerUvAnimation(@"materials\test\animated.mat", 1).IsResolved);
         Assert.False(database.ResolveLayerUvAnimation(@"materials\test\animated.mat", -1).IsResolved);
     }
 
     [Fact]
     public void Parse_FailsClosedWhenLinearCurveDoesNotWrapToEquivalentTextureCoordinate()
     {
-        var database = StarfieldMaterialDatabase.Parse(BuildControllerDatabase(yEnd: 0.5f));
+        var database = StarfieldMaterialDatabase.Parse(BuildControllerDatabase(0.5f));
 
         Assert.NotNull(database);
-        Assert.False(database!.ResolveLayerUvAnimation(@"materials\test\animated.mat", 0).IsResolved);
+        Assert.False(database.ResolveLayerUvAnimation(@"materials\test\animated.mat", 0).IsResolved);
     }
 
     private static byte[] BuildControllerDatabase(float yEnd = 0f)
@@ -77,8 +77,15 @@ public sealed class StarfieldMaterialUvAnimationTests
             stringTable.Add(0);
         }
 
-        uint Custom(string name) => offsets[name];
-        static uint BuiltIn(uint index) => 0xFFFFFF01u + index;
+        uint Custom(string name)
+        {
+            return offsets[name];
+        }
+
+        static uint BuiltIn(uint index)
+        {
+            return 0xFFFFFF01u + index;
+        }
 
         var chunks = new List<byte[]>
         {
@@ -145,8 +152,8 @@ public sealed class StarfieldMaterialUvAnimationTests
             U32(1),
             Str("UVOffset1"))));
 
-        var xCurve = CurveBody(defaultValue: 0.5f, period: 5f);
-        var yCurve = CurveBody(defaultValue: 0.1f, period: 5f);
+        var xCurve = CurveBody(0.5f, 5f);
+        var yCurve = CurveBody(0.1f, 5f);
         chunks.Add(Chunk("USER", Concat(
             U32(Custom(controller)),
             U32(Custom(controller)),
@@ -235,9 +242,20 @@ public sealed class StarfieldMaterialUvAnimationTests
         return Concat(U16((ushort)value.Length), Encoding.ASCII.GetBytes(value));
     }
 
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
-    private static byte[] F32(float value) => BitConverter.GetBytes(value);
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] F32(float value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {

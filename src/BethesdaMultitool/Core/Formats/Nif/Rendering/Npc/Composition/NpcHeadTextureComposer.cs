@@ -55,7 +55,8 @@ internal static class NpcHeadTextureComposer
                         npc,
                         textureResolver,
                         authoredComposite,
-                        NpcHeadTextureSource.AuthoredMap0);
+                        NpcHeadTextureSource.AuthoredMap0,
+                        ClassicSkinAuthoredAlbedo.Create(npc.Game, baseTexturePath, npc.AuthoredFaceGenMap0Path));
                 }
             }
         }
@@ -94,7 +95,8 @@ internal static class NpcHeadTextureComposer
         NpcAppearance npc,
         NifTextureResolver textureResolver,
         DecodedTexture texture,
-        NpcHeadTextureSource source)
+        NpcHeadTextureSource source,
+        ClassicSkinAuthoredAlbedo? authoredAlbedo = null)
     {
         // SKIN2000 samples BaseMap, FaceGenMap0, and FaceGenMap1 separately. The current scene
         // contract carries one diffuse texture, so preserve the exact texel-center algebra in the
@@ -113,7 +115,8 @@ internal static class NpcHeadTextureComposer
             generatedTextureKey,
             source,
             map1Source,
-            map1Source == NpcFaceGenMap1Source.None ? null : generatedTextureKey);
+            map1Source == NpcFaceGenMap1Source.None ? null : generatedTextureKey,
+            authoredAlbedo);
     }
 }
 
@@ -122,4 +125,5 @@ internal readonly record struct NpcHeadTextureResolution(
     string? EffectiveTexturePath,
     NpcHeadTextureSource Source,
     NpcFaceGenMap1Source FaceGenMap1Source = NpcFaceGenMap1Source.None,
-    string? FaceGenMap1EffectivePath = null);
+    string? FaceGenMap1EffectivePath = null,
+    ClassicSkinAuthoredAlbedo? AuthoredAlbedo = null);

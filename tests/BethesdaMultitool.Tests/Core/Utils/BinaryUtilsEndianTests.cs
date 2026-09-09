@@ -42,43 +42,43 @@ public class BinaryUtilsEndianTests
             (d, o) => BinaryUtils.ReadUInt16LE(d, o),
             (d, o, be) => BinaryUtils.ReadUInt16(d.AsSpan(), o, be),
             (d, o, be) => BinaryUtils.ReadUInt16(d, o, be),
-            ExpectedBigEndian: 0x1234,
-            ExpectedLittleEndian: 0x3412),
+            0x1234,
+            0x3412),
         new IntegerReaderFamily("ReadInt16", 2,
             (d, o) => unchecked((ushort)BinaryUtils.ReadInt16BE(d, o)),
             (d, o) => unchecked((ushort)BinaryUtils.ReadInt16LE(d, o)),
             (d, o, be) => unchecked((ushort)BinaryUtils.ReadInt16(d.AsSpan(), o, be)),
             (d, o, be) => unchecked((ushort)BinaryUtils.ReadInt16(d, o, be)),
-            ExpectedBigEndian: 0x1234,
-            ExpectedLittleEndian: 0x3412),
+            0x1234,
+            0x3412),
         new IntegerReaderFamily("ReadUInt32", 4,
             (d, o) => BinaryUtils.ReadUInt32BE(d, o),
             (d, o) => BinaryUtils.ReadUInt32LE(d, o),
             (d, o, be) => BinaryUtils.ReadUInt32(d.AsSpan(), o, be),
             (d, o, be) => BinaryUtils.ReadUInt32(d, o, be),
-            ExpectedBigEndian: 0x12345678,
-            ExpectedLittleEndian: 0x78563412),
+            0x12345678,
+            0x78563412),
         new IntegerReaderFamily("ReadInt32", 4,
             (d, o) => unchecked((uint)BinaryUtils.ReadInt32BE(d, o)),
             (d, o) => unchecked((uint)BinaryUtils.ReadInt32LE(d, o)),
             (d, o, be) => unchecked((uint)BinaryUtils.ReadInt32(d.AsSpan(), o, be)),
             (d, o, be) => unchecked((uint)BinaryUtils.ReadInt32(d, o, be)),
-            ExpectedBigEndian: 0x12345678,
-            ExpectedLittleEndian: 0x78563412),
+            0x12345678,
+            0x78563412),
         new IntegerReaderFamily("ReadUInt64", 8,
             (d, o) => BinaryUtils.ReadUInt64BE(d, o),
             (d, o) => BinaryUtils.ReadUInt64LE(d, o),
             (d, o, be) => BinaryUtils.ReadUInt64(d.AsSpan(), o, be),
             (d, o, be) => BinaryUtils.ReadUInt64(d, o, be),
-            ExpectedBigEndian: 0x123456789ABCDEF0,
-            ExpectedLittleEndian: 0xF0DEBC9A78563412),
+            0x123456789ABCDEF0,
+            0xF0DEBC9A78563412),
         new IntegerReaderFamily("ReadInt64", 8,
             (d, o) => unchecked((ulong)BinaryUtils.ReadInt64BE(d, o)),
             (d, o) => unchecked((ulong)BinaryUtils.ReadInt64LE(d, o)),
             (d, o, be) => unchecked((ulong)BinaryUtils.ReadInt64(d.AsSpan(), o, be)),
             (d, o, be) => unchecked((ulong)BinaryUtils.ReadInt64(d, o, be)),
-            ExpectedBigEndian: 0x123456789ABCDEF0,
-            ExpectedLittleEndian: 0xF0DEBC9A78563412)
+            0x123456789ABCDEF0,
+            0xF0DEBC9A78563412)
     };
 
     /// <summary>
@@ -92,15 +92,15 @@ public class BinaryUtilsEndianTests
             (d, o) => BinaryUtils.ReadFloatLE(d, o),
             (d, o, be) => BinaryUtils.ReadFloat(d.AsSpan(), o, be),
             (d, o, be) => BinaryUtils.ReadFloat(d, o, be),
-            ExpectedBigEndian: BitConverter.Int32BitsToSingle(0x12345678),
-            ExpectedLittleEndian: BitConverter.Int32BitsToSingle(0x78563412)),
+            BitConverter.Int32BitsToSingle(0x12345678),
+            BitConverter.Int32BitsToSingle(0x78563412)),
         new FloatReaderFamily("ReadDouble",
             (d, o) => BinaryUtils.ReadDoubleBE(d, o),
             (d, o) => BinaryUtils.ReadDoubleLE(d, o),
             (d, o, be) => BinaryUtils.ReadDouble(d.AsSpan(), o, be),
             (d, o, be) => BinaryUtils.ReadDouble(d, o, be),
-            ExpectedBigEndian: BitConverter.Int64BitsToDouble(0x123456789ABCDEF0L),
-            ExpectedLittleEndian: BitConverter.Int64BitsToDouble(unchecked((long)0xF0DEBC9A78563412UL)))
+            BitConverter.Int64BitsToDouble(0x123456789ABCDEF0L),
+            BitConverter.Int64BitsToDouble(unchecked((long)0xF0DEBC9A78563412UL)))
     };
 
     public static TheoryData<ushort, float, string> HalfToFloatCases => new()
@@ -160,8 +160,8 @@ public class BinaryUtilsEndianTests
             $"{family.Name} is {family.WidthInBytes} bytes wide; the {TestData.Length}-byte fixture "
             + "holds only one window.");
 
-        var expectedBigEndian = ExpectedAt(TestData, offset, family.WidthInBytes, bigEndian: true);
-        var expectedLittleEndian = ExpectedAt(TestData, offset, family.WidthInBytes, bigEndian: false);
+        var expectedBigEndian = ExpectedAt(TestData, offset, family.WidthInBytes, true);
+        var expectedLittleEndian = ExpectedAt(TestData, offset, family.WidthInBytes, false);
 
         Assert.Equal(expectedBigEndian, family.ExplicitBigEndian(TestData, offset));
         Assert.Equal(expectedLittleEndian, family.ExplicitLittleEndian(TestData, offset));

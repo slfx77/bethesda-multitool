@@ -33,9 +33,10 @@ internal sealed class OblivionPspArchiveBackend : IArchiveBackend
     /// <summary>RenderWare 3.7 library id, on some June 2006 entries.</summary>
     private const uint RenderWareLibrary37 = 0x1C020065;
 
+    private readonly MemoryMappedViewAccessor _accessor;
+
     private readonly OblivionPspArchive _archive;
     private readonly MemoryMappedFile _mmf;
-    private readonly MemoryMappedViewAccessor _accessor;
 
     public OblivionPspArchiveBackend(OblivionPspArchive archive)
     {
@@ -68,31 +69,6 @@ internal sealed class OblivionPspArchiveBackend : IArchiveBackend
         }
 
         return list;
-    }
-
-    /// <summary>
-    ///     The entry's file extension, or empty when its name is a namespaced resource id rather
-    ///     than a file name. See the type remarks: a RenderWare payload means the dot is a namespace
-    ///     separator. Reads 12 bytes through the shared accessor, which the index build does once.
-    /// </summary>
-    private string ExtensionOf(OblivionPspArchiveEntry entry)
-    {
-        var extension = Path.GetExtension(entry.Name);
-        if (extension.Length <= 1)
-        {
-            return string.Empty;
-        }
-
-        if (entry.Size >= RenderWareHeaderLength)
-        {
-            var library = _accessor.ReadUInt32(entry.Offset + 8);
-            if (library is RenderWareLibrary36 or RenderWareLibrary37)
-            {
-                return string.Empty;
-            }
-        }
-
-        return extension.ToLowerInvariant();
     }
 
     public IEnumerable<string> EnumerateFilePaths()
@@ -131,5 +107,30 @@ internal sealed class OblivionPspArchiveBackend : IArchiveBackend
     {
         _accessor.Dispose();
         _mmf.Dispose();
+    }
+
+    /// <summary>
+    ///     The entry's file extension, or empty when its name is a namespaced resource id rather
+    ///     than a file name. See the type remarks: a RenderWare payload means the dot is a namespace
+    ///     separator. Reads 12 bytes through the shared accessor, which the index build does once.
+    /// </summary>
+    private string ExtensionOf(OblivionPspArchiveEntry entry)
+    {
+        var extension = Path.GetExtension(entry.Name);
+        if (extension.Length <= 1)
+        {
+            return string.Empty;
+        }
+
+        if (entry.Size >= RenderWareHeaderLength)
+        {
+            var library = _accessor.ReadUInt32(entry.Offset + 8);
+            if (library is RenderWareLibrary36 or RenderWareLibrary37)
+            {
+                return string.Empty;
+            }
+        }
+
+        return extension.ToLowerInvariant();
     }
 }

@@ -65,6 +65,7 @@ internal static class NifGeometryMorphEvaluator
         {
             return earlier.Value + fraction * delta;
         }
+
         if (curve.Interpolation != NifKeyInterpolation.Quadratic)
         {
             throw new InvalidDataException("Geometry morph scalar interpolation is unsupported.");

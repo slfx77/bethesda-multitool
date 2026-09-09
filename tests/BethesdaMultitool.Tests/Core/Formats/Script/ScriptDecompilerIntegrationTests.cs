@@ -23,7 +23,7 @@ public class ScriptDecompilerIntegrationTests(ITestOutputHelper output)
         var definition = functions.Get(opcode);
 
         Assert.NotNull(definition);
-        Assert.Equal("ShowBarterMenu", definition!.Name);
+        Assert.Equal("ShowBarterMenu", definition.Name);
         Assert.Equal("sbm", definition.ShortName);
         Assert.Equal("sbm", ScriptDecompiler.GetFunctionDisplayName(definition, opcode, functions));
 

@@ -82,58 +82,64 @@ public sealed class StarfieldWaterApproximationTests
         }));
     }
 
-    private static WaterRecord BuildWater(byte opacity, StarfieldWaterVisualData visual) => new()
+    private static WaterRecord BuildWater(byte opacity, StarfieldWaterVisualData visual)
     {
-        Opacity = opacity,
-        VisualProperties = new Dictionary<string, object?>
+        return new WaterRecord
         {
-            ["StarfieldVisualData"] = visual
-        }
-    };
+            Opacity = opacity,
+            VisualProperties = new Dictionary<string, object?>
+            {
+                ["StarfieldVisualData"] = visual
+            }
+        };
+    }
 
-    private static StarfieldWaterVisualData BuildVisual() => new()
+    private static StarfieldWaterVisualData BuildVisual()
     {
-        Flags = StarfieldWaterFlags.EnableFlowmap | StarfieldWaterFlags.BlendNormals,
-        LinearVelocity = (4f, 5f, 6f),
-        AngularVelocity = null,
-        Dnam = new StarfieldWaterDnam
+        return new StarfieldWaterVisualData
         {
-            DepthAmount = 12f,
-            AbsorptionRanges = (0.1f, 0.2f, 0.3f),
-            PhytoplanktonConcentration = 0.4f,
-            SedimentConcentration = 0.5f,
-            YellowMatterConcentration = 0.7f,
-            Oceanness = 0.6f,
-            UnderwaterColor = (16, 32, 64, 128),
-            UnderwaterFogAmount = 0.8f,
-            UnderwaterFogNear = 14f,
-            UnderwaterFogFar = 15f,
-            NormalMagnitude = 0.42f,
-            ShallowNormalFalloff = 0.25f,
-            DeepNormalFalloff = 0.75f,
-            SurfaceEffectFalloff = 8f,
-            DisplacementForce = 9f,
-            DisplacementVelocity = 10f,
-            DisplacementFalloff = 11f,
-            DisplacementDampener = 12f,
-            DisplacementStartingSize = 13f,
-            Layer1 = new StarfieldWaterNoiseLayer
+            Flags = StarfieldWaterFlags.EnableFlowmap | StarfieldWaterFlags.BlendNormals,
+            LinearVelocity = (4f, 5f, 6f),
+            AngularVelocity = null,
+            Dnam = new StarfieldWaterDnam
             {
-                UvScale = 101f, WindDirection = 10f, WindSpeed = 1.5f,
-                AmplitudeScale = 0.2f, NoiseFalloff = 0.11f
-            },
-            Layer2 = new StarfieldWaterNoiseLayer
-            {
-                UvScale = 202f, WindDirection = 20f, WindSpeed = 2.5f,
-                AmplitudeScale = 0.3f, NoiseFalloff = 0.22f
-            },
-            Layer3 = new StarfieldWaterNoiseLayer
-            {
-                UvScale = 303f, WindDirection = 30f, WindSpeed = 3.5f,
-                AmplitudeScale = 0.4f, NoiseFalloff = 0.33f
-            },
-            FlowmapScale = 3.5f,
-            Roughness = 0.17f
-        }
-    };
+                DepthAmount = 12f,
+                AbsorptionRanges = (0.1f, 0.2f, 0.3f),
+                PhytoplanktonConcentration = 0.4f,
+                SedimentConcentration = 0.5f,
+                YellowMatterConcentration = 0.7f,
+                Oceanness = 0.6f,
+                UnderwaterColor = (16, 32, 64, 128),
+                UnderwaterFogAmount = 0.8f,
+                UnderwaterFogNear = 14f,
+                UnderwaterFogFar = 15f,
+                NormalMagnitude = 0.42f,
+                ShallowNormalFalloff = 0.25f,
+                DeepNormalFalloff = 0.75f,
+                SurfaceEffectFalloff = 8f,
+                DisplacementForce = 9f,
+                DisplacementVelocity = 10f,
+                DisplacementFalloff = 11f,
+                DisplacementDampener = 12f,
+                DisplacementStartingSize = 13f,
+                Layer1 = new StarfieldWaterNoiseLayer
+                {
+                    UvScale = 101f, WindDirection = 10f, WindSpeed = 1.5f,
+                    AmplitudeScale = 0.2f, NoiseFalloff = 0.11f
+                },
+                Layer2 = new StarfieldWaterNoiseLayer
+                {
+                    UvScale = 202f, WindDirection = 20f, WindSpeed = 2.5f,
+                    AmplitudeScale = 0.3f, NoiseFalloff = 0.22f
+                },
+                Layer3 = new StarfieldWaterNoiseLayer
+                {
+                    UvScale = 303f, WindDirection = 30f, WindSpeed = 3.5f,
+                    AmplitudeScale = 0.4f, NoiseFalloff = 0.33f
+                },
+                FlowmapScale = 3.5f,
+                Roughness = 0.17f
+            }
+        };
+    }
 }

@@ -26,7 +26,7 @@ public class Fallout76LazyTerrainLayerTests
         Assert.SkipUnless(esm is not null,
             "SeventySix.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout 76).");
 
-        var result = await RealAssetEsmCache.LoadAsync(esm!, TestContext.Current.CancellationToken);
+        var result = await RealAssetEsmCache.LoadAsync(esm, TestContext.Current.CancellationToken);
 
         var gridded = result.Records.Cells
             .Where(c => !c.IsInterior && c is { GridX: not null, GridY: not null })
@@ -71,7 +71,7 @@ public class Fallout76LazyTerrainLayerTests
         BucketBTestGuard.SkipUnlessEnabled();
         Assert.SkipUnless(esm is not null, "SeventySix.esm not found.");
 
-        var result = await RealAssetEsmCache.LoadAsync(esm!, TestContext.Current.CancellationToken);
+        var result = await RealAssetEsmCache.LoadAsync(esm, TestContext.Current.CancellationToken);
 
         var ltex = result.Records.LandTextures;
         Assert.True(ltex.Count > 0, "FO76 exposed no LTEX records at all");

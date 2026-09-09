@@ -1,6 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
-using BethesdaMultitool.Core.Formats.Esm.Export;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.WorldData;
 

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Travels;
 using BethesdaMultitool.Core.Formats.Travels.Dawnstar;
@@ -26,7 +23,7 @@ public sealed class TravelsTableRetailTests
     private static string Require(string? path, string what)
     {
         Assert.SkipWhen(path is null, RealAssetPaths.SkipMessage(what));
-        return path!;
+        return path;
     }
 
     private static ArchiveReader OpenStormhold()
@@ -43,7 +40,7 @@ public sealed class TravelsTableRetailTests
     {
         var bytes = reader.ReadFile(name);
         Assert.NotNull(bytes);
-        return bytes!;
+        return bytes;
     }
 
     private static DawnstarLumpArchive DataLump(ArchiveReader dawnstar)
@@ -54,7 +51,7 @@ public sealed class TravelsTableRetailTests
     private static byte[] LumpMember(DawnstarLumpArchive lump, string name)
     {
         Assert.True(lump.TryGetEntry(name, out var entry), $"{name} is missing from datfiles.lmp.");
-        return lump.Read(entry!).ToArray();
+        return lump.Read(entry).ToArray();
     }
 
     [Fact]

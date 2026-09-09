@@ -91,26 +91,19 @@ public class EsmParsedRecordTypesTests
         Assert.DoesNotContain("CUR3", fallout4);
 
         Assert.Equal(nameof(RecordCollection.VolumetricLightingSettings),
-            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
-                .Where(entry => entry.Code == "VOLI")).Collection);
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield), entry => entry.Code == "VOLI").Collection);
         Assert.Equal(nameof(RecordCollection.Fallout76VolumetricLightingSettings),
-            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Fallout76)
-                .Where(entry => entry.Code == "VOLI")).Collection);
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Fallout76), entry => entry.Code == "VOLI").Collection);
         Assert.Equal(nameof(RecordCollection.Atmospheres),
-            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
-                .Where(entry => entry.Code == "ATMO")).Collection);
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield), entry => entry.Code == "ATMO").Collection);
         Assert.Equal(nameof(RecordCollection.PlanetData),
-            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
-                .Where(entry => entry.Code == "PNDT")).Collection);
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield), entry => entry.Code == "PNDT").Collection);
         Assert.Equal(nameof(RecordCollection.StarData),
-            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
-                .Where(entry => entry.Code == "STDT")).Collection);
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield), entry => entry.Code == "STDT").Collection);
         Assert.Equal(nameof(RecordCollection.SunPresets),
-            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
-                .Where(entry => entry.Code == "SUNP")).Collection);
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield), entry => entry.Code == "SUNP").Collection);
         Assert.Equal(nameof(RecordCollection.Curves3D),
-            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield)
-                .Where(entry => entry.Code == "CUR3")).Collection);
+            Assert.Single(EsmParsedRecordTypes.EntriesForGame(BethesdaGame.Starfield), entry => entry.Code == "CUR3").Collection);
     }
 
     [Fact]

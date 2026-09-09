@@ -5,8 +5,17 @@ namespace BethesdaMultitool.Tests.Core.Compression;
 
 /// <summary>
 ///     Vectors for the Fallout DAT1 block-framed LZSS decoder. Streams are hand-built block by
-///     block (signed 16-bit big-endian block length; 0 = terminator, negative = raw bytes,
-///     positive = LZSS-coded) and the decoded bytes are pinned independently. Inside a coded
+///     block (16-bit big-endian block length; 0 = terminator, HIGH BIT SET = raw bytes whose count
+///     is the low 15 bits, any other positive value = LZSS-coded)
+///     <para>
+///         ⚠⚠ These vectors USED to encode a raw block as the NEGATED count (0xFFFD for 3 bytes),
+///         matching what the decoder then did and what the ported reference's prose says. Retail
+///         disagrees: a raw block's length is the LOW 15 BITS (0x8003 for 3). The tests were written
+///         from the same wrong premise as the code, so they could not catch it — corrected
+///         2026-09-06 after a full-archive A/B: the negated reading fails 206 of MASTER.DAT's
+///         entries, the low-15-bit reading fails none of 19,784.
+///     </para>
+///     and the decoded bytes are pinned independently. Inside a coded
 ///     block: fresh 4096-byte dictionary filled with 0x20, write cursor at 4078, LSB-first flag
 ///     bits, references are byte1 = offset low 8, byte2 = offset high nibble | (length - 3).
 /// </summary>
@@ -15,8 +24,8 @@ public class FalloutLzssTests
     [Fact]
     public void Decompress_RawBlockWithTerminator_CopiesVerbatim()
     {
-        // Block length 0xFFFD = -3 -> 3 raw bytes "XYZ", then the 00 00 terminator.
-        byte[] input = [0xFF, 0xFD, 0x58, 0x59, 0x5A, 0x00, 0x00];
+        // Block length 0x8003 -> 3 raw bytes "XYZ", then the 00 00 terminator.
+        byte[] input = [0x80, 0x03, 0x58, 0x59, 0x5A, 0x00, 0x00];
 
         var result = FalloutLzss.Decompress(input, 3);
 
@@ -59,10 +68,10 @@ public class FalloutLzssTests
         // the 00 00 terminator must be ignored.
         byte[] input =
         [
-            0xFF, 0xFE, 0x58, 0x59, //             raw block: "XY"
+            0x80, 0x02, 0x58, 0x59, //             raw block: "XY"
             0x00, 0x04, 0x01, 0x41, 0xEE, 0xF2, // coded block: "AAAAAA"
             0x00, 0x00, //                         terminator
-            0xDE, 0xAD, //                         trailing bytes, ignored
+            0xDE, 0xAD //                         trailing bytes, ignored
         ];
 
         var result = FalloutLzss.Decompress(input, 8);
@@ -74,7 +83,7 @@ public class FalloutLzssTests
     public void Decompress_NoTerminator_EndsAtInputEnd()
     {
         // A stream may end by exhausting the input instead of via the 00 00 terminator.
-        byte[] input = [0xFF, 0xFE, 0x58, 0x59];
+        byte[] input = [0x80, 0x02, 0x58, 0x59];
 
         var result = FalloutLzss.Decompress(input, 2);
 
@@ -89,11 +98,27 @@ public class FalloutLzssTests
     // Coded block length 10 extends past the end of the input.
     [InlineData(new byte[] { 0x00, 0x0A, 0x01, 0x41 }, 6)]
     // Stream produces 3 bytes but the directory declared 5.
-    [InlineData(new byte[] { 0xFF, 0xFD, 0x58, 0x59, 0x5A, 0x00, 0x00 }, 5)]
+    [InlineData(new byte[] { 0x80, 0x03, 0x58, 0x59, 0x5A, 0x00, 0x00 }, 5)]
     // Stream produces 3 bytes but the directory declared 2 (raw block overruns).
-    [InlineData(new byte[] { 0xFF, 0xFD, 0x58, 0x59, 0x5A, 0x00, 0x00 }, 2)]
+    [InlineData(new byte[] { 0x80, 0x03, 0x58, 0x59, 0x5A, 0x00, 0x00 }, 2)]
     public void Decompress_MalformedStream_Throws(byte[] input, int unpackedLength)
     {
         Assert.Throws<InvalidDataException>(() => FalloutLzss.Decompress(input, unpackedLength));
+    }
+
+    [Fact]
+    public void Decompress_ReadsARawBlockLengthFromTheLowFifteenBitsNotTheNegatedWord()
+    {
+        // THE regression this file exists to prevent. TEXT/SPANISH/DIALOG/SET.MSG ends with a
+        // header of 0x800B and exactly 11 bytes: 16,384 already produced + 11 == the declared
+        // 16,395. Reading the word as -n gives 32,757 and throws.
+        // Proven by a full-archive A/B with the SHIPPED extractor: the negated reading fails 206 of
+        // MASTER.DAT's entries (19,578 of 19,784 extracted); the low-15-bit reading fails NONE.
+        // Bytes spelled out rather than written as a string literal - the tail is "ecesita.}" plus
+        // CR LF, and escaping it through a shell heredoc is how this file got a stray newline once.
+        byte[] tail = [0x65, 0x63, 0x65, 0x73, 0x69, 0x74, 0x61, 0x2E, 0x7D, 0x0D, 0x0A];
+        byte[] input = [0x80, 0x0B, .. tail, 0x00, 0x00];
+
+        Assert.Equal(tail, FalloutLzss.Decompress(input, tail.Length));
     }
 }

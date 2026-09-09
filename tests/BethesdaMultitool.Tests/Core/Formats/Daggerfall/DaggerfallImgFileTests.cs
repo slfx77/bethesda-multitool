@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 
@@ -124,7 +121,7 @@ public class DaggerfallImgFileTests
         Assert.Equal(0, parsed.Bitmap.YOffset);
         Assert.Equal(width * height, parsed.Bitmap.Indices.Length);
         Assert.Equal(0xAB, parsed.Bitmap.Indices[0]);
-        Assert.Equal(0xCD, parsed.Bitmap.Indices[(width * height) - 1]);
+        Assert.Equal(0xCD, parsed.Bitmap.Indices[width * height - 1]);
     }
 
     [Fact]
@@ -150,7 +147,7 @@ public class DaggerfallImgFileTests
             [64000] = (320, 200),
             [64768] = (320, 200),
             [68800] = (320, 215),
-            [112128] = (512, 219),
+            [112128] = (512, 219)
         };
 
         Assert.Equal(expected.Count, DaggerfallImgFile.HeaderlessDimensionsBySize.Count);
@@ -165,8 +162,7 @@ public class DaggerfallImgFileTests
     {
         // The reference maps 44 bytes to 22x22 = 484 pixels — impossible from 44 bytes. No
         // retail IMG has this size; the reference would silently zero-pad, this port throws.
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallImgFile.Parse(new byte[44], "TINY00I0.IMG"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallImgFile.Parse(new byte[44], "TINY00I0.IMG"));
     }
 
     [Fact]
@@ -178,13 +174,13 @@ public class DaggerfallImgFileTests
         var file = new byte[64768];
         file[0] = 5;
         file[63999] = 6;
-        file[64000] = 0;   // entry 0: (0, 0, 0)
+        file[64000] = 0; // entry 0: (0, 0, 0)
         file[64001] = 0;
         file[64002] = 0;
-        file[64003] = 63;  // entry 1: (63, 32, 1)
+        file[64003] = 63; // entry 1: (63, 32, 1)
         file[64004] = 32;
         file[64005] = 1;
-        file[64006] = 10;  // entry 2: (10, 47, 63)
+        file[64006] = 10; // entry 2: (10, 47, 63)
         file[64007] = 47;
         file[64008] = 63;
 
@@ -241,8 +237,7 @@ public class DaggerfallImgFileTests
     public void Parse_PalettizedNameWithoutPaletteBytes_Throws()
     {
         // 64,000 bytes is a valid headerless size, but a palettized name must carry 768 more.
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallImgFile.Parse(new byte[64000], "TITL00I0.IMG"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallImgFile.Parse(new byte[64000], "TITL00I0.IMG"));
     }
 
     [Theory]
@@ -252,8 +247,7 @@ public class DaggerfallImgFileTests
     public void Parse_UnsupportedFmapNames_Throw(string name)
     {
         // Retail: each is exactly 12 bytes of zeroed header, no image.
-        Assert.Throws<NotSupportedException>(
-            () => DaggerfallImgFile.Parse(new byte[12], name));
+        Assert.Throws<NotSupportedException>(() => DaggerfallImgFile.Parse(new byte[12], name));
         Assert.True(DaggerfallImgFile.IsUnsupported(name));
     }
 
@@ -261,8 +255,7 @@ public class DaggerfallImgFileTests
     public void Parse_TruncatedHeader_Throws()
     {
         // 8 bytes: not a headerless size, too small for the 12-byte header.
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallImgFile.Parse(new byte[8], "SOME00I0.IMG"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallImgFile.Parse(new byte[8], "SOME00I0.IMG"));
     }
 
     [Fact]
@@ -270,10 +263,9 @@ public class DaggerfallImgFileTests
     {
         // Header promises 4x2 = 8 pixels but only 5 data bytes exist (17-byte file, not a
         // headerless size).
-        var file = BuildHeadered(0, 0, 4, 2, 0, [1, 2, 3, 4, 5], declaredDataLength: 8);
+        var file = BuildHeadered(0, 0, 4, 2, 0, [1, 2, 3, 4, 5], 8);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallImgFile.Parse(file, "SOME00I0.IMG"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallImgFile.Parse(file, "SOME00I0.IMG"));
     }
 
     [Fact]
@@ -283,7 +275,7 @@ public class DaggerfallImgFileTests
         // the reference never reads it when decoding. Pin that: a wildly wrong declared length
         // over well-formed width*height data must decode identically to a correct one.
         var data = new byte[] { 1, 2, 3, 4, 5, 6 };
-        var lying = BuildHeadered(48, 5, 3, 2, 0, data, declaredDataLength: 9999);
+        var lying = BuildHeadered(48, 5, 3, 2, 0, data, 9999);
         var honest = BuildHeadered(48, 5, 3, 2, 0, data);
 
         Assert.Equal(
@@ -296,8 +288,7 @@ public class DaggerfallImgFileTests
     {
         var file = BuildHeadered(0, 0, 0, 5, 0, []);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallImgFile.Parse(file, "SOME00I0.IMG"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallImgFile.Parse(file, "SOME00I0.IMG"));
     }
 
     [Fact]
@@ -307,8 +298,7 @@ public class DaggerfallImgFileTests
         // decoder must throw at end of input, never loop waiting for pixels.
         var file = BuildHeadered(0, 0, 2, 2, 2, [0, 9]);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallImgFile.Parse(file, "FAKE00I0.IMG"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallImgFile.Parse(file, "FAKE00I0.IMG"));
     }
 
     [Fact]
@@ -317,8 +307,7 @@ public class DaggerfallImgFileTests
         // Header claims RLE but the file ends at the header: first code-byte read must throw.
         var file = BuildHeadered(0, 0, 1, 1, 2, []);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallImgFile.Parse(file, "FAKE00I0.IMG"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallImgFile.Parse(file, "FAKE00I0.IMG"));
     }
 
     [Fact]
@@ -327,8 +316,7 @@ public class DaggerfallImgFileTests
         // 2x1 image, but 130 repeats 3 pixels (130 - 127): one more than the image holds.
         var file = BuildHeadered(0, 0, 2, 1, 2, [130, 5]);
 
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallImgFile.Parse(file, "FAKE00I0.IMG"));
+        Assert.Throws<InvalidDataException>(() => DaggerfallImgFile.Parse(file, "FAKE00I0.IMG"));
     }
 
     [Theory]

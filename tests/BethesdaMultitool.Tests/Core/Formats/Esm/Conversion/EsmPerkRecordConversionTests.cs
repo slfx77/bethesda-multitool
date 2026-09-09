@@ -28,7 +28,7 @@ public class EsmPerkRecordConversionTests
 
         Assert.NotNull(converted);
         Assert.Equal("PERK", signature);
-        AssertPerkDataScopes(converted![24..]);
+        AssertPerkDataScopes(converted[24..]);
     }
 
     [Fact]
@@ -41,7 +41,7 @@ public class EsmPerkRecordConversionTests
 
         Assert.NotNull(converted);
         Assert.Equal("PERK", signature);
-        Assert.NotEqual(0u, BinaryPrimitives.ReadUInt32LittleEndian(converted!.AsSpan(8)) & 0x00040000u);
+        Assert.NotEqual(0u, BinaryPrimitives.ReadUInt32LittleEndian(converted.AsSpan(8)) & 0x00040000u);
         AssertPerkDataScopes(DecompressConvertedBody(converted));
     }
 

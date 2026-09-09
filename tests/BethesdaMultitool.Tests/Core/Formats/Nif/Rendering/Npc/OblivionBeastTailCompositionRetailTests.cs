@@ -27,6 +27,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Npc;
 public sealed class OblivionBeastTailCompositionRetailTests
 {
     private const string BeastSkeletonPath = @"meshes\characters\_Male\skeletonbeast.nif";
+
     // Both installed tail NIFs bind nine joints, in this exact NiSkinInstance order.
     // TailRoot belongs to the skeleton hierarchy but is not in either tail's skin bone list.
     private static readonly string[] AuthoredTailJointNames =
@@ -59,18 +60,18 @@ public sealed class OblivionBeastTailCompositionRetailTests
             RealAssetPaths.SkipMessage("Oblivion - Textures - Compressed.bsa"));
 
         var cancellationToken = TestContext.Current.CancellationToken;
-        var resolver = await LoadAppearanceResolverAsync(esmPath!, cancellationToken);
+        var resolver = await LoadAppearanceResolverAsync(esmPath, cancellationToken);
         var appearance = Assert.IsType<NpcAppearance>(
             resolver.ResolveHeadOnly(actorFormId, "Oblivion.esm"));
         Assert.Equal(actorFormId, appearance.NpcFormId);
         Assert.Equal(BethesdaGame.Oblivion, appearance.Game);
         Assert.Equal(isFemale, appearance.IsFemale);
-        Assert.Equal(tailPath, appearance.TailNifPath, ignoreCase: true);
-        Assert.Equal(tailTexturePath, appearance.TailTexturePath, ignoreCase: true);
-        Assert.Equal(BeastSkeletonPath, appearance.SkeletonNifPath, ignoreCase: true);
+        Assert.Equal(tailPath, appearance.TailNifPath, true);
+        Assert.Equal(tailTexturePath, appearance.TailTexturePath, true);
+        Assert.Equal(BeastSkeletonPath, appearance.SkeletonNifPath, true);
 
-        using var meshArchives = MeshArchiveSet.Open(meshesPath!, null);
-        using var textureResolver = new NifTextureResolver(texturesPath!);
+        using var meshArchives = MeshArchiveSet.Open(meshesPath, null);
+        using var textureResolver = new NifTextureResolver(texturesPath);
         var tailTexture = Assert.IsType<DecodedTexture>(textureResolver.GetTexture(tailTexturePath));
         Assert.True(tailTexture.Width > 0 && tailTexture.Height > 0);
         Assert.NotEmpty(tailTexture.Pixels);
@@ -94,6 +95,7 @@ public sealed class OblivionBeastTailCompositionRetailTests
         {
             Assert.Equal(tailTexture.Pixels[alpha], tintedTail.Pixels[alpha]);
         }
+
         var generatedTextureKeys = NpcTextureHelpers.BuildNpcGeneratedTextureKeys(appearance);
         Assert.Contains(expectedCpuTexturePath, generatedTextureKeys);
         Assert.Contains(generatedTexturePath, generatedTextureKeys);
@@ -107,7 +109,7 @@ public sealed class OblivionBeastTailCompositionRetailTests
             $"Oblivion.esm:0x{actorFormId:X8}",
             BethesdaViewerScenePurpose.NpcAppearance,
             game: BethesdaGame.Oblivion,
-            textureSourcePaths: [texturesPath!]);
+            textureSourcePaths: [texturesPath]);
         NpcBoundaryVertexStitcher.PopulateViewerSceneBoundaryGroups(scene);
 
         var tail = Assert.Single(scene.MeshParts, part => string.Equals(
@@ -119,7 +121,7 @@ public sealed class OblivionBeastTailCompositionRetailTests
         Assert.Equal((0.588f, 0.588f, 0.588f), tail.Submesh.AuthoredOblivionBodySkinAmbientColor);
         Assert.True(tail.Submesh.IsFaceGen);
         var expectedNormalPath = tailTexturePath[..^4] + "_n.dds";
-        Assert.Equal(expectedNormalPath, tail.Submesh.NormalMapTexturePath, ignoreCase: true);
+        Assert.Equal(expectedNormalPath, tail.Submesh.NormalMapTexturePath, true);
         var nativeNormal = Assert.IsType<DecodedTexture>(textureResolver.GetTexture(expectedNormalPath));
         Assert.True(nativeNormal.Width > 0 && nativeNormal.Height > 0);
         Assert.NotEmpty(nativeNormal.Pixels);
@@ -183,7 +185,7 @@ public sealed class OblivionBeastTailCompositionRetailTests
     private static void AssertSkeletonPose(NpcCompositionPlan plan)
     {
         var skeleton = Assert.IsType<NpcSkeletonComposition>(plan.Skeleton);
-        Assert.Equal(BeastSkeletonPath, skeleton.SkeletonNifPath, ignoreCase: true);
+        Assert.Equal(BeastSkeletonPath, skeleton.SkeletonNifPath, true);
         Assert.NotNull(skeleton.BodySkinningBones);
         Assert.NotNull(skeleton.AnimationOverrides);
         AssertFinite(Assert.Contains("Bip01 TailRoot", skeleton.BodySkinningBones));
@@ -236,6 +238,7 @@ public sealed class OblivionBeastTailCompositionRetailTests
                 Assert.InRange(influence.Weight, 0f, 1f);
                 totalWeight += influence.Weight;
             }
+
             Assert.InRange(totalWeight, 0.99f, 1.01f);
         });
     }
@@ -248,7 +251,7 @@ public sealed class OblivionBeastTailCompositionRetailTests
         Assert.NotEmpty(submesh.Triangles);
         Assert.Equal(0, submesh.Triangles.Length % 3);
         Assert.All(submesh.Triangles, index =>
-            Assert.InRange((uint)index, 0u, (uint)(submesh.Positions.Length / 3 - 1)));
+            Assert.InRange(index, 0u, (uint)(submesh.Positions.Length / 3 - 1)));
         var bindPositions = Assert.IsType<float[]>(submesh.BindPosePositions);
         Assert.Equal(submesh.Positions.Length, bindPositions.Length);
         Assert.All(bindPositions, static value => Assert.True(float.IsFinite(value)));

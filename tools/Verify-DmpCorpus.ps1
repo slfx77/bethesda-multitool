@@ -765,7 +765,7 @@ if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
 }
 $RepositoryRoot = (Resolve-Path -LiteralPath $RepositoryRoot).Path
 if ([string]::IsNullOrWhiteSpace($DumpDirectory)) {
-    $DumpDirectory = Join-Path $RepositoryRoot 'Sample\MemoryDump'
+    $DumpDirectory = Join-Path $RepositoryRoot 'Sample\MemoryDumps'
 }
 $DumpDirectory = (Resolve-Path -LiteralPath $DumpDirectory).Path
 if ([string]::IsNullOrWhiteSpace($DumpFilter)) {

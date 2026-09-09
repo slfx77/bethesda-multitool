@@ -25,7 +25,7 @@ public class FalloutNvSchemaEnrichmentTests
         Assert.NotNull(definitions);
         Assert.True(definitions.TryGetValue("COBJ", out var cobj));
 
-        var signatures = EnumerateSignatures(cobj!.Members).ToHashSet(StringComparer.Ordinal);
+        var signatures = EnumerateSignatures(cobj.Members).ToHashSet(StringComparer.Ordinal);
 
         Assert.Contains("EDID", signatures);
         Assert.Contains("OBND", signatures);
@@ -51,7 +51,7 @@ public class FalloutNvSchemaEnrichmentTests
         Assert.True(definitions.TryGetValue("INGR", out var ingredient));
 
         var data = Assert.IsType<FieldDef>(
-            Assert.Single(ingredient!.Members, member => member.Signature == "DATA"));
+            Assert.Single(ingredient.Members, member => member.Signature == "DATA"));
         Assert.Equal(PrimType.Float, data.Type);
 
         var enit = Assert.IsType<StructDef>(
@@ -79,7 +79,7 @@ public class FalloutNvSchemaEnrichmentTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         // 1. No regression: FNV still reads through its rich typed handlers (the schema did NOT take over).
         Assert.True(result.Records.Npcs.Count > 1000,

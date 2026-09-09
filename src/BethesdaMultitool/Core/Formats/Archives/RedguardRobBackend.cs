@@ -17,9 +17,9 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 /// </summary>
 internal sealed class RedguardRobBackend : IArchiveBackend
 {
+    private readonly MemoryMappedViewAccessor _accessor;
     private readonly RedguardRobArchive _archive;
     private readonly MemoryMappedFile _mmf;
-    private readonly MemoryMappedViewAccessor _accessor;
 
     public RedguardRobBackend(RedguardRobArchive archive)
     {

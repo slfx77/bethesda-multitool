@@ -5,9 +5,12 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
 
 public sealed class NifBrowserDeferredTextureResolverSourceContractTests
 {
-    private static string BrowserSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
-        "NifBrowserService.cs");
+    private static string BrowserSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
+            "NifBrowserService.cs");
+    }
 
     [Fact]
     public void SourceSelectionStoresTexturePathsWithoutOpeningResolver()

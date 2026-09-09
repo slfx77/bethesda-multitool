@@ -1,7 +1,6 @@
 using System.Numerics;
 using System.Security.Cryptography;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.Viewer;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Tests.Helpers;
@@ -22,9 +21,10 @@ public sealed class FnvGreatKhanGeometryMorphRetailTests
         var archivePath = RealAssetPaths.SteamGameFile("Fallout New Vegas", @"Data\Fallout - Meshes.bsa");
         Assert.SkipWhen(archivePath is null, RealAssetPaths.SkipMessage("FNV Fallout - Meshes.bsa"));
         const string modelPath = @"meshes\clutter\nvgreatkhanflag\nvgreatkhanflag.nif";
-        using var service = NifBrowserService.CreateFromBsa(archivePath!);
+        using var service = NifBrowserService.CreateFromBsa(archivePath);
         var data = Assert.IsType<byte[]>(service.ReadNifData(modelPath));
-        Assert.Equal("1DD0D3FEBEBC40BFB6E7B0E3FB3F231F64F64C181AA18D17F88FB181786D509A", Convert.ToHexString(SHA256.HashData(data)));
+        Assert.Equal("1DD0D3FEBEBC40BFB6E7B0E3FB3F231F64F64C181AA18D17F88FB181786D509A",
+            Convert.ToHexString(SHA256.HashData(data)));
         var build = service.BuildViewerSceneWithDiagnostics(data, "nvgreatkhanflag.nif", modelPath);
         var scene = Assert.IsType<BethesdaViewerScene>(build.Scene);
         var clip = Assert.Single(scene.AnimationClips);
@@ -57,6 +57,7 @@ public sealed class FnvGreatKhanGeometryMorphRetailTests
             Assert.Equal(original[vertex].TexCoord, vertices[vertex].TexCoord);
             Assert.Equal(original[vertex].VertexColorRgba, vertices[vertex].VertexColorRgba);
         }
+
         BethesdaViewerGeometryMorphPolicy.Pose(track.Morph, 0f, vertices, weights);
         Assert.Equal(atZero, vertices);
         var posed = BethesdaViewerScenePoseMaterializer12.Materialize(decoded);

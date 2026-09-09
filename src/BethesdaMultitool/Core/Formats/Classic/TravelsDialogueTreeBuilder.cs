@@ -16,8 +16,12 @@ namespace BethesdaMultitool.Core.Formats.Classic;
 ///         game whose strings parse gets a dialogue tree for free.
 ///     </para>
 ///     <para>
-///         ⚠ <b>Every topic lands in <see cref="DialogueTreeResult.OrphanTopics" />, and that is the
-///         honest bucket rather than a shortcut.</b> "Orphan" means a topic no quest reaches, which
+///         ⚠
+///         <b>
+///             Every topic lands in <see cref="DialogueTreeResult.OrphanTopics" />, and that is the
+///             honest bucket rather than a shortcut.
+///         </b>
+///         "Orphan" means a topic no quest reaches, which
 ///         is exactly true here: these games organise dialogue by SPEAKER, not by quest, and there
 ///         is no quest-to-dialogue link in the data to represent. Inventing
 ///         <see cref="DialogueTreeResult.QuestTrees" /> entries would put a structure on screen that
@@ -141,8 +145,10 @@ internal static class TravelsDialogueTreeBuilder
         return topic;
     }
 
-    private static string? ReadText(GenericEsmRecord record) =>
-        record.Fields.TryGetValue(TextField, out var value) ? value as string : null;
+    private static string? ReadText(GenericEsmRecord record)
+    {
+        return record.Fields.TryGetValue(TextField, out var value) ? value as string : null;
+    }
 
     /// <summary>
     ///     Reads an integer field. The synthesizer boxes them as <see cref="int" />, but a record

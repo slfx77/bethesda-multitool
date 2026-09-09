@@ -34,7 +34,7 @@ public sealed class StaticLayoutOffsetParityTests
         // be at +16 in its PDB layout.
         var topic = PdbStructLayouts.Get(0x45);
         Assert.NotNull(topic);
-        var fld = RuntimePdbFieldAccessor.FindFieldOffset(topic!, "cFormEditorID", "TESForm");
+        var fld = RuntimePdbFieldAccessor.FindFieldOffset(topic, "cFormEditorID", "TESForm");
         Assert.Equal(16, fld);
     }
 
@@ -75,7 +75,7 @@ public sealed class StaticLayoutOffsetParityTests
         // side trips the test, prompting a re-confirm.
         var topic = PdbStructLayouts.Get(0x45);
         Assert.NotNull(topic);
-        Assert.Equal(80, topic!.StructSize);
+        Assert.Equal(80, topic.StructSize);
         Assert.Equal(88, RuntimeDialogueLayouts.DialStructSize);
     }
 
@@ -118,7 +118,7 @@ public sealed class StaticLayoutOffsetParityTests
 
         var info = PdbStructLayouts.Get(0x46);
         Assert.NotNull(info);
-        Assert.Equal(96, info!.StructSize);
+        Assert.Equal(96, info.StructSize);
     }
 
     // ===== RuntimeItemLayouts — struct sizes (sanity check the +16 shift is wired right) =====
@@ -137,7 +137,7 @@ public sealed class StaticLayoutOffsetParityTests
     {
         var layout = PdbStructLayouts.Get(formType);
         Assert.NotNull(layout);
-        Assert.Equal(expectedStructSize, layout!.StructSize);
+        Assert.Equal(expectedStructSize, layout.StructSize);
     }
 
     [Fact]
@@ -238,7 +238,7 @@ public sealed class StaticLayoutOffsetParityTests
         // MemDebug shift resolves to +92 — matching PDB cModel for CONT.
         var cont = PdbStructLayouts.Get(0x1B);
         Assert.NotNull(cont);
-        var cModelOffset = RuntimePdbFieldAccessor.FindFieldOffset(cont!, "cModel", "TESModel");
+        var cModelOffset = RuntimePdbFieldAccessor.FindFieldOffset(cont, "cModel", "TESModel");
         Assert.Equal(92, cModelOffset);
         // The private property is not directly accessible from tests; sanity-check the
         // formula it uses (76 + 16 = 92).
@@ -251,17 +251,17 @@ public sealed class StaticLayoutOffsetParityTests
     {
         var layout = PdbStructLayouts.Get(formType);
         Assert.NotNull(layout);
-        var actual = RuntimePdbFieldAccessor.FindFieldOffset(layout!, fieldName, owner);
+        var actual = RuntimePdbFieldAccessor.FindFieldOffset(layout, fieldName, owner);
         Assert.True(actual.HasValue,
             $"Field {owner}.{fieldName} not found in PDB layout for FormType 0x{formType:X2}");
-        Assert.Equal(expected, actual!.Value);
+        Assert.Equal(expected, actual.Value);
     }
 
     private static void AssertItemStructSize(int layoutValue, byte formType)
     {
         var pdb = PdbStructLayouts.Get(formType);
         Assert.NotNull(pdb);
-        Assert.Equal(pdb!.StructSize, layoutValue);
+        Assert.Equal(pdb.StructSize, layoutValue);
     }
 
     private static int LookupItemProperty(RuntimeItemLayouts items, string name)
@@ -271,7 +271,7 @@ public sealed class StaticLayoutOffsetParityTests
             BindingFlags.NonPublic |
             BindingFlags.Public);
         Assert.NotNull(prop);
-        var value = prop!.GetValue(items);
+        var value = prop.GetValue(items);
         return Assert.IsType<int>(value);
     }
 }

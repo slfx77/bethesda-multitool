@@ -1,5 +1,4 @@
-using System;
-using System.Linq;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Arena;
 using Xunit;
 
@@ -13,6 +12,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Arena;
 /// </summary>
 public class ArenaInfFileTests
 {
+    private const string RetailAgtemplPlaintext = "@FLOORS\r\n*CEILIN";
+
     /// <summary>
     ///     The first 16 bytes of AGTEMPL.INF as they sit inside GLOBAL.BSA, and the plaintext they
     ///     must produce. Captured by hex dump, not by this code.
@@ -23,14 +24,12 @@ public class ArenaInfFileTests
         0xF8, 0xAE, 0x1B, 0x8D, 0x6C, 0x9A, 0x0F, 0xE6
     ];
 
-    private const string RetailAgtemplPlaintext = "@FLOORS\r\n*CEILIN";
-
     [Fact]
     public void Decrypt_RetailPrefix_ProducesTheKnownPlaintext()
     {
         var plain = ArenaInfFile.Decrypt(RetailAgtemplPrefix);
 
-        Assert.Equal(RetailAgtemplPlaintext, System.Text.Encoding.Latin1.GetString(plain));
+        Assert.Equal(RetailAgtemplPlaintext, Encoding.Latin1.GetString(plain));
     }
 
     [Fact]
@@ -39,7 +38,7 @@ public class ArenaInfFileTests
         var original = new byte[512];
         for (var i = 0; i < original.Length; i++)
         {
-            original[i] = (byte)((i * 7) + 3);
+            original[i] = (byte)(i * 7 + 3);
         }
 
         Assert.Equal(original, ArenaInfFile.Decrypt(ArenaInfFile.Decrypt(original)));
@@ -62,16 +61,16 @@ public class ArenaInfFileTests
     {
         Assert.True(ArenaInfFile.IsProbablyEncrypted(RetailAgtemplPrefix));
         Assert.False(ArenaInfFile.IsProbablyEncrypted(
-            System.Text.Encoding.Latin1.GetBytes("@FLOORS\r\n*BOXCAP 0\r\nfloora.set  #4\r\n")));
+            Encoding.Latin1.GetBytes("@FLOORS\r\n*BOXCAP 0\r\nfloora.set  #4\r\n")));
     }
 
     [Fact]
     public void Parse_Encrypted_RoundTripsThroughDecryption()
     {
         const string text = "@FLOORS\n*BOXCAP 3\nfloord.set #2\n";
-        var cipher = ArenaInfFile.Decrypt(System.Text.Encoding.Latin1.GetBytes(text));
+        var cipher = ArenaInfFile.Decrypt(Encoding.Latin1.GetBytes(text));
 
-        var inf = ArenaInfFile.Parse(cipher, "TEST.INF", encrypted: true);
+        var inf = ArenaInfFile.Parse(cipher, "TEST.INF", true);
 
         var floor = Assert.Single(inf.Floors);
         Assert.Equal("floord.set", floor.FileName);
@@ -265,20 +264,20 @@ public class ArenaInfFileTests
     {
         var inf = ArenaInfFile.ParseText(
             """
-            @TEXT
-            *TEXT 0
-            ^3 12
-            What walks on four legs?
+                @TEXT
+                *TEXT 0
+                ^3 12
+                What walks on four legs?
 
-            And then on two?
-            :man
-            :human
-            `CORRECT
-            The door swings open.
-            `WRONG
-            Nothing happens.
+                And then on two?
+                :man
+                :human
+                `CORRECT
+                The door swings open.
+                `WRONG
+                Nothing happens.
 
-            """.Replace("\r\n", "\n", StringComparison.Ordinal),
+                """.Replace("\r\n", "\n", StringComparison.Ordinal),
             "LABRNTH2.INF");
 
         var riddle = Assert.Single(inf.Texts).Riddle;
@@ -302,8 +301,8 @@ public class ArenaInfFileTests
     [Fact]
     public void ParseText_UnknownWallDirective_Throws()
     {
-        var ex = Assert.Throws<InvalidDataException>(
-            () => ArenaInfFile.ParseText("@WALLS\n*NOSUCH 1\nx.img\n", "BAD.INF"));
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            ArenaInfFile.ParseText("@WALLS\n*NOSUCH 1\nx.img\n", "BAD.INF"));
 
         Assert.Contains("BAD.INF", ex.Message, StringComparison.Ordinal);
     }

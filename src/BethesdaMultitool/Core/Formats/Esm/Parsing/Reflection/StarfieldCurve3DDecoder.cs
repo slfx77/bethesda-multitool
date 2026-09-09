@@ -261,7 +261,7 @@ internal static class StarfieldCurve3DDecoder
         var fieldCount = BinaryPrimitives.ReadUInt16LittleEndian(body[10..]);
         if (flags != expected.Flags ||
             fieldCount != expected.Fields.Count ||
-            body.Length != 12 + (fieldCount * 12))
+            body.Length != 12 + fieldCount * 12)
         {
             error = $"CUR3 CLAS '{expected.Name}' has changed flags, field count, or framing.";
             return false;
@@ -269,7 +269,7 @@ internal static class StarfieldCurve3DDecoder
 
         for (var index = 0; index < expected.Fields.Count; index++)
         {
-            var descriptor = body.Slice(12 + (index * 12), 12);
+            var descriptor = body.Slice(12 + index * 12, 12);
             var expectedField = expected.Fields[index];
             if (!TryResolveName(
                     BinaryPrimitives.ReadUInt32LittleEndian(descriptor), strings, out var fieldName) ||
@@ -384,7 +384,7 @@ internal static class StarfieldCurve3DDecoder
         if (!TryReadNamedToken(body, ref position, strings, ControlType) ||
             !TryReadUInt32(body, ref position, out var count) ||
             count > int.MaxValue ||
-            8L + (count * 8L) != body.Length)
+            8L + count * 8L != body.Length)
         {
             error = "LIST is not an exactly framed List<BSFloatCurve::Control>.";
             return false;
@@ -532,7 +532,10 @@ internal static class StarfieldCurve3DDecoder
     private static bool TryResolveName(
         uint token,
         IReadOnlyDictionary<uint, string> strings,
-        out string value) => strings.TryGetValue(token, out value!);
+        out string value)
+    {
+        return strings.TryGetValue(token, out value!);
+    }
 
     private static bool ContainsNonAscii(ReadOnlySpan<byte> bytes)
     {
@@ -547,13 +550,16 @@ internal static class StarfieldCurve3DDecoder
         return false;
     }
 
-    private static string AxisName(int axis) => axis switch
+    private static string AxisName(int axis)
     {
-        0 => "X",
-        1 => "Y",
-        2 => "Z",
-        _ => "unknown"
-    };
+        return axis switch
+        {
+            0 => "X",
+            1 => "Y",
+            2 => "Z",
+            _ => "unknown"
+        };
+    }
 
     private static string ChunkName(uint value)
     {
@@ -564,11 +570,15 @@ internal static class StarfieldCurve3DDecoder
             : $"'{Encoding.ASCII.GetString(bytes)}'";
     }
 
-    private static ExpectedField NamedField(string name, string type, uint runtimeOffset) =>
-        new(name, type, null, runtimeOffset);
+    private static ExpectedField NamedField(string name, string type, uint runtimeOffset)
+    {
+        return new ExpectedField(name, type, null, runtimeOffset);
+    }
 
-    private static ExpectedField BuiltInField(string name, uint type, uint runtimeOffset) =>
-        new(name, null, type, runtimeOffset);
+    private static ExpectedField BuiltInField(string name, uint type, uint runtimeOffset)
+    {
+        return new ExpectedField(name, null, type, runtimeOffset);
+    }
 
     private sealed record ExpectedClass(
         string Name,

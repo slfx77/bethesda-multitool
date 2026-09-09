@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -58,7 +57,7 @@ public sealed class RuntimeMediaSetReaderTests
                 continue;
             }
 
-            var nameVa = FirstLayerNameVa + ((uint)i * LayerNameStride);
+            var nameVa = FirstLayerNameVa + (uint)i * LayerNameStride;
             fixture.WithPointerTarget(nameVa, SyntheticStructFactory.AsciiBytes(LayerNames[i]));
             layers[i] = new SyntheticStructFactory.MediaLayerSpec(
                 nameVa, (ushort)LayerNames[i].Length, LayerDb[i], LayerPercent[i]);
@@ -66,14 +65,14 @@ public sealed class RuntimeMediaSetReaderTests
 
         var buffer = SyntheticStructFactory.BuildMediaSet(
             MsetFormId,
-            setType: 1,
+            1,
             layers,
-            enableFlags: 0x3F,
-            timings: [10f, 11f, 12f, 13f],
-            soundOnePtr: introSoundPtr,
-            soundTwoPtr: OutroSoundVa,
-            fullNameVa: FullNameVa,
-            fullNameLength: (ushort)"Vegas Strip".Length);
+            0x3F,
+            [10f, 11f, 12f, 13f],
+            introSoundPtr,
+            OutroSoundVa,
+            FullNameVa,
+            (ushort)"Vegas Strip".Length);
 
         // Two real SOUN forms plus a WEAP that must never satisfy a sound slot.
         var introSound = new byte[24];
@@ -102,7 +101,7 @@ public sealed class RuntimeMediaSetReaderTests
         var record = reader.ReadRuntimeMediaSet(entry);
 
         Assert.NotNull(record);
-        Assert.Equal("MSET", record!.RecordType);
+        Assert.Equal("MSET", record.RecordType);
         Assert.Equal(MsetFormId, record.FormId);
         Assert.Equal("Vegas Strip", record.FullName);
 
@@ -123,7 +122,7 @@ public sealed class RuntimeMediaSetReaderTests
         var record = reader.ReadRuntimeMediaSet(entry);
 
         Assert.NotNull(record);
-        Assert.Equal(1u, record!.Fields["NAM1"]);
+        Assert.Equal(1u, record.Fields["NAM1"]);
         Assert.Equal(0x3Fu, record.Fields["PNAM"]);
         Assert.Equal(10f, record.Fields["DNAM"]);
         Assert.Equal(11f, record.Fields["ENAM"]);
@@ -138,13 +137,13 @@ public sealed class RuntimeMediaSetReaderTests
     {
         // Layer 1 (NAM3/NAM9/KNAM) is missing. Layer 2's data must stay in NAM4/NAM0/LNAM —
         // sliding it up one slot is exactly the corruption the positional rule guards against.
-        var (fixture, entry) = Build(omittedLayer: 1);
+        var (fixture, entry) = Build(1);
         var reader = new RuntimeMediaSetReader(fixture.BuildContext());
 
         var record = reader.ReadRuntimeMediaSet(entry);
 
         Assert.NotNull(record);
-        Assert.DoesNotContain("NAM3", record!.Fields.Keys);
+        Assert.DoesNotContain("NAM3", record.Fields.Keys);
         Assert.DoesNotContain("NAM9", record.Fields.Keys);
         Assert.DoesNotContain("KNAM", record.Fields.Keys);
 
@@ -164,7 +163,7 @@ public sealed class RuntimeMediaSetReaderTests
         var record = reader.ReadRuntimeMediaSet(entry);
 
         Assert.NotNull(record);
-        Assert.DoesNotContain("HNAM", record!.Fields.Keys);
+        Assert.DoesNotContain("HNAM", record.Fields.Keys);
         Assert.Equal(OutroSoundFormId, record.Fields["INAM"]);
     }
 

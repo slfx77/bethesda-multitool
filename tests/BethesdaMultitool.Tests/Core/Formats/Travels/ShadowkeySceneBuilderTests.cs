@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 using BethesdaMultitool.Core.Games;
@@ -17,6 +14,9 @@ namespace BethesdaMultitool.Tests.Core.Formats.Travels;
 public class ShadowkeySceneBuilderTests
 {
     private const int TextureSize = 2;
+
+    /// <summary>The normalised UVs of the one face, u = 0, 1, 2 texels over a 2-wide skin.</summary>
+    private static readonly float[] ExpectedUvs = [0f, 0.75f, 0.5f, 0.75f, 1.0f, 0.75f];
 
     /// <summary>
     ///     A minimal but valid record: <paramref name="frames" /> frames of 3 vertices, 3 UVs, one
@@ -55,7 +55,7 @@ public class ShadowkeySceneBuilderTests
             for (var v = 0; v < 3; v++)
             {
                 I16(v * 10);
-                I16((f * 100) + v);
+                I16(f * 100 + v);
                 I16(-v);
             }
         }
@@ -95,11 +95,10 @@ public class ShadowkeySceneBuilderTests
         return [.. body];
     }
 
-    /// <summary>The normalised UVs of the one face, u = 0, 1, 2 texels over a 2-wide skin.</summary>
-    private static readonly float[] ExpectedUvs = [0f, 0.75f, 0.5f, 0.75f, 1.0f, 0.75f];
-
-    private static ShadowkeyMesh Parse(int frames = 2, int textureCount = 1) =>
-        ShadowkeyMesh.Parse(MeshBytes(frames, textureCount), "rat.bin");
+    private static ShadowkeyMesh Parse(int frames = 2, int textureCount = 1)
+    {
+        return ShadowkeyMesh.Parse(MeshBytes(frames, textureCount), "rat.bin");
+    }
 
     [Fact]
     public void BuildMeshScene_ProducesOneMeshPartForTheWholeMesh()
@@ -243,15 +242,15 @@ public class ShadowkeySceneBuilderTests
     public void BuildMeshScene_SelectsTheRequestedFrame()
     {
         var frame0 = ShadowkeySceneBuilder
-            .BuildMeshScene(Parse(), frame: 0, axes: ShadowkeyAxisConvention.Source)
+            .BuildMeshScene(Parse(), 0, axes: ShadowkeyAxisConvention.Source)
             .MeshParts[0].Submesh.Positions;
         var frame1 = ShadowkeySceneBuilder
-            .BuildMeshScene(Parse(), frame: 1, axes: ShadowkeyAxisConvention.Source)
+            .BuildMeshScene(Parse(), 1, axes: ShadowkeyAxisConvention.Source)
             .MeshParts[0].Submesh.Positions;
 
         for (var corner = 0; corner < 3; corner++)
         {
-            Assert.Equal(frame0[(corner * 3) + 1] + 100f, frame1[(corner * 3) + 1]);
+            Assert.Equal(frame0[corner * 3 + 1] + 100f, frame1[corner * 3 + 1]);
         }
     }
 
@@ -270,7 +269,7 @@ public class ShadowkeySceneBuilderTests
     [Fact]
     public void BuildMeshScene_RejectsAFrameOutsideTheRecord()
     {
-        Assert.ThrowsAny<ArgumentException>(() => ShadowkeySceneBuilder.BuildMeshScene(Parse(), frame: 5));
+        Assert.ThrowsAny<ArgumentException>(() => ShadowkeySceneBuilder.BuildMeshScene(Parse(), 5));
     }
 
     [Fact]

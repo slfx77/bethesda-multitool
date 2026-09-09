@@ -41,37 +41,6 @@ namespace BethesdaMultitool.Core.Formats.Nif;
 /// </remarks>
 public sealed partial class NifFormat : FileFormatBase, IFileConverter, IGapAssessor
 {
-    /// <summary>
-    ///     A NIF header carries the block-type table, the per-block sizes and the string table —
-    ///     lose any of it and the block stream cannot be located at all. Past the header, blocks are
-    ///     read strictly in order, so a hole costs the block it lands in and every block after it.
-    /// </summary>
-    public string? AssessGaps(
-        ReadOnlySpan<byte> data,
-        IReadOnlyList<CarveHole> holes,
-        IReadOnlyDictionary<string, object>? metadata)
-    {
-        var headerSize = metadata?.TryGetValue("headerSize", out var value) == true && value is int size
-            ? size
-            : 0;
-
-        if (headerSize <= 0)
-        {
-            // The header could not be walked at parse time, so its extent is unknown. Any hole is
-            // reported rather than silently cleared — the safe direction for a usability verdict.
-            return holes.Count > 0 ? "an unwalked NIF header (extent unknown)" : null;
-        }
-
-        if (GapAssessment.Overlaps(holes, 0, headerSize))
-        {
-            return "the NIF header (block table, block sizes and strings are unreadable)";
-        }
-
-        return GapAssessment.Overlaps(holes, headerSize, data.Length - headerSize)
-            ? "NIF block data (blocks are read in order, so this block and every later one are lost)"
-            : null;
-    }
-
     // Block type names that indicate geometry meshes
     private static readonly HashSet<string> GeometryBlockTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -107,6 +76,37 @@ public sealed partial class NifFormat : FileFormatBase, IFileConverter, IGapAsse
             Description = "NetImmerse/Gamebryo 3D model"
         }
     ];
+
+    /// <summary>
+    ///     A NIF header carries the block-type table, the per-block sizes and the string table —
+    ///     lose any of it and the block stream cannot be located at all. Past the header, blocks are
+    ///     read strictly in order, so a hole costs the block it lands in and every block after it.
+    /// </summary>
+    public string? AssessGaps(
+        ReadOnlySpan<byte> data,
+        IReadOnlyList<CarveHole> holes,
+        IReadOnlyDictionary<string, object>? metadata)
+    {
+        var headerSize = metadata?.TryGetValue("headerSize", out var value) == true && value is int size
+            ? size
+            : 0;
+
+        if (headerSize <= 0)
+        {
+            // The header could not be walked at parse time, so its extent is unknown. Any hole is
+            // reported rather than silently cleared — the safe direction for a usability verdict.
+            return holes.Count > 0 ? "an unwalked NIF header (extent unknown)" : null;
+        }
+
+        if (GapAssessment.Overlaps(holes, 0, headerSize))
+        {
+            return "the NIF header (block table, block sizes and strings are unreadable)";
+        }
+
+        return GapAssessment.Overlaps(holes, headerSize, data.Length - headerSize)
+            ? "NIF block data (blocks are read in order, so this block and every later one are lost)"
+            : null;
+    }
 
     [GeneratedRegex(@"^\d{1,2}\.\d{1,2}\.\d{1,2}\.\d{1,2}$")]
     private static partial Regex VersionPattern();

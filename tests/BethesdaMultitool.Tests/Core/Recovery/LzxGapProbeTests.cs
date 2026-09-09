@@ -28,7 +28,7 @@ public class LzxGapProbeTests
         FillPseudoRandom(region);
         stream.CopyTo(region.AsSpan(4096));
 
-        var hits = LzxGapProbe.Probe(region, 0x1000);
+        var hits = LzxGapProbe.Probe(region, 0x1000, cancellationToken: TestContext.Current.CancellationToken);
 
         var hit = Assert.Single(hits, h => h.InflatedBytes == payload.Length);
         Assert.Equal(0x1000 + 4096, hit.Offset);
@@ -43,7 +43,8 @@ public class LzxGapProbeTests
         var noise = new byte[256 * 1024];
         FillPseudoRandom(noise);
 
-        var unfiltered = LzxGapProbe.Probe(noise, requireKnownContent: false);
+        var unfiltered = LzxGapProbe.Probe(noise, requireKnownContent: false,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.NotEmpty(unfiltered);
         Assert.All(unfiltered, hit => Assert.Equal("binary", hit.ContentSniff));
@@ -55,7 +56,8 @@ public class LzxGapProbeTests
         var payload = StampedPayload(8192);
         "BSA\0"u8.CopyTo(payload);
 
-        var hits = LzxGapProbe.Probe(BuildUncompressedLzxStream(payload));
+        var hits = LzxGapProbe.Probe(BuildUncompressedLzxStream(payload),
+            cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Contains(hits, h => h.ContentSniff == "bsa");
     }
@@ -68,7 +70,7 @@ public class LzxGapProbeTests
         var noise = new byte[256 * 1024];
         FillPseudoRandom(noise);
 
-        Assert.Empty(LzxGapProbe.Probe(noise));
+        Assert.Empty(LzxGapProbe.Probe(noise, cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -79,7 +81,8 @@ public class LzxGapProbeTests
 
         // A stream's own bytes contain many offsets that would decode as truncated sub-streams;
         // consuming the whole stream on a hit is what keeps one archive from becoming hundreds.
-        Assert.Single(LzxGapProbe.Probe(BuildUncompressedLzxStream(payload)));
+        Assert.Single(LzxGapProbe.Probe(BuildUncompressedLzxStream(payload),
+            cancellationToken: TestContext.Current.CancellationToken));
     }
 
     /// <summary>
@@ -100,7 +103,8 @@ public class LzxGapProbeTests
         payload.AsSpan().Fill((byte)'A');
         lead.CopyTo(payload, 0);
 
-        var hits = LzxGapProbe.Probe(BuildUncompressedLzxStream(payload), requireKnownContent: false);
+        var hits = LzxGapProbe.Probe(BuildUncompressedLzxStream(payload), requireKnownContent: false,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         var hit = Assert.Single(hits);
         Assert.Equal(expectText ? "text" : "binary", hit.ContentSniff);
@@ -132,10 +136,10 @@ public class LzxGapProbeTests
 
     private static void FillPseudoRandom(Span<byte> buffer)
     {
-        uint state = 0x9E3779B9;
+        var state = 0x9E3779B9;
         for (var i = 0; i < buffer.Length; i++)
         {
-            state = (state * 1664525) + 1013904223;
+            state = state * 1664525 + 1013904223;
             buffer[i] = (byte)(state >> 24);
         }
     }

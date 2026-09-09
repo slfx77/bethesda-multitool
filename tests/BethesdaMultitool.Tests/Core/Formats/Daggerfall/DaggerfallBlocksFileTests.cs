@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Text;
 using BethesdaMultitool.CLI.Rendering.Map;
 using BethesdaMultitool.Core.Formats.Daggerfall;
@@ -32,10 +29,12 @@ public class DaggerfallBlocksFileTests
                 new DaggerfallBlockFixture.BlockData([], []))
         ]);
         var rdb = DaggerfallBlockFixture.Rdb(1, 1, [("72100", "DOR")],
-            new Dictionary<int, IReadOnlyList<DaggerfallBlockFixture.RdbObject>> { [0] = [new DaggerfallBlockFixture.RdbObject(1, 0, 0, 0)] });
+            new Dictionary<int, IReadOnlyList<DaggerfallBlockFixture.RdbObject>>
+                { [0] = [new DaggerfallBlockFixture.RdbObject(1, 0, 0, 0)] });
         var rdi = new byte[512];
         var foo = Encoding.ASCII.GetBytes("\r\n Volume in drive C has no label");
-        var archive = DaggerfallBlockFixture.Archive(("TVRNAS00.RMB", rmb), ("N0000071.RDB", rdb), ("N0000071.RDI", rdi), ("FOO", foo));
+        var archive = DaggerfallBlockFixture.Archive(("TVRNAS00.RMB", rmb), ("N0000071.RDB", rdb),
+            ("N0000071.RDI", rdi), ("FOO", foo));
 
         var directory = Path.Combine(Path.GetTempPath(), "bmt-blocks-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
@@ -60,7 +59,7 @@ public class DaggerfallBlocksFileTests
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            Directory.Delete(directory, true);
         }
     }
 
@@ -76,7 +75,9 @@ public class DaggerfallBlocksFileTests
         Assert.Equal(64 * 64 * 4, ground.Length);
         Assert.Equal(255, ground[3]);
 
-        var rdb = DaggerfallRdbBlock.Parse(DaggerfallBlockFixture.Rdb(2, 1, [], new Dictionary<int, IReadOnlyList<DaggerfallBlockFixture.RdbObject>>()), "N.RDB");
+        var rdb = DaggerfallRdbBlock.Parse(
+            DaggerfallBlockFixture.Rdb(2, 1, [],
+                new Dictionary<int, IReadOnlyList<DaggerfallBlockFixture.RdbObject>>()), "N.RDB");
         var (plan, planWidth, planHeight) = DaggerfallBlockRenderer.RenderDungeonPlan(rdb, 64);
         Assert.Equal((64, 64, 64 * 64 * 4), (planWidth, planHeight, plan.Length));
 

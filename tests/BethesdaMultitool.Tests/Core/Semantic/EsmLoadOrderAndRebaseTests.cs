@@ -271,10 +271,10 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
         Assert.Equal(0x3456L, rebasedMalformed.Offset);
         Assert.True(rebasedMalformed.IsBigEndian);
 
-        Assert.Equal(0x0100_2000u, full.Definition!.CloudCardSequenceFormId);
+        Assert.Equal(0x0100_2000u, full.Definition.CloudCardSequenceFormId);
         Assert.Same(sourceLayers, full.Definition.Layers);
         Assert.Same(sourcePlanes, full.Definition.Planes);
-        Assert.Equal(0u, noSequence.Definition!.CloudCardSequenceFormId);
+        Assert.Equal(0u, noSequence.Definition.CloudCardSequenceFormId);
         Assert.Null(malformed.Definition);
     }
 
@@ -319,7 +319,7 @@ public sealed class EsmLoadOrderAndRebaseTests : IDisposable
             ]
         };
 
-        var namespacedSpacer = mapper!.Namespaced(spacerSource, "Spacer.esm");
+        var namespacedSpacer = mapper.Namespaced(spacerSource, "Spacer.esm");
         var namespacedClouds = mapper.Namespaced(cloudsSource, "Clouds.esm");
         var merged = namespacedSpacer.MergeWith(namespacedClouds);
 

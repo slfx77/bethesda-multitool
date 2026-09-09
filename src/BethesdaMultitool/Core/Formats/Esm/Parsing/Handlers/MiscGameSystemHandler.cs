@@ -352,7 +352,7 @@ internal sealed class MiscGameSystemHandler(RecordParserContext context) : Recor
                 // directional ambient cube lives in the separate DALC subrecord. Match exact,
                 // reviewed layouts so FO4/FO76's longer height-fog structures are not truncated.
                 case "DATA" when sub.DataLength == 40
-                                      || sub.DataLength == 92 && Context.Game == BethesdaGame.Skyrim:
+                                 || (sub.DataLength == 92 && Context.Game == BethesdaGame.Skyrim):
                 {
                     if (SubrecordSchemaView.TryRead("DATA", "LGTM", subData, record.IsBigEndian) is { } v)
                     {

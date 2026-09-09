@@ -1,3 +1,4 @@
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Redguard;
@@ -20,7 +21,8 @@ internal static class RedguardRecordSource
     public const string WorldRecordType = "RWLD";
 
     /// <summary>Reads <paramref name="dataRoot" /> and appends every synthesized record.</summary>
-    public static void Populate(string dataRoot, RecordCollection records, CancellationToken cancellationToken = default)
+    public static void Populate(string dataRoot, RecordCollection records,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dataRoot);
         ArgumentNullException.ThrowIfNull(records);
@@ -103,7 +105,8 @@ internal static class RedguardRecordSource
         }
 
         fields[label] = declared;
-        fields[label + "Present"] = File.Exists(Path.Combine(dataRoot, declared.Replace('\\', Path.DirectorySeparatorChar)));
+        fields[label + "Present"] =
+            File.Exists(Path.Combine(dataRoot, declared.Replace('\\', Path.DirectorySeparatorChar)));
     }
 
     private static bool IsModelled(string key)
@@ -121,6 +124,6 @@ internal static class RedguardRecordSource
     {
         return world.MapPath is { Length: > 0 } map
             ? Path.GetFileNameWithoutExtension(map).ToUpperInvariant()
-            : "WORLD" + world.Index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            : "WORLD" + world.Index.ToString(CultureInfo.InvariantCulture);
     }
 }

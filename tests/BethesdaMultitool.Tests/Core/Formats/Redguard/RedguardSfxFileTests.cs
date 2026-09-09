@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Redguard;
 using Xunit;
@@ -122,8 +119,8 @@ public sealed class RedguardSfxFileTests
     [Fact]
     public void Parse_RejectsBytesThatAreNotABank()
     {
-        Assert.Throws<InvalidDataException>(
-            () => RedguardSfxFile.Parse("not a sound bank at all"u8.ToArray(), "BAD.SFX"));
+        Assert.Throws<InvalidDataException>(() =>
+            RedguardSfxFile.Parse("not a sound bank at all"u8.ToArray(), "BAD.SFX"));
     }
 
     [Fact]

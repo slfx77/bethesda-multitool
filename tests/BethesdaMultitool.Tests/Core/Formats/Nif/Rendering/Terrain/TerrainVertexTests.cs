@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using Xunit;
 
@@ -42,7 +43,7 @@ public sealed class TerrainVertexTests
         // colour 16 + tangent 12 + bitangent 12, of which uv/tangent/bitangent were never read by
         // either terrain shader. It is now 60 — colour was later narrowed to R8G8B8A8_UNORM for the
         // reference path too — so the gap this test measures is against 60, not the original 72.
-        Assert.Equal(60, Unsafe.SizeOf<BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.GpuMeshUploader.GpuVertex>());
+        Assert.Equal(60, Unsafe.SizeOf<GpuMeshUploader.GpuVertex>());
         Assert.True(TerrainVertex.SizeInBytes * 5 <= 60, "expected at least a 5x reduction");
     }
 
@@ -53,8 +54,10 @@ public sealed class TerrainVertexTests
     [InlineData(0, 255, 0, 0xFF00FF00)]
     [InlineData(0, 0, 255, 0xFFFF0000)]
     [InlineData(18, 52, 86, 0xFF563412)]
-    public void PackColor_puts_red_in_the_low_byte(byte r, byte g, byte b, uint expected) =>
+    public void PackColor_puts_red_in_the_low_byte(byte r, byte g, byte b, uint expected)
+    {
         Assert.Equal(expected, TerrainVertex.PackColor(r, g, b));
+    }
 
     [Fact]
     public void Every_byte_triple_round_trips_exactly()
@@ -115,7 +118,7 @@ public sealed class TerrainVertexTests
             vertices[i] = new TerrainVertex(i, Vector3.UnitZ, TerrainVertex.PackColor((byte)i, 0, 0));
         }
 
-        var bytes = MemoryMarshal.AsBytes<TerrainVertex>(vertices);
+        var bytes = MemoryMarshal.AsBytes(vertices);
 
         Assert.Equal(4 * TerrainVertex.SizeInBytes, bytes.Length);
         // Third vertex's packed colour sits at 2*12 + 8 = 32, with red (= 2) in the low byte.

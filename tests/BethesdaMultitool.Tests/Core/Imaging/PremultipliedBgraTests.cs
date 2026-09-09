@@ -1,4 +1,3 @@
-using System;
 using BethesdaMultitool.Core.Imaging;
 using Xunit;
 

@@ -1,8 +1,12 @@
 namespace BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 
 /// <summary>
-///     One row of <c>entities.txt</c>, the install-wide entity registry: <c>id modelIndex kind
-///     name</c>. 735 data rows on retail, ids non-contiguous and running to 6023.
+///     One row of <c>entities.txt</c>, the install-wide entity registry:
+///     <c>
+///         id modelIndex kind
+///         name
+///     </c>
+///     . 735 data rows on retail, ids non-contiguous and running to 6023.
 ///     <para>
 ///         A <c>.ent</c> placement carries only the id (see <see cref="ShadowkeyEntity" />), so
 ///         this row is the hop that supplies the model — <see cref="ModelIndex" /> indexes

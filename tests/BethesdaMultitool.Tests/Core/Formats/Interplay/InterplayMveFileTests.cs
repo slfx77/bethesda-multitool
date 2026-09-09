@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Interplay;
 using Xunit;
@@ -37,7 +33,7 @@ public sealed class InterplayMveFileTests
     private static byte[] Movie(int trailing = 0, params byte[][] chunks)
     {
         var b = new List<byte>(Encoding.ASCII.GetBytes(InterplayMveFile.Signature));
-        b.AddRange([0x1A, 0x00, 0x1A, 0x00, 0x00, 0x01, 0x33, 0x11]);   // the 8 bytes after the text
+        b.AddRange([0x1A, 0x00, 0x1A, 0x00, 0x00, 0x01, 0x33, 0x11]); // the 8 bytes after the text
         foreach (var chunk in chunks)
         {
             b.AddRange(chunk);
@@ -66,7 +62,7 @@ public sealed class InterplayMveFileTests
         var movie = InterplayMveFile.Parse(
             Movie(0,
                 Chunk(2, Opcode(InterplayMveFile.PaletteOpcode, 0, 1, 0, 2, 0, 9, 9, 9, 8, 8, 8),
-                         Opcode(InterplayMveFile.EndOfChunkOpcode, 0)),
+                    Opcode(InterplayMveFile.EndOfChunkOpcode, 0)),
                 Chunk(1, Opcode(0x08, 0, 1, 2, 3, 4), Opcode(InterplayMveFile.EndOfChunkOpcode, 0))),
             "T.MVE");
 
@@ -80,8 +76,8 @@ public sealed class InterplayMveFileTests
     public void Parse_RejectsTrailingBytes()
     {
         // The chunks must reach EOF exactly — that is what makes this a parse and not a sniff.
-        var error = Assert.Throws<InvalidDataException>(
-            () => InterplayMveFile.Parse(Movie(3, Chunk(2, Opcode(InterplayMveFile.EndOfChunkOpcode, 0))), "BAD.MVE"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            InterplayMveFile.Parse(Movie(3, Chunk(2, Opcode(InterplayMveFile.EndOfChunkOpcode, 0))), "BAD.MVE"));
         Assert.Contains("chunks end at", error.Message, StringComparison.Ordinal);
     }
 
@@ -89,7 +85,7 @@ public sealed class InterplayMveFileTests
     public void Parse_RejectsAChunkRunningPastTheFile()
     {
         var b = Movie(0, Chunk(2, Opcode(InterplayMveFile.EndOfChunkOpcode, 0)));
-        b[InterplayMveFile.HeaderLength] = 0xFF;   // inflate the chunk length
+        b[InterplayMveFile.HeaderLength] = 0xFF; // inflate the chunk length
 
         Assert.Throws<InvalidDataException>(() => InterplayMveFile.Parse(b, "BAD.MVE"));
     }
@@ -104,6 +100,6 @@ public sealed class InterplayMveFileTests
     public void IsMveFile_ChecksTheSignature()
     {
         Assert.True(InterplayMveFile.IsMveFile(Movie(0, Chunk(0, Opcode(InterplayMveFile.EndOfChunkOpcode, 0)))));
-        Assert.False(InterplayMveFile.IsMveFile("Interplay AVI File\x1a\0......"u8.ToArray()));
+        Assert.False(InterplayMveFile.IsMveFile("Interplay AVI File\u001a\0......"u8.ToArray()));
     }
 }

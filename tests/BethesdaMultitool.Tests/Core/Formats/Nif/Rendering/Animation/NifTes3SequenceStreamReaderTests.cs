@@ -95,13 +95,14 @@ public sealed class NifTes3SequenceStreamReaderTests
             case "trailing-key-data": nif.Blocks[9].Size++; break;
             default: throw new InvalidOperationException("Unknown fixture mutation.");
         }
+
         Assert.Empty(NifTes3SequenceStreamReader.ReadAll(data, nif));
     }
 
     [Fact]
     public void AuthoredRotationDoesNotSlipIntoTheTranslationOnlyRoute()
     {
-        var data = CreateSequence(false, addRotation: true);
+        var data = CreateSequence(false, true);
         var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
         Assert.Equal(11, nif.Blocks.Count);
         Assert.Empty(NifTes3SequenceStreamReader.ReadAll(data, nif));
@@ -116,6 +117,7 @@ public sealed class NifTes3SequenceStreamReaderTests
         {
             BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(block.DataOffset + 4), 12);
         }
+
         Assert.Empty(NifTes3SequenceStreamReader.ReadAll(data, nif));
     }
 
@@ -150,6 +152,7 @@ public sealed class NifTes3SequenceStreamReaderTests
                 WriteName(writer, name);
             })));
         }
+
         for (var index = 0; index < names.Length; index++)
         {
             var next = NextReference(index, 5, reversePhysicalOrder);
@@ -165,6 +168,7 @@ public sealed class NifTes3SequenceStreamReaderTests
                 writer.Write(8 + index);
             })));
         }
+
         for (var index = 0; index < names.Length; index++)
         {
             blocks.Add(("NiKeyframeData", Payload(writer =>
@@ -177,6 +181,7 @@ public sealed class NifTes3SequenceStreamReaderTests
                 writer.Write(0);
             })));
         }
+
         return Payload(writer =>
         {
             writer.Write(Encoding.ASCII.GetBytes("NetImmerse File Format, Version 4.0.0.2\n"));
@@ -187,6 +192,7 @@ public sealed class NifTes3SequenceStreamReaderTests
                 WriteName(writer, block.Type);
                 writer.Write(block.Data);
             }
+
             writer.Write(1);
             writer.Write(0);
         });
@@ -203,6 +209,7 @@ public sealed class NifTes3SequenceStreamReaderTests
         {
             offset = index < 2 ? index + 1 : -1;
         }
+
         return offset < 0 ? -1 : first + offset;
     }
 
@@ -242,15 +249,19 @@ public sealed class NifTes3SequenceStreamReaderTests
     private static byte[] Payload(Action<BinaryWriter> write)
     {
         using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
         write(writer);
         writer.Flush();
         return stream.ToArray();
     }
 
-    private static void WriteInt(byte[] data, int offset, int value) =>
+    private static void WriteInt(byte[] data, int offset, int value)
+    {
         BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(offset), value);
+    }
 
-    private static void WriteFloat(byte[] data, int offset, float value) =>
+    private static void WriteFloat(byte[] data, int offset, float value)
+    {
         WriteInt(data, offset, BitConverter.SingleToInt32Bits(value));
+    }
 }

@@ -99,7 +99,10 @@ internal readonly record struct SceneSkyColorTransform(float Scale, float Bias)
 {
     internal static SceneSkyColorTransform Identity { get; } = new(1f, 0f);
 
-    internal Vector3 Apply(Vector3 color) => (color * Scale) + new Vector3(Bias);
+    internal Vector3 Apply(Vector3 color)
+    {
+        return color * Scale + new Vector3(Bias);
+    }
 }
 
 /// <summary>

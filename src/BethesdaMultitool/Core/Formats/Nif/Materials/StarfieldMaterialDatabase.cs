@@ -47,6 +47,7 @@ internal sealed partial class StarfieldMaterialDatabase
 
     /// <summary>CE2 scalar PBR maps occupy slots 3..5 and are sampled from their red channels.</summary>
     private const int RoughnessSlot = 3;
+
     private const int MetalnessSlot = 4;
     private const int AmbientOcclusionSlot = 5;
 
@@ -63,21 +64,27 @@ internal sealed partial class StarfieldMaterialDatabase
     private const uint UvStreamsRootFileCrc = 0x4298BB09; // uvstreams
 
     private static readonly uint[] Crc32Table = BuildCrc32Table();
+    private readonly Dictionary<uint, StarfieldMaterialAlphaBlenderMode> _alphaBlenderModeByObject = [];
+    private readonly Dictionary<uint, float> _alphaContrastByObject = [];
+    private readonly Dictionary<uint, bool> _alphaHasOpacityByObject = [];
+    private readonly Dictionary<uint, float> _alphaHeightBlendFactorByObject = [];
+    private readonly Dictionary<uint, float> _alphaHeightBlendThresholdByObject = [];
+    private readonly Dictionary<uint, float> _alphaPositionByObject = [];
+
+    // AlphaSettings lives on the root CE2Material (object type 1), not on the layer material.
+    // Keep every field separate: a DIFF component may override just one nested member and inherits
+    // every other member independently from the base object.
+    private readonly HashSet<uint> _alphaSettingsObjects = [];
+    private readonly Dictionary<uint, int> _alphaSourceLayerByObject = [];
+    private readonly Dictionary<uint, float> _alphaThresholdByObject = [];
+    private readonly Dictionary<uint, bool> _alphaUsesDetailBlendMaskByObject = [];
+    private readonly Dictionary<uint, bool> _alphaUsesDitheredTransparencyByObject = [];
+    private readonly Dictionary<uint, bool> _alphaUsesVertexColorByObject = [];
+    private readonly Dictionary<uint, uint> _alphaUvStreamByObject = [];
+    private readonly Dictionary<uint, StarfieldMaterialColorChannel> _alphaVertexColorChannelByObject = [];
 
     /// <summary>dbID → the object it inherits from (shader-model templates like LayeredMaterials.mat).</summary>
     private readonly Dictionary<uint, uint> _baseByObject = [];
-
-    /// <summary>Every non-zero dbID declared by ObjectInfo, including synthetic material sub-objects.</summary>
-    private readonly HashSet<uint> _objectIds = [];
-
-    /// <summary>dbID → file-backed resource ID, when ObjectInfo gives the object one.</summary>
-    private readonly Dictionary<uint, (uint Dir, uint File, uint Ext)> _resourceIdByObject = [];
-
-    /// <summary>
-    ///     dbID → wide-ObjectInfo parent resource. Retail writes this alongside the numeric base ID;
-    ///     the reference reader consults it only when the numeric lookup fails and <c>hasData</c> is set.
-    /// </summary>
-    private readonly Dictionary<uint, (uint Dir, uint File, uint Ext)> _parentResourceIdByObject = [];
 
     /// <summary>
     ///     Objects reached through a <c>BSMaterial::BlenderID</c>. A blender's own texture is the MASK
@@ -90,6 +97,12 @@ internal sealed partial class StarfieldMaterialDatabase
     /// <summary>Material dbID → its blender objects by blender index.</summary>
     private readonly Dictionary<uint, Dictionary<int, uint>> _blendersByObject = [];
 
+    /// <summary>parent dbID → its child dbIDs, from the edge table.</summary>
+    private readonly Dictionary<uint, List<uint>> _childrenByObject = [];
+
+    /// <summary>Reflection class name → field count, needed for versioned component tails.</summary>
+    private readonly Dictionary<string, ushort> _classFieldCounts = new(StringComparer.Ordinal);
+
     /// <summary>
     ///     Blender dbID → the vertex-colour channel its layer mask consumes. This does NOT mean
     ///     the base material uses vertex colour as an RGB tint; that is a separate ParamBool on the
@@ -97,8 +110,22 @@ internal sealed partial class StarfieldMaterialDatabase
     /// </summary>
     private readonly Dictionary<uint, StarfieldMaterialColorChannel> _colorChannelByBlender = [];
 
-    /// <summary>parent dbID → its child dbIDs, from the edge table.</summary>
-    private readonly Dictionary<uint, List<uint>> _childrenByObject = [];
+    private readonly Dictionary<uint, StarfieldMaterialEffectBlendMode> _effectBlendModeByObject = [];
+    private readonly Dictionary<uint, bool> _effectHasFrostingByObject = [];
+    private readonly Dictionary<uint, bool> _effectIsGlassByObject = [];
+    private readonly Dictionary<uint, float> _effectMaterialAlphaByObject = [];
+
+    // Effect OpacityComponent defaults select layer 0 with no secondary layers.
+    private readonly HashSet<uint> _effectOpacityObjects = [];
+    private readonly Dictionary<uint, bool> _effectOpacitySecondLayerActiveByObject = [];
+    private readonly Dictionary<uint, int> _effectOpacitySourceLayerByObject = [];
+    private readonly Dictionary<uint, bool> _effectOpacityThirdLayerActiveByObject = [];
+
+    // EffectSettings lives on the root CE2Material. Keep the fields used by the bounded glTF alpha
+    // projection separate so a DIFF may replace one member while inheriting every other member.
+    private readonly HashSet<uint> _effectSettingsObjects = [];
+    private readonly Dictionary<uint, bool> _effectUsesVertexColorByObject = [];
+    private readonly HashSet<uint> _layeredEdgeFalloffObjects = [];
 
     /// <summary>
     ///     Material dbID → its layer objects by layer index. A CE2 material is a STACK of layers, and
@@ -106,61 +133,19 @@ internal sealed partial class StarfieldMaterialDatabase
     /// </summary>
     private readonly Dictionary<uint, Dictionary<int, uint>> _layersByObject = [];
 
-    /// <summary>Layer/blender dbID → the UV-stream object selected by <c>UVStreamID</c>.</summary>
-    private readonly Dictionary<uint, uint> _uvStreamByObject = [];
-
-    // UVStream fields inherit independently. DIFF may override only X or Y inside the nested
-    // XMFLOAT2, so storing a Vector2 per object would incorrectly erase the untouched base member.
-    private readonly Dictionary<uint, float> _uvScaleXByObject = [];
-    private readonly Dictionary<uint, float> _uvScaleYByObject = [];
-    private readonly Dictionary<uint, float> _uvOffsetXByObject = [];
-    private readonly Dictionary<uint, float> _uvOffsetYByObject = [];
-    private readonly Dictionary<uint, StarfieldMaterialTextureAddressMode> _uvAddressModeByObject = [];
-    private readonly Dictionary<uint, StarfieldMaterialUvChannel> _uvChannelByObject = [];
-    private readonly HashSet<uint> _malformedUvObjects = [];
-
-    /// <summary>Root material dbID → authored shader route; Deferred is the constructor default.</summary>
-    private readonly Dictionary<uint, StarfieldMaterialShaderRoute> _shaderRouteByObject = [];
-    private readonly HashSet<uint> _malformedShaderRouteObjects = [];
-
-    /// <summary>Root material shader model; constructor default is BaseMaterial.</summary>
-    private readonly Dictionary<uint, string> _shaderModelByObject = [];
-    private readonly HashSet<uint> _malformedShaderModelObjects = [];
-
-    // EffectSettings lives on the root CE2Material. Keep the fields used by the bounded glTF alpha
-    // projection separate so a DIFF may replace one member while inheriting every other member.
-    private readonly HashSet<uint> _effectSettingsObjects = [];
-    private readonly Dictionary<uint, bool> _effectIsGlassByObject = [];
-    private readonly Dictionary<uint, bool> _effectHasFrostingByObject = [];
-    private readonly Dictionary<uint, bool> _effectUsesVertexColorByObject = [];
-    private readonly Dictionary<uint, float> _effectMaterialAlphaByObject = [];
-    private readonly Dictionary<uint, StarfieldMaterialEffectBlendMode> _effectBlendModeByObject = [];
-    private readonly HashSet<uint> _malformedEffectSettingsObjects = [];
-    private readonly HashSet<uint> _layeredEdgeFalloffObjects = [];
-
-    // Effect OpacityComponent defaults select layer 0 with no secondary layers.
-    private readonly HashSet<uint> _effectOpacityObjects = [];
-    private readonly Dictionary<uint, int> _effectOpacitySourceLayerByObject = [];
-    private readonly Dictionary<uint, bool> _effectOpacitySecondLayerActiveByObject = [];
-    private readonly Dictionary<uint, bool> _effectOpacityThirdLayerActiveByObject = [];
+    private readonly HashSet<uint> _malformedAlphaSettingsObjects = [];
     private readonly HashSet<uint> _malformedEffectOpacityObjects = [];
+    private readonly HashSet<uint> _malformedEffectSettingsObjects = [];
 
-    /// <summary>Reflection class name → field count, needed for versioned component tails.</summary>
-    private readonly Dictionary<string, ushort> _classFieldCounts = new(StringComparer.Ordinal);
-
-    /// <summary>
-    ///     Root CE2Material dbID → locally authored Flag_TwoSided setters in component-list order.
-    ///     Derived components replace an inherited component key without moving its base-list
-    ///     position, so resolving only the nearest setter would not reproduce copyBaseObject.
-    /// </summary>
-    private readonly Dictionary<uint, List<TwoSidedSetter>> _twoSidedSettersByObject = [];
+    private readonly HashSet<uint> _malformedMaterialGraphObjects = [];
+    private readonly HashSet<uint> _malformedShaderModelObjects = [];
+    private readonly HashSet<uint> _malformedShaderRouteObjects = [];
+    private readonly HashSet<uint> _malformedTextureObjects = [];
     private readonly HashSet<uint> _malformedTwoSidedObjects = [];
+    private readonly HashSet<uint> _malformedUvObjects = [];
 
     /// <summary>Layer dbID → the material object it uses.</summary>
     private readonly Dictionary<uint, uint> _materialByLayer = [];
-
-    /// <summary>Objects reached through a layer's <c>BSMaterial::MaterialID</c> (object type 4).</summary>
-    private readonly HashSet<uint> _materialObjects = [];
 
     /// <summary>Layer-material dbID → authored material colour at its original XMFLOAT4 precision.</summary>
     private readonly Dictionary<uint, Vector4> _materialColorByObject = [];
@@ -175,6 +160,9 @@ internal sealed partial class StarfieldMaterialDatabase
     /// </summary>
     private readonly Dictionary<uint, bool> _materialIsFlipbookByObject = [];
 
+    /// <summary>Objects reached through a layer's <c>BSMaterial::MaterialID</c> (object type 4).</summary>
+    private readonly HashSet<uint> _materialObjects = [];
+
     /// <summary>
     ///     Layer-material dbID → whether mesh vertex colour is a surface tint. The identical
     ///     ParamBool slot on a root CE2Material means two-sided instead, so callers must resolve this
@@ -182,27 +170,17 @@ internal sealed partial class StarfieldMaterialDatabase
     /// </summary>
     private readonly Dictionary<uint, bool> _materialUsesVertexColorByObject = [];
 
-    // AlphaSettings lives on the root CE2Material (object type 1), not on the layer material.
-    // Keep every field separate: a DIFF component may override just one nested member and inherits
-    // every other member independently from the base object.
-    private readonly HashSet<uint> _alphaSettingsObjects = [];
-    private readonly Dictionary<uint, bool> _alphaHasOpacityByObject = [];
-    private readonly Dictionary<uint, float> _alphaThresholdByObject = [];
-    private readonly Dictionary<uint, int> _alphaSourceLayerByObject = [];
-    private readonly Dictionary<uint, StarfieldMaterialAlphaBlenderMode> _alphaBlenderModeByObject = [];
-    private readonly Dictionary<uint, bool> _alphaUsesDetailBlendMaskByObject = [];
-    private readonly Dictionary<uint, bool> _alphaUsesVertexColorByObject = [];
-    private readonly Dictionary<uint, StarfieldMaterialColorChannel> _alphaVertexColorChannelByObject = [];
-    private readonly Dictionary<uint, uint> _alphaUvStreamByObject = [];
-    private readonly Dictionary<uint, float> _alphaHeightBlendThresholdByObject = [];
-    private readonly Dictionary<uint, float> _alphaHeightBlendFactorByObject = [];
-    private readonly Dictionary<uint, float> _alphaPositionByObject = [];
-    private readonly Dictionary<uint, float> _alphaContrastByObject = [];
-    private readonly Dictionary<uint, bool> _alphaUsesDitheredTransparencyByObject = [];
-    private readonly HashSet<uint> _malformedAlphaSettingsObjects = [];
-
     /// <summary>Resource ID (dir, file, ext CRCs) → dbID, for resolving a <c>.mat</c> path.</summary>
     private readonly Dictionary<(uint Dir, uint File, uint Ext), uint> _objectByResourceId = [];
+
+    /// <summary>Every non-zero dbID declared by ObjectInfo, including synthetic material sub-objects.</summary>
+    private readonly HashSet<uint> _objectIds = [];
+
+    /// <summary>
+    ///     dbID → wide-ObjectInfo parent resource. Retail writes this alongside the numeric base ID;
+    ///     the reference reader consults it only when the numeric lookup fails and <c>hasData</c> is set.
+    /// </summary>
+    private readonly Dictionary<uint, (uint Dir, uint File, uint Ext)> _parentResourceIdByObject = [];
 
     /// <summary>
     ///     Texture-set dbID → per-slot flat colour standing in for an absent texture
@@ -211,6 +189,15 @@ internal sealed partial class StarfieldMaterialDatabase
     /// </summary>
     private readonly Dictionary<uint, Dictionary<int, TextureReplacementOverride>> _replacementsByObject = [];
 
+    /// <summary>dbID → file-backed resource ID, when ObjectInfo gives the object one.</summary>
+    private readonly Dictionary<uint, (uint Dir, uint File, uint Ext)> _resourceIdByObject = [];
+
+    /// <summary>Root material shader model; constructor default is BaseMaterial.</summary>
+    private readonly Dictionary<uint, string> _shaderModelByObject = [];
+
+    /// <summary>Root material dbID → authored shader route; Deferred is the constructor default.</summary>
+    private readonly Dictionary<uint, StarfieldMaterialShaderRoute> _shaderRouteByObject = [];
+
     /// <summary>
     ///     dbID → texture declarations by slot. Empty paths are retained because they explicitly clear
     ///     an inherited image; MRTextureFile is also retained because only that class may replace an
@@ -218,11 +205,28 @@ internal sealed partial class StarfieldMaterialDatabase
     /// </summary>
     private readonly Dictionary<uint, Dictionary<int, TexturePathOverride>> _texturesByObject = [];
 
-    private readonly HashSet<uint> _malformedMaterialGraphObjects = [];
-    private readonly HashSet<uint> _malformedTextureObjects = [];
-
     /// <summary>Material dbID → the texture-set object it uses.</summary>
     private readonly Dictionary<uint, uint> _textureSetByMaterial = [];
+
+    /// <summary>
+    ///     Root CE2Material dbID → locally authored Flag_TwoSided setters in component-list order.
+    ///     Derived components replace an inherited component key without moving its base-list
+    ///     position, so resolving only the nearest setter would not reproduce copyBaseObject.
+    /// </summary>
+    private readonly Dictionary<uint, List<TwoSidedSetter>> _twoSidedSettersByObject = [];
+
+    private readonly Dictionary<uint, StarfieldMaterialTextureAddressMode> _uvAddressModeByObject = [];
+    private readonly Dictionary<uint, StarfieldMaterialUvChannel> _uvChannelByObject = [];
+    private readonly Dictionary<uint, float> _uvOffsetXByObject = [];
+    private readonly Dictionary<uint, float> _uvOffsetYByObject = [];
+
+    // UVStream fields inherit independently. DIFF may override only X or Y inside the nested
+    // XMFLOAT2, so storing a Vector2 per object would incorrectly erase the untouched base member.
+    private readonly Dictionary<uint, float> _uvScaleXByObject = [];
+    private readonly Dictionary<uint, float> _uvScaleYByObject = [];
+
+    /// <summary>Layer/blender dbID → the UV-stream object selected by <c>UVStreamID</c>.</summary>
+    private readonly Dictionary<uint, uint> _uvStreamByObject = [];
 
     /// <summary>Objects whose components were successfully decoded (diagnostics).</summary>
     public int TextureObjectCount => _texturesByObject.Count;
@@ -552,9 +556,9 @@ internal sealed partial class StarfieldMaterialDatabase
                         InheritedContains(_malformedShaderModelObjects, root) ||
                         InheritedContains(_malformedUvObjects, layer) ||
                         InheritedContains(_malformedTextureObjects, textureSet) ||
-                        uvStream != 0 &&
-                        (!IsObjectTypeRootedAt(uvStream, UvStreamsRootFileCrc) ||
-                         InheritedContains(_malformedUvObjects, uvStream));
+                        (uvStream != 0 &&
+                         (!IsObjectTypeRootedAt(uvStream, UvStreamsRootFileCrc) ||
+                          InheritedContains(_malformedUvObjects, uvStream)));
         var scale = uvStream == 0
             ? Vector2.One
             : new Vector2(
@@ -715,8 +719,8 @@ internal sealed partial class StarfieldMaterialDatabase
             _alphaVertexColorChannelByObject, root, StarfieldMaterialColorChannel.Red);
         var uvStream = InheritedOrDefault(_alphaUvStreamByObject, root, 0u);
         var uvIsWellFormed = uvStream == 0 ||
-                             IsObjectTypeRootedAt(uvStream, UvStreamsRootFileCrc) &&
-                             !InheritedContains(_malformedUvObjects, uvStream);
+                             (IsObjectTypeRootedAt(uvStream, UvStreamsRootFileCrc) &&
+                              !InheritedContains(_malformedUvObjects, uvStream));
         var uvScale = uvStream == 0
             ? Vector2.One
             : new Vector2(
@@ -1098,14 +1102,6 @@ internal sealed partial class StarfieldMaterialDatabase
             "Water1Layer";
     }
 
-    private enum TwoSidedSetterKind : byte
-    {
-        ShaderModel,
-        ParamBool
-    }
-
-    private readonly record struct TwoSidedSetter(TwoSidedSetterKind Kind, bool Value);
-
     /// <summary>
     ///     A texture set's effective image and replacement inherit independently. The renderer uses
     ///     the replacement only when the effective image is empty/unavailable, matching getSFTexture.
@@ -1374,10 +1370,10 @@ internal sealed partial class StarfieldMaterialDatabase
         switch (className)
         {
             case "BSMaterial::MRTextureFile":
-                ReadTextureFile(body, owner, slot, isDiff, isMultiResolution: true);
+                ReadTextureFile(body, owner, slot, isDiff, true);
                 break;
             case "BSMaterial::TextureFile":
-                ReadTextureFile(body, owner, slot, isDiff, isMultiResolution: false);
+                ReadTextureFile(body, owner, slot, isDiff, false);
                 break;
 
             // Each of these wraps a single BSComponentDB2::ID (a 4-byte dbID reference).
@@ -1769,8 +1765,8 @@ internal sealed partial class StarfieldMaterialDatabase
                     when TryReadSingle(body, ref pos, out _):
                     break;
                 case 32 when _classFieldCounts.GetValueOrDefault(
-                                      "BSMaterial::EffectSettingsComponent") >= 34 &&
-                                  TryReadByte(body, ref pos, out _):
+                                 "BSMaterial::EffectSettingsComponent") >= 34 &&
+                             TryReadByte(body, ref pos, out _):
                     break;
                 case 32 when TryReadUInt16(body, ref pos, out _):
                 case 33 when TryReadUInt16(body, ref pos, out _):
@@ -2975,6 +2971,14 @@ internal sealed partial class StarfieldMaterialDatabase
 
         return table;
     }
+
+    private enum TwoSidedSetterKind : byte
+    {
+        ShaderModel,
+        ParamBool
+    }
+
+    private readonly record struct TwoSidedSetter(TwoSidedSetterKind Kind, bool Value);
 
     internal readonly record struct TexturePathOverride(string Path, bool IsMultiResolution);
 

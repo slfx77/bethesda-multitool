@@ -5,11 +5,16 @@ using SharpGLTF.Geometry.VertexTypes;
 using SharpGLTF.Materials;
 using SharpGLTF.Memory;
 using SharpGLTF.Scenes;
+using SharpGLTF.Schema2;
 
 namespace BethesdaMultitool.Core.Formats.Xngine.Mesh;
 
-/// <summary>A decoded texture as PNG bytes plus its pixel size, used to normalise texel UVs.</summary>
-internal sealed record XnGineTexturePng(byte[] Png, int Width, int Height);
+/// <summary>
+///     A decoded texture as PNG bytes plus its pixel size, used to normalise texel UVs. An optional
+///     <paramref name="Name" /> names the GLB material (a Battlespire BSI stem such as
+///     <c>wall35</c>); without one the material is named by its (archive, record) pair.
+/// </summary>
+internal sealed record XnGineTexturePng(byte[] Png, int Width, int Height, string? Name = null);
 
 /// <summary>One placed copy of a mesh: the mesh and its transform in the game's Y-down space.</summary>
 internal sealed record XnGineMeshInstance(XnGineTriangleMesh Mesh, Matrix4x4 Transform, string Name);
@@ -42,7 +47,8 @@ internal static class XnGineMeshGlbExporter
         Build(mesh, textureProvider).SaveGLB(outputPath);
     }
 
-    public static byte[] WriteToBytes(XnGineTriangleMesh mesh, Func<int, int, XnGineTexturePng?>? textureProvider = null)
+    public static byte[] WriteToBytes(XnGineTriangleMesh mesh,
+        Func<int, int, XnGineTexturePng?>? textureProvider = null)
     {
         ArgumentNullException.ThrowIfNull(mesh);
 
@@ -90,7 +96,7 @@ internal static class XnGineMeshGlbExporter
         return stream.ToArray();
     }
 
-    private static SharpGLTF.Schema2.ModelRoot BuildScene(
+    private static ModelRoot BuildScene(
         string sceneName,
         IEnumerable<XnGineMeshInstance> instances,
         Func<int, int, XnGineTexturePng?>? textureProvider)
@@ -101,7 +107,8 @@ internal static class XnGineMeshGlbExporter
         // conjugation keeps the determinant positive, so the reversed winding stays correct.
         var flip = Matrix4x4.CreateScale(1, -1, 1);
         var scene = new SceneBuilder(sceneName);
-        var built = new Dictionary<XnGineTriangleMesh, MeshBuilder<VertexPositionNormal, VertexTexture1, VertexEmpty>>();
+        var built =
+            new Dictionary<XnGineTriangleMesh, MeshBuilder<VertexPositionNormal, VertexTexture1, VertexEmpty>>();
 
         foreach (var instance in instances)
         {
@@ -117,7 +124,7 @@ internal static class XnGineMeshGlbExporter
         return scene.ToGltf2();
     }
 
-    private static SharpGLTF.Schema2.ModelRoot Build(XnGineTriangleMesh mesh, Func<int, int, XnGineTexturePng?>? textureProvider)
+    private static ModelRoot Build(XnGineTriangleMesh mesh, Func<int, int, XnGineTexturePng?>? textureProvider)
     {
         var scene = new SceneBuilder("mesh_" + mesh.ObjectId.ToString(CultureInfo.InvariantCulture));
         scene.AddRigidMesh(BuildMesh(mesh, textureProvider), Matrix4x4.Identity);
@@ -159,7 +166,8 @@ internal static class XnGineMeshGlbExporter
 
     private static MaterialBuilder CreateMaterial(XnGineSubMesh subMesh, XnGineTexturePng? texture)
     {
-        var name = string.Create(CultureInfo.InvariantCulture, $"TEXTURE.{subMesh.TextureArchive:D3}#{subMesh.TextureRecord}");
+        var name = texture?.Name ?? string.Create(CultureInfo.InvariantCulture,
+            $"TEXTURE.{subMesh.TextureArchive:D3}#{subMesh.TextureRecord}");
         var material = new MaterialBuilder(name)
             .WithDoubleSide(true)
             .WithMetallicRoughnessShader()

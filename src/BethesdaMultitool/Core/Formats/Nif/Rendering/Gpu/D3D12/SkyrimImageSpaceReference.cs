@@ -13,8 +13,6 @@ internal static class SkyrimImageSpaceReference
 {
     internal const float MinimumAdaptationStep = 1f / 256f;
 
-    internal readonly record struct AdaptationFactors(float Fast, float Slow);
-
     /// <summary>
     ///     Resolves the two factors written to the retail adapt shader's Param.zw. Inputs are deliberately
     ///     not clamped here: valid IMGS data is passed through the recovered equations literally.
@@ -74,4 +72,6 @@ internal static class SkyrimImageSpaceReference
         return settings.Contrast * (settings.Brightness * graded - new Vector3(adaptedSlow))
                + new Vector3(adaptedSlow);
     }
+
+    internal readonly record struct AdaptationFactors(float Fast, float Slow);
 }

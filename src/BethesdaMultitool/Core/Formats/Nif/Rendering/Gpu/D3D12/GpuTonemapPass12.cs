@@ -49,7 +49,9 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
     private const int ReductionRtvStart = 2;
     private const int BrightPassBlurRtvSlot = ReductionRtvStart + ClassicHdrPassPlan.MaxReductionLevels;
     private const int BlurRtvSlot = BrightPassBlurRtvSlot + 1;
+
     private const int RtvBankSize = BlurRtvSlot + 1;
+
     // Two banks retain the floor-quarter and ceiling-quarter target families concurrently. A live
     // cross-game switch can therefore stop using one family without rewriting descriptors or
     // destroying resources still referenced by an in-flight frame.
@@ -65,63 +67,70 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
     // then samples the freshly written side. Both start in PixelShaderResource.
     private readonly ID3D12Resource[] _avgTextures = new ID3D12Resource[2];
     private readonly ID3D12PipelineState _bloomPso;
+
     private readonly ID3D12PipelineState _blurPso;
+
+    // A failed constructor never reaches GpuSwapChainSurface12 ownership. Track each COM resource
+    // until the whole immutable tonemap graph exists, then transfer it to the normal Dispose path.
+    private readonly TonemapConstructionTransaction? _constructionTransaction = new();
     private readonly ID3D12PipelineState _downsamplePso;
-    private readonly ID3D12PipelineState _skyrimDownsamplePso;
-    private readonly ID3D12PipelineState _skyrimLuminancePso;
-    private readonly ID3D12PipelineState _tes4BlurPso;
-    private readonly ID3D12PipelineState _tes4BrightPassPso;
 
     private readonly GpuDevice12 _gpu;
 
     private readonly ID3D12PipelineState _pso;
 
-    // Recursive /4 DownSample16 targets. Level 0 is retained as the BrightPassBlur source. Classic
-    // ends at 1x1; primed Skyrim frames retain the preceding level for fused reduction + ADAPT.
-    private ID3D12Resource?[] _reductionTextures =
-        new ID3D12Resource?[ClassicHdrPassPlan.MaxReductionLevels];
+    private readonly ID3D12RootSignature _rootSignature;
+    private readonly ID3D12PipelineState _skyrimDownsamplePso;
+    private readonly ID3D12PipelineState _skyrimLuminancePso;
+    private readonly uint _srvDescriptorSize;
+    private readonly ID3D12DescriptorHeap _srvHeap;
+    private readonly ID3D12PipelineState _tes4BlurPso;
+    private readonly ID3D12PipelineState _tes4BrightPassPso;
+    private bool _adaptPrimed;
+    private int _alternateBloomHeight;
+    private ID3D12Resource? _alternateBloomTexture;
+    private int _alternateBloomWidth;
+    private ID3D12Resource? _alternateBrightPassBlurTexture;
+    private HdrReductionDimensionRule _alternateClassicDimensionRule;
+    private int _alternateClassicSourceHeight;
+    private int _alternateClassicSourceWidth;
+    private int _alternateReductionLevelCount;
+
     private ID3D12Resource?[] _alternateReductionTextures =
         new ID3D12Resource?[ClassicHdrPassPlan.MaxReductionLevels];
 
-    private readonly ID3D12RootSignature _rootSignature;
-    private readonly uint _srvDescriptorSize;
-    private readonly ID3D12DescriptorHeap _srvHeap;
-    private bool _adaptPrimed;
+    private int _alternateRtvBank = 1;
     private int _avgWriteIndex;
     private int _bloomHeight;
     private ID3D12Resource? _bloomTexture;
     private int _bloomWidth;
     private ID3D12Resource? _brightPassBlurTexture;
-    private int _alternateBloomHeight;
-    private ID3D12Resource? _alternateBloomTexture;
-    private int _alternateBloomWidth;
-    private ID3D12Resource? _alternateBrightPassBlurTexture;
-    private int _alternateClassicSourceHeight;
-    private int _alternateClassicSourceWidth;
-    private HdrReductionDimensionRule _alternateClassicDimensionRule;
-    private int _alternateReductionLevelCount;
-    private int _alternateRtvBank = 1;
-    private int _classicSourceHeight;
-    private int _classicSourceWidth;
     private HdrReductionDimensionRule _classicDimensionRule;
     private int _classicRtvBank;
-    // A failed constructor never reaches GpuSwapChainSurface12 ownership. Track each COM resource
-    // until the whole immutable tonemap graph exists, then transfer it to the normal Dispose path.
-    private readonly TonemapConstructionTransaction? _constructionTransaction = new();
+    private int _classicSourceHeight;
+    private int _classicSourceWidth;
     private bool _disposed;
+    private TonemapLogicalHistoryState? _historyBeforeCurrentCommandList;
+
+    private GpuCommandRecorder12? _historyTransactionRecorder;
+
     // Null represents a non-adaptive composite. Keep the exact adaptive operator identity rather
     // than only a bool: Skyrim stores two scalar luminance lanes in the history texture, whereas
     // the classic FO3/FNV/Bloom path stores RGB. Reinterpreting either layout after a live mode
     // switch corrupts exposure until it happens to converge again.
     private GpuTonemapMode? _lastAdaptiveMode;
-    private TonemapLogicalHistoryState? _historyBeforeCurrentCommandList;
-    private GpuCommandRecorder12? _historyTransactionRecorder;
     private Format _lastHistoryFormat = Format.Unknown;
     private int _lastHistoryHeight;
     private ulong _lastHistoryKey = ulong.MaxValue;
     private ID3D12Resource? _lastHistoryTarget;
     private int _lastHistoryWidth;
     private int _reductionLevelCount;
+
+    // Recursive /4 DownSample16 targets. Level 0 is retained as the BrightPassBlur source. Classic
+    // ends at 1x1; primed Skyrim frames retain the preceding level for fused reduction + ADAPT.
+    private ID3D12Resource?[] _reductionTextures =
+        new ID3D12Resource?[ClassicHdrPassPlan.MaxReductionLevels];
+
     private int _srvCursor;
 
     public GpuTonemapPass12(GpuDevice12 gpu)
@@ -130,196 +139,193 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         var device = gpu.Device;
         try
         {
-
-        // Root: [0] SRV table (t0 = HDR scene, t1 = 1×1 adapted average color, t2 = bloom); [1]
-        // 24×32-bit root constants (b0, six float4s — tonemap/cinematic + modern semantic params
-        // draws, repacked as bloom params for the bloom draws); linear-clamp s0 plus point-clamp s1
-        // for Skyrim's explicitly unfiltered slot-6 reduction.
-        var srvRange = new DescriptorRange1
-        {
-            RangeType = DescriptorRangeType.ShaderResourceView,
-            NumDescriptors = SrvsPerCall,
-            BaseShaderRegister = 0,
-            RegisterSpace = 0,
-            Flags = DescriptorRangeFlags.DescriptorsVolatile,
-            OffsetInDescriptorsFromTableStart = 0
-        };
-        var srvTable = new RootParameter1(new RootDescriptorTable1(srvRange), ShaderVisibility.Pixel);
-        var rootConstants = new RootParameter1(
-            new RootConstants(0, 0, 24),
-            ShaderVisibility.Pixel);
-
-        var linearSampler = new StaticSamplerDescription(
-            0,
-            Filter.MinMagMipLinear,
-            TextureAddressMode.Clamp,
-            TextureAddressMode.Clamp,
-            TextureAddressMode.Clamp,
-            0f,
-            1,
-            ComparisonFunction.Never,
-            StaticBorderColor.OpaqueBlack,
-            0f,
-            float.MaxValue,
-            ShaderVisibility.Pixel,
-            0);
-        var pointSampler = new StaticSamplerDescription(
-            1,
-            Filter.MinMagMipPoint,
-            TextureAddressMode.Clamp,
-            TextureAddressMode.Clamp,
-            TextureAddressMode.Clamp,
-            0f,
-            1,
-            ComparisonFunction.Never,
-            StaticBorderColor.OpaqueBlack,
-            0f,
-            float.MaxValue,
-            ShaderVisibility.Pixel,
-            0);
-
-        var desc = new RootSignatureDescription1(
-            RootSignatureFlags.None,
-            new[] { srvTable, rootConstants },
-            new[] { linearSampler, pointSampler });
-        _rootSignature = TrackConstructionResource(device.CreateRootSignature(desc));
-
-        var vs = CompileEmbeddedShader("tonemap.vert.hlsl", "main", "vs_5_1");
-        var ps = CompileEmbeddedShader("tonemap.frag.hlsl", "main", "ps_5_1");
-
-        var blend = new BlendDescription { AlphaToCoverageEnable = false, IndependentBlendEnable = false };
-        blend.RenderTarget[0] = new RenderTargetBlendDescription
-        {
-            BlendEnable = false,
-            RenderTargetWriteMask = ColorWriteEnable.All
-        };
-
-        var psoDesc = new GraphicsPipelineStateDescription
-        {
-            RootSignature = _rootSignature,
-            VertexShader = vs,
-            PixelShader = ps,
-            BlendState = blend,
-            RasterizerState = new RasterizerDescription
+            // Root: [0] SRV table (t0 = HDR scene, t1 = 1×1 adapted average color, t2 = bloom); [1]
+            // 24×32-bit root constants (b0, six float4s — tonemap/cinematic + modern semantic params
+            // draws, repacked as bloom params for the bloom draws); linear-clamp s0 plus point-clamp s1
+            // for Skyrim's explicitly unfiltered slot-6 reduction.
+            var srvRange = new DescriptorRange1
             {
-                FillMode = FillMode.Solid,
-                CullMode = CullMode.None,
-                DepthClipEnable = false
-            },
-            DepthStencilState = new DepthStencilDescription
+                RangeType = DescriptorRangeType.ShaderResourceView,
+                NumDescriptors = SrvsPerCall,
+                BaseShaderRegister = 0,
+                RegisterSpace = 0,
+                Flags = DescriptorRangeFlags.DescriptorsVolatile,
+                OffsetInDescriptorsFromTableStart = 0
+            };
+            var srvTable = new RootParameter1(new RootDescriptorTable1(srvRange), ShaderVisibility.Pixel);
+            var rootConstants = new RootParameter1(
+                new RootConstants(0, 0, 24),
+                ShaderVisibility.Pixel);
+
+            var linearSampler = new StaticSamplerDescription(
+                0,
+                Filter.MinMagMipLinear,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                0f,
+                1,
+                ComparisonFunction.Never,
+                StaticBorderColor.OpaqueBlack,
+                0f,
+                float.MaxValue,
+                ShaderVisibility.Pixel);
+            var pointSampler = new StaticSamplerDescription(
+                1,
+                Filter.MinMagMipPoint,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                TextureAddressMode.Clamp,
+                0f,
+                1,
+                ComparisonFunction.Never,
+                StaticBorderColor.OpaqueBlack,
+                0f,
+                float.MaxValue,
+                ShaderVisibility.Pixel);
+
+            var desc = new RootSignatureDescription1(
+                RootSignatureFlags.None,
+                new[] { srvTable, rootConstants },
+                new[] { linearSampler, pointSampler });
+            _rootSignature = TrackConstructionResource(device.CreateRootSignature(desc));
+
+            var vs = CompileEmbeddedShader("tonemap.vert.hlsl", "main", "vs_5_1");
+            var ps = CompileEmbeddedShader("tonemap.frag.hlsl", "main", "ps_5_1");
+
+            var blend = new BlendDescription { AlphaToCoverageEnable = false, IndependentBlendEnable = false };
+            blend.RenderTarget[0] = new RenderTargetBlendDescription
             {
-                DepthEnable = false,
-                DepthWriteMask = DepthWriteMask.Zero,
-                DepthFunc = ComparisonFunction.Always,
-                StencilEnable = false
-            },
-            InputLayout = new InputLayoutDescription(Array.Empty<InputElementDescription>()),
-            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
-            RenderTargetFormats = new[] { GpuSceneFormats.LdrOutput },
-            DepthStencilFormat = Format.Unknown,
-            SampleDescription = new SampleDescription(1, 0), // the LDR output/backbuffer is single-sample
-            SampleMask = uint.MaxValue
-        };
-        _pso = TrackConstructionResource(device.CreateGraphicsPipelineState(psoDesc));
+                BlendEnable = false,
+                RenderTargetWriteMask = ColorWriteEnable.All
+            };
 
-        // The modern stand-in still computes a sparse average in mainAvg. Engine modes instead run
-        // their recursive reductions below; Skyrim's mainAdapt also fuses the final retail step.
-        var avgPs = CompileEmbeddedShader("tonemap.frag.hlsl", "mainAvg", "ps_5_1");
-        var avgPsoDesc = psoDesc;
-        avgPsoDesc.PixelShader = avgPs;
-        avgPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _avgPso = TrackConstructionResource(device.CreateGraphicsPipelineState(avgPsoDesc));
+            var psoDesc = new GraphicsPipelineStateDescription
+            {
+                RootSignature = _rootSignature,
+                VertexShader = vs,
+                PixelShader = ps,
+                BlendState = blend,
+                RasterizerState = new RasterizerDescription
+                {
+                    FillMode = FillMode.Solid,
+                    CullMode = CullMode.None,
+                    DepthClipEnable = false
+                },
+                DepthStencilState = new DepthStencilDescription
+                {
+                    DepthEnable = false,
+                    DepthWriteMask = DepthWriteMask.Zero,
+                    DepthFunc = ComparisonFunction.Always,
+                    StencilEnable = false
+                },
+                InputLayout = new InputLayoutDescription(Array.Empty<InputElementDescription>()),
+                PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
+                RenderTargetFormats = new[] { GpuSceneFormats.LdrOutput },
+                DepthStencilFormat = Format.Unknown,
+                SampleDescription = new SampleDescription(1, 0), // the LDR output/backbuffer is single-sample
+                SampleMask = uint.MaxValue
+            };
+            _pso = TrackConstructionResource(device.CreateGraphicsPipelineState(psoDesc));
 
-        var adaptPs = CompileEmbeddedShader("tonemap.frag.hlsl", "mainAdapt", "ps_5_1");
-        var adaptPsoDesc = psoDesc;
-        adaptPsoDesc.PixelShader = adaptPs;
-        adaptPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _adaptPso = TrackConstructionResource(device.CreateGraphicsPipelineState(adaptPsoDesc));
+            // The modern stand-in still computes a sparse average in mainAvg. Engine modes instead run
+            // their recursive reductions below; Skyrim's mainAdapt also fuses the final retail step.
+            var avgPs = CompileEmbeddedShader("tonemap.frag.hlsl", "mainAvg", "ps_5_1");
+            var avgPsoDesc = psoDesc;
+            avgPsoDesc.PixelShader = avgPs;
+            avgPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+            _avgPso = TrackConstructionResource(device.CreateGraphicsPipelineState(avgPsoDesc));
 
-        // Recovered engine bloom: explicit DownSample16, then the two rows inside the selected
-        // ImageSpaceEffectBlur effect: vertical BrightPassBlur followed by horizontal plain blur.
-        var downsamplePs = CompileEmbeddedShader("bloom.frag.hlsl", "mainDownsample16", "ps_5_1");
-        var downsamplePsoDesc = psoDesc;
-        downsamplePsoDesc.PixelShader = downsamplePs;
-        downsamplePsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _downsamplePso = TrackConstructionResource(device.CreateGraphicsPipelineState(downsamplePsoDesc));
+            var adaptPs = CompileEmbeddedShader("tonemap.frag.hlsl", "mainAdapt", "ps_5_1");
+            var adaptPsoDesc = psoDesc;
+            adaptPsoDesc.PixelShader = adaptPs;
+            adaptPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+            _adaptPso = TrackConstructionResource(device.CreateGraphicsPipelineState(adaptPsoDesc));
 
-        var skyrimLuminancePs = CompileEmbeddedShader(
-            "bloom.frag.hlsl", "mainSkyrimLuminance4", "ps_5_1");
-        var skyrimLuminancePsoDesc = downsamplePsoDesc;
-        skyrimLuminancePsoDesc.PixelShader = skyrimLuminancePs;
-        _skyrimLuminancePso = TrackConstructionResource(
-            device.CreateGraphicsPipelineState(skyrimLuminancePsoDesc));
+            // Recovered engine bloom: explicit DownSample16, then the two rows inside the selected
+            // ImageSpaceEffectBlur effect: vertical BrightPassBlur followed by horizontal plain blur.
+            var downsamplePs = CompileEmbeddedShader("bloom.frag.hlsl", "mainDownsample16", "ps_5_1");
+            var downsamplePsoDesc = psoDesc;
+            downsamplePsoDesc.PixelShader = downsamplePs;
+            downsamplePsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+            _downsamplePso = TrackConstructionResource(device.CreateGraphicsPipelineState(downsamplePsoDesc));
 
-        var skyrimDownsamplePs = CompileEmbeddedShader(
-            "bloom.frag.hlsl", "mainSkyrimDownsample16", "ps_5_1");
-        var skyrimDownsamplePsoDesc = downsamplePsoDesc;
-        skyrimDownsamplePsoDesc.PixelShader = skyrimDownsamplePs;
-        _skyrimDownsamplePso = TrackConstructionResource(
-            device.CreateGraphicsPipelineState(skyrimDownsamplePsoDesc));
+            var skyrimLuminancePs = CompileEmbeddedShader(
+                "bloom.frag.hlsl", "mainSkyrimLuminance4", "ps_5_1");
+            var skyrimLuminancePsoDesc = downsamplePsoDesc;
+            skyrimLuminancePsoDesc.PixelShader = skyrimLuminancePs;
+            _skyrimLuminancePso = TrackConstructionResource(
+                device.CreateGraphicsPipelineState(skyrimLuminancePsoDesc));
 
-        var bloomPs = CompileEmbeddedShader("bloom.frag.hlsl", "main", "ps_5_1");
-        var bloomPsoDesc = psoDesc;
-        bloomPsoDesc.PixelShader = bloomPs;
-        bloomPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _bloomPso = TrackConstructionResource(device.CreateGraphicsPipelineState(bloomPsoDesc));
+            var skyrimDownsamplePs = CompileEmbeddedShader(
+                "bloom.frag.hlsl", "mainSkyrimDownsample16", "ps_5_1");
+            var skyrimDownsamplePsoDesc = downsamplePsoDesc;
+            skyrimDownsamplePsoDesc.PixelShader = skyrimDownsamplePs;
+            _skyrimDownsamplePso = TrackConstructionResource(
+                device.CreateGraphicsPipelineState(skyrimDownsamplePsoDesc));
 
-        var blurPs = CompileEmbeddedShader("bloom.frag.hlsl", "mainBlur", "ps_5_1");
-        var blurPsoDesc = psoDesc;
-        blurPsoDesc.PixelShader = blurPs;
-        blurPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _blurPso = TrackConstructionResource(device.CreateGraphicsPipelineState(blurPsoDesc));
+            var bloomPs = CompileEmbeddedShader("bloom.frag.hlsl", "main", "ps_5_1");
+            var bloomPsoDesc = psoDesc;
+            bloomPsoDesc.PixelShader = bloomPs;
+            bloomPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+            _bloomPso = TrackConstructionResource(device.CreateGraphicsPipelineState(bloomPsoDesc));
 
-        var tes4BrightPassPs = CompileEmbeddedShader(
-            "bloom.frag.hlsl", "mainTes4BrightPass", "ps_5_1");
-        var tes4BrightPassPsoDesc = psoDesc;
-        tes4BrightPassPsoDesc.PixelShader = tes4BrightPassPs;
-        tes4BrightPassPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _tes4BrightPassPso = TrackConstructionResource(
-            device.CreateGraphicsPipelineState(tes4BrightPassPsoDesc));
+            var blurPs = CompileEmbeddedShader("bloom.frag.hlsl", "mainBlur", "ps_5_1");
+            var blurPsoDesc = psoDesc;
+            blurPsoDesc.PixelShader = blurPs;
+            blurPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+            _blurPso = TrackConstructionResource(device.CreateGraphicsPipelineState(blurPsoDesc));
 
-        var tes4BlurPs = CompileEmbeddedShader("bloom.frag.hlsl", "mainTes4Blur", "ps_5_1");
-        var tes4BlurPsoDesc = psoDesc;
-        tes4BlurPsoDesc.PixelShader = tes4BlurPs;
-        tes4BlurPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-        _tes4BlurPso = TrackConstructionResource(device.CreateGraphicsPipelineState(tes4BlurPsoDesc));
+            var tes4BrightPassPs = CompileEmbeddedShader(
+                "bloom.frag.hlsl", "mainTes4BrightPass", "ps_5_1");
+            var tes4BrightPassPsoDesc = psoDesc;
+            tes4BrightPassPsoDesc.PixelShader = tes4BrightPassPs;
+            tes4BrightPassPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+            _tes4BrightPassPso = TrackConstructionResource(
+                device.CreateGraphicsPipelineState(tes4BrightPassPsoDesc));
 
-        // RTV heap: slots 0–1 = adapted-average ping-pong; then every possible reduction level;
-        // final two slots = vertical BrightPassBlur intermediate + horizontal plain-blur output.
-        _avgRtvHeap = TrackConstructionResource(
-            device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
-        {
-            Type = DescriptorHeapType.RenderTargetView,
-            DescriptorCount = RtvDescriptorCount,
-            Flags = DescriptorHeapFlags.None
-        }));
-        _avgRtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
-        for (var i = 0; i < 2; i++)
-        {
-            _avgTextures[i] = TrackConstructionResource(device.CreateCommittedResource<ID3D12Resource>(
-                new HeapProperties(HeapType.Default),
-                HeapFlags.None,
-                ResourceDescription.Texture2D(Format.R16G16B16A16_Float, 1, 1, 1, 1, 1, 0,
-                    ResourceFlags.AllowRenderTarget),
-                ResourceStates.PixelShaderResource));
-            _avgTextures[i].Name = $"TonemapAvgColor1x1_{i}";
-            var rtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
-            rtv.Ptr += (nuint)(i * _avgRtvDescriptorSize);
-            device.CreateRenderTargetView(_avgTextures[i], null, rtv);
-        }
+            var tes4BlurPs = CompileEmbeddedShader("bloom.frag.hlsl", "mainTes4Blur", "ps_5_1");
+            var tes4BlurPsoDesc = psoDesc;
+            tes4BlurPsoDesc.PixelShader = tes4BlurPs;
+            tes4BlurPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
+            _tes4BlurPso = TrackConstructionResource(device.CreateGraphicsPipelineState(tes4BlurPsoDesc));
 
-        _srvHeap = TrackConstructionResource(
-            device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
-        {
-            Type = DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
-            DescriptorCount = SrvRingSlots * GroupsPerCall * SrvsPerCall,
-            Flags = DescriptorHeapFlags.ShaderVisible
-        }));
-        _srvDescriptorSize = device.GetDescriptorHandleIncrementSize(
-            DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
+            // RTV heap: slots 0–1 = adapted-average ping-pong; then every possible reduction level;
+            // final two slots = vertical BrightPassBlur intermediate + horizontal plain-blur output.
+            _avgRtvHeap = TrackConstructionResource(
+                device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
+                {
+                    Type = DescriptorHeapType.RenderTargetView,
+                    DescriptorCount = RtvDescriptorCount,
+                    Flags = DescriptorHeapFlags.None
+                }));
+            _avgRtvDescriptorSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.RenderTargetView);
+            for (var i = 0; i < 2; i++)
+            {
+                _avgTextures[i] = TrackConstructionResource(device.CreateCommittedResource<ID3D12Resource>(
+                    new HeapProperties(HeapType.Default),
+                    HeapFlags.None,
+                    ResourceDescription.Texture2D(Format.R16G16B16A16_Float, 1, 1, 1, 1, 1, 0,
+                        ResourceFlags.AllowRenderTarget),
+                    ResourceStates.PixelShaderResource));
+                _avgTextures[i].Name = $"TonemapAvgColor1x1_{i}";
+                var rtv = _avgRtvHeap.GetCPUDescriptorHandleForHeapStart();
+                rtv.Ptr += (nuint)(i * _avgRtvDescriptorSize);
+                device.CreateRenderTargetView(_avgTextures[i], null, rtv);
+            }
 
-        _constructionTransaction!.Commit();
-        _constructionTransaction = null;
+            _srvHeap = TrackConstructionResource(
+                device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
+                {
+                    Type = DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
+                    DescriptorCount = SrvRingSlots * GroupsPerCall * SrvsPerCall,
+                    Flags = DescriptorHeapFlags.ShaderVisible
+                }));
+            _srvDescriptorSize = device.GetDescriptorHandleIncrementSize(
+                DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
+
+            _constructionTransaction!.Commit();
+            _constructionTransaction = null;
         }
         catch
         {
@@ -327,12 +333,6 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
             _constructionTransaction = null;
             throw;
         }
-    }
-
-    private T TrackConstructionResource<T>(T resource) where T : IDisposable
-    {
-        _constructionTransaction?.Track(resource);
-        return resource;
     }
 
     /// <summary>
@@ -368,6 +368,31 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         _avgPso.Dispose();
         _pso.Dispose();
         _rootSignature.Dispose();
+    }
+
+    void IGpuCommandSubmissionParticipant12.OnCommandListSubmitted()
+    {
+        // Record mutated the working logical state in command order. Submission makes that state
+        // authoritative, so committing only has to discard the rollback snapshot.
+        ClearLogicalHistoryTransaction();
+    }
+
+    void IGpuCommandSubmissionParticipant12.OnCommandListAborted()
+    {
+        if (_historyBeforeCurrentCommandList is { } snapshot)
+        {
+            RestoreLogicalHistory(snapshot);
+        }
+
+        // Deliberately retain lazy reduction/bloom allocations and descriptor-ring progress. They
+        // are valid reusable CPU allocations; only state that claimed GPU history is rolled back.
+        ClearLogicalHistoryTransaction();
+    }
+
+    private T TrackConstructionResource<T>(T resource) where T : IDisposable
+    {
+        _constructionTransaction?.Track(resource);
+        return resource;
     }
 
     /// <summary>
@@ -497,6 +522,7 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
             classicPlan = ClassicHdrPassPlan.Create(
                 width, height, bloomActive, settings.BlurPasses);
         }
+
         if (engineMode)
         {
             // Allocate the complete no-history chain once. Later Skyrim frames omit the final 1x1
@@ -582,6 +608,7 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         {
             finalBloom = tes4HdrBloom ? _brightPassBlurTexture! : _bloomTexture!;
         }
+
         _gpu.Device.CreateShaderResourceView(finalBloom, avgSrvDesc, cpuB);
 
         // First engine-mode frame has no valid history. Use >1 as an explicit no-history sentinel so
@@ -595,6 +622,7 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         {
             modernFamily = -1f;
         }
+
         var p = stackalloc float[24]
         {
             settings.Exposure, enabled ? 1f : 0f, (float)settings.Mode, settings.TargetLum,
@@ -807,36 +835,20 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         _historyTransactionRecorder = recorder;
     }
 
-    void IGpuCommandSubmissionParticipant12.OnCommandListSubmitted()
+    private TonemapLogicalHistoryState CaptureLogicalHistory()
     {
-        // Record mutated the working logical state in command order. Submission makes that state
-        // authoritative, so committing only has to discard the rollback snapshot.
-        ClearLogicalHistoryTransaction();
+        return new TonemapLogicalHistoryState(
+            _adaptPrimed,
+            _avgWriteIndex,
+            _lastAdaptiveMode,
+            _lastHistoryFormat,
+            _lastHistoryHeight,
+            _lastHistoryKey,
+            _lastHistoryTarget,
+            _lastHistoryWidth,
+            LastHistoryReset,
+            LastHistoryResetReason);
     }
-
-    void IGpuCommandSubmissionParticipant12.OnCommandListAborted()
-    {
-        if (_historyBeforeCurrentCommandList is { } snapshot)
-        {
-            RestoreLogicalHistory(snapshot);
-        }
-
-        // Deliberately retain lazy reduction/bloom allocations and descriptor-ring progress. They
-        // are valid reusable CPU allocations; only state that claimed GPU history is rolled back.
-        ClearLogicalHistoryTransaction();
-    }
-
-    private TonemapLogicalHistoryState CaptureLogicalHistory() => new(
-        _adaptPrimed,
-        _avgWriteIndex,
-        _lastAdaptiveMode,
-        _lastHistoryFormat,
-        _lastHistoryHeight,
-        _lastHistoryKey,
-        _lastHistoryTarget,
-        _lastHistoryWidth,
-        LastHistoryReset,
-        LastHistoryResetReason);
 
     private void RestoreLogicalHistory(in TonemapLogicalHistoryState snapshot)
     {
@@ -951,6 +963,7 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
             _reductionTextures[levelIndex] = texture;
             _reductionLevelCount = levelIndex + 1;
         }
+
         _reductionLevelCount = Math.Max(_reductionLevelCount, plan.DownsampleDrawCount);
 
         var bloomLevel = plan.GetReductionLevel(0);
@@ -1099,22 +1112,9 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
     private sealed class TonemapConstructionTransaction : IDisposable
     {
         private readonly List<IDisposable> _creationOrder = new(16);
+
         private readonly HashSet<IDisposable> _owned =
             new(16, ReferenceEqualityComparer.Instance);
-
-        internal void Track(IDisposable resource)
-        {
-            if (_owned.Add(resource))
-            {
-                _creationOrder.Add(resource);
-            }
-        }
-
-        internal void Commit()
-        {
-            _owned.Clear();
-            _creationOrder.Clear();
-        }
 
         public void Dispose()
         {
@@ -1127,6 +1127,20 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
                 }
             }
 
+            _creationOrder.Clear();
+        }
+
+        internal void Track(IDisposable resource)
+        {
+            if (_owned.Add(resource))
+            {
+                _creationOrder.Add(resource);
+            }
+        }
+
+        internal void Commit()
+        {
+            _owned.Clear();
             _creationOrder.Clear();
         }
     }

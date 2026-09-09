@@ -91,7 +91,8 @@ public sealed class CaptureShadowPrimingSourceContractTests
             "shadowPrimeReady = true;");
         Assert.Equal(2, SourceContract.CountOccurrences(loop, "shadowPrimeReady ="));
         Assert.Equal(1, SourceContract.CountOccurrences(loop, "target.RecordReadback(recorder);"));
-        Assert.Contains("if (!isPrime)\n                {\n                    target.RecordReadback(recorder);\n                }",
+        Assert.Contains(
+            "if (!isPrime)\n                {\n                    target.RecordReadback(recorder);\n                }",
             loop, StringComparison.Ordinal);
         Assert.DoesNotContain("await ", loop, StringComparison.Ordinal);
     }
@@ -173,7 +174,7 @@ public sealed class CaptureShadowPrimingSourceContractTests
         var compute = SourceContract.Extract(telemetry,
             "internal static unsafe string ComputeShadowFingerprint(",
             "internal static unsafe void AnalyzeAndLogShadowDump(");
-        SourceContract.AssertOrder(compute,
+        SourceContract.AssertOrderIgnoringWhitespace(compute,
             "buffer.Map(0, &data).CheckError();",
             "try",
             "return ShadowMapFingerprint.Compute(new ReadOnlySpan<byte>(data, length), resolution, checked((int)rowPitch));",
@@ -184,11 +185,17 @@ public sealed class CaptureShadowPrimingSourceContractTests
         Assert.DoesNotContain("buffer.Dispose(", compute, StringComparison.Ordinal);
     }
 
-    private static string CaptureLoop() => SourceContract.Extract(
-        SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs"),
-        "var primeAttempts = 0;", "var captureReferenceStats = captureReferencesEnabled");
+    private static string CaptureLoop()
+    {
+        return SourceContract.Extract(
+            SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs"),
+            "var primeAttempts = 0;", "var captureReferenceStats = captureReferencesEnabled");
+    }
 
-    private static string ShadowReplay() => SourceContract.Extract(
-        SourceContract.ReadAppSource("WorldView3DControl.Frame.cs"),
-        "private void RecordSunShadowPass(", "private void RenderFrameD3D12(");
+    private static string ShadowReplay()
+    {
+        return SourceContract.Extract(
+            SourceContract.ReadAppSource("WorldView3DControl.Frame.cs"),
+            "private void RecordSunShadowPass(", "private void RenderFrameD3D12(");
+    }
 }

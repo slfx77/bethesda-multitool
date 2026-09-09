@@ -193,7 +193,7 @@ public sealed class DmpXclcAuditCommandTests
         var cellB = result.Cells.Single(c => c.FormId == 0xB);
         Assert.Equal(1, cellB.ClaimedRefs);
         Assert.True(cellB.IsLastCell);
-        Assert.Equal(5_000 + DmpXclcAuditCommand.ProximityReachBytes, cellB.WindowEnd);
+        Assert.Equal(5_000 + ProximityReachBytes, cellB.WindowEnd);
     }
 
     [Fact]

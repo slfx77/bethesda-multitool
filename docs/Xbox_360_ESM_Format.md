@@ -307,7 +307,7 @@ class TESFile {
 | Xbox 360 ESM   | `Sample/ESM/360_final/`                                          | Input for conversion       |
 | PC ESM         | `Sample/ESM/pc_final/`                                           | Reference for verification |
 | Xbox 360 proto | `Sample/ESM/360_proto/`                                          | Earlier Xbox build         |
-| Debug PDB      | `Sample/Full_Builds/Fallout New Vegas (July 21, 2010)/FalloutNV/Fallout.pdb` | Structure definitions |
+| Debug PDB      | `Sample/Builds/Fallout - New Vegas (2010-7-21, X360 - Prototype)/FalloutNV/Fallout.pdb` | Structure definitions |
 
 ### Related Documentation
 
@@ -323,7 +323,7 @@ class TESFile {
 
 ### PDB-Verified Subrecord Layouts
 
-The following subrecord schemas have been cross-referenced against the Fallout New Vegas PDB debug symbols (`Sample/PDB/Proto/Fallout_Debug/types_full.txt`). These are authoritative — they come from the actual game engine source, not community reverse-engineering.
+The following subrecord schemas have been cross-referenced against the Fallout New Vegas PDB debug symbols (`Sample/DebugSymbols/Fallout - New Vegas (X360)/Proto/Fallout_Debug/types_full.txt`). These are authoritative — they come from the actual game engine source, not community reverse-engineering.
 
 #### ACTOR_BASE_DATA (ACBS - 24 bytes)
 

@@ -10,7 +10,6 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 /// </summary>
 internal sealed class BethesdaViewerAnimationPoseEvaluator
 {
-    private readonly BethesdaViewerAnimationClip _clip;
     private readonly int[] _parentIndices;
     private readonly RestTransform[] _restTransforms;
     private readonly BethesdaViewerNodeAnimationTrack?[] _tracksByNode;
@@ -27,6 +26,7 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
         {
             throw new ArgumentException("Animation rest-transform and parent collections must be parallel.");
         }
+
         if (!BethesdaViewerAnimationValidator.TryValidate(
                 clip,
                 restLocalTransforms.Count,
@@ -37,7 +37,7 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
                 $"Animation clip '{clip.Name}' is invalid: {validationError}.");
         }
 
-        _clip = clip;
+        Clip = clip;
         _parentIndices = new int[parentIndices.Count];
         _restTransforms = new RestTransform[restLocalTransforms.Count];
         _tracksByNode = new BethesdaViewerNodeAnimationTrack?[restLocalTransforms.Count];
@@ -74,7 +74,7 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
 
     internal int NodeCount => _restTransforms.Length;
 
-    internal BethesdaViewerAnimationClip Clip => _clip;
+    internal BethesdaViewerAnimationClip Clip { get; }
 
     internal void EvaluateNodeWorlds(float clockSeconds, Span<Matrix4x4> nodeWorlds)
     {
@@ -95,10 +95,10 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
                     clockSeconds,
                     track.Frequency,
                     track.Phase,
-                    _clip.StartTime,
-                    _clip.EndTime,
-                    _clip.Loops,
-                    _clip.PingPongs);
+                    Clip.StartTime,
+                    Clip.EndTime,
+                    Clip.Loops,
+                    Clip.PingPongs);
                 if (track.BsplineTransform is { } bspline)
                 {
                     if (bspline.RotationControlPoints is { } rotationControlPoints)
@@ -197,7 +197,7 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
         var safePhase = float.IsFinite(phase) ? phase : 0f;
         // Finite floats can still overflow when multiplied as float (MaxValue * MaxValue). Do the
         // clock arithmetic in double so looping never reaches Infinity % duration => NaN.
-        var mapped = ((double)safeClock * safeFrequency) + safePhase;
+        var mapped = (double)safeClock * safeFrequency + safePhase;
         var duration = (double)endTime - startTime;
         if (!double.IsFinite(duration) || duration <= 0d)
         {
@@ -283,6 +283,7 @@ internal sealed class BethesdaViewerAnimationPoseEvaluator
         {
             return keys[lower].Value;
         }
+
         return interpolation == BethesdaViewerKeyInterpolation.Quadratic &&
                keys[lower].HasQuadraticTangents && keys[upper].HasQuadraticTangents
             ? NifQuadraticVectorCurve.Sample(

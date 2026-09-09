@@ -31,8 +31,10 @@ public sealed class TerrainCellResidencyPolicyTests
     [InlineData(65, Cell65)]
     [InlineData(129, Cell129)]
     public void EstimateCellGpuBytes_charges_one_arena_suballocation_for_both_streams(
-        int gridSize, long expected) =>
+        int gridSize, long expected)
+    {
         Assert.Equal(expected, TerrainCellResidencyPolicy.EstimateCellGpuBytes(gridSize));
+    }
 
     [Fact]
     public void EstimateCellGpuBytes_is_far_below_the_old_committed_buffer_charge()
@@ -56,8 +58,10 @@ public sealed class TerrainCellResidencyPolicyTests
     [InlineData(1, 9L)]
     [InlineData(10, 441L)]
     [InlineData(-5, 1L)] // negative radius clamps to the single cell, never to a negative area
-    public void MinimumResidentCells_is_the_square_ring(int retainRadius, long expected) =>
+    public void MinimumResidentCells_is_the_square_ring(int retainRadius, long expected)
+    {
         Assert.Equal(expected, TerrainCellResidencyPolicy.MinimumResidentCells(retainRadius));
+    }
 
     [Fact]
     public void An_unknown_vram_budget_means_no_bound_rather_than_evict_everything()

@@ -44,6 +44,7 @@ internal static class BethesdaViewerKfAnimationBinder
                 ? NifTes3SequenceStreamReader.ReadAll(data, nif)
                 : NifControllerSequenceNameTrackReader.ReadAll(data, nif);
         }
+
         return Bind(scene, sources, sourceLabel);
     }
 
@@ -100,9 +101,9 @@ internal static class BethesdaViewerKfAnimationBinder
         if (accepted.Count == 0)
         {
             summary = reports
-                .Select(static report => report.FailureReason)
-                .FirstOrDefault(static reason => !string.IsNullOrWhiteSpace(reason)) ??
-                "No KF track bound uniquely to this scene's nodes.";
+                          .Select(static report => report.FailureReason)
+                          .FirstOrDefault(static reason => !string.IsNullOrWhiteSpace(reason)) ??
+                      "No KF track bound uniquely to this scene's nodes.";
         }
         else
         {

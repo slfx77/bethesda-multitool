@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -9,7 +6,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.DiscImage;
 
 /// <summary>
 ///     Opt-in checks (<c>RUN_BUCKET_B=1</c>) of the original redump media for Redguard and
-///     Battlespire, staged as CUE/BIN under <c>Sample/Full_Builds/</c>. Measured 2026-09-05:
+///     Battlespire, staged as CUE/BIN under <c>Sample/Builds/</c>. Measured 2026-09-05:
 ///     Redguard's Disc 1 is an InstallShield CD — its ISO9660 tree is <c>DATA1.CAB</c> + <c>DATA.TAG</c>
 ///     + Voodoo drivers, so the game files (including the 3dfx <c>fxart</c> the Steam build omits)
 ///     sit INSIDE the cabinet, which the ISO layer cannot see; Disc 2 is eleven Smacker movies plus
@@ -22,10 +19,31 @@ public sealed class ClassicDiscImageRetailTests
     private static string RequireCue(string stagedDirectory)
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        var directory = Path.Combine(RepositoryRoot(), "Sample", "Full_Builds", stagedDirectory);
-        var cue = Directory.Exists(directory) ? Directory.GetFiles(directory, "*.cue").FirstOrDefault() : null;
+        // The staged names are the pre-migration ones. SampleCorpus maps each onto its build
+        // directory; the CUE/BIN itself is original media, so it now sits under the matching
+        // Sample/Media path rather than in the build, which holds the extracted tree.
+        var directory = SampleCorpus.Candidates(Path.Combine("Full_Builds", stagedDirectory))
+            .SelectMany(relative => new[]
+            {
+                Path.Combine(RepositoryRoot(), "Sample", MediaRelative(relative)),
+                Path.Combine(RepositoryRoot(), "Sample", relative)
+            })
+            .FirstOrDefault(candidate => Directory.Exists(candidate) &&
+                                         Directory.GetFiles(candidate, "*.cue").Length > 0);
+        var cue = directory is not null ? Directory.GetFiles(directory, "*.cue").FirstOrDefault() : null;
         Assert.SkipWhen(cue is null, RealAssetPaths.SkipMessage($"{stagedDirectory} CUE/BIN"));
-        return cue!;
+        return cue;
+    }
+
+    /// <summary>
+    ///     The <c>Sample/Media</c> counterpart of a <c>Sample/Builds</c> relative path. Media keeps
+    ///     the build's directory name, so the two differ only in the first segment.
+    /// </summary>
+    private static string MediaRelative(string buildRelative)
+    {
+        return buildRelative.StartsWith(@"Builds\", StringComparison.OrdinalIgnoreCase)
+            ? @"Media\" + buildRelative[@"Builds\".Length..]
+            : buildRelative;
     }
 
     /// <summary>The checkout root: the nearest ancestor of the test binary holding the solution file.</summary>
@@ -37,7 +55,8 @@ public sealed class ClassicDiscImageRetailTests
             directory = directory.Parent;
         }
 
-        return directory?.FullName ?? throw new InvalidOperationException("BethesdaMultitool.slnx not found above the test binary.");
+        return directory?.FullName ??
+               throw new InvalidOperationException("BethesdaMultitool.slnx not found above the test binary.");
     }
 
     [Fact]
@@ -56,7 +75,7 @@ public sealed class ClassicDiscImageRetailTests
         Assert.Contains(entries, e => e.Name.Equals("DATA.TAG", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(entries, e => e.Name.Contains("TEXBSI", StringComparison.OrdinalIgnoreCase));
         Assert.DoesNotContain(entries, e => e.Name.Equals("WORLD.INI", StringComparison.OrdinalIgnoreCase));
-        Assert.Empty(entries.Where(e => e.FolderPath == "audio"));
+        Assert.DoesNotContain(entries, e => e.FolderPath == "audio");
     }
 
     [Fact]
@@ -66,7 +85,8 @@ public sealed class ClassicDiscImageRetailTests
 
         var entries = disc.ListFiles();
         var movies = entries.Count(e => e.Extension.Equals(".smk", StringComparison.OrdinalIgnoreCase));
-        var audio = entries.Where(e => e.FolderPath == "audio").Select(e => e.Name).OrderBy(n => n, StringComparer.Ordinal).ToList();
+        var audio = entries.Where(e => e.FolderPath == "audio").Select(e => e.Name)
+            .OrderBy(n => n, StringComparer.Ordinal).ToList();
 
         // The redump set is one data track plus tracks 2-7 of Redbook music.
         Assert.Equal(11, movies);
@@ -77,7 +97,8 @@ public sealed class ClassicDiscImageRetailTests
         // A Smacker movie opens with its "SMK2" tag when read through the raw sectors.
         var movie = entries.First(e => e.Extension.Equals(".smk", StringComparison.OrdinalIgnoreCase));
         var head = disc.ReadFile(movie.FullPath)!.AsSpan(0, 4);
-        Assert.True(head.SequenceEqual("SMK2"u8) || head.SequenceEqual("SMK4"u8), $"{movie.Name} does not open with a Smacker tag");
+        Assert.True(head.SequenceEqual("SMK2"u8) || head.SequenceEqual("SMK4"u8),
+            $"{movie.Name} does not open with a Smacker tag");
     }
 
     [Fact]

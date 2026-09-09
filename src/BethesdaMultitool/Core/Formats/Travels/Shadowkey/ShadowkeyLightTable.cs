@@ -138,7 +138,7 @@ internal sealed class ShadowkeyLightTable
                         value = (ushort)lit;
                     }
 
-                    entries[(((bank * Levels) + level) * PaletteEntries) + index] = value;
+                    entries[(bank * Levels + level) * PaletteEntries + index] = value;
                 }
             }
         }
@@ -165,7 +165,7 @@ internal sealed class ShadowkeyLightTable
                 nameof(paletteIndex), paletteIndex, $"'{Name}': palette index must be 0..{PaletteEntries - 1}.");
         }
 
-        return _entries[(((bank * Levels) + level) * PaletteEntries) + paletteIndex];
+        return _entries[(bank * Levels + level) * PaletteEntries + paletteIndex];
     }
 
     /// <summary>True when this table is byte-for-byte the one <see cref="Synthesize" /> builds.</summary>

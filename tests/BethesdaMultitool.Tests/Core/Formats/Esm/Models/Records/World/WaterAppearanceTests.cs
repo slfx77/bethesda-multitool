@@ -19,7 +19,7 @@ public sealed class WaterAppearanceTests
         var appearance = WaterAppearance.FromVisualProperties(props, "water\\noise.dds");
 
         Assert.NotNull(appearance);
-        Assert.Equal((R: (byte)0x77, G: (byte)0x55, B: (byte)0x33), appearance!.Shallow);
+        Assert.Equal((R: (byte)0x77, G: (byte)0x55, B: (byte)0x33), appearance.Shallow);
         Assert.Equal((R: (byte)0x44, G: (byte)0x22, B: (byte)0x11), appearance.Deep);
         Assert.Equal((R: (byte)0x66, G: (byte)0x88, B: (byte)0x99), appearance.Reflection);
         Assert.Equal("water\\noise.dds", appearance.NoiseTexture);
@@ -33,7 +33,7 @@ public sealed class WaterAppearanceTests
 
         Assert.NotNull(appearance);
         // Deep mirrors Shallow (missing endpoint), Reflection falls back to Shallow.
-        Assert.Equal(appearance!.Shallow, appearance.Deep);
+        Assert.Equal(appearance.Shallow, appearance.Deep);
         Assert.Equal(appearance.Shallow, appearance.Reflection);
         Assert.Equal((R: (byte)0x40, G: (byte)0x60, B: (byte)0x80), appearance.Shallow);
     }
@@ -73,7 +73,7 @@ public sealed class WaterAppearanceTests
         var appearance = WaterAppearance.FromVisualProperties(props, null);
 
         Assert.NotNull(appearance);
-        var s = appearance!.Surface;
+        var s = appearance.Surface;
         Assert.Equal(2.5f, s.NormalsUvScale, 4);
         Assert.Equal(0.4f, s.FresnelAmount, 4);
         Assert.Equal(0.8f, s.ReflectivityAmount, 4);
@@ -99,7 +99,7 @@ public sealed class WaterAppearanceTests
             new Dictionary<string, object?> { ["ShallowColor"] = 0x00_30_20_10u }, null);
 
         Assert.NotNull(appearance);
-        Assert.Equal(WaterSurfaceParams.Default, appearance!.Surface);
+        Assert.Equal(WaterSurfaceParams.Default, appearance.Surface);
     }
 
     [Fact]
@@ -125,7 +125,7 @@ public sealed class WaterAppearanceTests
         var appearance = WaterAppearance.FromWaterRecord(water);
 
         Assert.NotNull(appearance);
-        Assert.Equal((R: (byte)0x10, G: (byte)0x20, B: (byte)0x30), appearance!.Shallow);
+        Assert.Equal((R: (byte)0x10, G: (byte)0x20, B: (byte)0x30), appearance.Shallow);
         Assert.Equal((R: (byte)0x40, G: (byte)0x50, B: (byte)0x60), appearance.Deep);
         Assert.Equal("water\\water.dds", appearance.NoiseTexture);
     }
@@ -152,7 +152,7 @@ public sealed class WaterAppearanceTests
         var appearance = WaterAppearance.FromWaterRecord(water);
 
         Assert.NotNull(appearance);
-        Assert.Equal("water\\normal01.dds", appearance!.NoiseTexture);
+        Assert.Equal("water\\normal01.dds", appearance.NoiseTexture);
         Assert.Equal(water.NormalTextures, appearance.NormalTextures);
     }
 
@@ -172,7 +172,7 @@ public sealed class WaterAppearanceTests
         var appearance = WaterAppearance.FromWaterRecord(water);
 
         Assert.NotNull(appearance);
-        Assert.Null(appearance!.NoiseTexture);
+        Assert.Null(appearance.NoiseTexture);
         Assert.Empty(appearance.NormalTextures!);
         Assert.Equal("water\\water00.dds", appearance.SurfaceTexture);
     }
@@ -197,7 +197,7 @@ public sealed class WaterAppearanceTests
         var appearance = WaterAppearance.FromWaterRecord(water);
 
         Assert.NotNull(appearance);
-        Assert.False(appearance!.IsLava);
+        Assert.False(appearance.IsLava);
         Assert.Equal(water.SurfaceTexture, appearance.SurfaceTexture);
     }
 
@@ -220,7 +220,7 @@ public sealed class WaterAppearanceTests
         var appearance = WaterAppearance.FromWaterRecord(WaterWith("OblivionCitadelLavaPlane", 0x01));
 
         Assert.NotNull(appearance);
-        Assert.True(appearance!.IsLava);
+        Assert.True(appearance.IsLava);
         Assert.True(appearance.CausesDamage);
     }
 
@@ -231,7 +231,7 @@ public sealed class WaterAppearanceTests
         var appearance = WaterAppearance.FromWaterRecord(WaterWith("OblivionOil01", 0x01));
 
         Assert.NotNull(appearance);
-        Assert.True(appearance!.CausesDamage);
+        Assert.True(appearance.CausesDamage);
         Assert.False(appearance.IsLava);
     }
 
@@ -242,7 +242,7 @@ public sealed class WaterAppearanceTests
         var appearance = WaterAppearance.FromWaterRecord(WaterWith("DefaultWater", 0x02));
 
         Assert.NotNull(appearance);
-        Assert.False(appearance!.CausesDamage);
+        Assert.False(appearance.CausesDamage);
         Assert.False(appearance.IsLava);
         Assert.True(appearance.IsReflective);
     }
@@ -257,7 +257,7 @@ public sealed class WaterAppearanceTests
         var appearance = WaterAppearance.FromWaterRecord(WaterWith("DefaultWater", flags));
 
         Assert.NotNull(appearance);
-        Assert.Equal(expected, appearance!.IsReflective);
+        Assert.Equal(expected, appearance.IsReflective);
     }
 
     [Fact]
@@ -284,7 +284,7 @@ public sealed class WaterAppearanceTests
         var a = WaterAppearance.FromWaterRecord(water);
 
         Assert.NotNull(a);
-        Assert.True(a!.IsLava);
+        Assert.True(a.IsLava);
         Assert.True(a.CausesDamage);
         Assert.False(a.IsReflective);
         Assert.True(a.Shallow.R > a.Shallow.B); // molten (reddish), not a default blue water tint

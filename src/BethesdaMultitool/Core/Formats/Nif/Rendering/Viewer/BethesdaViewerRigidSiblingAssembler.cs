@@ -212,8 +212,8 @@ internal static class BethesdaViewerRigidSiblingAssembler
                     GlbNodeKind.Attachment,
                     // The sibling is a separate NIF. Its names and block indices must not compete
                     // with canonical KF targets or model-NIF source identities.
-                    lookupName: null,
-                    sourceBlockIndex: null);
+                    null,
+                    null);
                 mappedSiblingNodes.Add(siblingNodeIndex, candidateNodeIndex);
                 return true;
             }

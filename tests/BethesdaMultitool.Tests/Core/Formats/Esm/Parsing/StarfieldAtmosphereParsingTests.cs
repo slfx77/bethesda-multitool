@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -173,7 +174,7 @@ public sealed class StarfieldAtmosphereParsingTests
             true,
             ("EDID", NullTermString("BigEndianAtmosphere")),
             ("REFL", BuildFullStream(0, 0, 0)));
-        var bigEndian = Assert.Single(ParseRecords(bigEndianBytes, isBigEndian: true).Atmospheres);
+        var bigEndian = Assert.Single(ParseRecords(bigEndianBytes, true).Atmospheres);
         Assert.Equal("BigEndianAtmosphere", bigEndian.EditorId);
         Assert.True(bigEndian.IsBigEndian);
         Assert.Contains("little-endian", bigEndian.DecodeFailure, StringComparison.OrdinalIgnoreCase);
@@ -200,8 +201,10 @@ public sealed class StarfieldAtmosphereParsingTests
         Assert.Contains("partially recovered", recovered.DecodeFailure, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static RecordCollection ParseRecords(params byte[][] recordBytes) =>
-        ParseRecords(recordBytes, false);
+    private static RecordCollection ParseRecords(params byte[][] recordBytes)
+    {
+        return ParseRecords(recordBytes, false);
+    }
 
     private static RecordCollection ParseRecords(byte[][] recordBytes, bool isBigEndian)
     {
@@ -213,8 +216,8 @@ public sealed class StarfieldAtmosphereParsingTests
         {
             Array.Copy(bytes, 0, allBytes, offset, bytes.Length);
             var formId = isBigEndian
-                ? System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(12))
-                : System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12));
+                ? BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(12))
+                : BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12));
             descriptors.Add(Descriptor(bytes, offset, formId, isBigEndian));
             offset += bytes.Length;
         }
@@ -230,28 +233,36 @@ public sealed class StarfieldAtmosphereParsingTests
         return new RecordParser(scan, accessor: accessor, fileSize: allBytes.Length).ParseAll();
     }
 
-    private static RecordCollection ParseRecords(byte[] recordBytes, bool isBigEndian) =>
-        ParseRecords([recordBytes], isBigEndian);
+    private static RecordCollection ParseRecords(byte[] recordBytes, bool isBigEndian)
+    {
+        return ParseRecords([recordBytes], isBigEndian);
+    }
 
     private static DetectedMainRecord Descriptor(
         byte[] bytes,
         long offset,
         uint formId,
-        bool isBigEndian) =>
-        new("ATMO", (uint)(bytes.Length - 24), 0, formId, offset, isBigEndian);
+        bool isBigEndian)
+    {
+        return new DetectedMainRecord("ATMO", (uint)(bytes.Length - 24), 0, formId, offset, isBigEndian);
+    }
 
     private static byte[] AtmosphereRecord(
         uint formId,
-        params (string Signature, byte[] Data)[] fields) =>
-        BuildRecordBytes(formId, "ATMO", false, fields);
+        params (string Signature, byte[] Data)[] fields)
+    {
+        return BuildRecordBytes(formId, "ATMO", false, fields);
+    }
 
     private static byte[] BuildFullStream(uint parent, uint sun, uint climate)
     {
         var schema = BuildSchema();
         return ReflectionStream(
             schema.StringTable,
-            [.. schema.ClassChunks, Chunk("OBJT", Concat(
-                U32(schema.Offsets[RootType]), Ref(parent), Ref(sun), Ref(climate))) ]);
+            [
+                .. schema.ClassChunks, Chunk("OBJT", Concat(
+                    U32(schema.Offsets[RootType]), Ref(parent), Ref(sun), Ref(climate)))
+            ]);
     }
 
     private static byte[] BuildDiffStream(uint parent, uint? climate)
@@ -306,7 +317,7 @@ public sealed class StarfieldAtmosphereParsingTests
     }
 
     private static byte[] ClassChunk(
-        IReadOnlyDictionary<string, uint> offsets,
+        Dictionary<string, uint> offsets,
         string className,
         params (string Name, uint Type)[] fields)
     {
@@ -326,20 +337,33 @@ public sealed class StarfieldAtmosphereParsingTests
         return Chunk("CLAS", [.. body]);
     }
 
-    private static byte[] ReflectionStream(byte[] strings, IReadOnlyList<byte[]> chunks) =>
-        Concat(
+    private static byte[] ReflectionStream(byte[] strings, IReadOnlyList<byte[]> chunks)
+    {
+        return Concat(
             Encoding.ASCII.GetBytes("BETH"), U32(8), U32(4), U32((uint)chunks.Count + 2),
             Encoding.ASCII.GetBytes("STRT"), U32((uint)strings.Length), strings,
             Concat([.. chunks]));
+    }
 
-    private static byte[] Chunk(string signature, byte[] body) =>
-        Concat(Encoding.ASCII.GetBytes(signature), U32((uint)body.Length), body);
+    private static byte[] Chunk(string signature, byte[] body)
+    {
+        return Concat(Encoding.ASCII.GetBytes(signature), U32((uint)body.Length), body);
+    }
 
-    private static byte[] Ref(uint value) => Concat(U32(TypeUInt32), U32(value));
+    private static byte[] Ref(uint value)
+    {
+        return Concat(U32(TypeUInt32), U32(value));
+    }
 
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {

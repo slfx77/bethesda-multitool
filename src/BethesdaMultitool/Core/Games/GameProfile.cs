@@ -90,6 +90,16 @@ public sealed record GameProfile
     public string ClassicLooseRoot { get; init; } = string.Empty;
 
     /// <summary>
+    ///     Root-relative directories OUTSIDE <see cref="ClassicLooseRoot" /> that still hold game
+    ///     assets and are mounted as further loose layers below it — the Battlespire CD's
+    ///     <c>videos</c> (its six Smacker movies sit beside <c>GAME.EXE</c>, not under
+    ///     <c>GAMEDATA</c>). Each is mounted under its own name so its files keep a distinct path.
+    ///     A directory that does not exist is skipped, so the Steam install (which ships no such
+    ///     directory) is unaffected.
+    /// </summary>
+    public IReadOnlyList<string> ClassicExtraLooseDirectories { get; init; } = [];
+
+    /// <summary>
     ///     Root-relative marker files whose JOINT presence identifies this game's install root
     ///     (consumed by <see cref="ClassicGameLocator" />). Every entry must be satisfied; within one
     ///     entry, <c>|</c> separates alternatives of which any one suffices (e.g. Fallout 1's

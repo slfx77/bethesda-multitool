@@ -33,7 +33,8 @@ internal static class RedguardMapRecordSource
     private const int ObjectIndexBits = 9;
 
     /// <summary>Reads every <c>maps\*.RGM</c> under <paramref name="dataRoot" /> and appends its records.</summary>
-    public static void Populate(string dataRoot, RecordCollection records, CancellationToken cancellationToken = default)
+    public static void Populate(string dataRoot, RecordCollection records,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dataRoot);
         ArgumentNullException.ThrowIfNull(records);
@@ -49,7 +50,8 @@ internal static class RedguardMapRecordSource
             : null;
 
         var seen = new Dictionary<uint, string>();
-        foreach (var path in Directory.EnumerateFiles(mapsDirectory, "*.rgm").OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+        foreach (var path in Directory.EnumerateFiles(mapsDirectory, "*.rgm")
+                     .OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var stem = Path.GetFileNameWithoutExtension(path).ToUpperInvariant();
@@ -94,7 +96,8 @@ internal static class RedguardMapRecordSource
         }
     }
 
-    private static GenericEsmRecord BuildMapRecord(string stem, RedguardRgmFile map, RedguardWorldIni? registry, IReadOnlySet<string>? robSegments)
+    private static GenericEsmRecord BuildMapRecord(string stem, RedguardRgmFile map, RedguardWorldIni? registry,
+        IReadOnlySet<string>? robSegments)
     {
         var worlds = registry?.Worlds
             .Where(w => w.MapPath is { } mapPath &&
@@ -103,7 +106,8 @@ internal static class RedguardMapRecordSource
             .ToList() ?? [];
 
         var entries = map.Placements.Where(p => p.IsEntryOrExit).Select(p => p.ObjectName).ToList();
-        var placedMeshes = map.Placements.Where(p => p.HasMesh).Select(p => p.MeshStem).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var placedMeshes = map.Placements.Where(p => p.HasMesh).Select(p => p.MeshStem)
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         var staticNames = map.StaticMeshes.Select(s => s.MeshName).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
         var fields = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -152,7 +156,8 @@ internal static class RedguardMapRecordSource
     }
 
     private static GenericEsmRecord BuildObjectRecord(
-        string stem, RedguardRgmFile map, RedguardRgmObject obj, List<RedguardRgmPlacement> placements, IReadOnlySet<string>? robSegments)
+        string stem, RedguardRgmFile map, RedguardRgmObject obj, List<RedguardRgmPlacement> placements,
+        IReadOnlySet<string>? robSegments)
     {
         var fields = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -191,7 +196,8 @@ internal static class RedguardMapRecordSource
             fields["CollisionSpheres"] = obj.CollisionSphereCount;
         }
 
-        var meshes = map.AnimationMeshes.Where(a => a.ObjectIndex == obj.Index).Select(a => Path.GetFileName(a.Path)).ToList();
+        var meshes = map.AnimationMeshes.Where(a => a.ObjectIndex == obj.Index).Select(a => Path.GetFileName(a.Path))
+            .ToList();
         if (meshes.Count > 0)
         {
             fields["AnimationMeshFiles"] = string.Join(", ", meshes);
@@ -221,7 +227,8 @@ internal static class RedguardMapRecordSource
         var index = (ClassicNameHash.Of(stem, ObjectMapHashBits) << ObjectIndexBits) | (uint)obj.Index;
         if (obj.Index >= 1 << ObjectIndexBits)
         {
-            throw new InvalidDataException($"{stem}: object index {obj.Index} exceeds the {1 << ObjectIndexBits}-slot FormID budget.");
+            throw new InvalidDataException(
+                $"{stem}: object index {obj.Index} exceeds the {1 << ObjectIndexBits}-slot FormID budget.");
         }
 
         return new GenericEsmRecord

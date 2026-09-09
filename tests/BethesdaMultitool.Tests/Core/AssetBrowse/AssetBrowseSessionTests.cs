@@ -83,7 +83,7 @@ public sealed class AssetBrowseSessionTests
         try
         {
             var bsaPath = Path.Combine(dir, "browse.bsa");
-            using (var writer = new BsaWriter(compressFiles: false))
+            using (var writer = new BsaWriter(false))
             {
                 writer.AddFile(@"meshes\clutter\bucket.nif", new byte[32]);
                 writer.AddFile(@"textures\clutter\bucket.dds", new byte[48]);
@@ -124,6 +124,6 @@ public sealed class AssetBrowseSessionTests
         Assert.Equal(1, fake.DisposeCount);
         session.Dispose();
         Assert.Equal(1, fake.DisposeCount); // second dispose must not re-dispose the filesystem
-        Assert.Same(root, session.Root);    // the tree stays readable after dispose
+        Assert.Same(root, session.Root); // the tree stays readable after dispose
     }
 }

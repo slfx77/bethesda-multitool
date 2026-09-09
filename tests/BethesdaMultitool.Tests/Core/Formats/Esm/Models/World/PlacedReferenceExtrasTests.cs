@@ -1,7 +1,7 @@
+using System.Numerics;
 using System.Reflection;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using Xunit;
@@ -47,80 +47,85 @@ public sealed class PlacedReferenceExtrasTests
     ///     <see cref="Every_settable_property_is_covered_by_the_fully_populated_fixture" /> proves
     ///     this stays exhaustive.
     /// </summary>
-    private static PlacedReference CreateFullyPopulated() => new()
+    private static PlacedReference CreateFullyPopulated()
     {
-        Bounds = new ObjectBounds { X1 = -1, Y1 = -2, Z1 = -3, X2 = 4, Y2 = 5, Z2 = 6 },
-        ModelPath = "meshes\\test\\thing.nif",
-        FormId = 0x0001A2B3,
-        BaseFormId = 0x000C4D5E,
-        BaseEditorId = "TestBase",
-        EditorId = "TestRef",
-        RecordType = "ACHR",
-        X = 11f,
-        Y = 22f,
-        Z = 33f,
-        RotX = 0.1f,
-        RotY = 0.2f,
-        RotZ = 0.3f,
-        Scale = 2.5f,
-        IsMapMarker = true,
-        IsPersistent = true,
-        IsInitiallyDisabled = true,
-        Offset = 123456L,
-        IsBigEndian = true,
-        Radius = 9.5f,
-        Count = 7,
-        RadioData = new RadioData { Radius = 3f, RangeType = 1, StaticPercentage = 0.5f },
-        OwnerFormId = 0x11111111,
-        EncounterZoneFormId = 0x22222222,
-        MaterialSwapFormId = 0x33333333,
-        EmittanceFormId = 0x44444444,
-        LockLevel = 50,
-        LockKeyFormId = 0x55555555,
-        LockFlags = 0x04,
-        LockNumTries = 3,
-        LockTimesUnlocked = 2,
-        EnableParentFormId = 0x66666666,
-        EnableParentFlags = 0x01,
-        PersistentCellFormId = 0x77777777,
-        StartingPosition = new PositionSubrecord(1, 2, 3, 4, 5, 6, 7L, true),
-        StartingWorldOrCellFormId = 0x88888888,
-        PackageStartLocation = new RuntimePackageStartLocation(0x99999999, 1, 2, 3, 4),
-        MerchantContainerFormId = 0xAAAAAAAA,
-        LeveledCreatureOriginalBaseFormId = 0xBBBBBBBB,
-        LeveledCreatureTemplateFormId = 0xCCCCCCCC,
-        // TrailingData is deliberately left at its default. It is an IReadOnlyList<byte>, and
-        // record equality compares collection members by REFERENCE — a populated array here
-        // makes two otherwise-identical fixtures unequal and fails the value-equality test.
-        // (The default `[]` lowers to Array.Empty<byte>(), a shared singleton, so it compares
-        // equal.) That reference-equality is a real gap in BendableSplinePlacementData, not
-        // something the fixture should paper over; it is left visible here rather than hidden.
-        BendableSpline = new BendableSplinePlacementData
+        return new PlacedReference
         {
-            Slack = 1.5f,
-            Thickness = 0.25f,
-            HalfExtents = new Vector3(1f, 2f, 3f),
-            WindDetachedEndRaw = 1
-        },
-        DestinationDoorFormId = 0xDDDDDDDD,
-        DestinationCellFormId = 0xEEEEEEEE,
-        TeleportPosRot = new PositionSubrecord(9, 8, 7, 6, 5, 4, 3L, false),
-        TeleportFlags = 0x01,
-        MarkerType = MapMarkerType.Vault,
-        MarkerName = "Test Marker",
-        OriginCellFormId = 0x0F0F0F0F,
-        SpecialRenderingFlags = 0x2,
-        LinkedRefKeywordFormId = 0x12121212,
-        LinkedRefFormId = 0x13131313,
-        LinkedRefChildrenFormIds = SharedLinkedChildren,
-        StructuralData = SharedStructuralData,
-        AssignmentSource = "GridMap"
-    };
+            Bounds = new ObjectBounds { X1 = -1, Y1 = -2, Z1 = -3, X2 = 4, Y2 = 5, Z2 = 6 },
+            ModelPath = "meshes\\test\\thing.nif",
+            FormId = 0x0001A2B3,
+            BaseFormId = 0x000C4D5E,
+            BaseEditorId = "TestBase",
+            EditorId = "TestRef",
+            RecordType = "ACHR",
+            X = 11f,
+            Y = 22f,
+            Z = 33f,
+            RotX = 0.1f,
+            RotY = 0.2f,
+            RotZ = 0.3f,
+            Scale = 2.5f,
+            IsMapMarker = true,
+            IsPersistent = true,
+            IsInitiallyDisabled = true,
+            Offset = 123456L,
+            IsBigEndian = true,
+            Radius = 9.5f,
+            Count = 7,
+            RadioData = new RadioData { Radius = 3f, RangeType = 1, StaticPercentage = 0.5f },
+            OwnerFormId = 0x11111111,
+            EncounterZoneFormId = 0x22222222,
+            MaterialSwapFormId = 0x33333333,
+            EmittanceFormId = 0x44444444,
+            LockLevel = 50,
+            LockKeyFormId = 0x55555555,
+            LockFlags = 0x04,
+            LockNumTries = 3,
+            LockTimesUnlocked = 2,
+            EnableParentFormId = 0x66666666,
+            EnableParentFlags = 0x01,
+            PersistentCellFormId = 0x77777777,
+            StartingPosition = new PositionSubrecord(1, 2, 3, 4, 5, 6, 7L, true),
+            StartingWorldOrCellFormId = 0x88888888,
+            PackageStartLocation = new RuntimePackageStartLocation(0x99999999, 1, 2, 3, 4),
+            MerchantContainerFormId = 0xAAAAAAAA,
+            LeveledCreatureOriginalBaseFormId = 0xBBBBBBBB,
+            LeveledCreatureTemplateFormId = 0xCCCCCCCC,
+            // TrailingData is deliberately left at its default. It is an IReadOnlyList<byte>, and
+            // record equality compares collection members by REFERENCE — a populated array here
+            // makes two otherwise-identical fixtures unequal and fails the value-equality test.
+            // (The default `[]` lowers to Array.Empty<byte>(), a shared singleton, so it compares
+            // equal.) That reference-equality is a real gap in BendableSplinePlacementData, not
+            // something the fixture should paper over; it is left visible here rather than hidden.
+            BendableSpline = new BendableSplinePlacementData
+            {
+                Slack = 1.5f,
+                Thickness = 0.25f,
+                HalfExtents = new Vector3(1f, 2f, 3f),
+                WindDetachedEndRaw = 1
+            },
+            DestinationDoorFormId = 0xDDDDDDDD,
+            DestinationCellFormId = 0xEEEEEEEE,
+            TeleportPosRot = new PositionSubrecord(9, 8, 7, 6, 5, 4, 3L, false),
+            TeleportFlags = 0x01,
+            MarkerType = MapMarkerType.Vault,
+            MarkerName = "Test Marker",
+            OriginCellFormId = 0x0F0F0F0F,
+            SpecialRenderingFlags = 0x2,
+            LinkedRefKeywordFormId = 0x12121212,
+            LinkedRefFormId = 0x13131313,
+            LinkedRefChildrenFormIds = SharedLinkedChildren,
+            StructuralData = SharedStructuralData,
+            AssignmentSource = "GridMap"
+        };
+    }
 
-    private static IEnumerable<PropertyInfo> SettableProperties() =>
-        typeof(PlacedReference)
+    private static IEnumerable<PropertyInfo> SettableProperties()
+    {
+        return typeof(PlacedReference)
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanWrite);
+    }
 
     [Fact]
     public void Every_settable_property_is_covered_by_the_fully_populated_fixture()

@@ -40,11 +40,10 @@ public sealed class FaceGenHairEgmPathResolverTests
     [Fact]
     public void CpuAndNativeAssemblersUseTheSharedResolver()
     {
-        var cpu = SourceContract.ReadSource(
-            ["src", "BethesdaMultitool", "CLI", "Rendering", "Npc", "NpcHeadPartAttacher.cs"]);
-        var native = SourceContract.ReadSource(
-            ["src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Npc",
-                "Assembly", "NpcExportHeadAssembler.cs"]);
+        var cpu = SourceContract.ReadSource("src", "BethesdaMultitool", "CLI", "Rendering", "Npc",
+            "NpcHeadPartAttacher.cs");
+        var native = SourceContract.ReadSource("src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Npc",
+            "Assembly", "NpcExportHeadAssembler.cs");
 
         Assert.Contains("FaceGenHairEgmPathResolver.Build(", cpu, StringComparison.Ordinal);
         Assert.Contains("FaceGenHairEgmPathResolver.Build(", native, StringComparison.Ordinal);

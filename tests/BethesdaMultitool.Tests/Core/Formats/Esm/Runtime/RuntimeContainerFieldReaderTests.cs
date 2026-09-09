@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 using BethesdaMultitool.Core.Minidump;
 using Xunit;
 
@@ -86,7 +85,7 @@ public sealed class RuntimeContainerFieldReaderTests
         var idleB = heap.AddForm(IdleFormType, 0x00033002);
         var array = heap.AddPointerArray(idleA, idleB);
 
-        var struc = BuildIdleMarker(count: 2, arrayVa: array);
+        var struc = BuildIdleMarker(2, array);
         var value = Read(heap, struc, IdleArrayField(), IdleMarkerFields());
 
         Assert.Equal<uint>([0x00033001, 0x00033002], Assert.IsAssignableFrom<IReadOnlyList<uint>>(value));
@@ -101,7 +100,7 @@ public sealed class RuntimeContainerFieldReaderTests
         var idleA = heap.AddForm(IdleFormType, 0x00033001);
         var array = heap.AddPointerArray(idleA, 0xDEADBEEF);
 
-        var struc = BuildIdleMarker(count: 2, arrayVa: array);
+        var struc = BuildIdleMarker(2, array);
 
         Assert.Null(Read(heap, struc, IdleArrayField(), IdleMarkerFields()));
     }
@@ -112,7 +111,7 @@ public sealed class RuntimeContainerFieldReaderTests
         var heap = new Heap();
         var array = heap.AddPointerArray(heap.AddForm(IdleFormType, 0x00033001));
 
-        var struc = BuildIdleMarker(count: 0, arrayVa: array);
+        var struc = BuildIdleMarker(0, array);
 
         Assert.Null(Read(heap, struc, IdleArrayField(), IdleMarkerFields()));
     }
@@ -244,8 +243,10 @@ public sealed class RuntimeContainerFieldReaderTests
 
         var entries = Assert.IsAssignableFrom<IReadOnlyList<AlternateTextureEntry>>(value);
         Assert.Equal(
-            [new AlternateTextureEntry("Body", 0x0004B1C2, 0),
-             new AlternateTextureEntry("Barrel", 0x0004B1C3, 2)],
+            [
+                new AlternateTextureEntry("Body", 0x0004B1C2, 0),
+                new AlternateTextureEntry("Barrel", 0x0004B1C3, 2)
+            ],
             entries);
     }
 
@@ -255,7 +256,7 @@ public sealed class RuntimeContainerFieldReaderTests
         // The wire format keys each swap on its length-prefixed 3D name, so an entry without one
         // could not be written and does not describe anything either.
         var heap = new Heap();
-        var node = heap.AddTexSwap(heap.AddForm(FormTypeOf("BGSTextureSet"), 0x0004B1C2), 0, name: null);
+        var node = heap.AddTexSwap(heap.AddForm(FormTypeOf("BGSTextureSet"), 0x0004B1C2), 0, null);
 
         var struc = new byte[32];
         WriteListHead(struc, 8, node, 0);
@@ -282,8 +283,10 @@ public sealed class RuntimeContainerFieldReaderTests
             "LoadFormList", 60, 8, "struct", "TESLoadScreen", "BSSimpleList<LOAD_FORM_DATA *>"));
 
         Assert.Equal(
-            [new LoadScreenLocationEntry(0x0001C0DE, 0x000DA726, 0xFFF8_0004),
-             new LoadScreenLocationEntry(0x0001C0DF, 0, 0)],
+            [
+                new LoadScreenLocationEntry(0x0001C0DE, 0x000DA726, 0xFFF8_0004),
+                new LoadScreenLocationEntry(0x0001C0DF, 0, 0)
+            ],
             Assert.IsAssignableFrom<IReadOnlyList<LoadScreenLocationEntry>>(value));
     }
 
@@ -293,14 +296,14 @@ public sealed class RuntimeContainerFieldReaderTests
         var heap = new Heap();
         var explosion = heap.AddForm(FormTypeOf("BGSExplosion"), 0x000B2959);
         var stageA = heap.AddDestructionStage(
-            damageStage: 0, healthPercent: 93, flags: 0, selfDamage: 0,
-            explosion: 0, debris: 0, debrisCount: 0, replacementModel: null);
+            0, 93, 0, 0,
+            0, 0, 0, null);
         var stageB = heap.AddDestructionStage(
-            damageStage: 1, healthPercent: 65, flags: 0x05, selfDamage: 10,
-            explosion: explosion, debris: 0, debrisCount: 0,
-            replacementModel: @"Vehicles\CarHulk02.NIF");
+            1, 65, 0x05, 10,
+            explosion, 0, 0,
+            @"Vehicles\CarHulk02.NIF");
         var block = heap.AddDestructibleData(
-            health: 325, flags: 0xCE, heap.AddPointerArray(stageA, stageB), stageCount: 2);
+            325, 0xCE, heap.AddPointerArray(stageA, stageB), 2);
 
         var struc = new byte[160];
         WriteBe(struc, 148, block);
@@ -326,7 +329,7 @@ public sealed class RuntimeContainerFieldReaderTests
         var heap = new Heap();
         var stageA = heap.AddDestructionStage(0, 93, 0, 0, 0, 0, 0, null);
         var block = heap.AddDestructibleData(
-            health: 325, flags: 0, heap.AddPointerArray(stageA, 0xDEADBEEF), stageCount: 2);
+            325, 0, heap.AddPointerArray(stageA, 0xDEADBEEF), 2);
 
         var struc = new byte[160];
         WriteBe(struc, 148, block);
@@ -342,7 +345,7 @@ public sealed class RuntimeContainerFieldReaderTests
     public void EmptyDestructibleAllocation_YieldsNothing()
     {
         var heap = new Heap();
-        var block = heap.AddDestructibleData(health: 0, flags: 0, stageArrayVa: 0, stageCount: 0);
+        var block = heap.AddDestructibleData(0, 0, 0, 0);
 
         var struc = new byte[160];
         WriteBe(struc, 148, block);

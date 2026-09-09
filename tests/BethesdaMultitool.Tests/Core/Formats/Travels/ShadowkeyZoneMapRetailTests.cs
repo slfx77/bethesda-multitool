@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
 using System.Globalization;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -30,30 +26,34 @@ public sealed class ShadowkeyZoneMapRetailTests
     ///     The per-zone census measured 2026-09-05: grid size, open and blocked cell counts,
     ///     <c>.zcp</c> prototype count and <c>.ztx</c> texture count.
     /// </summary>
-    public static readonly (string Zone, int Width, int Height, int Open, int Blocked, int Prototypes, int Textures)[] Census =
-    [
-        ("azra", 128, 128, 15659, 725, 11828, 21),
-        ("broken1", 128, 128, 11890, 4494, 448, 19),
-        ("broken2", 128, 128, 8733, 7651, 209, 18),
-        ("crypt1", 128, 128, 12610, 3774, 1350, 17),
-        ("crypt2", 128, 128, 11009, 5375, 341, 16),
-        ("Crypt3", 128, 128, 3299, 13085, 270, 18),
-        ("delfhide", 128, 128, 10744, 5640, 1799, 18),
-        ("drgnfld", 128, 128, 15453, 931, 4725, 15),
-        ("dstar_e", 128, 128, 13325, 3059, 897, 22),
-        ("dstar_w", 128, 128, 13196, 3188, 1946, 19),
-        ("erthcave", 128, 128, 8144, 8240, 5782, 15),
-        ("fearfrst", 128, 128, 15472, 912, 6982, 10),
-        ("ffarena", 64, 64, 1876, 2220, 965, 7),
-        ("GhstPass", 128, 128, 15324, 1060, 10303, 19),
-        ("GlacierCrawl", 128, 128, 15049, 1335, 182, 6),
-        ("lakvan", 128, 128, 12971, 3413, 1057, 12),
-        ("LothCav", 128, 128, 11776, 4608, 2703, 8),
-        ("raiders", 128, 128, 12445, 3939, 99, 12),
-        ("snowline", 128, 128, 15346, 1038, 6243, 19),
-        ("stouttp", 128, 128, 15296, 1088, 8245, 14),
-        ("twilite", 128, 128, 8384, 8000, 455, 21),
-    ];
+    public static readonly (string Zone, int Width, int Height, int Open, int Blocked, int Prototypes, int Textures)[]
+        Census =
+        [
+            ("azra", 128, 128, 15659, 725, 11828, 21),
+            ("broken1", 128, 128, 11890, 4494, 448, 19),
+            ("broken2", 128, 128, 8733, 7651, 209, 18),
+            ("crypt1", 128, 128, 12610, 3774, 1350, 17),
+            ("crypt2", 128, 128, 11009, 5375, 341, 16),
+            ("Crypt3", 128, 128, 3299, 13085, 270, 18),
+            ("delfhide", 128, 128, 10744, 5640, 1799, 18),
+            ("drgnfld", 128, 128, 15453, 931, 4725, 15),
+            ("dstar_e", 128, 128, 13325, 3059, 897, 22),
+            ("dstar_w", 128, 128, 13196, 3188, 1946, 19),
+            ("erthcave", 128, 128, 8144, 8240, 5782, 15),
+            ("fearfrst", 128, 128, 15472, 912, 6982, 10),
+            ("ffarena", 64, 64, 1876, 2220, 965, 7),
+            ("GhstPass", 128, 128, 15324, 1060, 10303, 19),
+            ("GlacierCrawl", 128, 128, 15049, 1335, 182, 6),
+            ("lakvan", 128, 128, 12971, 3413, 1057, 12),
+            ("LothCav", 128, 128, 11776, 4608, 2703, 8),
+            ("raiders", 128, 128, 12445, 3939, 99, 12),
+            ("snowline", 128, 128, 15346, 1038, 6243, 19),
+            ("stouttp", 128, 128, 15296, 1088, 8245, 14),
+            ("twilite", 128, 128, 8384, 8000, 455, 21)
+        ];
+
+    /// <summary>The six per-zone extensions that use the size-prefixed zlib envelope.</summary>
+    private static readonly string[] CompressedExtensions = [".zmp", ".zcp", ".zsk", ".ztx", ".zlu", ".zfg"];
 
     /// <summary>The zone names the census covers, as xUnit member data.</summary>
     public static TheoryData<string> ZoneNames
@@ -70,14 +70,11 @@ public sealed class ShadowkeyZoneMapRetailTests
         }
     }
 
-    /// <summary>The six per-zone extensions that use the size-prefixed zlib envelope.</summary>
-    private static readonly string[] CompressedExtensions = [".zmp", ".zcp", ".zsk", ".ztx", ".zlu", ".zfg"];
-
     private static string RequireRoot()
     {
         var root = RealAssetPaths.Travels.ShadowkeyRoot();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("the Shadowkey application directory"));
-        return root!;
+        return root;
     }
 
     private static byte[] Inflate(string root, string zone, string extension)
@@ -150,7 +147,7 @@ public sealed class ShadowkeyZoneMapRetailTests
         Assert.Equal(expected.Width, map.Width);
         Assert.Equal(expected.Height, map.Height);
         Assert.Equal(
-            ShadowkeyZoneMap.HeaderLength + (map.Width * map.Height * ShadowkeyZoneMap.CellLength),
+            ShadowkeyZoneMap.HeaderLength + map.Width * map.Height * ShadowkeyZoneMap.CellLength,
             payload.Length);
 
         // The embedded name is the file stem, case aside (the install mixes Crypt3 and crypt1).
@@ -176,7 +173,7 @@ public sealed class ShadowkeyZoneMapRetailTests
         }
 
         Assert.Equal(20, sizes.Count(s => s.Width == 128 && s.Height == 128 && s.Length == 98436));
-        var arena = Assert.Single(sizes.Where(s => s.Width == 64));
+        var arena = Assert.Single(sizes, s => s.Width == 64);
         Assert.Equal("ffarena", arena.Zone);
         Assert.Equal(64, arena.Height);
         Assert.Equal(24708, arena.Length);
@@ -196,7 +193,7 @@ public sealed class ShadowkeyZoneMapRetailTests
 
         Assert.Equal(expected.Prototypes, table.Count);
         Assert.Equal(
-            ShadowkeyCellPrototypes.HeaderLength + (table.Count * ShadowkeyCellPrototype.RecordLength),
+            ShadowkeyCellPrototypes.HeaderLength + table.Count * ShadowkeyCellPrototype.RecordLength,
             payload.Length);
 
         // No cell indexes past the table, and no record is slack: max index + 1 == count.
@@ -240,7 +237,7 @@ public sealed class ShadowkeyZoneMapRetailTests
 
         Assert.Equal(expected.Textures, bank.Count);
         Assert.Equal(
-            ShadowkeyTextureBank.HeaderLength + (bank.Count * ShadowkeyTextureBank.TextureLength),
+            ShadowkeyTextureBank.HeaderLength + bank.Count * ShadowkeyTextureBank.TextureLength,
             payload.Length);
         Assert.All(bank.Textures, texture =>
         {
@@ -287,6 +284,42 @@ public sealed class ShadowkeyZoneMapRetailTests
         Assert.Equal(r, texture.Pixels[0]);
         Assert.Equal(g, texture.Pixels[1]);
         Assert.Equal(b, texture.Pixels[2]);
+    }
+
+    /// <summary>
+    ///     ⚠ The rows are stored BOTTOM-UP, and an autocorrelation cannot see that — it measures
+    ///     stride, not order — so the bank claimed "top row first" until the gallery showed the
+    ///     user mirrored art (2026-09-08). twilite's texture 20 is a window vista: sky and water
+    ///     above, foliage below. Read the right way up its top quarter is the bright sky and its
+    ///     bottom quarter the dark foliage; the file-order read puts the foliage on top, so this
+    ///     fails against it.
+    /// </summary>
+    [Fact]
+    public void TextureRowsAreStoredBottomUp_TwiliteVistaHasSkyAboveFoliage()
+    {
+        BucketBTestGuard.SkipUnlessEnabled();
+        var root = RequireRoot();
+
+        var palette = ShadowkeyZonePalette.Parse(File.ReadAllBytes(Path.Combine(root, "twilite.pal")), "twilite.pal");
+        var bank = ShadowkeyTextureBank.Parse(Inflate(root, "twilite", ".ztx"), "twilite.ztx");
+        var vista = bank.Decode(20, palette);
+
+        static double MeanLuminance(byte[] rgba, int firstRow, int rowCount)
+        {
+            double sum = 0;
+            var first = firstRow * ShadowkeyTextureBank.TextureWidth * 4;
+            var count = rowCount * ShadowkeyTextureBank.TextureWidth;
+            for (var i = 0; i < count; i++)
+            {
+                sum += rgba[first + i * 4] + rgba[first + i * 4 + 1] + rgba[first + i * 4 + 2];
+            }
+
+            return sum / count;
+        }
+
+        var top = MeanLuminance(vista.Pixels, 0, 32);
+        var bottom = MeanLuminance(vista.Pixels, 96, 32);
+        Assert.True(top > bottom * 1.5, $"top quarter {top:F1} should be far brighter (sky) than the bottom {bottom:F1} (foliage).");
     }
 
     [Fact]
@@ -429,8 +462,10 @@ public sealed class ShadowkeyZoneMapRetailTests
 
         Assert.Equal(5, colours.Count);
         Assert.Equal(14, colours["0,0,0"].Count);
-        Assert.Equal(new[] { "GhstPass", "GlacierCrawl" }, colours["10,10,11"].OrderBy(z => z, StringComparer.Ordinal).ToArray());
-        Assert.Equal(new[] { "drgnfld", "dstar_e", "dstar_w" }, colours["10,10,12"].OrderBy(z => z, StringComparer.Ordinal).ToArray());
+        Assert.Equal(new[] { "GhstPass", "GlacierCrawl" },
+            colours["10,10,11"].OrderBy(z => z, StringComparer.Ordinal).ToArray());
+        Assert.Equal(new[] { "drgnfld", "dstar_e", "dstar_w" },
+            colours["10,10,12"].OrderBy(z => z, StringComparer.Ordinal).ToArray());
         Assert.Equal(new[] { "snowline" }, colours["9,9,11"]);
         Assert.Equal(new[] { "stouttp" }, colours["8,8,9"]);
     }

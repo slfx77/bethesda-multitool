@@ -11,7 +11,7 @@ public sealed class StarfieldCurve3DDecoderTests
     public void Decoder_preserves_exact_metadata_marker_raw_bodies_and_unresampled_controls()
     {
         var data = StarfieldCurve3DTestStreamBuilder.Build(
-            serializedControlListMarker: 0xA1B2C3D4);
+            0xA1B2C3D4);
 
         var success = StarfieldCurve3DDecoder.TryDecode(data, out var definition, out var error);
 

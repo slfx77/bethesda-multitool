@@ -28,7 +28,7 @@ public sealed class LandTextureLayerPrecedenceTests
         var merged = LandVisualData.MergeForEmission(runtime, null, master);
 
         Assert.NotNull(merged);
-        Assert.Equal(6, merged!.TextureLayers.Count);
+        Assert.Equal(6, merged.TextureLayers.Count);
         Assert.Equal(VisualDataSource.MasterEsm, merged.TextureLayersSource);
     }
 
@@ -73,7 +73,7 @@ public sealed class LandTextureLayerPrecedenceTests
         // authored layers merged as None. The effective-source properties make the fallback real:
         // an aggregate-only MasterEsm instance must outrank a runtime capture.
         var runtime = Data(VisualDataSource.Runtime, 5);
-        var master = Data(VisualDataSource.MasterEsm, 6, stampPerField: false);
+        var master = Data(VisualDataSource.MasterEsm, 6, false);
 
         var merged = LandVisualData.MergeCategories(runtime, master);
 
@@ -87,7 +87,7 @@ public sealed class LandTextureLayerPrecedenceTests
         // The demotion must not be dodgeable by omitting the per-field stamp on a runtime capture:
         // pass 1 is an authored allowlist, so an effective-Runtime (or effective-None) candidate
         // cannot win it.
-        var runtime = Data(VisualDataSource.Runtime, 5, stampPerField: false);
+        var runtime = Data(VisualDataSource.Runtime, 5, false);
         var master = Data(VisualDataSource.MasterEsm, 3);
 
         var merged = LandVisualData.MergeCategories(runtime, master);

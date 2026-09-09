@@ -143,7 +143,7 @@ public class BsaWriterFlagsTests
 
         Assert.NotNull(texture);
         Assert.Equal(0x83u, (uint)archive.Header.ArchiveFlags);
-        Assert.False(texture!.CompressionToggle);
+        Assert.False(texture.CompressionToggle);
         Assert.True(ddsBytes.SequenceEqual(bytes.Skip((int)texture.Offset).Take(ddsBytes.Length)));
     }
 
@@ -155,7 +155,7 @@ public class BsaWriterFlagsTests
 
         Assert.NotNull(method);
 
-        var folderHash = (ulong)method!.Invoke(null, ["textures\\characters\\male", true])!;
+        var folderHash = (ulong)method.Invoke(null, ["textures\\characters\\male", true])!;
         var fileHash = (ulong)method.Invoke(null, ["upperbodymale_n.dds", false])!;
 
         Assert.Equal(0xE081F3D674186C65ul, folderHash);

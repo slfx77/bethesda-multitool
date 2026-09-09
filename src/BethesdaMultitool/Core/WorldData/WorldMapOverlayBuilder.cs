@@ -1,20 +1,18 @@
 using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
-using BethesdaMultitool.Core.Formats.Esm;
-using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.SaveGame.Models;
-using BethesdaMultitool.Core.Formats.SaveGame;
 using BethesdaMultitool.Core.Formats.SpeedTree;
+using BethesdaMultitool.Core.Formats.Tes3;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.WorldData;
+using BethesdaMultitool.Core.WorldData.DayNight;
 
 namespace BethesdaMultitool;
 
@@ -40,7 +38,7 @@ internal static class WorldMapOverlayBuilder
         if (game == BethesdaGame.Morrowind && weatherRecords.Count == 0)
         {
             var (mwWeathers, mwClimate) =
-                Core.Formats.Tes3.MorrowindWeatherIni.SynthesizeFromInstall(sourceFilePath);
+                MorrowindWeatherIni.SynthesizeFromInstall(sourceFilePath);
             weatherRecords = mwWeathers;
             climateRecords = [mwClimate];
         }
@@ -106,7 +104,7 @@ internal static class WorldMapOverlayBuilder
             UnlinkedMapMarkers = unlinkedMarkers,
             AllCells = semantic.Cells,
             XespDisabledRefs = PlacedReferenceEnableStateResolver.ResolveXespDisabledRefs(placedRefs),
-            DayNightSchedule = Core.WorldData.DayNight.DayNightRefSchedule.Build(
+            DayNightSchedule = DayNightRefSchedule.Build(
                 semantic.Scripts, semantic.Cells, semantic.Activators, semantic.Lights, placedRefs),
             CellWorldSize = ResolveCellWorldSize(semantic.Cells),
             CellByFormId = cellByFormId,
@@ -175,7 +173,9 @@ internal static class WorldMapOverlayBuilder
     ///     does the structural plugin probe plus master-list/filename refinement.
     /// </summary>
     private static BethesdaGame DetectGame(string? sourceFilePath)
-        => GameDetector.DetectFromFile(sourceFilePath).Game;
+    {
+        return GameDetector.DetectFromFile(sourceFilePath).Game;
+    }
 
     // Moon-disc sizes for the loaded game, read from iMasserSize/iSecundaSize. Recovered FNV and Skyrim
     // Moon::Initialize implementations place their ±size billboard quad on a fixed 512-unit arm; FO4's
@@ -184,11 +184,17 @@ internal static class WorldMapOverlayBuilder
     private static (float? Primary, float? Secondary) ComputeMoonSizes(
         RecordCollection records, BethesdaGame game)
     {
-        int? GmstInt(string id) => records.GameSettings
-            .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.IntValue;
+        int? GmstInt(string id)
+        {
+            return records.GameSettings
+                .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.IntValue;
+        }
 
-        float? GmstFloat(string id) => records.GameSettings
-            .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.FloatValue;
+        float? GmstFloat(string id)
+        {
+            return records.GameSettings
+                .FirstOrDefault(g => string.Equals(g.EditorId, id, StringComparison.OrdinalIgnoreCase))?.FloatValue;
+        }
 
         var profile = SkyMoonProfile.ForGame(game);
 
@@ -209,7 +215,10 @@ internal static class WorldMapOverlayBuilder
     }
 
     internal static Dictionary<string, GameSettingRecord> BuildGameSettingIndex(
-        IReadOnlyList<GameSettingRecord> settings) => GameSettingRegistry.BuildIndex(settings);
+        IReadOnlyList<GameSettingRecord> settings)
+    {
+        return GameSettingRegistry.BuildIndex(settings);
+    }
 
     /// <summary>
     ///     Build <see cref="WorldViewData" /> from a save file, optionally enriched with a supplementary ESM.
@@ -384,8 +393,10 @@ internal static class WorldMapOverlayBuilder
     ///     <see cref="SpeedTreeRecordSource" /> walks BOTH the typed <c>Trees</c> list (FNV/FO3) and the
     ///     generic records (bare schema-driven collections and fixtures); scanning only one drops valid trees.
     /// </summary>
-    private static Dictionary<string, string> BuildSpeedTreeLeafTextures(RecordCollection semantic) =>
-        SpeedTreeRecordSource.BuildLeafTextureMap(semantic);
+    private static Dictionary<string, string> BuildSpeedTreeLeafTextures(RecordCollection semantic)
+    {
+        return SpeedTreeRecordSource.BuildLeafTextureMap(semantic);
+    }
 
     /// <summary>
     ///     Map each SpeedTree <c>.spt</c> archive path → the TREE record's CNAM dimming pair — the engine's
@@ -393,8 +404,10 @@ internal static class WorldMapOverlayBuilder
     ///     tree before Compute). Without these the generator falls back to the <c>.spt</c>'s token-3010
     ///     leaf default and neutral bark.
     /// </summary>
-    private static Dictionary<string, SpeedTreeDimming> BuildSpeedTreeDimming(RecordCollection semantic) =>
-        SpeedTreeRecordSource.BuildDimmingMap(semantic);
+    private static Dictionary<string, SpeedTreeDimming> BuildSpeedTreeDimming(RecordCollection semantic)
+    {
+        return SpeedTreeRecordSource.BuildDimmingMap(semantic);
+    }
 
     private static Dictionary<uint, List<NavMeshRecord>> BuildNavMeshIndex(
         List<NavMeshRecord> navMeshes, List<CellRecord> cells)
@@ -730,8 +743,10 @@ internal static class WorldMapOverlayBuilder
         return dict;
     }
 
-    private static List<WeatherRecord> BuildAllWeathers(List<WeatherRecord> records) =>
-        records.OrderBy(r => r.EditorId ?? $"0x{r.FormId:X8}", StringComparer.OrdinalIgnoreCase).ToList();
+    private static List<WeatherRecord> BuildAllWeathers(List<WeatherRecord> records)
+    {
+        return records.OrderBy(r => r.EditorId ?? $"0x{r.FormId:X8}", StringComparer.OrdinalIgnoreCase).ToList();
+    }
 
     private static List<PlacedReference> BuildSaveOverlayMarkers(
         SaveFile save, uint[] formIdArray, FormIdResolver resolver)
@@ -777,7 +792,9 @@ internal static class WorldMapOverlayBuilder
     // builder just delegates.
     private static Dictionary<uint, List<PlacedReference>> GroupMarkersByWorldspace(
         List<WorldspaceRecord> worldspaces, BethesdaGame game)
-        => WorldspaceMarkerGrouping.GroupByWorldspace(worldspaces, game);
+    {
+        return WorldspaceMarkerGrouping.GroupByWorldspace(worldspaces, game);
+    }
 
     private static HashSet<uint> CollectLinkedCellFormIds(List<WorldspaceRecord> worldspaces)
     {

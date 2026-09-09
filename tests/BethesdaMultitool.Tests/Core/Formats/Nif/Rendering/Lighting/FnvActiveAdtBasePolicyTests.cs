@@ -115,7 +115,7 @@ public sealed class FnvActiveAdtBasePolicyTests
     public void AlphaEligibility_AcceptsOnlyAuthoredGreaterWhenTestingIsEnabled(int function)
     {
         foreach (var mode in new[]
-                 { FnvClassicBasicShaderMode.Sls1009, FnvClassicBasicShaderMode.Sls1013VertexColor })
+                     { FnvClassicBasicShaderMode.Sls1009, FnvClassicBasicShaderMode.Sls1013VertexColor })
         {
             var eligibility = Eligible(mode) with { HasAlphaTest = true, AlphaTestFunction = function };
             Assert.Equal(function == 4, FnvActiveAdtBasePolicy.IsEligible(eligibility));
@@ -129,6 +129,7 @@ public sealed class FnvActiveAdtBasePolicyTests
                     expected |= FnvActiveAdtBasePolicy.RuntimeActiveAdtVertexColorFlag;
                 }
             }
+
             Assert.Equal(expected, flags);
             Assert.True(FnvActiveAdtBasePolicy.IsEligible(eligibility with { HasAlphaTest = false }));
         }
@@ -141,12 +142,12 @@ public sealed class FnvActiveAdtBasePolicyTests
     {
         var opaque = Eligible((FnvClassicBasicShaderMode)classifierMode);
         var cutout = opaque with { HasAlphaTest = true, AlphaTestFunction = 4 };
-        Assert.True(FnvActiveAdtBasePolicy.IsEligible(opaque, allowAlphaTested: false));
-        Assert.False(FnvActiveAdtBasePolicy.IsEligible(cutout, allowAlphaTested: false));
+        Assert.True(FnvActiveAdtBasePolicy.IsEligible(opaque, false));
+        Assert.False(FnvActiveAdtBasePolicy.IsEligible(cutout, false));
         Assert.Equal(0x45u,
-            FnvActiveAdtBasePolicy.ApplyRuntimeFlags(cutout, 0xC45u, allowAlphaTested: false));
+            FnvActiveAdtBasePolicy.ApplyRuntimeFlags(cutout, 0xC45u, false));
         Assert.Equal(FnvActiveAdtBasePolicy.ApplyRuntimeFlags(opaque, 0x45u),
-            FnvActiveAdtBasePolicy.ApplyRuntimeFlags(opaque, 0x45u, allowAlphaTested: false));
+            FnvActiveAdtBasePolicy.ApplyRuntimeFlags(opaque, 0x45u, false));
     }
 
     [Fact]

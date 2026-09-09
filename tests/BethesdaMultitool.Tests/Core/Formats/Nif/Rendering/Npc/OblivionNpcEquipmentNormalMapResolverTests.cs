@@ -170,15 +170,18 @@ public sealed class OblivionNpcEquipmentNormalMapResolverTests
         Assert.Equal(0, resolver.CacheMisses);
     }
 
-    private static RenderableSubmesh CreateTriangle(NifShaderTextureMetadata? metadata = null) => new()
+    private static RenderableSubmesh CreateTriangle(NifShaderTextureMetadata? metadata = null)
     {
-        Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
-        Triangles = [0, 1, 2],
-        Normals = [0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f],
-        UVs = [0f, 0f, 1f, 0f, 0f, 1f],
-        Tangents = [1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f],
-        Bitangents = [0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f],
-        DiffuseTexturePath = AuthoredDiffuse,
-        ShaderMetadata = metadata
-    };
+        return new RenderableSubmesh
+        {
+            Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
+            Triangles = [0, 1, 2],
+            Normals = [0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f],
+            UVs = [0f, 0f, 1f, 0f, 0f, 1f],
+            Tangents = [1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f],
+            Bitangents = [0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f],
+            DiffuseTexturePath = AuthoredDiffuse,
+            ShaderMetadata = metadata
+        };
+    }
 }

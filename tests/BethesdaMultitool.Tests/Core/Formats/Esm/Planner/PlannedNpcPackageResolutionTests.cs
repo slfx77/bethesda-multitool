@@ -118,12 +118,13 @@ public sealed class PlannedNpcPackageResolutionTests
         IEnumerable<uint> packages,
         ImmutableDictionary<uint, uint> remap)
     {
+        var packageIds = packages.ToImmutableHashSet();
         return new EmitPlan
         {
             Records = [record],
             SourceToEmittedFormId = remap,
-            EmittedFormIds = packages.Append(record.FormId).ToImmutableHashSet(),
-            ValidPackageFormIds = packages.ToImmutableHashSet(),
+            EmittedFormIds = packageIds.Add(record.FormId),
+            ValidPackageFormIds = packageIds,
             RecordIndexByEmittedFormId = ImmutableDictionary<uint, int>.Empty.Add(record.FormId, 0),
             Diagnostics = ImmutableArray<PlanDiagnostic>.Empty,
             Meta = new PlanMetadata

@@ -38,17 +38,17 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     private readonly AutoResetEvent _fenceEvent = new(false);
     private readonly Queue<FenceRetirement> _fenceRetirements = new();
     private readonly ulong[] _frameFenceValues = new ulong[FramesInFlight];
-    private readonly List<IDisposable> _unfencedSubmissionRetirements = new();
 
     private readonly GpuDevice12 _gpu;
+    private readonly List<IDisposable> _unfencedSubmissionRetirements = new();
     private bool _disposed;
 
     // True once this frame slot's wait counters have been reset, so a wait split across
     // WaitForFrameSlot + BeginFrame reports one total rather than only the second half.
     private bool _fenceWaitAccumulating;
     private bool _frameOpen;
-    private bool _submissionPoisoned;
     private ulong _nextFenceValue = 1;
+    private bool _submissionPoisoned;
 
     public GpuCommandRecorder12(GpuDevice12 gpu)
     {
@@ -62,8 +62,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         CommandList = gpu.Device.CreateCommandList<ID3D12GraphicsCommandList>(
             0,
             CommandListType.Direct,
-            _allocators[0],
-            null);
+            _allocators[0]);
         CommandList.Close();
     }
 
@@ -95,14 +94,20 @@ internal sealed class GpuCommandRecorder12 : IDisposable
     /// <summary>Fence value signaled by the most recent <see cref="EndFrame" /> submission.</summary>
     public ulong LastSubmittedFenceValue { get; private set; }
 
-    public void Dispose() => DisposeCore(waitForGpuIdle: true);
+    public void Dispose()
+    {
+        DisposeCore(true);
+    }
 
     /// <summary>
     ///     Releases recorder-owned objects after the owner has already made its one best-effort idle
     ///     wait. This keeps shared-context teardown from issuing a second queue signal after device
     ///     removal while preserving <see cref="Dispose()" /> as the safe standalone API.
     /// </summary>
-    internal void DisposeAfterGpuIdleAttempt() => DisposeCore(waitForGpuIdle: false);
+    internal void DisposeAfterGpuIdleAttempt()
+    {
+        DisposeCore(false);
+    }
 
     private void DisposeCore(bool waitForGpuIdle)
     {
@@ -296,7 +301,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
             finally
             {
                 _currentFrameRetirements.Clear();
-                NotifyCurrentFrameParticipants(submitted: false);
+                NotifyCurrentFrameParticipants(false);
                 FrameIndex = (FrameIndex + 1) % FramesInFlight;
                 _frameOpen = false;
                 _fenceWaitAccumulating = false;
@@ -331,7 +336,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         }
         catch (Exception ex)
         {
-            return FinalizeFailedSubmission(ex, commandListMayHaveReachedQueue: false, retainIfUnfenced);
+            return FinalizeFailedSubmission(ex, false, retainIfUnfenced);
         }
 
         try
@@ -342,7 +347,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         {
             // ExecuteCommandLists has no HRESULT return. If its managed projection throws while
             // crossing the native boundary, conservatively retain every referenced lifetime.
-            return FinalizeFailedSubmission(ex, commandListMayHaveReachedQueue: true, retainIfUnfenced);
+            return FinalizeFailedSubmission(ex, true, retainIfUnfenced);
         }
 
         var signalValue = _nextFenceValue++;
@@ -355,7 +360,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
             // Execute succeeded, so releasing staging/readback resources here can race the GPU even
             // though no usable completion fence was published. Poison future recording and retain
             // those objects until the owner performs its final idle/device teardown.
-            return FinalizeFailedSubmission(ex, commandListMayHaveReachedQueue: true, retainIfUnfenced);
+            return FinalizeFailedSubmission(ex, true, retainIfUnfenced);
         }
 
         _frameFenceValues[FrameIndex] = signalValue;
@@ -366,7 +371,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
         }
 
         _currentFrameRetirements.Clear();
-        NotifyCurrentFrameParticipants(submitted: true);
+        NotifyCurrentFrameParticipants(true);
 
         FrameIndex = (FrameIndex + 1) % FramesInFlight;
         _frameOpen = false;
@@ -431,7 +436,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
                 _unfencedSubmissionRetirements.Add(retainIfUnfenced);
             }
 
-            NotifyCurrentFrameParticipants(submitted: true);
+            NotifyCurrentFrameParticipants(true);
         }
         else
         {
@@ -440,7 +445,7 @@ internal sealed class GpuCommandRecorder12 : IDisposable
                 DisposeNoThrow(resource, "abandoned submission retirement");
             }
 
-            NotifyCurrentFrameParticipants(submitted: false);
+            NotifyCurrentFrameParticipants(false);
         }
 
         _currentFrameRetirements.Clear();
@@ -517,13 +522,17 @@ internal readonly record struct GpuCommandSubmissionOutcome12(
     ulong FenceValue,
     Exception? Error)
 {
-    internal static GpuCommandSubmissionOutcome12 Success(ulong fenceValue) =>
-        new(true, true, fenceValue, null);
+    internal static GpuCommandSubmissionOutcome12 Success(ulong fenceValue)
+    {
+        return new GpuCommandSubmissionOutcome12(true, true, fenceValue, null);
+    }
 
     internal static GpuCommandSubmissionOutcome12 Failure(
         bool commandListMayHaveReachedQueue,
-        Exception error) =>
-        new(false, commandListMayHaveReachedQueue, 0, error);
+        Exception error)
+    {
+        return new GpuCommandSubmissionOutcome12(false, commandListMayHaveReachedQueue, 0, error);
+    }
 
     internal void ThrowIfFailed()
     {

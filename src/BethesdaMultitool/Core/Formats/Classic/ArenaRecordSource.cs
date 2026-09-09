@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Arena;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -224,7 +225,11 @@ internal static class ArenaRecordSource
             }
         }
 
-        return [.. result.Select(kvp => (kvp.Key.ToUpperInvariant(), kvp.Value)).OrderBy(x => x.Item1, StringComparer.Ordinal)];
+        return
+        [
+            .. result.Select(kvp => (kvp.Key.ToUpperInvariant(), kvp.Value))
+                .OrderBy(x => x.Item1, StringComparer.Ordinal)
+        ];
     }
 
     /// <summary>Parses one already-decrypted .INF into its record form.</summary>
@@ -233,7 +238,7 @@ internal static class ArenaRecordSource
         ArgumentNullException.ThrowIfNull(name);
         ArgumentNullException.ThrowIfNull(plainBytes);
 
-        var inf = ArenaInfFile.ParseText(System.Text.Encoding.Latin1.GetString(plainBytes), name);
+        var inf = ArenaInfFile.ParseText(Encoding.Latin1.GetString(plainBytes), name);
         var fields = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["FloorTextures"] = inf.Floors.Count,
@@ -255,7 +260,8 @@ internal static class ArenaRecordSource
             fields["OutdoorDungeon"] = ceiling.OutdoorDungeon;
         }
 
-        var menuIds = inf.Walls.Where(w => w.MenuId is not null).Select(w => w.MenuId!.Value).Distinct().Order().ToList();
+        var menuIds = inf.Walls.Where(w => w.MenuId is not null).Select(w => w.MenuId!.Value).Distinct().Order()
+            .ToList();
         if (menuIds.Count > 0)
         {
             fields["MenuIds"] = string.Join(", ", menuIds);

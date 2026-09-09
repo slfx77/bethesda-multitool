@@ -57,6 +57,13 @@ internal readonly record struct FrameProfileSample(
 internal sealed class FrameProfileAccumulator
 {
     private readonly List<double> _frameSamples = new(256);
+    private readonly Dictionary<int, int> _refBuildPhases = [];
+    private readonly Dictionary<int, int> _refBuildTriggers = [];
+    private readonly Dictionary<string, int> _refLightTileFallbacks = new(StringComparer.Ordinal);
+    private readonly Dictionary<int, int> _refOpaqueFrontToBackFallbacks = new();
+    private readonly Dictionary<int, int> _refOpaqueIndirectFallbacks = new();
+    private readonly Dictionary<int, int> _refReuseBlockers = [];
+    private readonly Dictionary<int, int> _refStaticOpaquePacketFallbacks = new();
     private double _acquire;
     private double _allocatedBytes;
     private double _beginFrame;
@@ -69,9 +76,6 @@ internal sealed class FrameProfileAccumulator
     private double _frameMax;
     private int _frames;
     private double _frameTotal;
-    private int _sceneCensusDirtyFrames;
-    private int _sceneNonMaintenanceDirtyFrames;
-    private double _renderBody;
     private double _hud;
     private long _intervalStarted = Stopwatch.GetTimestamp();
     private long _lastFrameNumber;
@@ -81,8 +85,17 @@ internal sealed class FrameProfileAccumulator
     private uint _lastViewportWidth;
     private double _present;
     private double _refActiveDecodes;
+    private double _refBatchBuild;
+    private double _refBatchBuildBudget;
+    private double _refBatchBuildProcessed;
+    private double _refBatchBuildTotal;
     private double _refBatches;
+    private double _refBatchFinalize;
+    private int _refBatchReuseFrames;
     private double _refBlendedDraws;
+    private double _refBlendedRefresh;
+    private double _refBlendedSubmission;
+    private int _refBuildPublishedFrames;
     private double _refCandidates;
     private double _refCb;
     private double _refCellsVisited;
@@ -91,118 +104,105 @@ internal sealed class FrameProfileAccumulator
     private double _refCpuDecodedMisses;
     private double _refCpuDecodedNegativeHits;
     private double _refCull;
+    private int _refCullCacheHits;
     private double _refCulled;
-    private bool _refCullRefreshPending;
     private double _refCullFlips;
+    private bool _refCullRefreshPending;
     private double _refDecodeRequests;
     private double _refDecodeStarts;
     private double _refDrawCall;
     private double _refDrawn;
     private double _referencesFrame;
-    private double _shadowFrame;
+    private double _refGpuUpload;
+    private int _refIncrementalBuildFrames;
+    private double _refInstanceBucket;
     private double _refInstancedDraws;
     private double _refInstances;
-    private double _refOpaqueActiveDraws;
-    private double _refOpaqueDecalDraws;
-    private double _refOpaqueGrassCutoutDraws;
-    private double _refOpaqueGrassDepthWriteDraws;
-    private double _refOpaqueOrdinaryDraws;
-    private double _refOpaquePsoTransitions;
-    private double _refOpaqueSurvivingDraws;
-    private double _refOpaqueUniquePsos;
-    private int _refOpaqueIndirectActiveFrames;
-    private double _refOpaqueDirectDraws;
-    private double _refOpaqueIndirectDraws;
-    private double _refOpaqueIndirectExecuteCalls;
-    private double _refOpaqueIndirectArgumentBytes;
-    private readonly Dictionary<int, int> _refOpaqueIndirectFallbacks = new();
-    private int _refOpaqueFrontToBackActiveFrames;
-    private double _refOpaqueFrontToBackBatches;
-    private double _refOpaqueFrontToBackInstances;
-    private readonly Dictionary<int, int> _refOpaqueFrontToBackFallbacks = new();
-    private int _refModernStandardShaderActiveFrames;
-    private double _refModernStandardBatches;
-    private double _refModernStandardInstances;
-    private int _refStaticOpaquePacketActiveFrames;
-    private int _refStaticOpaquePacketHitFrames;
-    private double _refStaticOpaquePacketBatches;
-    private double _refStaticOpaquePacketInstances;
-    private double _refStaticOpaquePacketRuns;
-    private double _refStaticOpaquePacketBytes;
-    private double _refStaticOpaquePacketBuildMilliseconds;
-    private double _refStaticOpaquePacketSavedMatrixBytes;
-    private double _refStaticOpaquePacketSavedConstantBytes;
-    private double _refStaticOpaquePacketSavedArgumentBytes;
-    private readonly Dictionary<int, int> _refStaticOpaquePacketFallbacks = new();
+    private double _refLightTileAverageLights;
+    private double _refLightTileBuild;
+    private double _refLightTileCount;
+    private double _refLightTileEmptyPercent;
+    private int _refLightTileFallbackFrames;
+    private double _refLightTileMaxLights;
+    private double _refLightTileUploadBytes;
     private double _refLiveParticleDraws;
     private double _refLiveParticleFallbacks;
     private double _refLiveParticleOwners;
     private double _refLiveParticleParticles;
     private double _refLiveParticleUploadBytes;
-    private double _refPlacedLights;
-    private double _refLightTileBuild;
-    private double _refLightTileCount;
-    private double _refLightTileUploadBytes;
-    private double _refLightTileAverageLights;
-    private double _refLightTileMaxLights;
-    private double _refLightTileEmptyPercent;
-    private int _refLightTileFallbackFrames;
-    private readonly Dictionary<string, int> _refLightTileFallbacks = new(StringComparer.Ordinal);
+    private double _refMainCpu;
+    private int _refMeshMaterializationPending;
     private double _refMeshMisses;
     private double _refMeshMissing;
-    private int _refMeshMaterializationPending;
-    private double _refShadowMeshMissing;
-    private double _refBatchBuild;
-    private double _refBatchBuildProcessed;
-    private double _refBatchBuildTotal;
-    private double _refBatchBuildBudget;
     private double _refMeshResolve;
-    private double _refInstanceBucket;
-    private double _refBatchFinalize;
-    private double _refGpuUpload;
-    private double _refBlendedRefresh;
-    private double _refBlendedSubmission;
-    private double _refMainCpu;
+    private double _refModernStandardBatches;
+    private double _refModernStandardInstances;
+    private int _refModernStandardShaderActiveFrames;
+    private double _refOpaqueActiveDraws;
+    private double _refOpaqueDecalDraws;
+    private double _refOpaqueDirectDraws;
+    private int _refOpaqueFrontToBackActiveFrames;
+    private double _refOpaqueFrontToBackBatches;
+    private double _refOpaqueFrontToBackInstances;
+    private double _refOpaqueGrassCutoutDraws;
+    private double _refOpaqueGrassDepthWriteDraws;
+    private int _refOpaqueIndirectActiveFrames;
+    private double _refOpaqueIndirectArgumentBytes;
+    private double _refOpaqueIndirectDraws;
+    private double _refOpaqueIndirectExecuteCalls;
+    private double _refOpaqueOrdinaryDraws;
+    private double _refOpaquePsoTransitions;
     private double _refOpaqueSubmission;
-    private int _refSampleFrames;
-    private int _refCullCacheHits;
-    private int _refBatchReuseFrames;
-    private int _refIncrementalBuildFrames;
-    private int _refBuildPublishedFrames;
-    private int _refSyncFallbackFrames;
-    private readonly Dictionary<int, int> _refReuseBlockers = [];
-    private readonly Dictionary<int, int> _refBuildTriggers = [];
-    private readonly Dictionary<int, int> _refBuildPhases = [];
+    private double _refOpaqueSurvivingDraws;
+    private double _refOpaqueUniquePsos;
+    private double _refPlacedLights;
     private double _refQueuedDecodes;
     private double _refRgbaTextureUploads;
+    private int _refSampleFrames;
+    private double _refShadowMeshMissing;
     private double _refSrvBind;
     private double _refSrvBinds;
     private double _refState;
+    private int _refStaticOpaquePacketActiveFrames;
+    private double _refStaticOpaquePacketBatches;
+    private double _refStaticOpaquePacketBuildMilliseconds;
+    private double _refStaticOpaquePacketBytes;
+    private int _refStaticOpaquePacketHitFrames;
+    private double _refStaticOpaquePacketInstances;
+    private double _refStaticOpaquePacketRuns;
+    private double _refStaticOpaquePacketSavedArgumentBytes;
+    private double _refStaticOpaquePacketSavedConstantBytes;
+    private double _refStaticOpaquePacketSavedMatrixBytes;
     private double _refSubmeshDraws;
-    private double _refTexturePending;
+    private int _refSyncFallbackFrames;
     private int _refTextureActiveResolvesMax;
+    private double _refTexturePending;
+    private double _renderBody;
     private double _ringBytes;
+    private int _sceneCensusDirtyFrames;
+    private int _sceneNonMaintenanceDirtyFrames;
+    private double _shadowFrame;
     private double _terrainCandidates;
     private double _terrainCpu;
     private double _terrainDrawLoop;
     private double _terrainDraws;
+    private double _terrainFrame;
     private int _terrainFrustumActiveFrames;
     private double _terrainFrustumRejected;
-    private double _terrainFrame;
     private double _terrainGather;
     private double _terrainMeshUpload;
     private double _terrainPreUpload;
     private double _terrainPreUploads;
     private double _terrainQuadrantDraws;
     private double _terrainQuadrants;
+    private int _terrainSampleFrames;
     private double _terrainSort;
     private double _terrainState;
+    private int _terrainTextureActiveResolvesMax;
     private double _terrainUploads;
-    private int _terrainSampleFrames;
     private double _textureCompressedUploads;
     private double _textureMisses;
     private double _textureRgbaUploads;
-    private int _terrainTextureActiveResolvesMax;
     private double _visibleReferences;
     private double _visibleTerrain;
     private double _visibleWater;
@@ -234,6 +234,7 @@ internal sealed class FrameProfileAccumulator
         {
             _sceneCensusDirtyFrames++;
         }
+
         if (!sceneCensus.IsCleanOrFrameCeilingMaintenance(
                 references?.ReferenceBatchBuildTrigger ?? 0))
         {
@@ -372,6 +373,7 @@ internal sealed class FrameProfileAccumulator
             {
                 _refOpaqueIndirectActiveFrames++;
             }
+
             _refOpaqueDirectDraws += references.ReferenceOpaqueDirectDraws;
             _refOpaqueIndirectDraws += references.ReferenceOpaqueIndirectDraws;
             _refOpaqueIndirectExecuteCalls += references.ReferenceOpaqueIndirectExecuteCalls;
@@ -382,10 +384,12 @@ internal sealed class FrameProfileAccumulator
                     _refOpaqueIndirectFallbacks,
                     references.ReferenceOpaqueIndirectFallbackReason);
             }
+
             if (references.ReferenceOpaqueFrontToBackActive)
             {
                 _refOpaqueFrontToBackActiveFrames++;
             }
+
             _refOpaqueFrontToBackBatches += references.ReferenceOpaqueFrontToBackBatches;
             _refOpaqueFrontToBackInstances += references.ReferenceOpaqueFrontToBackInstances;
             if (references.ReferenceOpaqueFrontToBackFallbackReason != 0)
@@ -394,20 +398,24 @@ internal sealed class FrameProfileAccumulator
                     _refOpaqueFrontToBackFallbacks,
                     references.ReferenceOpaqueFrontToBackFallbackReason);
             }
+
             if (references.ReferenceModernStandardShaderActive)
             {
                 _refModernStandardShaderActiveFrames++;
             }
+
             _refModernStandardBatches += references.ReferenceModernStandardBatches;
             _refModernStandardInstances += references.ReferenceModernStandardInstances;
             if (references.ReferenceStaticOpaquePacketActive)
             {
                 _refStaticOpaquePacketActiveFrames++;
             }
+
             if (references.ReferenceStaticOpaquePacketHit)
             {
                 _refStaticOpaquePacketHitFrames++;
             }
+
             _refStaticOpaquePacketBatches += references.ReferenceStaticOpaquePacketBatches;
             _refStaticOpaquePacketInstances += references.ReferenceStaticOpaquePacketInstances;
             _refStaticOpaquePacketRuns += references.ReferenceStaticOpaquePacketRuns;
@@ -426,6 +434,7 @@ internal sealed class FrameProfileAccumulator
                     _refStaticOpaquePacketFallbacks,
                     references.ReferenceStaticOpaquePacketFallbackReason);
             }
+
             _refBlendedDraws += references.ReferenceBlendedDraws;
             _refPlacedLights += references.ReferencePlacedLightCount;
             _refLightTileBuild += references.ReferencePlacedLightTileBuildMilliseconds;
@@ -440,6 +449,7 @@ internal sealed class FrameProfileAccumulator
                 _refLightTileFallbacks[lightTileFallback] =
                     _refLightTileFallbacks.TryGetValue(lightTileFallback, out var count) ? count + 1 : 1;
             }
+
             _refLiveParticleOwners += references.ReferenceLiveParticleOwners;
             _refLiveParticleParticles += references.ReferenceLiveParticleParticles;
             _refLiveParticleDraws += references.ReferenceLiveParticleDraws;
@@ -476,6 +486,7 @@ internal sealed class FrameProfileAccumulator
         }
 
         double Avg(double value) => value / _frames;
+
         double TerrainAvg(double value) =>
             _terrainSampleFrames == 0 ? 0.0 : value / _terrainSampleFrames;
 
@@ -540,7 +551,8 @@ internal sealed class FrameProfileAccumulator
             // loop. Report the renderer's actual main-pass stopwatch under the established key;
             // retain the selected sum under an explicitly honest compatibility name.
             ["refsCpuAvgMs"] = Avg(_refMainCpu),
-            ["refsInstrumentedAvgMs"] = Avg(_refState + _refCull + _refBatchBuild + _refBlendedRefresh + _refCb + _refSrvBind + _refDrawCall),
+            ["refsInstrumentedAvgMs"] = Avg(_refState + _refCull + _refBatchBuild + _refBlendedRefresh + _refCb +
+                                            _refSrvBind + _refDrawCall),
             ["refsOpaqueSubmitAvgMs"] = Avg(_refOpaqueSubmission),
             ["refsBlendedSubmitAvgMs"] = Avg(_refBlendedSubmission),
             ["refsCullAvgMs"] = Avg(_refCull),
@@ -707,9 +719,9 @@ internal sealed class FrameProfileAccumulator
                 $"instDraw={Avg(_refInstancedDraws):0.0} blendDraw={Avg(_refBlendedDraws):0.0} ") +
             string.Create(CultureInfo.InvariantCulture,
                 $"opaque={Avg(_refOpaqueActiveDraws):0.0}/{Avg(_refOpaqueSurvivingDraws):0.0} " +
-                 $"pso={Avg(_refOpaqueUniquePsos):0.0}/{Avg(_refOpaquePsoTransitions):0.0} " +
-                 $"lanes={Avg(_refOpaqueOrdinaryDraws):0.0}/{Avg(_refOpaqueDecalDraws):0.0}/" +
-                 $"{Avg(_refOpaqueGrassCutoutDraws):0.0}/{Avg(_refOpaqueGrassDepthWriteDraws):0.0} ") +
+                $"pso={Avg(_refOpaqueUniquePsos):0.0}/{Avg(_refOpaquePsoTransitions):0.0} " +
+                $"lanes={Avg(_refOpaqueOrdinaryDraws):0.0}/{Avg(_refOpaqueDecalDraws):0.0}/" +
+                $"{Avg(_refOpaqueGrassCutoutDraws):0.0}/{Avg(_refOpaqueGrassDepthWriteDraws):0.0} ") +
             string.Create(CultureInfo.InvariantCulture,
                 $"indirect={Avg(_refOpaqueIndirectDraws):0.0}/{Avg(_refOpaqueIndirectExecuteCalls):0.0} " +
                 $"direct={Avg(_refOpaqueDirectDraws):0.0} argKB={Avg(_refOpaqueIndirectArgumentBytes) / 1024.0:0.0} " +

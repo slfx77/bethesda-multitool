@@ -34,7 +34,7 @@ public sealed class DdsGpuTexturePayloadParserTests
         var payload = DdsGpuTexturePayloadParser.Parse(ddsData);
 
         Assert.NotNull(payload);
-        Assert.Equal(expectedFormat, payload!.Format);
+        Assert.Equal(expectedFormat, payload.Format);
         Assert.Equal(8, payload.Width);
         Assert.Equal(8, payload.Height);
         Assert.Equal(4, payload.MipCount);
@@ -77,7 +77,7 @@ public sealed class DdsGpuTexturePayloadParserTests
         var payload = DdsGpuTexturePayloadParser.Parse(ddsData);
 
         Assert.NotNull(payload);
-        Assert.Equal(expectedFormat, payload!.Format);
+        Assert.Equal(expectedFormat, payload.Format);
         Assert.Equal(ExpectedNormalDecodeMode(expectedFormat), payload.NormalDecodeMode);
         Assert.Equal(4, payload.MipCount);
         AssertMip(payload.MipLevels[0], 8, 8, GetCompressedLevelSize(8, 8, bytesPerBlock), 1);
@@ -112,7 +112,7 @@ public sealed class DdsGpuTexturePayloadParserTests
         var payload = DdsGpuTexturePayloadParser.Parse(ddsData);
 
         Assert.NotNull(payload);
-        Assert.True(payload!.IsCubemap);
+        Assert.True(payload.IsCubemap);
         Assert.Equal(6, payload.ArraySize);
         Assert.Equal(2, payload.MipCount);
         Assert.Equal(12, payload.MipLevels.Count); // 6 faces × 2 mips, face-major
@@ -166,7 +166,7 @@ public sealed class DdsGpuTexturePayloadParserTests
         var payload = DdsGpuTexturePayloadParser.Parse(data);
 
         Assert.NotNull(payload);
-        Assert.True(payload!.IsCubemap);
+        Assert.True(payload.IsCubemap);
         Assert.Equal(GpuTexturePayloadFormat.Rgba8, payload.Format);
         Assert.Equal(2, payload.MipCount);
         Assert.Equal(12, payload.MipLevels.Count);
@@ -190,13 +190,15 @@ public sealed class DdsGpuTexturePayloadParserTests
         Assert.All(mip.Bytes, value => Assert.Equal(expectedFill, value));
     }
 
-    private static GpuNormalDecodeMode ExpectedNormalDecodeMode(GpuTexturePayloadFormat format) =>
-        format switch
+    private static GpuNormalDecodeMode ExpectedNormalDecodeMode(GpuTexturePayloadFormat format)
+    {
+        return format switch
         {
             GpuTexturePayloadFormat.BC5 => GpuNormalDecodeMode.Bc5ReconstructZ,
             GpuTexturePayloadFormat.BC5S => GpuNormalDecodeMode.Bc5SignedReconstructZ,
             _ => GpuNormalDecodeMode.None
         };
+    }
 
     private static byte[] CreateCompressedDds(
         int width,

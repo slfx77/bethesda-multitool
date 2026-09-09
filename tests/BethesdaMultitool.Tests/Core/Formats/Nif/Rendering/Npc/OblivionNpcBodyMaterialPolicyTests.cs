@@ -267,20 +267,23 @@ public sealed class OblivionNpcBodyMaterialPolicyTests
             npc, mesh, default, partOverride));
     }
 
-    private static RenderableSubmesh Mesh(string? material, string? shape) => new()
+    private static RenderableSubmesh Mesh(string? material, string? shape)
     {
-        LegacyMaterialName = material,
-        ShapeName = shape,
-        Positions = [1, 2, 3],
-        Triangles = [],
-        Normals = [0, 0, 1],
-        Tangents = [2, 0.3f, 0],
-        Bitangents = [0.4f, -3, 0],
-        DiffuseTexturePath = OriginalDiffuse,
-        NormalMapTexturePath = OriginalNormal,
-        MaterialDiffuse = (0.4f, 0.6f, 0.8f),
-        SpecularColor = (0.5f, 0.7f, 0.9f),
-        MaterialGlossiness = 23,
-        MaterialAlpha = 0.8f
-    };
+        return new RenderableSubmesh
+        {
+            LegacyMaterialName = material,
+            ShapeName = shape,
+            Positions = [1, 2, 3],
+            Triangles = [],
+            Normals = [0, 0, 1],
+            Tangents = [2, 0.3f, 0],
+            Bitangents = [0.4f, -3, 0],
+            DiffuseTexturePath = OriginalDiffuse,
+            NormalMapTexturePath = OriginalNormal,
+            MaterialDiffuse = (0.4f, 0.6f, 0.8f),
+            SpecularColor = (0.5f, 0.7f, 0.9f),
+            MaterialGlossiness = 23,
+            MaterialAlpha = 0.8f
+        };
+    }
 }

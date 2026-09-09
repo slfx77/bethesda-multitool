@@ -41,7 +41,7 @@ public sealed class NifBsplineTransformReaderTests
     [Fact]
     public void TryRead_AbsentHandlesUseAuthoredTransformDefaultsWithoutDataBlocks()
     {
-        var fixture = new Fixture(compressed: true, bigEndian: false);
+        var fixture = new Fixture(true, false);
         fixture.AuthorDefaultsOnly();
         long decodedScalarCount = 7;
 
@@ -66,24 +66,24 @@ public sealed class NifBsplineTransformReaderTests
     [Fact]
     public void TryRead_InvalidRangesSpansAndBudgetsFailClosed()
     {
-        var invalidHandle = new Fixture(compressed: true, bigEndian: false);
+        var invalidHandle = new Fixture(true, false);
         invalidHandle.SetRotationHandle(uint.MaxValue);
         AssertRejected(invalidHandle);
 
-        var invalidBasis = new Fixture(compressed: false, bigEndian: false);
+        var invalidBasis = new Fixture(false, false);
         invalidBasis.SetBasisCount(3);
         AssertRejected(invalidBasis);
 
-        var overlongStore = new Fixture(compressed: true, bigEndian: false);
+        var overlongStore = new Fixture(true, false);
         overlongStore.GrowDataBlockByOneByte();
         AssertRejected(overlongStore);
 
-        var wrongInterpolatorSize = new Fixture(compressed: false, bigEndian: false);
+        var wrongInterpolatorSize = new Fixture(false, false);
         wrongInterpolatorSize.Interpolator.Size--;
         AssertRejected(wrongInterpolatorSize);
 
-        var budgeted = new Fixture(compressed: true, bigEndian: false);
-        long decodedScalarCount = NifBsplineTransformReader.MaximumDecodedScalarCount - 31;
+        var budgeted = new Fixture(true, false);
+        var decodedScalarCount = NifBsplineTransformReader.MaximumDecodedScalarCount - 31;
         Assert.False(NifBsplineTransformReader.TryRead(
             budgeted.Data,
             budgeted.Nif,
@@ -103,7 +103,7 @@ public sealed class NifBsplineTransformReaderTests
         {
             foreach (var value in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
             {
-                var fixture = new Fixture(compressed: true, bigEndian);
+                var fixture = new Fixture(true, bigEndian);
                 fixture.SetCompressionScalar(relativeOffset, value);
                 AssertRejected(fixture);
             }
@@ -111,7 +111,7 @@ public sealed class NifBsplineTransformReaderTests
 
         foreach (var multiplierOffset in new[] { 64, 72, 80 })
         {
-            var fixture = new Fixture(compressed: true, bigEndian);
+            var fixture = new Fixture(true, bigEndian);
             fixture.SetCompressionScalar(multiplierOffset, -1f);
             AssertRejected(fixture);
         }
@@ -152,9 +152,9 @@ public sealed class NifBsplineTransformReaderTests
     private sealed class Fixture
     {
         private const int ControlPointCount = 4;
+        private readonly BlockInfo _basis;
         private readonly bool _bigEndian;
         private readonly bool _compressed;
-        private readonly BlockInfo _basis;
         private readonly BlockInfo _store;
 
         internal Fixture(bool compressed, bool bigEndian)

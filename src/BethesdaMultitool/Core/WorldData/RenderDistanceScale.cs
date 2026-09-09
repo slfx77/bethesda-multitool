@@ -1,4 +1,5 @@
 using System.Globalization;
+
 namespace BethesdaMultitool.Core.WorldData;
 
 /// <summary>

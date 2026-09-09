@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.BrotherhoodOfSteel;
 using Xunit;
@@ -39,8 +36,10 @@ public sealed class BosStringDatabaseTests
         {
             // Leave a gap so slot indices are not simply 0..n-1, as the real table does.
             var slot = i * 2 < slots ? i * 2 : i;
-            BinaryPrimitives.WriteUInt32LittleEndian(table.AsSpan(slot * BosStringDatabase.SlotLength), entries[i].Hash);
-            BinaryPrimitives.WriteUInt32LittleEndian(table.AsSpan((slot * BosStringDatabase.SlotLength) + 4), (uint)offsets[i]);
+            BinaryPrimitives.WriteUInt32LittleEndian(table.AsSpan(slot * BosStringDatabase.SlotLength),
+                entries[i].Hash);
+            BinaryPrimitives.WriteUInt32LittleEndian(table.AsSpan(slot * BosStringDatabase.SlotLength + 4),
+                (uint)offsets[i]);
         }
 
         body.Write(table);
@@ -77,7 +76,7 @@ public sealed class BosStringDatabaseTests
     public void Parse_SkipsZeroedSlotsWithoutCountingThem()
     {
         // The real table is sparse: 86 non-empty slots in a much larger table.
-        var db = BosStringDatabase.Parse(Database([(7, "one"), (9, "two")], emptySlots: 40), "Sparse.SDB");
+        var db = BosStringDatabase.Parse(Database([(7, "one"), (9, "two")], 40), "Sparse.SDB");
 
         Assert.Equal(2, db.Entries.Count);
         Assert.All(db.Entries, e => Assert.NotEqual(0u, e.Hash));
@@ -90,7 +89,7 @@ public sealed class BosStringDatabaseTests
         // data beyond it. Walking to EOF regardless looked right on 51 of them and invented exactly
         // ONE extra entry in the other five — enough to break the count, not enough to look wrong.
         // Here the trailing bytes would resolve to a real string if the walk did not stop.
-        var db = Database([(1, "kept")], emptySlots: 0);
+        var db = Database([(1, "kept")], 0);
         var trailing = new byte[BosStringDatabase.SlotLength * 2];
         BinaryPrimitives.WriteUInt32LittleEndian(trailing, BosStringDatabase.TerminatorHash);
         BinaryPrimitives.WriteUInt32LittleEndian(trailing.AsSpan(4), BosStringDatabase.TerminatorOffset);

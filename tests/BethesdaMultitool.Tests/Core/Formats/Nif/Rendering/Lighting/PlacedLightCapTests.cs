@@ -117,8 +117,7 @@ public class PlacedLightCapTests
     [Fact]
     public void ClipToFrameBudget_NullList_Throws()
     {
-        Assert.Throws<ArgumentNullException>(
-            () => PlacedLightFrameBudget.ClipToFrameBudget(null!, Vector3.Zero));
+        Assert.Throws<ArgumentNullException>(() => PlacedLightFrameBudget.ClipToFrameBudget(null!, Vector3.Zero));
     }
 
     /// <summary>

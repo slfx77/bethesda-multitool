@@ -2,7 +2,6 @@ using System.Diagnostics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Resources;
 using BethesdaMultitool.Tests.Helpers;

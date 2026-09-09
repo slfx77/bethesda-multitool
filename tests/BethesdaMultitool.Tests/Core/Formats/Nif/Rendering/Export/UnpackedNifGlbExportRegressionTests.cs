@@ -36,7 +36,7 @@ public sealed class UnpackedNifGlbExportRegressionTests
 
         NifExportPipeline.Run(new NifExportSettings
         {
-            InputPath = inputPath!,
+            InputPath = inputPath,
             OutputPath = outputPath
         });
 

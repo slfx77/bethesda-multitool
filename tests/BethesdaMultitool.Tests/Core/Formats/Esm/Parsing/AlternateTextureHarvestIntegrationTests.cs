@@ -31,20 +31,20 @@ public class AlternateTextureHarvestIntegrationTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
         var raw = Assert.Single(result.Records.AlternateTexturesByFormId[baseFormId]);
         Assert.Equal(shapeName, raw.ShapeName);
         Assert.Equal(textureSetFormId, raw.TextureSetFormId);
         Assert.Equal(1, raw.Index);
 
-        var txst = Assert.Single(result.Records.TextureSets.Where(record => record.FormId == textureSetFormId));
+        var txst = Assert.Single(result.Records.TextureSets, record => record.FormId == textureSetFormId);
         Assert.Equal("NVBillboardAtomicWrangler", txst.EditorId);
         Assert.Equal(@"clutter\billboards\AtomicWrangler_Billboard.dds", txst.DiffuseTexture,
             StringComparer.OrdinalIgnoreCase);
         Assert.Equal(@"clutter\billboards\AtomicWrangler_Billboard_n.dds", txst.NormalTexture,
             StringComparer.OrdinalIgnoreCase);
 
-        var world = global::BethesdaMultitool.WorldMapOverlayBuilder.BuildFromRecords(
+        var world = WorldMapOverlayBuilder.BuildFromRecords(
             result.Records, esm);
         Assert.Equal(BethesdaGame.FalloutNewVegas, world.Game);
         Assert.True(world.PlacedRefs.TryGetEntry(referenceFormId, out var placed));
@@ -84,7 +84,7 @@ public class AlternateTextureHarvestIntegrationTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         var index = result.Records.AlternateTexturesByFormId;
         Assert.NotEmpty(index);

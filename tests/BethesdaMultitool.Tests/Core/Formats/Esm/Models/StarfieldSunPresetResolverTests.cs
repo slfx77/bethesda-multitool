@@ -212,33 +212,38 @@ public sealed class StarfieldSunPresetResolverTests
         var root = Root(1);
         var diff = Diff(2, 1, new StarfieldSunPresetPatch { ParentFormId = 1 });
 
-        var result = StarfieldSunPresetResolver.Resolve(2, Index(root, diff), maxDepth: 1);
+        var result = StarfieldSunPresetResolver.Resolve(2, Index(root, diff), 1);
 
         AssertFailure(result, StarfieldSunPresetResolutionStatus.DepthLimitExceeded, 1);
     }
 
-    private static StarfieldSunPresetRecord Root(uint formId) =>
-        new()
+    private static StarfieldSunPresetRecord Root(uint formId)
+    {
+        return new StarfieldSunPresetRecord
         {
             FormId = formId,
             PayloadKind = StarfieldSunPresetPayloadKind.FullObject,
             Patch = CompletePatch()
         };
+    }
 
     private static StarfieldSunPresetRecord Diff(
         uint formId,
         uint outerParent,
-        StarfieldSunPresetPatch patch) =>
-        new()
+        StarfieldSunPresetPatch patch)
+    {
+        return new StarfieldSunPresetRecord
         {
             FormId = formId,
             ParentFormId = outerParent,
             PayloadKind = StarfieldSunPresetPayloadKind.Diff,
             Patch = patch
         };
+    }
 
-    private static StarfieldSunPresetPatch CompletePatch() =>
-        new()
+    private static StarfieldSunPresetPatch CompletePatch()
+    {
+        return new StarfieldSunPresetPatch
         {
             ParentFormId = 0,
             SunColor = FullColor(0.1f, 0.2f, 0.3f, 1),
@@ -260,17 +265,22 @@ public sealed class StarfieldSunPresetResolverTests
                 GlareColor = FullColor(0, 0, 0, 1)
             }
         };
+    }
 
     private static StarfieldSunPresetFloat4Patch FullColor(
         float x,
         float y,
         float z,
-        float w) =>
-        new() { X = x, Y = y, Z = z, W = w };
+        float w)
+    {
+        return new StarfieldSunPresetFloat4Patch { X = x, Y = y, Z = z, W = w };
+    }
 
-    private static IReadOnlyDictionary<uint, StarfieldSunPresetRecord> Index(
-        params StarfieldSunPresetRecord[] records) =>
-        records.ToDictionary(record => record.FormId);
+    private static Dictionary<uint, StarfieldSunPresetRecord> Index(
+        params StarfieldSunPresetRecord[] records)
+    {
+        return records.ToDictionary(record => record.FormId);
+    }
 
     private static void AssertFailure(
         StarfieldSunPresetResolution result,

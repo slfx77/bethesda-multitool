@@ -12,11 +12,11 @@ public sealed partial class BethesdaSceneViewerControl
 {
     private const string AnimationPlayGlyph = "\uE768";
     private const string AnimationPauseGlyph = "\uE769";
-    private bool _synchronizingAnimationControls;
-    private bool _animationKfLoadInProgress;
     private int _animationKfLoadGeneration;
+    private bool _animationKfLoadInProgress;
     private string? _animationLoadStatus;
     private long _lastAnimationUiTimestamp;
+    private bool _synchronizingAnimationControls;
 
     private void SynchronizeAnimationControls()
     {
@@ -110,6 +110,7 @@ public sealed partial class BethesdaSceneViewerControl
             {
                 return;
             }
+
             if (file is null)
             {
                 _animationLoadStatus = "KF selection was canceled.";
@@ -138,8 +139,8 @@ public sealed partial class BethesdaSceneViewerControl
                 return;
             }
 
-            var binding = await Task.Run(
-                () => BethesdaViewerKfAnimationBinder.ParseAndBind(data, targetScene, file.Name));
+            var binding = await Task.Run(() =>
+                BethesdaViewerKfAnimationBinder.ParseAndBind(data, targetScene, file.Name));
             if (_disposed || generation != _animationKfLoadGeneration ||
                 !ReferenceEquals(targetScene, _scene))
             {
@@ -156,7 +157,7 @@ public sealed partial class BethesdaSceneViewerControl
             }
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and
-                                   not StackOverflowException)
+                                       not StackOverflowException)
         {
             if (!_disposed && generation == _animationKfLoadGeneration &&
                 ReferenceEquals(targetScene, _scene))

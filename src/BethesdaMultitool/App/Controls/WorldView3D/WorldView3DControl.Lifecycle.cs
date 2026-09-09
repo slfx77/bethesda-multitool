@@ -315,7 +315,8 @@ public sealed partial class WorldView3DControl
 
             _waterOpaqueSnapshotSrvResource = null;
             _surface12.ReleaseDedicatedWaterOpaqueSnapshotResource();
-            Log.Warn("WorldView3DControl: water refraction snapshot SRV creation failed; using the RT-free fallback: {0}",
+            Log.Warn(
+                "WorldView3DControl: water refraction snapshot SRV creation failed; using the RT-free fallback: {0}",
                 ex.Message);
             return false;
         }

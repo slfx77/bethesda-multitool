@@ -18,6 +18,7 @@ public sealed class Tes3ExternalControllerCycleRetailTests
     private static readonly int[] ModelDataBlocks = [250, 257, 264, 271, 278];
     private static readonly int[] KfDataBlocks = [88, 87, 86, 85, 84];
     private static readonly float[] SampleTimes = [8.5f, 40.56667f, 57.56667f];
+
     private static readonly string[] ExpectedDataHashes =
     [
         "F02D2F417288D7D88F70307AF34CAF271D04142ADC0130B84D73D3CB5F554BFB",
@@ -35,7 +36,7 @@ public sealed class Tes3ExternalControllerCycleRetailTests
         Assert.SkipWhen(archive is null, RealAssetPaths.SkipMessage("Morrowind.bsa"));
         const string modelPath = @"meshes\r\atronach_storm.nif";
         const string kfPath = @"meshes\r\xatronach_storm.kf";
-        using var service = NifBrowserService.CreateFromBsa(archive!);
+        using var service = NifBrowserService.CreateFromBsa(archive);
         var model = Assert.IsType<byte[]>(service.ReadNifData(modelPath));
         var kf = Assert.IsType<byte[]>(service.ReadNifData(kfPath));
         Assert.Equal(640391, model.Length);
@@ -53,6 +54,7 @@ public sealed class Tes3ExternalControllerCycleRetailTests
             Assert.Equal(ExpectedDataHashes[index], Hash(kf.AsSpan(kfBlock.DataOffset, kfBlock.Size)));
             Assert.Equal(ExpectedDataHashes[index], Hash(model.AsSpan(modelBlock.DataOffset, modelBlock.Size)));
         }
+
         var source = Assert.Single(NifTes3SequenceStreamReader.ReadAll(kf, kfInfo));
         Assert.Equal(ExpectedNames, source.Tracks.Select(static track => track.NodeName));
         Assert.All(source.Tracks, static track =>
@@ -76,7 +78,8 @@ public sealed class Tes3ExternalControllerCycleRetailTests
         Assert.Equal(2, scene.AnimationClips.Count); // Binding alone remains transactional.
         scene.AnimationClips.Add(external);
         var decoded = BethesdaViewerSceneDecoder12.Decode(scene);
-        var native = Assert.Single(decoded.AnimationClips, static clip => clip.Name == "External TES3 Controller Cycle");
+        var native = Assert.Single(decoded.AnimationClips,
+            static clip => clip.Name == "External TES3 Controller Cycle");
         Assert.Equal(98.13334f, BethesdaViewerAnimationClockPolicy.Resolve(native).PresentationDurationSeconds, 4);
         var rest = scene.Nodes.Select(static node => node.LocalTransform).ToArray();
         var parents = scene.Nodes.Select(static node => node.ParentIndex).ToArray();
@@ -90,15 +93,20 @@ public sealed class Tes3ExternalControllerCycleRetailTests
             externalEvaluator.EvaluateNodeWorlds(time, actual);
             foreach (var track in native.NodeTracks)
             {
-                Assert.InRange(Vector3.Distance(expected[track.NodeIndex].Translation, actual[track.NodeIndex].Translation), 0f, .001f);
+                Assert.InRange(
+                    Vector3.Distance(expected[track.NodeIndex].Translation, actual[track.NodeIndex].Translation), 0f,
+                    .001f);
             }
         }
+
         externalEvaluator.EvaluateNodeWorlds(40.56667f, expected);
         externalEvaluator.EvaluateNodeWorlds(57.56667f, actual);
         foreach (var track in native.NodeTracks)
         {
-            Assert.InRange(Vector3.Distance(expected[track.NodeIndex].Translation, actual[track.NodeIndex].Translation), 0f, .001f);
+            Assert.InRange(Vector3.Distance(expected[track.NodeIndex].Translation, actual[track.NodeIndex].Translation),
+                0f, .001f);
         }
+
         externalEvaluator.EvaluateNodeWorlds(8.5f, actual);
         Assert.Contains(native.NodeTracks, track =>
             Vector3.Distance(expected[track.NodeIndex].Translation, actual[track.NodeIndex].Translation) > 80f);
@@ -107,5 +115,8 @@ public sealed class Tes3ExternalControllerCycleRetailTests
         Assert.Equal(snapshotKey, native.NodeTracks[0].TranslationKeys[0]);
     }
 
-    private static string Hash(ReadOnlySpan<byte> data) => Convert.ToHexString(SHA256.HashData(data));
+    private static string Hash(ReadOnlySpan<byte> data)
+    {
+        return Convert.ToHexString(SHA256.HashData(data));
+    }
 }

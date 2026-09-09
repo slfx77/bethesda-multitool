@@ -6,6 +6,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Camera;
 
 public sealed class TrimetricViewProjBuilderTests
 {
+    private static readonly float[] CompassYaws =
+    [
+        TrimetricViewProjBuilder.YawDegrees,
+        TrimetricViewProjBuilder.YawDegrees + 90f,
+        TrimetricViewProjBuilder.YawDegrees + 180f,
+        TrimetricViewProjBuilder.YawDegrees + 270f
+    ];
+
     /// <summary>
     ///     Content boxes spanning the capture corpus: a small room, a real mid-sized interior
     ///     (GunRunnerHQInterior's box), a long corridor, and a worldspace-scale extent.
@@ -17,14 +25,6 @@ public sealed class TrimetricViewProjBuilderTests
         { -6000f, 6000f, -1200f, 1200f, 0f, 400f },
         { -20000f, 20000f, -20000f, 20000f, -2000f, 2000f }
     };
-
-    private static readonly float[] CompassYaws =
-    [
-        TrimetricViewProjBuilder.YawDegrees,
-        TrimetricViewProjBuilder.YawDegrees + 90f,
-        TrimetricViewProjBuilder.YawDegrees + 180f,
-        TrimetricViewProjBuilder.YawDegrees + 270f
-    ];
 
     /// <summary>
     ///     The framed centre must project to the NDC origin at every yaw. The original
@@ -43,7 +43,7 @@ public sealed class TrimetricViewProjBuilderTests
         foreach (var yaw in CompassYaws)
         {
             var tri = TrimetricViewProjBuilder.Build(
-                minX, maxX, minY, maxY, minZ, maxZ, clipWorldZMax: null, yawDegrees: yaw);
+                minX, maxX, minY, maxY, minZ, maxZ, null, yaw);
             var clip = Vector4.Transform(new Vector4(centre, 1f), tri.ViewProj);
 
             Assert.True(clip.W > 0f, $"yaw {yaw}: w={clip.W}");
@@ -67,7 +67,7 @@ public sealed class TrimetricViewProjBuilderTests
         foreach (var yaw in CompassYaws)
         {
             var tri = TrimetricViewProjBuilder.Build(
-                minX, maxX, minY, maxY, minZ, maxZ, clipWorldZMax: null, yawDegrees: yaw);
+                minX, maxX, minY, maxY, minZ, maxZ, null, yaw);
             for (var i = 0; i < 8; i++)
             {
                 var corner = new Vector3(

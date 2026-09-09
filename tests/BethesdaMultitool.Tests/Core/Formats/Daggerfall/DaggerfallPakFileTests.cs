@@ -1,5 +1,3 @@
-using System;
-using System.Collections.Generic;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 
@@ -27,7 +25,7 @@ public class DaggerfallPakFileTests
         var tableLength = DaggerfallPakFile.Height * 4;
         for (var row = 0; row < DaggerfallPakFile.Height; row++)
         {
-            var offset = tableLength + (row * rowBytes.Count);
+            var offset = tableLength + row * rowBytes.Count;
             file.Add((byte)(offset & 0xFF));
             file.Add((byte)((offset >> 8) & 0xFF));
             file.Add((byte)((offset >> 16) & 0xFF));
@@ -93,15 +91,15 @@ public class DaggerfallPakFileTests
     public void Parse_RowOverrunningItsWidth_Throws()
     {
         // 1,002 values in a 1,001-wide row.
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallPakFile.Parse(BuildPak([(1000, 1), (2, 2)]), "CLIMATE.PAK"));
+        Assert.Throws<InvalidDataException>(() =>
+            DaggerfallPakFile.Parse(BuildPak([(1000, 1), (2, 2)]), "CLIMATE.PAK"));
     }
 
     [Fact]
     public void Parse_ZeroLengthRun_ThrowsInsteadOfSpinning()
     {
-        Assert.Throws<InvalidDataException>(
-            () => DaggerfallPakFile.Parse(BuildPak([(0, 1), (1001, 1)]), "CLIMATE.PAK"));
+        Assert.Throws<InvalidDataException>(() =>
+            DaggerfallPakFile.Parse(BuildPak([(0, 1), (1001, 1)]), "CLIMATE.PAK"));
     }
 
     [Fact]

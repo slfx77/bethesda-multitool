@@ -1,5 +1,3 @@
-using BethesdaMultitool.Core.EsmView;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;

@@ -45,20 +45,14 @@ internal static class DialogueUnattributedCommand
 
         // Build lookup
         var lookup = new Dictionary<uint, string>(formIdMap);
-        if (result.FormIdToEditorId != null)
+        foreach (var (k, v) in result.FormIdToEditorId)
         {
-            foreach (var (k, v) in result.FormIdToEditorId)
-            {
-                lookup.TryAdd(k, v);
-            }
+            lookup.TryAdd(k, v);
         }
 
-        if (result.FormIdToDisplayName != null)
+        foreach (var (k, v) in result.FormIdToDisplayName)
         {
-            foreach (var (k, v) in result.FormIdToDisplayName)
-            {
-                lookup.TryAdd(k, v);
-            }
+            lookup.TryAdd(k, v);
         }
 
         // Find unattributed lines (no NPC, no faction, no race, no voice type)

@@ -11,6 +11,22 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 internal sealed class MiscStaticObjectHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
     /// <summary>
+    ///     Fallout 4/76 SCOL fields this reader knowingly does not model — presentation, snapping,
+    ///     LOD and layer metadata that no consumer of <see cref="StaticCollectionRecord" /> reads.
+    ///     They are skipped without a log line so the "unexpected subrecord" warning keeps meaning
+    ///     "we have never seen this"; before this set existed, one Fallout 76 load buried the log
+    ///     under 4,492 lines of them.
+    /// </summary>
+    private static readonly HashSet<string> KnownUnmodelledScolSubrecords =
+    [
+        "MODB", "MODS", "MODD", // model variant/alt-texture blocks (the merged NIF is in MODL)
+        "FULL", "MNAM", "FLTR", // display name, workshop menu, editor filter string
+        "PTRN", "SNTP", "PHST", "DEFL", "XALG", "OPDS", "PRPS", // transform/snap/physics/layer/props
+        "NAM1", "LODP", // LOD selection
+        "ENLM", "ENLT", "ENLS", "AUUV" // Fallout 76 lighting/UV metadata
+    ];
+
+    /// <summary>
     ///     Parse Fallout 4-family BNDS base objects. BNDS deliberately has no MODL; its placements
     ///     are generated procedurally from DNAM, TNAM, and each REFR's XBSD.
     /// </summary>
@@ -616,22 +632,6 @@ internal sealed class MiscStaticObjectHandler(RecordParserContext context) : Rec
             IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
         };
     }
-
-    /// <summary>
-    ///     Fallout 4/76 SCOL fields this reader knowingly does not model — presentation, snapping,
-    ///     LOD and layer metadata that no consumer of <see cref="StaticCollectionRecord" /> reads.
-    ///     They are skipped without a log line so the "unexpected subrecord" warning keeps meaning
-    ///     "we have never seen this"; before this set existed, one Fallout 76 load buried the log
-    ///     under 4,492 lines of them.
-    /// </summary>
-    private static readonly HashSet<string> KnownUnmodelledScolSubrecords =
-    [
-        "MODB", "MODS", "MODD", // model variant/alt-texture blocks (the merged NIF is in MODL)
-        "FULL", "MNAM", "FLTR", // display name, workshop menu, editor filter string
-        "PTRN", "SNTP", "PHST", "DEFL", "XALG", "OPDS", "PRPS", // transform/snap/physics/layer/props
-        "NAM1", "LODP", // LOD selection
-        "ENLM", "ENLT", "ENLS", "AUUV" // Fallout 76 lighting/UV metadata
-    ];
 
     private StaticCollectionRecord? ParseScolFromAccessor(DetectedMainRecord record, byte[] buffer)
     {

@@ -243,7 +243,7 @@ internal enum OblivionMobileOperandForm
     ByteList,
 
     /// <summary>Opcode 34's sub-command byte, whose value picks the width that follows it.</summary>
-    SubCommand,
+    SubCommand
 }
 
 /// <summary>One interpreter case: the opcode, this spec's mnemonic, and its operand widths.</summary>

@@ -106,8 +106,8 @@ public sealed class RenderingShaderCompilationTests
     public void Fallout76FloatOpticsPermutationsCompile()
     {
         var permutations = ShaderPermutations.Water
-            .Where(permutation => permutation.Macros.Any(
-                macro => macro.Name == "FO76_WATER_OPTICS" && macro.Definition == "1"));
+            .Where(permutation =>
+                permutation.Macros.Any(macro => macro.Name == "FO76_WATER_OPTICS" && macro.Definition == "1"));
         foreach (var permutation in permutations)
         {
             Compile(permutation.File, permutation.EntryPoint, permutation.Profile, permutation.Macros);

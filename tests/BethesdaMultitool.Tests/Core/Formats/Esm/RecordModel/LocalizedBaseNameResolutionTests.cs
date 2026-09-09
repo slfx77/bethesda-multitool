@@ -25,7 +25,7 @@ public class LocalizedBaseNameResolutionTests
         Assert.SkipWhen(esm is null, RealAssetPaths.SkipMessage(Path.GetFileName(relativePath)));
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         var total = 0;
         var rawIndex = 0;

@@ -1,3 +1,4 @@
+using System.Globalization;
 using BethesdaMultitool.Core;
 using Xunit;
 
@@ -19,7 +20,10 @@ namespace BethesdaMultitool.Tests.Core;
 /// </summary>
 public sealed class EnvironmentVariablesPositiveIntTests
 {
-    private static string UniqueName() => $"BETHESDA_TEST_POSINT_{Guid.NewGuid():N}";
+    private static string UniqueName()
+    {
+        return $"BETHESDA_TEST_POSINT_{Guid.NewGuid():N}";
+    }
 
     private static void WithVariable(string? value, Action<string> body)
     {
@@ -78,7 +82,7 @@ public sealed class EnvironmentVariablesPositiveIntTests
         // Environment variables are machine configuration, not localized input. A German thread
         // culture must not change how "1234" is read, and must not make "1.234" parse as 1234.
         var previous = Thread.CurrentThread.CurrentCulture;
-        Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
+        Thread.CurrentThread.CurrentCulture = new CultureInfo("de-DE");
         try
         {
             WithVariable("1234", name =>

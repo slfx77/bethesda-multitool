@@ -59,8 +59,8 @@ public sealed class OblivionNpcBodyTextureComposerTests
             ["Tail.dds"] = BaseTexture(140)
         };
         var originalPixels = bases.ToDictionary(static p => p.Key, static p => p.Value.Pixels.ToArray());
-        using var resolver = new NifTextureResolver(path => bases.FirstOrDefault(
-            pair => path.EndsWith(pair.Key, StringComparison.OrdinalIgnoreCase)).Value);
+        using var resolver = new NifTextureResolver(path =>
+            bases.FirstOrDefault(pair => path.EndsWith(pair.Key, StringComparison.OrdinalIgnoreCase)).Value);
         var femaleEgt = SpatialMorph(11, 0, 0);
         var maleEgt = SpatialMorph(0, 21, 0);
         var bodyEgt = SpatialMorph(0, 0, 31);
@@ -86,12 +86,14 @@ public sealed class OblivionNpcBodyTextureComposerTests
         Assert.Equal(ExpectedHandPixels, AssertTexture(resolver, result.Hands).Pixels);
         Assert.Equal(ExpectedFootPixels, AssertTexture(resolver, result.Feet).Pixels);
         Assert.Equal(ExpectedTailPixels, AssertTexture(resolver, result.Tail).Pixels);
-        Assert.Equal(5, new[] { result.UpperBody, result.LowerBody, result.Hands, result.Feet, result.Tail }.Distinct().Count());
+        Assert.Equal(5,
+            new[] { result.UpperBody, result.LowerBody, result.Hands, result.Feet, result.Tail }.Distinct().Count());
         Assert.Equal(ExpectedBasePixels, source.Pixels);
         foreach (var pair in bases)
         {
             Assert.Equal(originalPixels[pair.Key], pair.Value.Pixels);
         }
+
         Assert.Single(coefficients);
         Assert.Equal(1f, coefficients[0]);
     }
@@ -118,6 +120,7 @@ public sealed class OblivionNpcBodyTextureComposerTests
         {
             Assert.Equal(ExpectedCappedPixels, AssertTexture(resolver, path).Pixels);
         }
+
         Assert.Equal(50, coefficients.Length);
         Assert.Equal(1f, coefficients[29]);
         Assert.Equal(1f, coefficients[30]);
@@ -162,7 +165,8 @@ public sealed class OblivionNpcBodyTextureComposerTests
         // missing asset rather than accidentally supplying it from the fixture's catch-all.
         using var resolver = new NifTextureResolver(path =>
             path.EndsWith("HandFemale.dds", StringComparison.OrdinalIgnoreCase) ? null : BaseTexture(100));
-        var result = OblivionNpcBodyTextureComposer.Compose(Appearance(true, [1]), resolver, _ => SpatialMorph(11, 0, 0));
+        var result =
+            OblivionNpcBodyTextureComposer.Compose(Appearance(true, [1]), resolver, _ => SpatialMorph(11, 0, 0));
         Assert.Equal(Hand, result.Hands);
         Assert.NotEqual(Upper, result.UpperBody);
         Assert.NotEqual(Lower, result.LowerBody);
@@ -177,7 +181,8 @@ public sealed class OblivionNpcBodyTextureComposerTests
     public void OtherGames_AreNotRoutedThroughTheTes4Composer(int game)
     {
         var npc = Appearance(true, [1], (BethesdaGame)game);
-        using var resolver = new NifTextureResolver(_ => throw new InvalidOperationException("No texture load expected"));
+        using var resolver =
+            new NifTextureResolver(_ => throw new InvalidOperationException("No texture load expected"));
         var result = OblivionNpcBodyTextureComposer.Compose(npc, resolver,
             _ => throw new InvalidOperationException("No TES4 EGT load expected"));
         Assert.Equal(NpcBodyTextureSet.FromAppearance(npc), result);
@@ -187,7 +192,8 @@ public sealed class OblivionNpcBodyTextureComposerTests
     public void MissingCoefficients_DoNotLoadOrTintTextures()
     {
         var npc = Appearance(true, null);
-        using var resolver = new NifTextureResolver(_ => throw new InvalidOperationException("No texture load expected"));
+        using var resolver =
+            new NifTextureResolver(_ => throw new InvalidOperationException("No texture load expected"));
         var result = OblivionNpcBodyTextureComposer.Compose(npc, resolver,
             _ => throw new InvalidOperationException("No EGT load expected"));
         Assert.Equal(NpcBodyTextureSet.FromAppearance(npc), result);
@@ -211,7 +217,8 @@ public sealed class OblivionNpcBodyTextureComposerTests
         Assert.Contains(@"body_skin\00085969_hands.dds", keys);
         Assert.Contains(@"body_skin\00085969_feet.dds", keys);
         Assert.Contains(@"body_skin\00085969_tail.dds", keys);
-        var fallout = NpcTextureHelpers.BuildNpcGeneratedTextureKeys(Appearance(true, [1], BethesdaGame.FalloutNewVegas));
+        var fallout =
+            NpcTextureHelpers.BuildNpcGeneratedTextureKeys(Appearance(true, [1], BethesdaGame.FalloutNewVegas));
         Assert.Equal(5, fallout.Length);
         Assert.Contains(@"body_egt\00085969_lefthand.dds", fallout);
         Assert.Contains(@"body_egt\00085969_righthand.dds", fallout);
@@ -222,13 +229,15 @@ public sealed class OblivionNpcBodyTextureComposerTests
     public void EquipmentAndBarePartPlans_UseTheFiveResolvedAtlasesAndKeepCoverage()
     {
         var npc = Appearance(true, [1]);
-        var textures = new NpcBodyTextureSet("tinted-upper", "tinted-lower", "tinted-hands", "tinted-feet", "tinted-tail");
+        var textures =
+            new NpcBodyTextureSet("tinted-upper", "tinted-lower", "tinted-hands", "tinted-feet", "tinted-tail");
         Assert.Equal("tinted-upper", NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(npc, Upper, textures));
         Assert.Equal("tinted-lower", NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(npc, Lower, textures));
         Assert.Equal("tinted-hands", NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(npc, Hand, textures));
         Assert.Equal("tinted-feet", NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(npc, Foot, textures));
         Assert.Equal("tinted-tail", NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(npc, Tail, textures));
-        Assert.Null(NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(npc, @"textures\armor\iron\f\Greaves.dds", textures));
+        Assert.Null(
+            NpcTextureHelpers.ResolveEquipmentSkinTextureOverride(npc, @"textures\armor\iron\f\Greaves.dds", textures));
         var parts = NpcCompositionPlanner.BuildBodyParts(npc, new NpcCompositionOptions(), 0, textures);
         Assert.Equal(5, parts.Count);
         Assert.Contains(parts, static p => p.MeshPath == "upper.nif" && p.TextureOverride == "tinted-upper");
@@ -237,17 +246,20 @@ public sealed class OblivionNpcBodyTextureComposerTests
         Assert.Contains(parts, static p => p.MeshPath == "feet.nif" && p.TextureOverride == "tinted-feet");
         Assert.Contains(parts, static p => p.MeshPath == "tail.nif" && p.TextureOverride == "tinted-tail");
         Assert.Empty(NpcCompositionPlanner.BuildBodyParts(npc, new NpcCompositionOptions(), 0x803c, textures));
-        Assert.Empty(NpcCompositionPlanner.BuildBodyParts(npc, new NpcCompositionOptions { HeadOnly = true }, 0, textures));
+        Assert.Empty(NpcCompositionPlanner.BuildBodyParts(npc, new NpcCompositionOptions { HeadOnly = true }, 0,
+            textures));
     }
 
-    private static NpcAppearance Appearance(bool female, float[]? coefficients, BethesdaGame game = BethesdaGame.Oblivion)
+    private static NpcAppearance Appearance(bool female, float[]? coefficients,
+        BethesdaGame game = BethesdaGame.Oblivion)
     {
         return new NpcAppearance
         {
             Game = game, NpcFormId = 0x85969, IsFemale = female, FaceGenTextureCoeffs = coefficients,
             BodyTexturePath = Upper, LowerBodyTexturePath = Lower, HandTexturePath = Hand,
             FootTexturePath = Foot, TailTexturePath = Tail, UpperBodyNifPath = "upper.nif",
-            LowerBodyNifPath = "lower.nif", HandNifPath = "hands.nif", FootNifPath = "feet.nif", TailNifPath = "tail.nif"
+            LowerBodyNifPath = "lower.nif", HandNifPath = "hands.nif", FootNifPath = "feet.nif",
+            TailNifPath = "tail.nif"
         };
     }
 
@@ -257,13 +269,24 @@ public sealed class OblivionNpcBodyTextureComposerTests
         return Assert.IsType<DecodedTexture>(resolver.GetTexture(path));
     }
 
-    private static DecodedTexture BaseTexture(byte value) =>
-        DecodedTexture.FromBaseLevel([value, value, value, 77, value, value, value, 99], 2, 1);
+    private static DecodedTexture BaseTexture(byte value)
+    {
+        return DecodedTexture.FromBaseLevel([value, value, value, 77, value, value, value, 99], 2, 1);
+    }
 
-    private static EgtParser SpatialMorph(sbyte red, sbyte green, sbyte blue) =>
-        EgtParser.CreateFromMorphs(2, 1,
-        [new EgtMorph { Scale = 1, DeltaR = [red, (sbyte)-red], DeltaG = [green, (sbyte)-green], DeltaB = [blue, (sbyte)-blue] }]);
+    private static EgtParser SpatialMorph(sbyte red, sbyte green, sbyte blue)
+    {
+        return EgtParser.CreateFromMorphs(2, 1,
+        [
+            new EgtMorph
+            {
+                Scale = 1, DeltaR = [red, (sbyte)-red], DeltaG = [green, (sbyte)-green], DeltaB = [blue, (sbyte)-blue]
+            }
+        ]);
+    }
 
-    private static EgtMorph SingleMorph(sbyte red) =>
-        new() { Scale = 1, DeltaR = [red], DeltaG = [0], DeltaB = [0] };
+    private static EgtMorph SingleMorph(sbyte red)
+    {
+        return new EgtMorph { Scale = 1, DeltaR = [red], DeltaG = [0], DeltaB = [0] };
+    }
 }

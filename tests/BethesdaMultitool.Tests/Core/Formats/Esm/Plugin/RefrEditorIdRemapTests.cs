@@ -47,7 +47,7 @@ public class RefrEditorIdRemapTests
         Assert.Null(result);
         Assert.True(ambiguous);
         Assert.NotNull(candidates);
-        Assert.Equal(3, candidates!.Count);
+        Assert.Equal(3, candidates.Count);
     }
 
     [Fact]

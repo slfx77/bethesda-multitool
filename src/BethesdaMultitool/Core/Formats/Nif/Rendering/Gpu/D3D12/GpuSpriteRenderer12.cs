@@ -33,13 +33,13 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     private const uint SamplerTableSize = 3; // skin.frag.hlsl binds one sampler per texture
     private const uint SamplerModeCount = 4; // wrap/wrap, clampU, clampV, clampUV
     private const uint SamplerHeapSize = SamplerTableSize * SamplerModeCount;
+    private readonly byte[] _classicSkinPsBytecode;
     private readonly AutoResetEvent _fenceEvent = new(false);
     private readonly ShaderResourceViewDescription _flatNormalSrvDesc;
     private readonly ID3D12Resource _flatNormalTexture;
 
     private readonly GpuDevice12 _gpu;
     private readonly InputElementDescription[] _inputElements;
-    private readonly byte[] _classicSkinPsBytecode;
     private readonly byte[] _psBytecode;
     private readonly Dictionary<PsoKey, ID3D12PipelineState> _psoCache = new();
     private readonly ID3D12Fence _renderFence;

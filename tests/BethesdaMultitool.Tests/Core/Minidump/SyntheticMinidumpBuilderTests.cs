@@ -69,7 +69,7 @@ public sealed class SyntheticMinidumpBuilderTests
     {
         var data = new SyntheticMinidumpBuilder()
             .AddRegion(0x40000000, new byte[0x40])
-            .AddTruncatedRegion(0x40001000, declaredSize: 0x100, payload: new byte[0x40])
+            .AddTruncatedRegion(0x40001000, 0x100, new byte[0x40])
             .Build();
 
         using var stream = new MemoryStream(data);

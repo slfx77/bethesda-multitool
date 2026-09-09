@@ -105,7 +105,7 @@ public sealed class TallGrassRenderTelemetryTests
         var compactCapture = string.Concat(capture.Where(c => !char.IsWhiteSpace(c)));
 
         Assert.Contains("private const uint InstanceDrawByteSize = 256;", renderer, StringComparison.Ordinal);
-        Assert.Contains("bool UsesTallGrassWind);", renderer, StringComparison.Ordinal);
+        Assert.Contains("bool UsesTallGrassWind,", renderer, StringComparison.Ordinal);
         Assert.Contains("ReferenceTallGrassInstancedDraws++", renderer, StringComparison.Ordinal);
         Assert.Contains("ReferenceTallGrassDirectDraws++", renderer, StringComparison.Ordinal);
         Assert.Contains("ReferenceTallGrassShadowDraws++", renderer, StringComparison.Ordinal);

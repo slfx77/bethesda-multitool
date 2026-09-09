@@ -32,10 +32,10 @@ public sealed class AtmosphereStateTests
         var transformed = AtmosphereState.ApplySkyColorTransform(original, scale, bias);
         var additive = new Vector3(bias);
 
-        Assert.Equal((original.SkyTopColor * scale) + additive, transformed.SkyTopColor);
-        Assert.Equal((original.SkyLowerColor * scale) + additive, transformed.SkyLowerColor);
-        Assert.Equal((original.AuthoredHorizonColor * scale) + additive, transformed.AuthoredHorizonColor);
-        Assert.Equal((original.SkyHorizonColor * scale) + additive, transformed.SkyHorizonColor);
+        Assert.Equal(original.SkyTopColor * scale + additive, transformed.SkyTopColor);
+        Assert.Equal(original.SkyLowerColor * scale + additive, transformed.SkyLowerColor);
+        Assert.Equal(original.AuthoredHorizonColor * scale + additive, transformed.AuthoredHorizonColor);
+        Assert.Equal(original.SkyHorizonColor * scale + additive, transformed.SkyHorizonColor);
         Assert.Equal(original.SunColor, transformed.SunColor);
         Assert.Equal(original.AmbientColor, transformed.AmbientColor);
         Assert.Equal(original.FogColor, transformed.FogColor);

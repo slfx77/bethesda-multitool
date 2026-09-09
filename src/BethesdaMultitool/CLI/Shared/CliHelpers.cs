@@ -1,4 +1,6 @@
 using System.Globalization;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.FileFormat;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Shared;
@@ -17,10 +19,10 @@ internal static class CliHelpers
     ///         accepted too. Any other directory, and any missing path, is still an error.
     ///     </para>
     /// </summary>
-    internal static Core.Analysis.AnalysisFileType? ResolveAnalysisInput(string path)
+    internal static AnalysisFileType? ResolveAnalysisInput(string path)
     {
-        var fileType = Core.FileFormat.FileTypeDetector.Detect(path);
-        if (File.Exists(path) || fileType == Core.Analysis.AnalysisFileType.ClassicGameData)
+        var fileType = FileTypeDetector.Detect(path);
+        if (File.Exists(path) || fileType == AnalysisFileType.ClassicGameData)
         {
             return fileType;
         }

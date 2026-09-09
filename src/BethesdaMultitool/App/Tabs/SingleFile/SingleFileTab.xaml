@@ -812,7 +812,7 @@
                     <ColumnDefinition Width="Auto" />
                   </Grid.ColumnDefinitions>
                   <TextBox x:Name="NpcBsaPathTextBox" Grid.Column="0"
-                           PlaceholderText="e.g. Sample\Full_Builds\...\Data"
+                           PlaceholderText="e.g. Sample\Builds\...\Data"
                            AutomationProperties.Name="Game data directory containing BSA files"
                            KeyDown="NpcBsaPathTextBox_KeyDown" />
                   <Button Grid.Column="1" Content="Browse..."

@@ -66,10 +66,11 @@ internal sealed class ShadowkeySkybox
     /// <summary>Gap between the face table and the image in the 12 outdoor files.</summary>
     public const int OutdoorGapLength = 6;
 
-    private readonly ShadowkeySkyVertex[] _vertices;
     private readonly ShadowkeySkyCorner[] _corners;
     private readonly ShadowkeySkyFace[] _faces;
     private readonly ushort[] _footer;
+
+    private readonly ShadowkeySkyVertex[] _vertices;
 
     private ShadowkeySkybox(
         string name,
@@ -168,9 +169,9 @@ internal sealed class ShadowkeySkybox
                 $"'{name}': byte 10 declares {coordinateCount} coordinates but byte 4 declares {vertexCount} vertices (expected {vertexCount * 3}).");
         }
 
-        var cornerOffset = HeaderLength + (vertexCount * 6);
-        var faceOffset = cornerOffset + (cornerCount * 4);
-        var afterFaces = faceOffset + (faceCount * 12);
+        var cornerOffset = HeaderLength + vertexCount * 6;
+        var faceOffset = cornerOffset + cornerCount * 4;
+        var afterFaces = faceOffset + faceCount * 12;
         var imageOffset = bytes.Length - FooterLength - TextureLength;
         var gap = imageOffset - afterFaces;
         if (imageOffset < afterFaces || (gap != InteriorGapLength && gap != OutdoorGapLength))
@@ -182,7 +183,7 @@ internal sealed class ShadowkeySkybox
         var vertices = new ShadowkeySkyVertex[vertexCount];
         for (var i = 0; i < vertexCount; i++)
         {
-            var offset = HeaderLength + (i * 6);
+            var offset = HeaderLength + i * 6;
             vertices[i] = new ShadowkeySkyVertex(
                 BinaryPrimitives.ReadInt16LittleEndian(bytes[offset..]),
                 BinaryPrimitives.ReadInt16LittleEndian(bytes[(offset + 2)..]),
@@ -192,7 +193,7 @@ internal sealed class ShadowkeySkybox
         var corners = new ShadowkeySkyCorner[cornerCount];
         for (var i = 0; i < cornerCount; i++)
         {
-            var offset = cornerOffset + (i * 4);
+            var offset = cornerOffset + i * 4;
             corners[i] = new ShadowkeySkyCorner(
                 BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..]),
                 BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 2)..]));
@@ -201,7 +202,7 @@ internal sealed class ShadowkeySkybox
         var faces = new ShadowkeySkyFace[faceCount];
         for (var i = 0; i < faceCount; i++)
         {
-            var offset = faceOffset + (i * 12);
+            var offset = faceOffset + i * 12;
             var face = new ShadowkeySkyFace(
                 BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..]),
                 BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 2)..]),
@@ -225,7 +226,7 @@ internal sealed class ShadowkeySkybox
         for (var i = 0; i < footer.Length; i++)
         {
             footer[i] = BinaryPrimitives.ReadUInt16LittleEndian(
-                bytes[(bytes.Length - FooterLength + (i * 2))..]);
+                bytes[(bytes.Length - FooterLength + i * 2)..]);
         }
 
         return new ShadowkeySkybox(name, vertices, corners, faces, gap, texture, footer);

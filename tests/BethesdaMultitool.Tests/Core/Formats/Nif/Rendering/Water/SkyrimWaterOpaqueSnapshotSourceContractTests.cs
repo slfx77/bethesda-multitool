@@ -24,8 +24,8 @@ public sealed class SkyrimWaterOpaqueSnapshotSourceContractTests
         Assert.Same(WaterProfile.Skyrim, profile);
         Assert.Equal(WaterShaderVariant.SkyrimWater, profile.ShaderVariant);
 
-        var permutation = Assert.Single(ShaderPermutations.Water.Where(candidate =>
-            candidate.Purpose == "Skyrim BSWaterShader opaque-scene snapshot refraction"));
+        var permutation = Assert.Single(ShaderPermutations.Water, candidate =>
+            candidate.Purpose == "Skyrim BSWaterShader opaque-scene snapshot refraction");
         Assert.Equal("water_fnv.frag.hlsl", permutation.File);
         Assert.Equal("main", permutation.EntryPoint);
         Assert.Equal("ps_5_1", permutation.Profile);

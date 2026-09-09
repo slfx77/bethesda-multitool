@@ -9,22 +9,32 @@ namespace BethesdaMultitool.Core.Formats.Redguard;
 ///     ("Some old 3DC files have a different vertex start offset for some unknown reason"), so
 ///     nothing here is ported.
 ///     <para>
-///         A <c>.3DC</c> is an ordinary <see cref="XnGineMesh" /> whose <b>geometry is a stack of
-///         poses</b>. The 64-byte header and the plane (face) list are byte-for-byte Daggerfall's,
+///         A <c>.3DC</c> is an ordinary <see cref="XnGineMesh" /> whose
+///         <b>
+///             geometry is a stack of
+///             poses
+///         </b>
+///         . The 64-byte header and the plane (face) list are byte-for-byte Daggerfall's,
 ///         which is why a <c>.3DC</c> parses as a <c>.3D</c> and yields wrong points rather than an
 ///         error: the header's point/normal/plane-data offsets at +48/+52/+24 are <b>frame 1's</b>,
 ///         not the mesh's. The real geometry is named by a FRAME TABLE:
 ///     </para>
 ///     <list type="bullet">
-///         <item>Header +20 gives the frame-block offset (64 on every retail file — the block starts
-///         immediately after the header). Its first dword is the frame table's own offset (88 on
-///         147/147) and its <b>third dword is the length of one unaccounted region</b>.</item>
-///         <item>The table holds <see cref="FrameCount" /> records of three or four dwords —
-///         <c>(vertexOffset, normalOffset, planeDataOffset[, unknown])</c>. Retail splits 110 three-
-///         dword / 37 four-dword.</item>
-///         <item>Frame 0 is a KEYFRAME of <c>PointCount</c> int32 triples. Later frames are either
-///         int32 triples again (37 "wide" files) or <b>int16 deltas added to the keyframe</b>
-///         (110 "narrow" files) — never accumulated frame-to-frame.</item>
+///         <item>
+///             Header +20 gives the frame-block offset (64 on every retail file — the block starts
+///             immediately after the header). Its first dword is the frame table's own offset (88 on
+///             147/147) and its <b>third dword is the length of one unaccounted region</b>.
+///         </item>
+///         <item>
+///             The table holds <see cref="FrameCount" /> records of three or four dwords —
+///             <c>(vertexOffset, normalOffset, planeDataOffset[, unknown])</c>. Retail splits 110 three-
+///             dword / 37 four-dword.
+///         </item>
+///         <item>
+///             Frame 0 is a KEYFRAME of <c>PointCount</c> int32 triples. Later frames are either
+///             int32 triples again (37 "wide" files) or <b>int16 deltas added to the keyframe</b>
+///             (110 "narrow" files) — never accumulated frame-to-frame.
+///         </item>
 ///     </list>
 ///     <para>
 ///         ⚠ That third dword is what the reference reads as its vertex base (<c>endFaceData + u3</c>).
@@ -43,7 +53,7 @@ namespace BethesdaMultitool.Core.Formats.Redguard;
 ///         reported unparsed rather than decoded into plausible-looking rubbish.
 ///     </para>
 /// </summary>
-internal sealed class Redguard3dcFile
+internal sealed class Redguard3DcFile
 {
     /// <summary>Bytes per point in a keyframe, and in every frame of a "wide" file.</summary>
     public const int WidePointLength = 12;
@@ -54,10 +64,10 @@ internal sealed class Redguard3dcFile
     /// <summary>Dwords of frame-block preamble before the frame table.</summary>
     public const int PreambleDwords = 6;
 
-    private Redguard3dcFile(
+    private Redguard3DcFile(
         string name,
         XnGineMesh keyframeMesh,
-        IReadOnlyList<Redguard3dcFrame> frames,
+        IReadOnlyList<Redguard3DcFrame> frames,
         bool wideFrames,
         int frameRecordDwords,
         int unaccountedLength)
@@ -77,7 +87,7 @@ internal sealed class Redguard3dcFile
     public XnGineMesh KeyframeMesh { get; }
 
     /// <summary>Every pose, keyframe first.</summary>
-    public IReadOnlyList<Redguard3dcFrame> Frames { get; }
+    public IReadOnlyList<Redguard3DcFrame> Frames { get; }
 
     /// <summary>True when later frames store int32 triples rather than int16 deltas.</summary>
     public bool WideFrames { get; }
@@ -98,7 +108,7 @@ internal sealed class Redguard3dcFile
     }
 
     /// <summary>Parses the mesh, throwing <see cref="InvalidDataException" /> when it does not tile.</summary>
-    public static Redguard3dcFile Parse(ReadOnlyMemory<byte> bytes, string name)
+    public static Redguard3DcFile Parse(ReadOnlyMemory<byte> bytes, string name)
     {
         if (!TryParse(bytes, name, out var file, out var error))
         {
@@ -117,7 +127,7 @@ internal sealed class Redguard3dcFile
     public static bool TryParse(
         ReadOnlyMemory<byte> bytes,
         string name,
-        out Redguard3dcFile file,
+        out Redguard3DcFile file,
         out string error)
     {
         file = null!;
@@ -140,7 +150,7 @@ internal sealed class Redguard3dcFile
             return false;
         }
 
-        if (frameBlockOffset < 0 || frameBlockOffset + (PreambleDwords * 4) > span.Length)
+        if (frameBlockOffset < 0 || frameBlockOffset + PreambleDwords * 4 > span.Length)
         {
             error = $"{name}: the frame block at {frameBlockOffset} does not fit the file.";
             return false;
@@ -171,7 +181,7 @@ internal sealed class Redguard3dcFile
         var table = new FrameTableEntry[frameCount];
         for (var i = 0; i < frameCount; i++)
         {
-            var at = tableOffset + (i * recordDwords * 4);
+            var at = tableOffset + i * recordDwords * 4;
             table[i] = new FrameTableEntry(
                 BinaryPrimitives.ReadInt32LittleEndian(span[at..]),
                 BinaryPrimitives.ReadInt32LittleEndian(span[(at + 4)..]),
@@ -200,27 +210,12 @@ internal sealed class Redguard3dcFile
         return false;
     }
 
-    /// <summary>One frame table record: where this pose's three blocks start.</summary>
-    private readonly record struct FrameTableEntry(int PointOffset, int NormalOffset, int PlaneDataOffset);
-
-    /// <summary>Everything the tiling and the readers need that the header settles.</summary>
-    private readonly record struct Geometry(
-        int PointCount,
-        int PlaneCount,
-        int FrameCount,
-        int PlaneListOffset,
-        int FrameBlockOffset,
-        int TableOffset,
-        int RecordDwords,
-        int UnaccountedLength,
-        bool Wide);
-
     private static bool TryBuild(
         ReadOnlyMemory<byte> bytes,
         string name,
         Geometry geometry,
         FrameTableEntry[] table,
-        out Redguard3dcFile file,
+        out Redguard3DcFile file,
         out string error)
     {
         file = null!;
@@ -244,9 +239,9 @@ internal sealed class Redguard3dcFile
             var pointLength = i == 0 || geometry.Wide ? WidePointLength : NarrowPointLength;
             var normalLength = geometry.Wide ? 12 : 4;
             var planeDataLength = geometry.Wide ? 24 : 12;
-            blocks.Add((table[i].PointOffset, table[i].PointOffset + (geometry.PointCount * pointLength)));
-            blocks.Add((table[i].NormalOffset, table[i].NormalOffset + (geometry.PlaneCount * normalLength)));
-            blocks.Add((table[i].PlaneDataOffset, table[i].PlaneDataOffset + (geometry.PlaneCount * planeDataLength)));
+            blocks.Add((table[i].PointOffset, table[i].PointOffset + geometry.PointCount * pointLength));
+            blocks.Add((table[i].NormalOffset, table[i].NormalOffset + geometry.PlaneCount * normalLength));
+            blocks.Add((table[i].PlaneDataOffset, table[i].PlaneDataOffset + geometry.PlaneCount * planeDataLength));
         }
 
         if (!Tiles(blocks, span.Length, geometry.UnaccountedLength, name, out error))
@@ -254,12 +249,12 @@ internal sealed class Redguard3dcFile
             return false;
         }
 
-        var frames = new Redguard3dcFrame[geometry.FrameCount];
+        var frames = new Redguard3DcFrame[geometry.FrameCount];
         var keyframe = ReadKeyframe(span, geometry, table[0].PointOffset);
-        frames[0] = new Redguard3dcFrame(0, table[0].PointOffset, keyframe);
+        frames[0] = new Redguard3DcFrame(0, table[0].PointOffset, keyframe);
         for (var i = 1; i < geometry.FrameCount; i++)
         {
-            frames[i] = new Redguard3dcFrame(i, table[i].PointOffset,
+            frames[i] = new Redguard3DcFrame(i, table[i].PointOffset,
                 geometry.Wide
                     ? ReadKeyframe(span, geometry, table[i].PointOffset)
                     : ReadDeltaFrame(span, geometry, table[i].PointOffset, keyframe));
@@ -267,7 +262,7 @@ internal sealed class Redguard3dcFile
 
         var mesh = XnGineMesh.Parse(bytes, 0, XnGineMeshLayout.Daggerfall, keyframe,
             ComputeNormals(keyframe, bytes, geometry));
-        file = new Redguard3dcFile(name, mesh, frames, geometry.Wide, geometry.RecordDwords,
+        file = new Redguard3DcFile(name, mesh, frames, geometry.Wide, geometry.RecordDwords,
             geometry.UnaccountedLength);
         error = string.Empty;
         return true;
@@ -287,7 +282,7 @@ internal sealed class Redguard3dcFile
                 return false;
             }
 
-            end += planeHeaderLength + (span[end] * planePointLength);
+            end += planeHeaderLength + span[end] * planePointLength;
             if (end > span.Length)
             {
                 error = $"plane {i} runs past the end of the file.";
@@ -361,7 +356,7 @@ internal sealed class Redguard3dcFile
         var points = new XnGineMeshPoint[geometry.PointCount];
         for (var i = 0; i < points.Length; i++)
         {
-            var at = offset + (i * WidePointLength);
+            var at = offset + i * WidePointLength;
             points[i] = new XnGineMeshPoint(
                 BinaryPrimitives.ReadInt32LittleEndian(span[at..]),
                 BinaryPrimitives.ReadInt32LittleEndian(span[(at + 4)..]),
@@ -385,7 +380,7 @@ internal sealed class Redguard3dcFile
         var points = new XnGineMeshPoint[geometry.PointCount];
         for (var i = 0; i < points.Length; i++)
         {
-            var at = offset + (i * NarrowPointLength);
+            var at = offset + i * NarrowPointLength;
             points[i] = new XnGineMeshPoint(
                 keyframe[i].X + BinaryPrimitives.ReadInt16LittleEndian(span[at..]),
                 keyframe[i].Y + BinaryPrimitives.ReadInt16LittleEndian(span[(at + 2)..]),
@@ -415,21 +410,21 @@ internal sealed class Redguard3dcFile
             double nx = 0, ny = 0, nz = 0;
             for (var q = 0; q < planePoints; q++)
             {
-                var a = points[PointIndex(span, first + (q * 8), points.Length)];
-                var b = points[PointIndex(span, first + (((q + 1) % planePoints) * 8), points.Length)];
+                var a = points[PointIndex(span, first + q * 8, points.Length)];
+                var b = points[PointIndex(span, first + (q + 1) % planePoints * 8, points.Length)];
                 nx += (a.Y - (double)b.Y) * (a.Z + (double)b.Z);
                 ny += (a.Z - (double)b.Z) * (a.X + (double)b.X);
                 nz += (a.X - (double)b.X) * (a.Y + (double)b.Y);
             }
 
-            var scale = Math.Sqrt((nx * nx) + (ny * ny) + (nz * nz));
+            var scale = Math.Sqrt(nx * nx + ny * ny + nz * nz);
             normals[i] = scale <= 0
                 ? new XnGineMeshPoint(0, 0, 0)
                 : new XnGineMeshPoint(
                     (int)Math.Round(nx / scale * XnGineMesh.PointDivisor),
                     (int)Math.Round(ny / scale * XnGineMesh.PointDivisor),
                     (int)Math.Round(nz / scale * XnGineMesh.PointDivisor));
-            position = first + (planePoints * 8);
+            position = first + planePoints * 8;
         }
 
         return normals;
@@ -440,10 +435,25 @@ internal sealed class Redguard3dcFile
         var offset = BinaryPrimitives.ReadInt32LittleEndian(span[at..]) / WidePointLength;
         return offset >= 0 && offset < pointCount ? offset : 0;
     }
+
+    /// <summary>One frame table record: where this pose's three blocks start.</summary>
+    private readonly record struct FrameTableEntry(int PointOffset, int NormalOffset, int PlaneDataOffset);
+
+    /// <summary>Everything the tiling and the readers need that the header settles.</summary>
+    private readonly record struct Geometry(
+        int PointCount,
+        int PlaneCount,
+        int FrameCount,
+        int PlaneListOffset,
+        int FrameBlockOffset,
+        int TableOffset,
+        int RecordDwords,
+        int UnaccountedLength,
+        bool Wide);
 }
 
-/// <summary>One pose of a <see cref="Redguard3dcFile" />, already resolved to absolute points.</summary>
+/// <summary>One pose of a <see cref="Redguard3DcFile" />, already resolved to absolute points.</summary>
 /// <param name="Index">Position in the frame table.</param>
 /// <param name="Offset">Where the frame's own bytes start, for diagnostics.</param>
 /// <param name="Points">The pose, in native units — deltas already applied.</param>
-internal readonly record struct Redguard3dcFrame(int Index, int Offset, IReadOnlyList<XnGineMeshPoint> Points);
+internal readonly record struct Redguard3DcFrame(int Index, int Offset, IReadOnlyList<XnGineMeshPoint> Points);

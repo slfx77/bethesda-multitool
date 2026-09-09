@@ -92,7 +92,7 @@ public sealed class OwnershipFieldIndexBuilderTests
         Assert.True(handWritten.TryGetValue(className, out var fields),
             $"{className} was removed from the fallback index. The PDB postdates the dumps; "
             + "disagreement with it is not proof the offset is wrong.");
-        Assert.Contains(fields!, f => f.Offset == offset);
+        Assert.Contains(fields, f => f.Offset == offset);
     }
 
     /// <summary>

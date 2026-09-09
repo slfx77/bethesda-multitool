@@ -1,21 +1,66 @@
 using System.Numerics;
-
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
 
 namespace BethesdaMultitool.Core.Formats.Daggerfall;
 
 /// <summary>What an assembly produced, and what it could not resolve.</summary>
 internal sealed record DaggerfallBlockAssembly(
-    IReadOnlyList<XnGineMeshInstance> Instances, int Placed, int Resolved, IReadOnlyList<uint> MissingIds);
+    IReadOnlyList<XnGineMeshInstance> Instances,
+    int Placed,
+    int Resolved,
+    IReadOnlyList<uint> MissingIds);
 
 /// <summary>
 ///     Assembles a Daggerfall RMB block into placed meshes, so a block can be viewed or exported as
 ///     one scene rather than as a diagnostic plan.
 ///     <para>
-///         The placement rules, each measured against the reference implementation's behaviour:
-///         a model's ARCH3D id is <c>ObjectId1 * 100 + ObjectId2</c>; it is rotated about Y by
-///         <see cref="RotationDegreesPerUnit" /> degrees per unit; and it is offset by its
-///         sub-block's own position and rotation.
+///         The placement rules: a model's ARCH3D id is <c>ObjectId1 * 100 + ObjectId2</c>; it is
+///         rotated about Y in <see cref="AngleUnitsPerTurn" /> units per full turn; and it is
+///         offset by its sub-block's own position and rotation.
+///     </para>
+///     <para>
+///         ⚠⚠
+///         <b>
+///             The angle unit is 2,048 per TURN, so a stored unit is 360/2048 of a degree — it is
+///             DIVIDED by 5.68889, never multiplied by it.
+///         </b>
+///         This file multiplied until 2026-09-06,
+///         which skewed every rotated sub-block by a factor of 32.36 (a quarter turn rendered as
+///         32.7 degrees, a half turn as 65.4). Three independent retail populations settle it:
+///     </para>
+///     <list type="bullet">
+///         <item>
+///             The 9,005 RMB sub-block rotations take EXACTLY FOUR distinct values — 0, 512, 1,024
+///             and 1,536 — and nothing else. Those are the four cardinal orientations a city block
+///             can take, which fixes 512 as a right angle.
+///         </item>
+///         <item>
+///             92.07% of the 236,250 RMB per-model rotations lie in <c>[0, 2048)</c> — one turn's
+///             worth — with the same four cardinals taking 66.6% of all placements and the next
+///             tier (513, 1, 1,025, 1,537) sitting a fine nudge off a cardinal.
+///         </item>
+///         <item>
+///             96.0% of the 22,961 RDB model rotations are multiples of 512, while X and Z are zero
+///             on 97.9% because dungeon models stand upright.
+///         </item>
+///     </list>
+///     <para>
+///         ⚑ The oracle that settles it rather than merely fitting it is each block's own authored
+///         64x64 AUTOMAP, which is independent of the placement fields. Scored on the population
+///         rotation actually MOVES (a rotated sub-block, a model at least 512 units off its origin),
+///         2,048-per-turn puts 32 of 32 models on a built automap cell; the old 63.28-per-turn
+///         reading manages 5 of 30, which is WORSE than applying no rotation at all (17 of 32).
+///         ⚠ Measured on the whole corpus the gap collapses to 0.86 against 0.80 — most placements
+///         sit too near their sub-block origin for any rotation to move them, so the affected
+///         population is the only one that can discriminate.
+///     </para>
+///     <para>
+///         ⚠ The SIGN is NOT settled by that oracle and is not claimed here: both signs score 32 of
+///         32 on the affected subset (17 of those rotate a half turn, where sign cannot matter, and
+///         the other 15 land on built cells either way). It follows the sibling engine's measured
+///         convention instead — <see cref="Battlespire.Bs6SceneAssembler" /> established raw,
+///         unnegated angles on the same 2,048-unit scale, with the handedness flip done separately
+///         as a frame conversion, which is exactly the shape of this transform.
 ///     </para>
 ///     <para>
 ///         ⚠ <b>Z is MIRRORED as <c>4096 - z</c>, not used directly.</b> Daggerfall authors block
@@ -32,11 +77,25 @@ internal static class DaggerfallBlockSceneAssembler
     public const int BlockSideUnits = 4096;
 
     /// <summary>
-    ///     Degrees of Y rotation per stored unit. 360 / 63.28125 — the reference's constant, which
-    ///     is <b>not</b> a whole number of units per turn, so rounding it to 5.69 or to 360/64
-    ///     visibly skews long terraces.
+    ///     Y rotation units in a full turn, so a quarter turn is exactly 512 units. The same scale
+    ///     the sibling engine uses (<see cref="Battlespire.Bs6SceneAssembler.AngleUnitsPerTurn" />)
+    ///     and the reciprocal of <see cref="DaggerfallRmbBlock.RotationDivisor" />'s 2048/360.
     /// </summary>
-    public const double RotationDegreesPerUnit = 5.68889;
+    public const float AngleUnitsPerTurn = 2048f;
+
+    /// <summary>Stored units in a quarter turn, the only rotation retail city blocks use.</summary>
+    public const int QuarterTurnUnits = 512;
+
+    /// <summary>
+    ///     Converts a block-space position into the mirrored frame: <c>z → 4096 - z</c>.
+    ///     <para>
+    ///         ⚠ This is a MIRROR, not a rotation, so it reverses handedness and therefore triangle
+    ///         winding. Consumers that cull back faces must account for that; the diagnostic and
+    ///         viewer paths here render both sides.
+    ///     </para>
+    /// </summary>
+    public static Matrix4x4 MirrorMatrix { get; } =
+        Matrix4x4.CreateScale(1, 1, -1) * Matrix4x4.CreateTranslation(0, 0, BlockSideUnits);
 
     /// <summary>
     ///     Places every model of every sub-block, resolving meshes through <paramref name="resolve" />.
@@ -100,12 +159,14 @@ internal static class DaggerfallBlockSceneAssembler
     {
         ArgumentNullException.ThrowIfNull(sub);
 
+        const float scale = float.Tau / AngleUnitsPerTurn;
+
         var model2Sub =
-            Matrix4x4.CreateRotationY((float)(model.YRotation * RotationDegreesPerUnit * Math.PI / 180.0)) *
+            Matrix4x4.CreateRotationY(model.YRotation * scale) *
             Matrix4x4.CreateTranslation(model.XPos, model.YPos, model.ZPos);
 
         var sub2Block =
-            Matrix4x4.CreateRotationY((float)(sub.YRotation * RotationDegreesPerUnit * Math.PI / 180.0)) *
+            Matrix4x4.CreateRotationY(sub.YRotation * scale) *
             Matrix4x4.CreateTranslation(sub.XPos, 0, sub.ZPos);
 
         // ⚠ The mirror is a FRAME CONVERSION and is applied exactly ONCE, at the end. Mirroring
@@ -114,17 +175,9 @@ internal static class DaggerfallBlockSceneAssembler
         return model2Sub * sub2Block * MirrorMatrix;
     }
 
-    /// <summary>
-    ///     Converts a block-space position into the mirrored frame: <c>z → 4096 - z</c>.
-    ///     <para>
-    ///         ⚠ This is a MIRROR, not a rotation, so it reverses handedness and therefore triangle
-    ///         winding. Consumers that cull back faces must account for that; the diagnostic and
-    ///         viewer paths here render both sides.
-    ///     </para>
-    /// </summary>
-    public static Matrix4x4 MirrorMatrix { get; } =
-        Matrix4x4.CreateScale(1, 1, -1) * Matrix4x4.CreateTranslation(0, 0, BlockSideUnits);
-
     /// <summary>Mirrors a single Z coordinate into the block's frame.</summary>
-    public static float MirrorZ(int z) => BlockSideUnits - z;
+    public static float MirrorZ(int z)
+    {
+        return BlockSideUnits - z;
+    }
 }

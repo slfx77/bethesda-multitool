@@ -68,7 +68,7 @@ internal static class FalloutRecordSource
     }
 
     private static void Populate(
-        IGameFileSystem files,
+        LayeredGameFileSystem files,
         FalloutProType type,
         RecordCollection records,
         CancellationToken cancellationToken)
@@ -99,7 +99,7 @@ internal static class FalloutRecordSource
     }
 
     /// <summary>The per-family message file, or null when it is not shipped.</summary>
-    private static FalloutMessageFile? ReadMessages(IGameFileSystem files, FalloutProType type)
+    private static FalloutMessageFile? ReadMessages(LayeredGameFileSystem files, FalloutProType type)
     {
         var name = type switch
         {

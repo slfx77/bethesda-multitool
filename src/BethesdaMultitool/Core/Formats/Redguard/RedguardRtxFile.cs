@@ -48,8 +48,9 @@ internal sealed class RedguardRtxFile : IDisposable
     /// <summary>The kind word that says a record carries a sound after its text.</summary>
     public const ushort VoicedKind = 0x0001;
 
-    private readonly FileStream _stream;
     private readonly Dictionary<string, RedguardRtxEntry> _byTag;
+
+    private readonly FileStream _stream;
 
     private RedguardRtxFile(string name, FileStream stream, IReadOnlyList<RedguardRtxEntry> entries)
     {
@@ -68,6 +69,11 @@ internal sealed class RedguardRtxFile : IDisposable
 
     /// <summary>Every record, in FILE order (the index's own order is not meaningful).</summary>
     public IReadOnlyList<RedguardRtxEntry> Entries { get; }
+
+    public void Dispose()
+    {
+        _stream.Dispose();
+    }
 
     /// <summary>Content probe: a record tag is four printable characters and the file ends in the trailer's count.</summary>
     public static bool IsRtxFile(string path)
@@ -190,14 +196,16 @@ internal sealed class RedguardRtxFile : IDisposable
             if (!head.AsSpan(0, 4).SequenceEqual(slot[..4]) ||
                 BinaryPrimitives.ReadUInt32BigEndian(head.AsSpan(4)) != (uint)recordLength)
             {
-                throw new InvalidDataException($"{name}: index entry '{tag}' disagrees with the record header at {payloadOffset - 8}.");
+                throw new InvalidDataException(
+                    $"{name}: index entry '{tag}' disagrees with the record header at {payloadOffset - 8}.");
             }
 
             var kind = BinaryPrimitives.ReadUInt16BigEndian(head.AsSpan(8));
             var textLength = (int)BinaryPrimitives.ReadUInt32LittleEndian(head.AsSpan(10));
             if (kind > VoicedKind || PayloadPrologueLength + textLength > recordLength)
             {
-                throw new InvalidDataException($"{name}: record '{tag}' has kind {kind} and a {textLength}-byte text in {recordLength} bytes.");
+                throw new InvalidDataException(
+                    $"{name}: record '{tag}' has kind {kind} and a {textLength}-byte text in {recordLength} bytes.");
             }
 
             var textBytes = new byte[textLength];
@@ -219,7 +227,8 @@ internal sealed class RedguardRtxFile : IDisposable
 
             if (consumed != recordLength)
             {
-                throw new InvalidDataException($"{name}: record '{tag}' declares {recordLength} bytes but its parts total {consumed}.");
+                throw new InvalidDataException(
+                    $"{name}: record '{tag}' declares {recordLength} bytes but its parts total {consumed}.");
             }
 
             entries.Add(new RedguardRtxEntry(i, tag, payloadOffset, recordLength, text, sound, sampleOffset));
@@ -241,15 +250,11 @@ internal sealed class RedguardRtxFile : IDisposable
 
         if (expected - RecordHeaderLength != recordsEnd)
         {
-            throw new InvalidDataException($"{name}: records end at {expected - RecordHeaderLength}, but \"END \" sits at {recordsEnd}.");
+            throw new InvalidDataException(
+                $"{name}: records end at {expected - RecordHeaderLength}, but \"END \" sits at {recordsEnd}.");
         }
 
         return entries;
-    }
-
-    public void Dispose()
-    {
-        _stream.Dispose();
     }
 }
 

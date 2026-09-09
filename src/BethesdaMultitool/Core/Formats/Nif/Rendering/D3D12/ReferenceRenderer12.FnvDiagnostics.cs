@@ -134,6 +134,9 @@ internal sealed partial class ReferenceRenderer12
             ["placedLightCount"] = _placedLightCount,
             ["projectedSunShadowActive"] = _fnvProjectedSunShadowActive,
             ["fogEnabled"] = _fnvActiveAdtFogEnabled,
+            ["finiteAdtFogSupported"] = _fnvActiveAdtFogSupported,
+            ["activeAdtVertexFog"] = _fnvActiveAdtFogEnabled &&
+                (flags & FnvActiveAdtBasePolicy.RuntimeActiveAdtFlag) != 0,
             ["submissionRoute"] = submission.Route,
             ["drawSubmitted"] = true,
             ["targetInstanceMatched"] = true,

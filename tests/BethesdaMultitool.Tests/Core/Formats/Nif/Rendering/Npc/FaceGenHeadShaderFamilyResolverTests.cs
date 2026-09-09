@@ -115,8 +115,8 @@ public sealed class FaceGenHeadShaderFamilyResolverTests
 
         Assert.Equal(effectiveDiffusePath, submesh.DiffuseTexturePath);
         Assert.Equal(normalPath, submesh.NormalMapTexturePath);
-        Assert.Equal<float>([1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f], submesh.Tangents!);
-        Assert.Equal<float>([0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f], submesh.Bitangents!);
+        Assert.Equal([1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f], submesh.Tangents!);
+        Assert.Equal([0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f], submesh.Bitangents!);
         Assert.True(submesh.IsFaceGen);
         Assert.Equal<byte>([97, 112, 117, 255], resolver.GetTexture(effectiveDiffusePath)!.Pixels);
     }

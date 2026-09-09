@@ -36,40 +36,40 @@ internal static class StarfieldSunPresetSchemaValidator
             NightType,
             0,
             [
-                new("DirectionalColor", Float4Type, null, 0),
-                new("DirectionalIlluminance", null, TypeFloat, 16),
-                new("GlareColor", Float4Type, null, 20)
+                new ExpectedField("DirectionalColor", Float4Type, null, 0),
+                new ExpectedField("DirectionalIlluminance", null, TypeFloat, 16),
+                new ExpectedField("GlareColor", Float4Type, null, 20)
             ]),
         new(
             RootType,
             0,
             [
-                new("pParent", null, TypeRef, 280),
-                new("SunColor", Float4Type, null, 288),
-                new("SunIlluminance", null, TypeFloat, 304),
-                new("SunGlareColor", Float4Type, null, 308),
-                new("SunDiskTexture", null, TypeString, 328),
-                new("SunDiskScreenSizeMin", null, TypeFloat, 336),
-                new("SunDiskScreenSizeMax", null, TypeFloat, 340),
-                new("DuskDawnPreset", DawnDuskType, null, 344),
-                new("NightPreset", NightType, null, 368)
+                new ExpectedField("pParent", null, TypeRef, 280),
+                new ExpectedField("SunColor", Float4Type, null, 288),
+                new ExpectedField("SunIlluminance", null, TypeFloat, 304),
+                new ExpectedField("SunGlareColor", Float4Type, null, 308),
+                new ExpectedField("SunDiskTexture", null, TypeString, 328),
+                new ExpectedField("SunDiskScreenSizeMin", null, TypeFloat, 336),
+                new ExpectedField("SunDiskScreenSizeMax", null, TypeFloat, 340),
+                new ExpectedField("DuskDawnPreset", DawnDuskType, null, 344),
+                new ExpectedField("NightPreset", NightType, null, 368)
             ]),
         new(
             Float4Type,
             8,
             [
-                new("x", null, TypeFloat, 0),
-                new("y", null, TypeFloat, 4),
-                new("z", null, TypeFloat, 8),
-                new("w", null, TypeFloat, 12)
+                new ExpectedField("x", null, TypeFloat, 0),
+                new ExpectedField("y", null, TypeFloat, 4),
+                new ExpectedField("z", null, TypeFloat, 8),
+                new ExpectedField("w", null, TypeFloat, 12)
             ]),
         new(
             DawnDuskType,
             0,
             [
-                new("DirectionalColor", Float4Type, null, 0),
-                new("TransitionStartAngle", null, TypeFloat, 16),
-                new("TransitionEndAngle", null, TypeFloat, 20)
+                new ExpectedField("DirectionalColor", Float4Type, null, 0),
+                new ExpectedField("TransitionStartAngle", null, TypeFloat, 16),
+                new ExpectedField("TransitionEndAngle", null, TypeFloat, 20)
             ])
     ];
 
@@ -163,7 +163,7 @@ internal static class StarfieldSunPresetSchemaValidator
         var fieldCount = BinaryPrimitives.ReadUInt16LittleEndian(body[10..]);
         if (flags != expected.Flags ||
             fieldCount != expected.Fields.Count ||
-            body.Length != 12 + (fieldCount * 12))
+            body.Length != 12 + fieldCount * 12)
         {
             error = $"SUNP CLAS '{expected.Name}' has changed flags, field count, or framing.";
             return false;
@@ -171,7 +171,7 @@ internal static class StarfieldSunPresetSchemaValidator
 
         for (var index = 0; index < expected.Fields.Count; index++)
         {
-            var descriptor = body.Slice(12 + (index * 12), 12);
+            var descriptor = body.Slice(12 + index * 12, 12);
             var expectedField = expected.Fields[index];
             if (!TryResolveName(
                     BinaryPrimitives.ReadUInt32LittleEndian(descriptor), strings, out var fieldName) ||
@@ -268,8 +268,10 @@ internal static class StarfieldSunPresetSchemaValidator
     private static bool TryResolveName(
         uint token,
         IReadOnlyDictionary<uint, string> strings,
-        out string name) =>
-        strings.TryGetValue(token, out name!);
+        out string name)
+    {
+        return strings.TryGetValue(token, out name!);
+    }
 
     private sealed record ExpectedClass(
         string Name,

@@ -80,7 +80,8 @@ public sealed class GpuVideoMemoryMonitorGpuTests
         // Same reading a moment apart, so allow a megabyte of drift in the usage but none in the
         // conversion itself: budget does not move between two adjacent calls.
         Assert.Equal(info.BudgetBytes / (1024 * 1024), budgetMb);
-        Assert.InRange(usedMb, (info.CurrentUsageBytes / (1024 * 1024)) - 64, (info.CurrentUsageBytes / (1024 * 1024)) + 64);
+        Assert.InRange(usedMb, info.CurrentUsageBytes / (1024 * 1024) - 64,
+            info.CurrentUsageBytes / (1024 * 1024) + 64);
     }
 
     [Fact]

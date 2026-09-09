@@ -45,7 +45,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
             new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
 
         var model = NpcHeadBuilder.Build(
-            veronica!,
+            veronica,
             assets.MeshArchives,
             assets.TextureResolver,
             headMeshCache,
@@ -73,7 +73,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
 
-        using var renderer = new GpuSpriteRenderer12(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu);
         var gpuSprite = renderer.Render(
             model,
             assets.TextureResolver,
@@ -113,7 +113,7 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         Dictionary<string, Matrix4x4>? poseDeltaCache = null;
 
         var model = NpcBodyBuilder.Build(
-            lucy!,
+            lucy,
             assets.MeshArchives,
             assets.TextureResolver,
             headMeshCache,
@@ -164,11 +164,11 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
     private PcAssets CreatePcAssets()
     {
         var meshesBsa = SampleFileFixture.FindSamplePath(
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa");
         var texturesBsa = SampleFileFixture.FindSamplePath(
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Textures.bsa");
         var textures2Bsa = SampleFileFixture.FindSamplePath(
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures2.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Textures2.bsa");
 
         Assert.SkipWhen(meshesBsa is null, "PC final meshes BSA not available");
         Assert.SkipWhen(texturesBsa is null, "PC final textures BSA not available");
@@ -178,8 +178,8 @@ public sealed class NpcRenderSmokeTests(SampleFileFixture samples)
         Assert.NotNull(esm);
 
         return new PcAssets(
-            MeshArchiveSet.Open(meshesBsa!, null),
-            new NifTextureResolver(texturesBsa!, textures2Bsa!),
+            MeshArchiveSet.Open(meshesBsa, null),
+            new NifTextureResolver(texturesBsa, textures2Bsa),
             NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian));
     }
 

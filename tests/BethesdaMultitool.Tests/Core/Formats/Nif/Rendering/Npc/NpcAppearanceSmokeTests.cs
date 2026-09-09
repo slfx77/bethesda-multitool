@@ -48,7 +48,7 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         var meshesBsa = SampleFileFixture.FindSamplePath(
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa");
         Assert.SkipWhen(meshesBsa is null, "PC final meshes BSA not available");
 
         var esm = EsmFileLoader.Load(samples.PcFinalEsm!, false);
@@ -60,13 +60,13 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
             Path.GetFileName(samples.PcFinalEsm!));
 
         Assert.NotNull(boone);
-        Assert.NotNull(boone!.BaseHeadTriPath);
+        Assert.NotNull(boone.BaseHeadTriPath);
 
-        using var meshArchives = MeshArchiveSet.Open(meshesBsa!, null);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsa, null);
         var tri = NpcMeshHelpers.LoadTriFromBsa(boone.BaseHeadTriPath!, meshArchives);
 
         Assert.NotNull(tri);
-        Assert.True(tri!.VertexCount > 0);
+        Assert.True(tri.VertexCount > 0);
         Assert.True(tri.TriangleCount > 0);
     }
 
@@ -76,11 +76,11 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
         Assert.SkipWhen(samples.PcFinalEsm is null, "PC final ESM not available");
 
         var meshesBsa = SampleFileFixture.FindSamplePath(
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa");
         var texturesBsa = SampleFileFixture.FindSamplePath(
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Textures.bsa");
         var textures2Bsa = SampleFileFixture.FindSamplePath(
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures2.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Textures2.bsa");
 
         Assert.SkipWhen(meshesBsa is null, "PC final meshes BSA not available");
         Assert.SkipWhen(texturesBsa is null, "PC final textures BSA not available");
@@ -97,7 +97,7 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
 
         var settings = new NpcRenderSettings
         {
-            MeshesBsaPath = meshesBsa!,
+            MeshesBsaPath = meshesBsa,
             EsmPath = samples.PcFinalEsm!,
             OutputDir = Path.GetTempPath(),
             HeadOnly = true,
@@ -112,8 +112,8 @@ public sealed class NpcAppearanceSmokeTests(SampleFileFixture samples)
         var egtCache =
             new Dictionary<string, EgtParser?>(StringComparer.OrdinalIgnoreCase);
 
-        using var meshArchives = MeshArchiveSet.Open(meshesBsa!, null);
-        using var textureResolver = new NifTextureResolver(texturesBsa!, textures2Bsa!);
+        using var meshArchives = MeshArchiveSet.Open(meshesBsa, null);
+        using var textureResolver = new NifTextureResolver(texturesBsa, textures2Bsa);
 
         var model = NpcHeadBuilder.Build(
             boone,

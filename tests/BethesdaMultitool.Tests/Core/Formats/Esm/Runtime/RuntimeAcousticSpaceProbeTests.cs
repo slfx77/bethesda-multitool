@@ -48,7 +48,7 @@ public sealed class RuntimeAcousticSpaceProbeTests
         var probe = RuntimeAcousticSpaceProbe.Probe(context, entries);
 
         Assert.NotNull(probe);
-        Assert.Equal(layout, probe!.Winner.Layout);
+        Assert.Equal(layout, probe.Winner.Layout);
         Assert.True(probe.Margin >= 3,
             $"the captured era must win decisively; got margin {probe.Margin}");
 
@@ -56,7 +56,7 @@ public sealed class RuntimeAcousticSpaceProbeTests
         var record = reader.ReadRuntimeAcousticSpace(entries[0]);
 
         Assert.NotNull(record);
-        Assert.Equal("ASPC", record!.RecordType);
+        Assert.Equal("ASPC", record.RecordType);
 
         // Dawn is populated in every era; the second slot only exists from FourSound on.
         Assert.Equal(SoundFormId, record.Fields["BGSAcousticSpace.pDawnSound"]);
@@ -96,7 +96,7 @@ public sealed class RuntimeAcousticSpaceProbeTests
         var record = reader.ReadRuntimeAcousticSpace(entries[0]);
 
         Assert.NotNull(record);
-        Assert.DoesNotContain("BGSAcousticSpace.pDuskSound", record!.Fields.Keys);
+        Assert.DoesNotContain("BGSAcousticSpace.pDuskSound", record.Fields.Keys);
         // The genuine sounds and the region are unaffected.
         Assert.Equal(SoundFormId, record.Fields["BGSAcousticSpace.pDawnSound"]);
         Assert.Equal(RegionFormId, record.Fields["BGSAcousticSpace.pSoundRegion"]);
@@ -134,7 +134,7 @@ public sealed class RuntimeAcousticSpaceProbeTests
         // either a wrong-typed pointer or a scalar, so all of them resolve to nothing and the only
         // surviving field is the environment type — no wrong FormID is ever produced.
         Assert.NotNull(record);
-        Assert.Equal(["BGSAcousticSpace.eEnvType"], record!.Fields.Keys);
+        Assert.Equal(["BGSAcousticSpace.eEnvType"], record.Fields.Keys);
     }
 
     private static RuntimeAcousticSpaceLayout LayoutFor(string label)

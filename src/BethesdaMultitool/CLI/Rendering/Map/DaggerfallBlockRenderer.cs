@@ -13,6 +13,9 @@ internal static class DaggerfallBlockRenderer
 {
     private const int BytesPerPixel = 4;
 
+    /// <summary>Block units of margin drawn around the 2,048-unit dungeon block in a plan.</summary>
+    public const int DungeonPlanMargin = 128;
+
     /// <summary>The 64x64 automap scaled up, RGBA row-major.</summary>
     public static (byte[] Pixels, int Width, int Height) RenderAutoMap(DaggerfallRmbBlock block, int scale)
     {
@@ -74,9 +77,6 @@ internal static class DaggerfallBlockRenderer
         return (pixels, width, width);
     }
 
-    /// <summary>Block units of margin drawn around the 2,048-unit dungeon block in a plan.</summary>
-    public const int DungeonPlanMargin = 128;
-
     /// <summary>
     ///     A top-down plan of a dungeon block: the whole 2,048-unit block (plus a margin, since a
     ///     few retail objects sit just outside it) on a square canvas, a helper grid every 512
@@ -125,7 +125,7 @@ internal static class DaggerfallBlockRenderer
     /// <summary>A stable, well-separated colour for a small integer id.</summary>
     internal static (byte R, byte G, byte B) DiagnosticColor(int id)
     {
-        var hue = (id * 0.618033988749895) % 1.0;
+        var hue = id * 0.618033988749895 % 1.0;
         var saturation = 0.65;
         var value = 0.95;
         var sector = (int)(hue * 6) % 6;
@@ -150,7 +150,8 @@ internal static class DaggerfallBlockRenderer
         FillRect(pixels, imageWidth, cellX * scale, cellY * scale, scale, scale, r, g, b);
     }
 
-    private static void FillRect(byte[] pixels, int imageWidth, int x, int y, int width, int height, byte r, byte g, byte b)
+    private static void FillRect(byte[] pixels, int imageWidth, int x, int y, int width, int height, byte r, byte g,
+        byte b)
     {
         var imageHeight = pixels.Length / (imageWidth * BytesPerPixel);
         for (var py = y; py < y + height && py < imageHeight; py++)

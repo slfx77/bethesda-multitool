@@ -67,9 +67,9 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
         var visible = NpcCompositionPlanner.BuildBodyParts(
             appearance,
             new NpcCompositionOptions(),
-            coveredSlots: 0,
-            effectiveBodyTex: null,
-            effectiveHandTex: null);
+            0,
+            null,
+            null);
         var tail = Assert.Single(visible);
         Assert.Equal(appearance.TailNifPath, tail.MeshPath);
         Assert.Equal(appearance.TailTexturePath, tail.TextureOverride);
@@ -77,25 +77,25 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
         var upperBodyCovered = NpcCompositionPlanner.BuildBodyParts(
             appearance,
             new NpcCompositionOptions(),
-            coveredSlots: 0x04,
-            effectiveBodyTex: null,
-            effectiveHandTex: null);
+            0x04,
+            null,
+            null);
         Assert.Single(upperBodyCovered);
 
         var tailCovered = NpcCompositionPlanner.BuildBodyParts(
             appearance,
             new NpcCompositionOptions(),
-            coveredSlots: NpcCompositionPlanner.Tes4TailSlot,
-            effectiveBodyTex: null,
-            effectiveHandTex: null);
+            NpcCompositionPlanner.Tes4TailSlot,
+            null,
+            null);
         Assert.Empty(tailCovered);
 
         var headOnly = NpcCompositionPlanner.BuildBodyParts(
             appearance,
             new NpcCompositionOptions { HeadOnly = true },
-            coveredSlots: 0,
-            effectiveBodyTex: null,
-            effectiveHandTex: null);
+            0,
+            null,
+            null);
         Assert.Empty(headOnly);
     }
 
@@ -112,9 +112,9 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
         var parts = NpcCompositionPlanner.BuildBodyParts(
             appearance,
             new NpcCompositionOptions(),
-            coveredSlots: 0x08,
-            effectiveBodyTex: null,
-            effectiveHandTex: null);
+            0x08,
+            null,
+            null);
 
         Assert.Empty(parts);
     }
@@ -132,7 +132,7 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
         Assert.NotNull(veronica);
 
         var appearance = WithOverrides(
-            veronica!,
+            veronica,
             [
                 new EquippedItem
                 {
@@ -199,7 +199,7 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
         var compositionCaches = new NpcCompositionCaches();
         var renderModelCache = new NpcRenderModelCache();
         var plan = NpcCompositionPlanner.CreatePlan(
-            veronica!,
+            veronica,
             assets.MeshArchives,
             assets.TextureResolver,
             compositionCaches,
@@ -219,9 +219,9 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
 
         Assert.NotNull(plan.Head.BaseHeadNifPath);
         Assert.NotNull(model);
-        Assert.True(model!.HasGeometry);
+        Assert.True(model.HasGeometry);
         Assert.NotNull(scene);
-        Assert.NotEmpty(scene!.MeshParts);
+        Assert.NotEmpty(scene.MeshParts);
         Assert.Contains(model.Submeshes, submesh => submesh.DiffuseTexturePath != null);
 
         var cpuSprite = NifSpriteRenderer.Render(
@@ -237,7 +237,7 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
 
         using var gpu = GpuDevice12.Create();
         Assert.SkipWhen(gpu is null, "GPU backend not available");
-        using var renderer = new GpuSpriteRenderer12(gpu!);
+        using var renderer = new GpuSpriteRenderer12(gpu);
         var gpuSprite = renderer.Render(
             model,
             assets.TextureResolver,
@@ -276,21 +276,21 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
         Assert.NotNull(creature);
 
         var plan = CreatureCompositionPlanner.CreatePlan(
-            creature!,
+            creature,
             assets.MeshArchives,
             assets.AppearanceResolver,
             CreatureCompositionOptions.From(CreateRenderSettings(false)));
 
         Assert.NotNull(plan);
-        Assert.NotEmpty(plan!.BodyModelPaths);
+        Assert.NotEmpty(plan.BodyModelPaths);
 
         var model = NpcCompositionRenderAdapter.BuildCreature(plan, assets.MeshArchives, assets.TextureResolver);
         var scene = NpcCompositionExportAdapter.BuildCreature(plan, assets.MeshArchives);
 
         Assert.NotNull(model);
-        Assert.True(model!.HasGeometry);
+        Assert.True(model.HasGeometry);
         Assert.NotNull(scene);
-        Assert.NotEmpty(scene!.MeshParts);
+        Assert.NotEmpty(scene.MeshParts);
 
         if (plan.BoneTransforms != null &&
             plan.BoneTransforms.TryGetValue("Bip01 Head", out var headBone))
@@ -303,11 +303,11 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
     private PcAssets CreatePcAssets()
     {
         var meshesBsa = SampleFileFixture.FindSamplePath(
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Meshes.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Meshes.bsa");
         var texturesBsa = SampleFileFixture.FindSamplePath(
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Textures.bsa");
         var textures2Bsa = SampleFileFixture.FindSamplePath(
-            @"Sample\Full_Builds\Fallout New Vegas (PC Final)\Data\Fallout - Textures2.bsa");
+            @"Sample\Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\Fallout - Textures2.bsa");
 
         Assert.SkipWhen(meshesBsa is null, "PC final meshes BSA not available");
         Assert.SkipWhen(texturesBsa is null, "PC final textures BSA not available");
@@ -317,8 +317,8 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
         Assert.NotNull(esm);
 
         return new PcAssets(
-            MeshArchiveSet.Open(meshesBsa!, null),
-            new NifTextureResolver(texturesBsa!, textures2Bsa!),
+            MeshArchiveSet.Open(meshesBsa, null),
+            new NifTextureResolver(texturesBsa, textures2Bsa),
             NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian));
     }
 
@@ -412,7 +412,7 @@ public sealed class NpcCompositionCoreTests(SampleFileFixture samples)
     private static void AssertSpriteHasVisiblePixels(SpriteResult? sprite)
     {
         Assert.NotNull(sprite);
-        Assert.Equal(sprite!.Width * sprite.Height * 4, sprite.Pixels.Length);
+        Assert.Equal(sprite.Width * sprite.Height * 4, sprite.Pixels.Length);
         Assert.Contains(
             Enumerable.Range(0, sprite.Pixels.Length / 4)
                 .Select(index => sprite.Pixels[index * 4 + 3]),

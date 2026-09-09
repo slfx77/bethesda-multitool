@@ -6,30 +6,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.D3D12;
 
 public sealed class OpaqueSubmissionOrderPolicyTests
 {
-    private readonly record struct Item(
-        string Name,
-        OpaqueSubmissionLane Lane,
-        string Pso,
-        double Depth = 0,
-        int Ordinal = 0);
-    private readonly record struct ReferenceItem(string Name, object Pso);
-
-    private sealed class ValueEqualPso
-    {
-        public override bool Equals(object? obj) => obj is ValueEqualPso;
-
-        public override int GetHashCode() => 0;
-    }
-
-    private sealed class ItemDepthComparer : IComparer<Item>
-    {
-        public int Compare(Item x, Item y)
-        {
-            var depth = x.Depth.CompareTo(y.Depth);
-            return depth != 0 ? depth : x.Ordinal.CompareTo(y.Ordinal);
-        }
-    }
-
     [Fact]
     public void Ordinary_batches_group_by_first_seen_pso_while_special_lanes_stay_stable()
     {
@@ -113,7 +89,7 @@ public sealed class OpaqueSubmissionOrderPolicyTests
     {
         var items = new List<Item>
         {
-            new("decal-a", OpaqueSubmissionLane.Decal, "decal", 1, 0),
+            new("decal-a", OpaqueSubmissionLane.Decal, "decal", 1),
             new("b-far", OpaqueSubmissionLane.Ordinary, "pso-b", 9, 1),
             new("grass-a", OpaqueSubmissionLane.Grass, "grass", 0, 2),
             new("a-far", OpaqueSubmissionLane.Ordinary, "pso-a", 8, 3),
@@ -178,5 +154,36 @@ public sealed class OpaqueSubmissionOrderPolicyTests
             static item => item.Lane,
             static item => item.Pso,
             StringComparer.Ordinal);
+    }
+
+    private readonly record struct Item(
+        string Name,
+        OpaqueSubmissionLane Lane,
+        string Pso,
+        double Depth = 0,
+        int Ordinal = 0);
+
+    private readonly record struct ReferenceItem(string Name, object Pso);
+
+    private sealed class ValueEqualPso
+    {
+        public override bool Equals(object? obj)
+        {
+            return obj is ValueEqualPso;
+        }
+
+        public override int GetHashCode()
+        {
+            return 0;
+        }
+    }
+
+    private sealed class ItemDepthComparer : IComparer<Item>
+    {
+        public int Compare(Item x, Item y)
+        {
+            var depth = x.Depth.CompareTo(y.Depth);
+            return depth != 0 ? depth : x.Ordinal.CompareTo(y.Ordinal);
+        }
     }
 }

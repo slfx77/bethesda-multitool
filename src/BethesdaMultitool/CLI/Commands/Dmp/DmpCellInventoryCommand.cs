@@ -456,7 +456,7 @@ internal static class DmpCellInventoryCommand
 
         AnsiConsole.MarkupLine($"[blue]Loading PC ESM authority: {Markup.Escape(Path.GetFileName(pcEsmPath))}...[/]");
         var analysis = await EsmFileAnalyzer.AnalyzeAsync(pcEsmPath, cancellationToken: cancellationToken);
-        if (analysis?.EsmRecords is { } esmRecords &&
+        if (analysis.EsmRecords is { } esmRecords &&
             (esmRecords.CellToWorldspaceMap.Count > 0 || esmRecords.CellToRefrMap.Count > 0))
         {
             var refToCell = BuildRefToCellMap(esmRecords.CellToRefrMap);

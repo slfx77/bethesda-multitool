@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -22,7 +20,7 @@ public sealed class DaggerfallImageRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Classics.Daggerfall();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Daggerfall (ARENA2)"));
-        return root!;
+        return root;
     }
 
     [Fact]
@@ -66,7 +64,8 @@ public sealed class DaggerfallImageRetailTests
             if (img.EmbeddedPalette is not null)
             {
                 embeddedPalettes++;
-                Assert.True(DaggerfallImgFile.HasEmbeddedPalette(name), $"{name} yielded a palette it should not carry.");
+                Assert.True(DaggerfallImgFile.HasEmbeddedPalette(name),
+                    $"{name} yielded a palette it should not carry.");
                 Assert.Equal(64_768, bytes.Length);
             }
         }

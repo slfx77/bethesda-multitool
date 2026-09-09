@@ -51,7 +51,7 @@ public class OblivionNifBrowserTextureIntegrationTests
         Assert.SkipUnless(dataDir is not null,
             "Oblivion Data folder not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
 
-        using var service = NifBrowserService.CreateFromBsa(Path.Combine(dataDir!, "Oblivion - Meshes.bsa"));
+        using var service = NifBrowserService.CreateFromBsa(Path.Combine(dataDir, "Oblivion - Meshes.bsa"));
 
         Assert.Contains(service.TexturePaths,
             p => p.EndsWith("Oblivion - Textures - Compressed.bsa", StringComparison.OrdinalIgnoreCase));
@@ -71,7 +71,7 @@ public class OblivionNifBrowserTextureIntegrationTests
         Assert.SkipUnless(dataDir is not null,
             "Oblivion Data folder not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
 
-        using var service = NifBrowserService.CreateFromBsa(Path.Combine(dataDir!, "Oblivion - Meshes.bsa"));
+        using var service = NifBrowserService.CreateFromBsa(Path.Combine(dataDir, "Oblivion - Meshes.bsa"));
 
         byte[]? nifData = null;
         string? nifPath = null;
@@ -88,12 +88,12 @@ public class OblivionNifBrowserTextureIntegrationTests
         Assert.SkipUnless(nifData is not null,
             $"None of the candidate NIFs found in Oblivion - Meshes.bsa: {string.Join(", ", CandidateNifPaths)}");
 
-        var nif = NifParser.Parse(nifData!);
+        var nif = NifParser.Parse(nifData);
         Assert.NotNull(nif);
 
-        var scene = NifExportSceneBuilder.Build(nifData!, nif!, nifPath!);
+        var scene = NifExportSceneBuilder.Build(nifData, nif, nifPath!);
         Assert.NotNull(scene);
-        Assert.NotEmpty(scene!.MeshParts);
+        Assert.NotEmpty(scene.MeshParts);
 
         // TES4 architecture meshes texture every visible shape; without the NiTexturingProperty
         // fallback every part came back with a null diffuse and the preview rendered white.

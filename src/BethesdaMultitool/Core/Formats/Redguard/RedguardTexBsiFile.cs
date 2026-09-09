@@ -23,7 +23,8 @@ namespace BethesdaMultitool.Core.Formats.Redguard;
 ///     </para>
 ///     <para>
 ///         <c>BHDR</c> is 26 bytes: u16 x @0, y @2, width @4, height @6; two bytes @8; two zero
-///         words @10 and @12; <b>u16 frame count @14</b>; u16 @16; two zero words; two bytes; u16. A still image's DATA is exactly
+///         words @10 and @12; <b>u16 frame count @14</b>; u16 @16; two zero words; two bytes; u16. A still image's DATA is
+///         exactly
 ///         width x height 8-bit indices — true on all 5,547 of them. An animated image's DATA
 ///         opens with a table of <c>height x frameCount</c> LITTLE-endian u32 ROW offsets,
 ///         relative to the DATA payload, each row being <c>width</c> bytes; frames therefore share
@@ -93,7 +94,8 @@ internal sealed class RedguardTexBsiFile
         {
             if (position + NameLength > bytes.Length)
             {
-                throw new InvalidDataException($"{name}: {bytes.Length - position} trailing bytes at {position} are not an image name.");
+                throw new InvalidDataException(
+                    $"{name}: {bytes.Length - position} trailing bytes at {position} are not an image name.");
             }
 
             if (!bytes.Slice(position, NameLength).ContainsAnyExcept((byte)0))
@@ -118,9 +120,10 @@ internal sealed class RedguardTexBsiFile
 
         var bodySize = BinaryPrimitives.ReadUInt32LittleEndian(bytes[(position + NameLength)..]);
         var body = position + NameLength + 4;
-        if (bodySize > int.MaxValue || body + (long)bodySize > bytes.Length)
+        if (bodySize > int.MaxValue || body + bodySize > bytes.Length)
         {
-            throw new InvalidDataException($"{fileName}: image {index} declares {bodySize} bytes, past the end of the file.");
+            throw new InvalidDataException(
+                $"{fileName}: image {index} declares {bodySize} bytes, past the end of the file.");
         }
 
         var end = body + (int)bodySize;
@@ -140,9 +143,10 @@ internal sealed class RedguardTexBsiFile
             var tag = bytes.Slice(at, 4);
             var length = BinaryPrimitives.ReadUInt32BigEndian(bytes[(at + 4)..]);
             at += SubrecordHeaderLength;
-            if (length > int.MaxValue || at + (long)length > end)
+            if (length > int.MaxValue || at + length > end)
             {
-                throw new InvalidDataException($"{fileName}: image {index} subrecord at {at - SubrecordHeaderLength} declares {length} bytes, past its body.");
+                throw new InvalidDataException(
+                    $"{fileName}: image {index} subrecord at {at - SubrecordHeaderLength} declares {length} bytes, past its body.");
             }
 
             var payload = bytes.Slice(at, (int)length);
@@ -154,7 +158,8 @@ internal sealed class RedguardTexBsiFile
             {
                 if (payload.Length < ImageHeaderLength)
                 {
-                    throw new InvalidDataException($"{fileName}: image {index} BHDR is {payload.Length} bytes, expected {ImageHeaderLength}.");
+                    throw new InvalidDataException(
+                        $"{fileName}: image {index} BHDR is {payload.Length} bytes, expected {ImageHeaderLength}.");
                 }
 
                 header = payload;
@@ -163,7 +168,8 @@ internal sealed class RedguardTexBsiFile
             {
                 if (payload.Length != PaletteLength)
                 {
-                    throw new InvalidDataException($"{fileName}: image {index} CMAP is {payload.Length} bytes, expected {PaletteLength}.");
+                    throw new InvalidDataException(
+                        $"{fileName}: image {index} CMAP is {payload.Length} bytes, expected {PaletteLength}.");
                 }
 
                 // Retail CMAPs top out at 63, so they are 6-bit VGA like the .GXA palettes.
@@ -207,12 +213,14 @@ internal sealed class RedguardTexBsiFile
             imageName, xOffset, yOffset, width, height, frameCount, animated && frameCount > 1, palette, frames);
     }
 
-    private static IndexedBitmap ReadStillFrame(ReadOnlySpan<byte> data, string fileName, int index, int width, int height)
+    private static IndexedBitmap ReadStillFrame(ReadOnlySpan<byte> data, string fileName, int index, int width,
+        int height)
     {
         var pixels = (long)width * height;
         if (data.Length != pixels)
         {
-            throw new InvalidDataException($"{fileName}: image {index} is {width}x{height} but its DATA is {data.Length} bytes.");
+            throw new InvalidDataException(
+                $"{fileName}: image {index} is {width}x{height} but its DATA is {data.Length} bytes.");
         }
 
         return new IndexedBitmap(width, height, data.ToArray());
@@ -223,13 +231,15 @@ internal sealed class RedguardTexBsiFile
     {
         if (frameCount <= 0 || width <= 0 || height <= 0)
         {
-            throw new InvalidDataException($"{fileName}: image {index} is animated but {width}x{height} with {frameCount} frames.");
+            throw new InvalidDataException(
+                $"{fileName}: image {index} is animated but {width}x{height} with {frameCount} frames.");
         }
 
         var rows = (long)height * frameCount;
         if (rows * 4 > data.Length)
         {
-            throw new InvalidDataException($"{fileName}: image {index} needs a {rows * 4}-byte row table but its DATA is {data.Length} bytes.");
+            throw new InvalidDataException(
+                $"{fileName}: image {index} needs a {rows * 4}-byte row table but its DATA is {data.Length} bytes.");
         }
 
         var frames = new IndexedBitmap[frameCount];
@@ -239,7 +249,7 @@ internal sealed class RedguardTexBsiFile
             for (var y = 0; y < height; y++)
             {
                 var offset = BinaryPrimitives.ReadUInt32LittleEndian(data[(4 * (height * f + y))..]);
-                if (offset + (long)width > data.Length)
+                if (offset + width > data.Length)
                 {
                     throw new InvalidDataException(
                         $"{fileName}: image {index} frame {f} row {y} starts at {offset}, past its {data.Length}-byte DATA.");

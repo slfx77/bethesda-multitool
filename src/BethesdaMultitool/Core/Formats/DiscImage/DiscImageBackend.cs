@@ -30,10 +30,11 @@ internal sealed class DiscImageBackend : IArchiveBackend
     private static readonly byte[] SyncPattern =
         [0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00];
 
-    private readonly IDiscSectorSource _source;
-    private readonly List<DiscFileEntry> _files;
     private readonly List<(int Number, DiscTrackRegion Region)> _audioTracks;
+    private readonly List<DiscFileEntry> _files;
     private readonly Lock _readLock = new();
+
+    private readonly IDiscSectorSource _source;
 
     private DiscImageBackend(
         IDiscSectorSource source, string formatName, string? volumeId,
@@ -46,14 +47,72 @@ internal sealed class DiscImageBackend : IArchiveBackend
         _audioTracks = audioTracks;
     }
 
+    /// <summary>The ISO9660 volume identifier, when the descriptor carries one.</summary>
+    public string? VolumeId { get; }
+
     public string FormatName { get; }
 
     public string PlatformLabel => "CD";
 
-    /// <summary>The ISO9660 volume identifier, when the descriptor carries one.</summary>
-    public string? VolumeId { get; }
-
     public int TotalFiles => _files.Count + _audioTracks.Count;
+
+    public IReadOnlyList<ArchiveEntry> ListFiles()
+    {
+        var list = new List<ArchiveEntry>(TotalFiles);
+        foreach (var file in _files)
+        {
+            var ext = Path.GetExtension(file.Name);
+            list.Add(new ArchiveEntry(
+                file.FullPath, file.Directory, file.Name,
+                string.IsNullOrEmpty(ext) ? string.Empty : ext.ToLowerInvariant(),
+                file.Size, file.ExtentLba * SectorSize, false, file));
+        }
+
+        foreach (var (number, region) in _audioTracks)
+        {
+            var name = $"track{number:D2}.wav";
+            list.Add(new ArchiveEntry(
+                $"{AudioFolder}/{name}", AudioFolder, name, ".wav",
+                44 + region.SectorCountValue * region.PhysicalSectorSize,
+                region.FileByteOffset, false, region));
+        }
+
+        return list;
+    }
+
+    public byte[] Extract(ArchiveEntry entry)
+    {
+        using var output = new MemoryStream();
+        ExtractTo(entry, output);
+        return output.ToArray();
+    }
+
+    public async Task<bool> ExtractToDiskAsync(ArchiveEntry entry, string outputDir, bool overwrite)
+    {
+        var relative = entry.FullPath.Replace('/', '\\').TrimStart('\\');
+        if (relative.Length == 0 || Path.IsPathRooted(relative) ||
+            relative.Split('\\').Any(static part => part == ".."))
+        {
+            throw new InvalidOperationException($"Archive entry path is not extractable: '{entry.FullPath}'.");
+        }
+
+        var target = Path.Combine(outputDir, relative);
+        if (!overwrite && File.Exists(target))
+        {
+            return false;
+        }
+
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        await using var output =
+            new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, true);
+        await Task.Run(() => ExtractTo(entry, output)).ConfigureAwait(false);
+        return true;
+    }
+
+    public void Dispose()
+    {
+        _source.Dispose();
+    }
 
     /// <summary>
     ///     Extension + content gate. <c>.bin</c> needs a raw-sector sync pattern (bare .bin files
@@ -93,7 +152,8 @@ internal sealed class DiscImageBackend : IArchiveBackend
             {
                 case ".cue":
                 {
-                    var cue = TryParseCue(path) ?? throw new InvalidDataException($"'{name}' is not a usable cue sheet (a data track and every referenced file are required).");
+                    var cue = TryParseCue(path) ?? throw new InvalidDataException(
+                        $"'{name}' is not a usable cue sheet (a data track and every referenced file are required).");
                     var regions = cue.BuildRegions();
                     source = new RawSectorSource(regions);
                     formatName = "CD image (CUE/BIN)";
@@ -118,7 +178,8 @@ internal sealed class DiscImageBackend : IArchiveBackend
                     }
 
                     var length = new FileInfo(path).Length;
-                    var region = new DiscTrackRegion(0, length / RawSectorSource.RawSectorSize, path, 0, RawSectorSource.RawSectorSize, false);
+                    var region = new DiscTrackRegion(0, length / RawSectorSource.RawSectorSize, path, 0,
+                        RawSectorSource.RawSectorSize, false);
                     source = new RawSectorSource([region]);
                     formatName = "CD image (raw BIN)";
                     break;
@@ -143,57 +204,6 @@ internal sealed class DiscImageBackend : IArchiveBackend
             source?.Dispose();
             throw;
         }
-    }
-
-    public IReadOnlyList<ArchiveEntry> ListFiles()
-    {
-        var list = new List<ArchiveEntry>(TotalFiles);
-        foreach (var file in _files)
-        {
-            var ext = Path.GetExtension(file.Name);
-            list.Add(new ArchiveEntry(
-                file.FullPath, file.Directory, file.Name,
-                string.IsNullOrEmpty(ext) ? string.Empty : ext.ToLowerInvariant(),
-                file.Size, file.ExtentLba * SectorSize, false, file));
-        }
-
-        foreach (var (number, region) in _audioTracks)
-        {
-            var name = $"track{number:D2}.wav";
-            list.Add(new ArchiveEntry(
-                $"{AudioFolder}/{name}", AudioFolder, name, ".wav",
-                44 + region.SectorCountValue * region.PhysicalSectorSize,
-                region.FileByteOffset, false, region));
-        }
-
-        return list;
-    }
-
-    public byte[] Extract(ArchiveEntry entry)
-    {
-        using var output = new MemoryStream();
-        ExtractTo(entry, output);
-        return output.ToArray();
-    }
-
-    public async Task<bool> ExtractToDiskAsync(ArchiveEntry entry, string outputDir, bool overwrite)
-    {
-        var relative = entry.FullPath.Replace('/', '\\').TrimStart('\\');
-        if (relative.Length == 0 || Path.IsPathRooted(relative) || relative.Split('\\').Any(static part => part == ".."))
-        {
-            throw new InvalidOperationException($"Archive entry path is not extractable: '{entry.FullPath}'.");
-        }
-
-        var target = Path.Combine(outputDir, relative);
-        if (!overwrite && File.Exists(target))
-        {
-            return false;
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-        await using var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true);
-        await Task.Run(() => ExtractTo(entry, output)).ConfigureAwait(false);
-        return true;
     }
 
     private void ExtractTo(ArchiveEntry entry, Stream output)
@@ -316,10 +326,5 @@ internal sealed class DiscImageBackend : IArchiveBackend
         Span<byte> head = stackalloc byte[12];
         stream.ReadExactly(head);
         return head.SequenceEqual(SyncPattern);
-    }
-
-    public void Dispose()
-    {
-        _source.Dispose();
     }
 }

@@ -20,7 +20,7 @@ public class NifMaterialAlphaControllerTests
         var path = SampleFileFixture.FindSamplePath(RetailSandDust02);
         Assert.SkipUnless(path is not null,
             "Extracted FNV SandDust02 NIF not present (dev-machine-only asset).");
-        var data = File.ReadAllBytes(path!);
+        var data = File.ReadAllBytes(path);
         var nif = NifParser.Parse(data);
         Assert.NotNull(nif);
 

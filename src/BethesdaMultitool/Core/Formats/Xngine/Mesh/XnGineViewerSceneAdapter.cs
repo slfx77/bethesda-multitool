@@ -1,9 +1,15 @@
 using System.Numerics;
-
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
 namespace BethesdaMultitool.Core.Formats.Xngine.Mesh;
+
+/// <summary>
+///     A material's texture as the viewer wants it: the lookup path its pixels are registered
+///     under (a generated texture on the scene, or a path the texture sources resolve) and the
+///     pixel size the mesh's texel UVs are divided by.
+/// </summary>
+internal sealed record XnGineViewerTexture(string Path, int Width, int Height);
 
 /// <summary>
 ///     Adapts a decoded classic (XnGine) mesh into the <see cref="GlbScene" /> the native viewer
@@ -22,8 +28,12 @@ namespace BethesdaMultitool.Core.Formats.Xngine.Mesh;
 ///         The mapping, derived rather than guessed: classic geometry is <b>Y-down</b> (that is why
 ///         the exporter negates Y for glTF and reverses winding to compensate). The viewer wants
 ///         X right, Y forward, Z up. So <c>(x, y, z)</c> becomes <c>(x, z, -y)</c> — a -90° rotation
-///         about X. Its determinant is +1, a proper rotation, so <b>winding is preserved and the
-///         triangle indices are NOT reversed</b>; that is the difference from the exporter's path,
+///         about X. Its determinant is +1, a proper rotation, so
+///         <b>
+///             winding is preserved and the
+///             triangle indices are NOT reversed
+///         </b>
+///         ; that is the difference from the exporter's path,
 ///         where a mirror forces the reversal.
 ///     </para>
 /// </summary>
@@ -48,6 +58,18 @@ internal static class XnGineViewerSceneAdapter
     /// </param>
     public static GlbScene ToViewerScene(
         XnGineTriangleMesh mesh, string sceneName, Func<int, int, string?>? texturePathFor = null)
+    {
+        return ToViewerScene(mesh, sceneName, PathOnly(texturePathFor));
+    }
+
+    /// <summary>
+    ///     The textured form of the single-mesh conversion: the resolver also states each texture's
+    ///     pixel size, and the mesh's texel UVs are divided by it so the viewer samples the image
+    ///     the way the GLB exporter does. ⚠ Without the size the UVs stay in texels, which is right
+    ///     for an untextured scene and wrong for a textured one.
+    /// </summary>
+    public static GlbScene ToViewerScene(
+        XnGineTriangleMesh mesh, string sceneName, Func<int, int, XnGineViewerTexture?>? textureFor)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(sceneName);
@@ -80,15 +102,12 @@ internal static class XnGineViewerSceneAdapter
             {
                 Name = $"{sceneName}_sub{i:D2}",
                 NodeIndex = rootIndex,
-                Submesh = BuildSubmesh(subMesh, texturePathFor)
+                Submesh = BuildSubmesh(subMesh, textureFor)
             });
         }
 
         return scene;
     }
-
-    /// <summary>Rotates a classic Y-down vector into the viewer's Z-up basis.</summary>
-    public static Vector3 ToViewerSpace(Vector3 classic) => new(classic.X, classic.Z, -classic.Y);
 
     /// <summary>
     ///     Assembles a whole level: many placed instances of (possibly shared) meshes.
@@ -108,6 +127,13 @@ internal static class XnGineViewerSceneAdapter
     /// </summary>
     public static GlbScene ToViewerScene(
         string sceneName, IEnumerable<XnGineMeshInstance> instances, Func<int, int, string?>? texturePathFor = null)
+    {
+        return ToViewerScene(sceneName, instances, PathOnly(texturePathFor));
+    }
+
+    /// <summary>The textured form of the level assembly; see the single-mesh overload for the UV rule.</summary>
+    public static GlbScene ToViewerScene(
+        string sceneName, IEnumerable<XnGineMeshInstance> instances, Func<int, int, XnGineViewerTexture?>? textureFor)
     {
         ArgumentNullException.ThrowIfNull(sceneName);
         ArgumentNullException.ThrowIfNull(instances);
@@ -135,7 +161,7 @@ internal static class XnGineViewerSceneAdapter
                 {
                     Name = $"{instance.Name}_sub{i:D2}",
                     NodeIndex = nodeIndex,
-                    Submesh = BuildSubmesh(subMesh, texturePathFor)
+                    Submesh = BuildSubmesh(subMesh, textureFor)
                 });
             }
 
@@ -150,8 +176,34 @@ internal static class XnGineViewerSceneAdapter
         return scene;
     }
 
-    private static RenderableSubmesh BuildSubmesh(XnGineSubMesh subMesh, Func<int, int, string?>? texturePathFor)
+    /// <summary>Adapts a path-only resolver: no size, so UVs stay in texel units.</summary>
+    private static Func<int, int, XnGineViewerTexture?>? PathOnly(Func<int, int, string?>? texturePathFor)
     {
+        if (texturePathFor is null)
+        {
+            return null;
+        }
+
+        return (archive, record) =>
+        {
+            var path = texturePathFor(archive, record);
+            return path is null ? null : new XnGineViewerTexture(path, 0, 0);
+        };
+    }
+
+    /// <summary>Rotates a classic Y-down vector into the viewer's Z-up basis.</summary>
+    public static Vector3 ToViewerSpace(Vector3 classic)
+    {
+        return new Vector3(classic.X, classic.Z, -classic.Y);
+    }
+
+    private static RenderableSubmesh BuildSubmesh(
+        XnGineSubMesh subMesh, Func<int, int, XnGineViewerTexture?>? textureFor)
+    {
+        var texture = textureFor?.Invoke(subMesh.TextureArchive, subMesh.TextureRecord);
+        var scaleU = texture is { Width: > 0 } ? 1f / texture.Width : 1f;
+        var scaleV = texture is { Height: > 0 } ? 1f / texture.Height : 1f;
+
         var count = subMesh.Vertices.Count;
         var positions = new float[count * 3];
         var normals = new float[count * 3];
@@ -164,15 +216,15 @@ internal static class XnGineViewerSceneAdapter
             var normal = ToViewerSpace(vertex.Normal);
 
             positions[v * 3] = position.X;
-            positions[(v * 3) + 1] = position.Y;
-            positions[(v * 3) + 2] = position.Z;
+            positions[v * 3 + 1] = position.Y;
+            positions[v * 3 + 2] = position.Z;
 
             normals[v * 3] = normal.X;
-            normals[(v * 3) + 1] = normal.Y;
-            normals[(v * 3) + 2] = normal.Z;
+            normals[v * 3 + 1] = normal.Y;
+            normals[v * 3 + 2] = normal.Z;
 
-            uvs[v * 2] = vertex.TexelUv.X;
-            uvs[(v * 2) + 1] = vertex.TexelUv.Y;
+            uvs[v * 2] = vertex.TexelUv.X * scaleU;
+            uvs[v * 2 + 1] = vertex.TexelUv.Y * scaleV;
         }
 
         // Winding is carried through unchanged: the basis change is a rotation, not a mirror.
@@ -189,7 +241,7 @@ internal static class XnGineViewerSceneAdapter
             Normals = normals,
             UVs = uvs,
             ShapeName = $"archive{subMesh.TextureArchive}_record{subMesh.TextureRecord}",
-            DiffuseTexturePath = texturePathFor?.Invoke(subMesh.TextureArchive, subMesh.TextureRecord)
+            DiffuseTexturePath = texture?.Path
         };
     }
 }

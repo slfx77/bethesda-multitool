@@ -1,6 +1,5 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Games;
@@ -130,10 +129,10 @@ internal sealed class BethesdaViewerScene
 {
     internal const int CurrentContractVersion = 1;
 
-    private readonly Dictionary<string, int> _namedNodes =
+    private readonly Dictionary<string, DecodedTexture> _generatedTextures =
         new(StringComparer.OrdinalIgnoreCase);
 
-    private readonly Dictionary<string, DecodedTexture> _generatedTextures =
+    private readonly Dictionary<string, int> _namedNodes =
         new(StringComparer.OrdinalIgnoreCase);
 
     internal BethesdaViewerScene(
@@ -315,8 +314,8 @@ internal sealed class BethesdaViewerScene
     private static string[] SnapshotTextureSourcePaths(IEnumerable<string>? sourcePaths)
     {
         return sourcePaths?
-                   .Where(static path => !string.IsNullOrWhiteSpace(path))
-                   .Distinct(StringComparer.OrdinalIgnoreCase)
-                   .ToArray() ?? [];
+            .Where(static path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray() ?? [];
     }
 }

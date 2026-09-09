@@ -118,7 +118,7 @@ internal static class ShadowkeyZoneFiles
         var zones = new List<ShadowkeyTriggerZone>(count);
         for (var i = 0; i < count; i++)
         {
-            var record = bytes.Slice(2 + (i * TriggerRecordLength), TriggerRecordLength);
+            var record = bytes.Slice(2 + i * TriggerRecordLength, TriggerRecordLength);
             zones.Add(new ShadowkeyTriggerZone(
                 BinaryPrimitives.ReadUInt16LittleEndian(record),
                 BinaryPrimitives.ReadUInt16LittleEndian(record[2..]),
@@ -194,7 +194,7 @@ internal static class ShadowkeyZoneFiles
             var points = new List<ShadowkeyPathPoint>(pointCount);
             for (var p = 0; p < pointCount; p++)
             {
-                var point = bytes.Slice(position + (p * PathPointLength), PathPointLength);
+                var point = bytes.Slice(position + p * PathPointLength, PathPointLength);
                 points.Add(new ShadowkeyPathPoint(
                     BinaryPrimitives.ReadUInt32LittleEndian(point),
                     BinaryPrimitives.ReadUInt32LittleEndian(point[4..])));
@@ -233,7 +233,7 @@ internal static class ShadowkeyZoneFiles
         var surfaces = new List<ShadowkeySurface>(count);
         for (var i = 0; i < count; i++)
         {
-            var record = bytes.Slice(1 + (i * SurfaceRecordLength), SurfaceRecordLength);
+            var record = bytes.Slice(1 + i * SurfaceRecordLength, SurfaceRecordLength);
             surfaces.Add(new ShadowkeySurface(
                 record[0],
                 record[1],
@@ -282,7 +282,7 @@ internal static class ShadowkeyZoneFiles
         }
 
         var count = BinaryPrimitives.ReadUInt32LittleEndian(bytes);
-        var expected = 4L + ((long)count * recordLength);
+        var expected = 4L + count * recordLength;
         if (expected != bytes.Length)
         {
             throw new InvalidDataException(
@@ -293,7 +293,7 @@ internal static class ShadowkeyZoneFiles
         var entities = new List<ShadowkeyEntity>((int)count);
         for (var i = 0; i < count; i++)
         {
-            var record = bytes.Slice(4 + (i * recordLength), recordLength);
+            var record = bytes.Slice(4 + i * recordLength, recordLength);
             entities.Add(new ShadowkeyEntity(
                 BinaryPrimitives.ReadInt32LittleEndian(record),
                 BinaryPrimitives.ReadInt32LittleEndian(record[4..]),
@@ -330,7 +330,7 @@ internal static class ShadowkeyZoneFiles
         string extension,
         string plural)
     {
-        var expected = (long)headerLength + ((long)count * recordLength);
+        var expected = headerLength + (long)count * recordLength;
         if (expected != length)
         {
             throw new InvalidDataException(

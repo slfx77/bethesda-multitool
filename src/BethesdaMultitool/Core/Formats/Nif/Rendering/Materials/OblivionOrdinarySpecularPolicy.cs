@@ -79,9 +79,12 @@ internal static class OblivionOrdinarySpecularPolicy
                !name.StartsWith("hair", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool HasAdditionalTextures(RenderableSubmesh submesh) =>
-        submesh.SpecularMapTexturePath is not null || submesh.GradientMapTexturePath is not null ||
-        submesh.EnvironmentMapTexturePath is not null || submesh.ClassicEnvironmentMapTexturePath is not null ||
-        submesh.ClassicEnvironmentMaskTexturePath is not null || submesh.ClassicParallaxHeightMapTexturePath is not null ||
-        submesh.Lighting30GlowMapTexturePath is not null || submesh.BgsmGlowMapTexturePath is not null;
+    private static bool HasAdditionalTextures(RenderableSubmesh submesh)
+    {
+        return submesh.SpecularMapTexturePath is not null || submesh.GradientMapTexturePath is not null ||
+               submesh.EnvironmentMapTexturePath is not null || submesh.ClassicEnvironmentMapTexturePath is not null ||
+               submesh.ClassicEnvironmentMaskTexturePath is not null ||
+               submesh.ClassicParallaxHeightMapTexturePath is not null ||
+               submesh.Lighting30GlowMapTexturePath is not null || submesh.BgsmGlowMapTexturePath is not null;
+    }
 }

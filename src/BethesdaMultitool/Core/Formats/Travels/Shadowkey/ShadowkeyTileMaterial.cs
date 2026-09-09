@@ -21,7 +21,10 @@ namespace BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 internal readonly record struct ShadowkeyTileMaterial(string? TextureKey, byte R, byte G, byte B, byte A)
 {
     /// <summary>An untextured, fully opaque face of one flat colour.</summary>
-    public static ShadowkeyTileMaterial Colour(byte r, byte g, byte b) => new(null, r, g, b, 255);
+    public static ShadowkeyTileMaterial Colour(byte r, byte g, byte b)
+    {
+        return new ShadowkeyTileMaterial(null, r, g, b, 255);
+    }
 }
 
 /// <summary>
@@ -59,9 +62,6 @@ internal interface IShadowkeyTileMaterialResolver
 /// </summary>
 internal sealed class ShadowkeyDebugTileMaterials : IShadowkeyTileMaterialResolver
 {
-    /// <summary>A shared instance; the resolver holds no state.</summary>
-    public static ShadowkeyDebugTileMaterials Instance { get; } = new();
-
     /// <summary>
     ///     Floor height, in tiles, that shades fully dark. Retail floors span roughly -30.6 to
     ///     13.7 tiles, but nearly all of a given zone sits in a much narrower band, so the ramp is
@@ -71,6 +71,9 @@ internal sealed class ShadowkeyDebugTileMaterials : IShadowkeyTileMaterialResolv
 
     /// <summary>Floor height, in tiles, that shades fully light.</summary>
     public const float ShadeHighTiles = 12f;
+
+    /// <summary>A shared instance; the resolver holds no state.</summary>
+    public static ShadowkeyDebugTileMaterials Instance { get; } = new();
 
     /// <summary>Resolves the diagnostic colour for one face.</summary>
     public ShadowkeyTileMaterial Resolve(in ShadowkeyTileFace face)
@@ -108,6 +111,8 @@ internal sealed class ShadowkeyDebugTileMaterials : IShadowkeyTileMaterialResolv
             Lerp(darkR, lightR, ramp), Lerp(darkG, lightG, ramp), Lerp(darkB, lightB, ramp));
     }
 
-    private static byte Lerp(byte from, byte to, float ramp) =>
-        (byte)Math.Clamp((int)MathF.Round(from + ((to - from) * ramp)), 0, 255);
+    private static byte Lerp(byte from, byte to, float ramp)
+    {
+        return (byte)Math.Clamp((int)MathF.Round(from + ((to - from) * ramp)), 0, 255);
+    }
 }

@@ -510,8 +510,8 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
                 // with directional ambient colors, far-fog/fade values, and an EMBEDDED inheritance
                 // word. Do not use a >= gate: FO4/FO76 append different height-fog layouts which need
                 // their own reviewed schemas rather than being silently truncated as Skyrim data.
-                case "XCLL" when (sub.DataLength is 36 or 40)
-                                      || sub.DataLength == 92 && Context.Game == BethesdaGame.Skyrim:
+                case "XCLL" when sub.DataLength is 36 or 40
+                                 || (sub.DataLength == 92 && Context.Game == BethesdaGame.Skyrim):
                 {
                     if (SubrecordSchemaView.TryRead("XCLL", "CELL", subData, record.IsBigEndian) is { } v)
                     {
@@ -601,7 +601,7 @@ internal sealed class CellRecordHandler(RecordParserContext context) : RecordHan
             // Skyrim stores this word at the end of its 92-byte XCLL. A separate LNAM is the
             // classic representation and remains the fallback for the legacy layouts.
             LightingTemplateInheritanceFlags = embeddedLightingTemplateInheritanceFlags
-                                                ?? lightingTemplateInheritanceFlags,
+                                               ?? lightingTemplateInheritanceFlags,
             LightingData = lightingData,
             RadiationRegionFormIds = radiationRegionFormIds ?? (IReadOnlyList<uint>)[],
             PlacedObjects = cellRefs,

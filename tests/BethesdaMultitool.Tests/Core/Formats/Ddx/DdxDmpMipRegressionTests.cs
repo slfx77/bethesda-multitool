@@ -38,7 +38,7 @@ public sealed class DdxDmpMipRegressionTests
     [
         new CarvedRegressionCase(
             "debug_nv_reflectron_rm",
-            @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
+            @"Sample\MemoryDumps\Fallout_Debug.xex.dmp",
             "nv_reflectron_rm.ddx",
             @"textures\terminals\nv_reflectron_rm.ddx",
             DdxKind.Xdo,
@@ -48,7 +48,7 @@ public sealed class DdxDmpMipRegressionTests
             0),
         new CarvedRegressionCase(
             "debug_rugsmall01_tail",
-            @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
+            @"Sample\MemoryDumps\Fallout_Debug.xex.dmp",
             "rugsmall01.ddx",
             @"textures\clutter\rugs\rugsmall01.ddx",
             DdxKind.Xdo,
@@ -58,7 +58,7 @@ public sealed class DdxDmpMipRegressionTests
             1),
         new CarvedRegressionCase(
             "debug_anesthesiamachine01_lod",
-            @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
+            @"Sample\MemoryDumps\Fallout_Debug.xex.dmp",
             "anesthesiamachine01.ddx",
             @"textures\clutter\hospital\anesthesiamachine01.ddx",
             DdxKind.Xdo,
@@ -68,7 +68,7 @@ public sealed class DdxDmpMipRegressionTests
             0),
         new CarvedRegressionCase(
             "debug_impactdecalglass01_n_lod",
-            @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
+            @"Sample\MemoryDumps\Fallout_Debug.xex.dmp",
             "impactdecalglass01_n.ddx",
             @"textures\decals\impactdecalglass01_n.ddx",
             DdxKind.Xdo,
@@ -78,7 +78,7 @@ public sealed class DdxDmpMipRegressionTests
             0),
         new CarvedRegressionCase(
             "debug_nv_reflectron_m_lod",
-            @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
+            @"Sample\MemoryDumps\Fallout_Debug.xex.dmp",
             "nv_reflectron_m.ddx",
             @"textures\terminals\nv_reflectron_m.ddx",
             DdxKind.Xdo,
@@ -88,7 +88,7 @@ public sealed class DdxDmpMipRegressionTests
             0),
         new CarvedRegressionCase(
             "debug_med_history_ok_btn_on_3xdr",
-            @"Sample\MemoryDump\Fallout_Debug.xex.dmp",
+            @"Sample\MemoryDumps\Fallout_Debug.xex.dmp",
             "med_history_ok_btn_on.ddx",
             @"textures\terminals\med_history_ok_btn_on.ddx",
             DdxKind.Xdr,
@@ -98,7 +98,7 @@ public sealed class DdxDmpMipRegressionTests
             0),
         new CarvedRegressionCase(
             "release2_terminalscreen01",
-            @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
+            @"Sample\MemoryDumps\Fallout_Release_Beta.xex2.dmp",
             "terminalscreen01.ddx",
             @"textures\terminals\terminalscreen01.ddx",
             DdxKind.Xdo,
@@ -108,7 +108,7 @@ public sealed class DdxDmpMipRegressionTests
             0),
         new CarvedRegressionCase(
             "release2_offrmtrimglass02",
-            @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
+            @"Sample\MemoryDumps\Fallout_Release_Beta.xex2.dmp",
             "offrmtrimglass02.ddx",
             @"textures\dungeons\office\offrmtrimglass02.ddx",
             DdxKind.Xdo,
@@ -118,7 +118,7 @@ public sealed class DdxDmpMipRegressionTests
             0),
         new CarvedRegressionCase(
             "release2_offswitches01",
-            @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
+            @"Sample\MemoryDumps\Fallout_Release_Beta.xex2.dmp",
             "offswitches01.ddx",
             @"textures\dungeons\office\offswitches01.ddx",
             DdxKind.Xdo,
@@ -128,7 +128,7 @@ public sealed class DdxDmpMipRegressionTests
             0),
         new CarvedRegressionCase(
             "release2_hairwavy_lod1",
-            @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
+            @"Sample\MemoryDumps\Fallout_Release_Beta.xex2.dmp",
             "hairwavy_2.ddx",
             @"textures\characters\hair\hairwavy.ddx",
             DdxKind.Xdo,
@@ -138,7 +138,7 @@ public sealed class DdxDmpMipRegressionTests
             0),
         new CarvedRegressionCase(
             "release2_outfitweatheredm_n_lod2",
-            @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
+            @"Sample\MemoryDumps\Fallout_Release_Beta.xex2.dmp",
             "outfitweatheredm_n.ddx",
             @"textures\armor\1950stylesuit\outfitweatheredm_n.ddx",
             DdxKind.Xdo,
@@ -148,7 +148,7 @@ public sealed class DdxDmpMipRegressionTests
             0),
         new CarvedRegressionCase(
             "release2_handfemale_sk_3xdr",
-            @"Sample\MemoryDump\Fallout_Release_Beta.xex2.dmp",
+            @"Sample\MemoryDumps\Fallout_Release_Beta.xex2.dmp",
             "handfemale_sk.ddx",
             @"textures\characters\female\handfemale_sk.ddx",
             DdxKind.Xdr,
@@ -167,7 +167,7 @@ public sealed class DdxDmpMipRegressionTests
         Assert.SkipWhen(dumpPath is null, $"Missing sample dump: {regressionCase.DumpRelativePath}");
 
         var repoRoot = FindRepoRoot();
-        var carvedDump = await EnsureCarvedDumpAsync(dumpPath!);
+        var carvedDump = await EnsureCarvedDumpAsync(dumpPath);
 
         // Use FirstOrDefault — duplicates are expected when the same texture is loaded
         // at multiple memory addresses in the dump.
@@ -176,7 +176,7 @@ public sealed class DdxDmpMipRegressionTests
             string.Equals(e.OriginalPath, regressionCase.OriginalPath, StringComparison.OrdinalIgnoreCase));
         Assert.NotNull(entry);
 
-        var ddxPath = Path.Combine(carvedDump.DdxDirectory, entry!.Filename);
+        var ddxPath = Path.Combine(carvedDump.DdxDirectory, entry.Filename);
         Assert.True(File.Exists(ddxPath), $"Missing carved DDX file: {ddxPath}");
 
         Assert.Equal(regressionCase.Kind, ReadDdxKind(ddxPath));

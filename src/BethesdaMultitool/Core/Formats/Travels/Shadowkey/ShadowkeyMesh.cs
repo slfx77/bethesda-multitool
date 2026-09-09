@@ -216,7 +216,8 @@ internal sealed class ShadowkeyMesh
 
         if (frameCount == 0)
         {
-            throw new InvalidDataException($"'{name}': the frame count at byte 2 is 0; a record has at least one frame.");
+            throw new InvalidDataException(
+                $"'{name}': the frame count at byte 2 is 0; a record has at least one frame.");
         }
 
         if (coordinateCount != 3 * vertexCount)
@@ -352,8 +353,8 @@ internal sealed class ShadowkeyMesh
         {
             var texel = colours[i];
             rgb[i * 3] = Expand4Bit((texel >> 8) & 0xF);
-            rgb[(i * 3) + 1] = Expand4Bit((texel >> 4) & 0xF);
-            rgb[(i * 3) + 2] = Expand4Bit(texel & 0xF);
+            rgb[i * 3 + 1] = Expand4Bit((texel >> 4) & 0xF);
+            rgb[i * 3 + 2] = Expand4Bit(texel & 0xF);
         }
 
         var palette = Palette.FromRgb8(rgb);
@@ -378,7 +379,7 @@ internal sealed class ShadowkeyMesh
         return (byte)(value * 17);
     }
 
-    private static IReadOnlyList<ShadowkeyVertex> ReadVertices(
+    private static ShadowkeyVertex[] ReadVertices(
         ReadOnlySpan<byte> bytes, string name, int frameCount, int vertexCount, ref long position)
     {
         var count = (long)frameCount * vertexCount;
@@ -399,7 +400,7 @@ internal sealed class ShadowkeyMesh
         return vertices;
     }
 
-    private static IReadOnlyList<ShadowkeyUv> ReadUvs(
+    private static ShadowkeyUv[] ReadUvs(
         ReadOnlySpan<byte> bytes, string name, int uvCount, ref long position)
     {
         RequireRoom(bytes, name, position, (long)uvCount * 4, "the UV block");
@@ -418,7 +419,7 @@ internal sealed class ShadowkeyMesh
         return uvs;
     }
 
-    private static IReadOnlyList<ShadowkeyFace> ReadFaces(
+    private static ShadowkeyFace[] ReadFaces(
         ReadOnlySpan<byte> bytes, string name, int faceCount, int vertexCount, int uvCount, ref long position)
     {
         RequireRoom(bytes, name, position, (long)faceCount * 12, "the face block");
@@ -474,7 +475,7 @@ internal sealed class ShadowkeyMesh
             var texels = new ushort[texelsPerSkin];
             for (var i = 0; i < texels.Length; i++)
             {
-                texels[i] = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + (i * 2))..]);
+                texels[i] = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + i * 2)..]);
             }
 
             skins.Add(texels);
@@ -485,7 +486,7 @@ internal sealed class ShadowkeyMesh
         return new ShadowkeyTextureSet(width, height, skins);
     }
 
-    private static IReadOnlyList<ShadowkeySequence> ReadSequences(
+    private static ShadowkeySequence[] ReadSequences(
         ReadOnlySpan<byte> bytes, string name, int frameCount, ref long position)
     {
         RequireRoom(bytes, name, position, 2, "the sequence count");

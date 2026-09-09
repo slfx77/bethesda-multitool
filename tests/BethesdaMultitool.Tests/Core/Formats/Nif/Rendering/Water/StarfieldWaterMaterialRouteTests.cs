@@ -7,7 +7,6 @@ using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Tests.Core.Formats.Nif.Materials;
@@ -28,11 +27,15 @@ public sealed class StarfieldWaterMaterialRouteTests
     private const string MaterialPath = @"materials\test\orm.mat";
     private const string DatabasePath = @"materials\materialsbeta.cdb";
     private const string ExternalMeshPath = @"geometries\test\water.mesh";
+
     private const string RetailNifPath =
         @"meshes\setdressing\paradiso\paradiso_waterfall01.nif";
+
     private const string RetailWaterMaterialPath = @"Materials\Water\WaterCalm.mat";
+
     private const string RetailWaterMeshPath =
         @"geometries\faf9712ae20b4af66067\71b8ddac844a03aef57d.mesh";
+
     private const string StaleNormalPath = @"textures\test\stale_normal.dds";
     private const string OtherStaleNormalPath = @"textures\test\other_stale_normal.dds";
     private const string StaleGlowPath = @"textures\test\stale_glow.dds";
@@ -45,7 +48,7 @@ public sealed class StarfieldWaterMaterialRouteTests
     public void ExtractionSeam_ResolvedWaterPathSelectsSentinelBlendAndNoCutout()
     {
         using var resolver = CreateResolver("Water", "Water1Layer");
-        string? diffusePath = MaterialPath;
+        var diffusePath = MaterialPath;
         var colorPolicy = new StarfieldMaterialColorPolicy(
             true,
             false,
@@ -68,8 +71,8 @@ public sealed class StarfieldWaterMaterialRouteTests
 
         Assert.True(applied);
         Assert.Equal(RenderableSubmesh.WaterSurfaceTexturePath, diffusePath);
-        Assert.Equal(default(StarfieldMaterialColorPolicy), colorPolicy);
-        Assert.Equal(default(StarfieldMaterialAlphaPolicy), alphaPolicy);
+        Assert.Equal(default, colorPolicy);
+        Assert.Equal(default, alphaPolicy);
         Assert.True(hasAlphaBlend);
         Assert.False(hasAlphaTest);
         Assert.Equal(0.5f, materialAlpha);
@@ -83,7 +86,7 @@ public sealed class StarfieldWaterMaterialRouteTests
         string shaderModel)
     {
         using var resolver = CreateResolver(shaderRoute, shaderModel);
-        string? diffusePath = MaterialPath;
+        var diffusePath = MaterialPath;
         var colorPolicy = new StarfieldMaterialColorPolicy(
             true,
             false,
@@ -134,8 +137,8 @@ public sealed class StarfieldWaterMaterialRouteTests
         Assert.True(water.HasAlphaBlend);
         Assert.False(water.HasAlphaTest);
         Assert.Equal(0.5f, water.MaterialAlpha);
-        Assert.Equal(default(StarfieldMaterialColorRenderState), water.StarfieldMaterialColor);
-        Assert.Equal(default(StarfieldMaterialAlphaRenderState), water.StarfieldMaterialAlpha);
+        Assert.Equal(default, water.StarfieldMaterialColor);
+        Assert.Equal(default, water.StarfieldMaterialAlpha);
     }
 
     /// <summary>
@@ -158,19 +161,20 @@ public sealed class StarfieldWaterMaterialRouteTests
         Assert.SkipUnless(materialsPath is not null,
             RealAssetPaths.SkipMessage("Starfield - Materials.ba2"));
 
-        using var meshes = new Ba2Extractor(meshesPath!);
+        using var meshes = new Ba2Extractor(meshesPath);
         var nifEntry = meshes.Archive.FindFile(RetailNifPath);
         Assert.NotNull(nifEntry);
 
-        var nifData = meshes.ExtractFile(nifEntry!);
+        var nifData = meshes.ExtractFile(nifEntry);
         var nif = Assert.IsType<NifInfo>(NifParser.Parse(nifData));
-        using var resolver = new NifTextureResolver(materialsPath!);
+        using var resolver = new NifTextureResolver(materialsPath);
 
         Assert.Equal(
             StarfieldMaterialShaderRoute.Water,
             resolver.ResolveStarfieldShaderRoute(RetailWaterMaterialPath));
 
         var requestedWaterBlob = false;
+
         byte[]? LoadExternalMesh(string path)
         {
             var normalized = path.Replace('/', '\\').Trim().TrimStart('\\');
@@ -205,10 +209,10 @@ public sealed class StarfieldWaterMaterialRouteTests
             nif,
             resolver,
             externalMeshLoader: LoadExternalMesh));
-        var water = Assert.Single(model.Submeshes.Where(submesh => string.Equals(
+        var water = Assert.Single(model.Submeshes, submesh => string.Equals(
             submesh.ShaderMetadata?.MaterialPath,
             RetailWaterMaterialPath,
-            StringComparison.OrdinalIgnoreCase)));
+            StringComparison.OrdinalIgnoreCase));
 
         Assert.True(requestedWaterBlob);
         Assert.NotEmpty(water.Positions);
@@ -217,8 +221,8 @@ public sealed class StarfieldWaterMaterialRouteTests
         Assert.True(water.HasAlphaBlend);
         Assert.False(water.HasAlphaTest);
         Assert.Equal(0.5f, water.MaterialAlpha);
-        Assert.Equal(default(StarfieldMaterialColorRenderState), water.StarfieldMaterialColor);
-        Assert.Equal(default(StarfieldMaterialAlphaRenderState), water.StarfieldMaterialAlpha);
+        Assert.Equal(default, water.StarfieldMaterialColor);
+        Assert.Equal(default, water.StarfieldMaterialAlpha);
     }
 
     [Fact]
@@ -316,9 +320,9 @@ public sealed class StarfieldWaterMaterialRouteTests
         using var resolver = CreateResolver(
             "Deferred",
             "BaseMaterial",
-            includeMeshViewerWaterNormal: true,
-            variableMeshViewerWaterNormalAlpha: true,
-            includeStaleMaterialTextures: true);
+            true,
+            true,
+            true);
         var staleOrmPolicy = resolver.ResolveStarfieldOrmPolicy(MaterialPath);
         Assert.True(staleOrmPolicy.TryResolveStaticLayer0Orm(out _),
             "The adversarial material fixture must expose an otherwise-applicable static ORM lane.");
@@ -390,11 +394,11 @@ public sealed class StarfieldWaterMaterialRouteTests
 
         var bytes = GlbWriter.WriteToBytes(scene, resolver);
 
-        using var stream = new MemoryStream(bytes, writable: false);
+        using var stream = new MemoryStream(bytes, false);
         var model = ModelRoot.ReadGLB(stream);
         var material = Assert.Single(model.LogicalMaterials);
         var baseColor = Assert.IsType<MaterialChannel>(material.FindChannel("BaseColor"));
-        Assert.Equal(SharpGLTF.Schema2.AlphaMode.OPAQUE, material.Alpha);
+        Assert.Equal(AlphaMode.OPAQUE, material.Alpha);
         Assert.True(material.DoubleSided);
         Assert.False(material.Unlit);
         Assert.Null(baseColor.Texture);
@@ -424,7 +428,7 @@ public sealed class StarfieldWaterMaterialRouteTests
             ParameterAt(Assert.IsType<MaterialChannel>(material.FindChannel("ClearCoatRoughness")), 0),
             3);
         var normal = Assert.IsType<MaterialChannel>(material.FindChannel("Normal"));
-        var normalTexture = Assert.IsType<SharpGLTF.Schema2.Texture>(normal.Texture);
+        var normalTexture = Assert.IsType<Texture>(normal.Texture);
         var normalSampler = Assert.IsType<TextureSampler>(normal.TextureSampler);
         Assert.Equal(TextureWrapMode.REPEAT, normalSampler.WrapS);
         Assert.Equal(TextureWrapMode.REPEAT, normalSampler.WrapT);
@@ -447,8 +451,10 @@ public sealed class StarfieldWaterMaterialRouteTests
     ///     channel's parameters in declaration order) in favour of <c>Parameters</c>. Index i is the
     ///     old vector's component i, so the assertions keep their original meaning.
     /// </summary>
-    private static float ParameterAt(MaterialChannel channel, int index) =>
-        Convert.ToSingle(channel.Parameters[index].Value);
+    private static float ParameterAt(MaterialChannel channel, int index)
+    {
+        return Convert.ToSingle(channel.Parameters[index].Value);
+    }
 
     private static NifTextureResolver CreateResolver(
         string shaderRoute,
@@ -458,13 +464,14 @@ public sealed class StarfieldWaterMaterialRouteTests
         bool includeStaleMaterialTextures = false)
     {
         var database = StarfieldMaterialOrmPolicyTests.BuildDatabase(
-            useDiffChunks: true,
+            true,
             shaderRoute: shaderRoute,
             shaderModel: shaderModel);
+        var firstNormalAlpha = variableMeshViewerWaterNormalAlpha ? (byte)0 : byte.MaxValue;
         var waterNormal = includeMeshViewerWaterNormal
             ? DecodedTexture.FromBaseLevel(
             [
-                128, 128, 255, variableMeshViewerWaterNormalAlpha ? (byte)0 : byte.MaxValue,
+                128, 128, 255, firstNormalAlpha,
                 144, 112, 252, 255
             ], 2, 1, false)
             : null;
@@ -539,7 +546,7 @@ public sealed class StarfieldWaterMaterialRouteTests
         var mesh = new List<byte>();
         mesh.AddRange(BitConverter.GetBytes(2u)); // container version
         mesh.AddRange(BitConverter.GetBytes(3u));
-        foreach (ushort index in new ushort[] { 0, 1, 2 })
+        foreach (var index in new ushort[] { 0, 1, 2 })
         {
             mesh.AddRange(BitConverter.GetBytes(index));
         }
@@ -554,7 +561,7 @@ public sealed class StarfieldWaterMaterialRouteTests
                      ((short)0, short.MaxValue, (short)0)
                  })
         {
-            mesh.AddRange(BitConverter.GetBytes((uint)((ushort)x | ((uint)(ushort)y << 16))));
+            mesh.AddRange(BitConverter.GetBytes((ushort)x | ((uint)(ushort)y << 16)));
             mesh.AddRange(BitConverter.GetBytes((ushort)z));
         }
 
@@ -575,9 +582,9 @@ public sealed class StarfieldWaterMaterialRouteTests
         public DecodedTexture? TryLoad(string path)
         {
             if (string.Equals(
-                path,
-                StarfieldWaterMaterialRoute.MeshViewerPrimaryNormalTexturePath,
-                StringComparison.OrdinalIgnoreCase))
+                    path,
+                    StarfieldWaterMaterialRoute.MeshViewerPrimaryNormalTexturePath,
+                    StringComparison.OrdinalIgnoreCase))
             {
                 return meshViewerWaterNormal;
             }
@@ -587,16 +594,20 @@ public sealed class StarfieldWaterMaterialRouteTests
                 : null;
         }
 
-        public byte[]? TryLoadRaw(string path) =>
-            string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase) ? database : null;
+        public byte[]? TryLoadRaw(string path)
+        {
+            return string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase) ? database : null;
+        }
 
-        public bool Exists(string path) =>
-            string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase) ||
-            meshViewerWaterNormal is not null && string.Equals(
-                path,
-                StarfieldWaterMaterialRoute.MeshViewerPrimaryNormalTexturePath,
-                StringComparison.OrdinalIgnoreCase) ||
-            staleMaterialTexture is not null && IsStaleMaterialTexture(path);
+        public bool Exists(string path)
+        {
+            return string.Equals(path, DatabasePath, StringComparison.OrdinalIgnoreCase) ||
+                   meshViewerWaterNormal is not null && string.Equals(
+                       path,
+                       StarfieldWaterMaterialRoute.MeshViewerPrimaryNormalTexturePath,
+                       StringComparison.OrdinalIgnoreCase) ||
+                   staleMaterialTexture is not null && IsStaleMaterialTexture(path);
+        }
 
         public bool TryGetAssetMetadata(string path, out NifTextureSourceAssetMetadata metadata)
         {
@@ -638,13 +649,15 @@ public sealed class StarfieldWaterMaterialRouteTests
         {
         }
 
-        private static bool IsStaleMaterialTexture(string path) =>
-            string.Equals(path, StaleNormalPath, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(path, OtherStaleNormalPath, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(path, StaleGlowPath, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(path, StaleHeightPath, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(path, StaleEnvironmentMaskPath, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(path, OrmRoughnessPath, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(path, OrmAmbientOcclusionPath, StringComparison.OrdinalIgnoreCase);
+        private static bool IsStaleMaterialTexture(string path)
+        {
+            return string.Equals(path, StaleNormalPath, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(path, OtherStaleNormalPath, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(path, StaleGlowPath, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(path, StaleHeightPath, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(path, StaleEnvironmentMaskPath, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(path, OrmRoughnessPath, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(path, OrmAmbientOcclusionPath, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

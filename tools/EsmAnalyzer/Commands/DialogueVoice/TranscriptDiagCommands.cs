@@ -145,7 +145,7 @@ public static class TranscriptDiagCommands
 
         if (collisions.Count > 0)
         {
-            var maxCollision = collisions.MaxBy(kv => kv.Value.Count)!;
+            var maxCollision = collisions.MaxBy(kv => kv.Value.Count);
             collisionTable.AddRow("Max voice types per key",
                 $"{maxCollision.Value.Count} ({maxCollision.Key})");
         }

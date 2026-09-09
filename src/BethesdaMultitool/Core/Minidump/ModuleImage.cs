@@ -34,9 +34,11 @@ internal sealed class ModuleImage
 
     internal uint ModuleEnd { get; }
 
-    /// <summary>Bytes actually present in the dump. Less than <see cref="BytesDeclared" /> whenever
-    /// the capture truncated part of the image — measured at ~88.7% on the corpus dumps, with the
-    /// shortfall entirely in the image tail.</summary>
+    /// <summary>
+    ///     Bytes actually present in the dump. Less than <see cref="BytesDeclared" /> whenever
+    ///     the capture truncated part of the image — measured at ~88.7% on the corpus dumps, with the
+    ///     shortfall entirely in the image tail.
+    /// </summary>
     internal long BytesCaptured { get; }
 
     internal long BytesDeclared { get; }

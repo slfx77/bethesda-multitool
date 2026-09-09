@@ -2,6 +2,7 @@ using BethesdaMultitool;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
+using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.WorldData;
 
@@ -46,7 +47,7 @@ internal static class RendererProfilerDataLoader
                 // the live renderer.
                 if (primary.FileType == AnalysisFileType.Minidump)
                 {
-                    var enriched = BethesdaMultitool.Core.Formats.Esm.Records.EsmLandEnricher
+                    var enriched = EsmLandEnricher
                         .EnrichCellsWithMasterEsmLandFallback(semantic.Cells, loadOrderRecords.Cells);
                     for (var i = 0; i < semantic.Cells.Count; i++)
                     {
@@ -95,7 +96,8 @@ internal static class RendererProfilerDataLoader
                 data.MeshPathRenames = MeshRenameMapService.TryLoad(sidecar);
                 if (data.MeshPathRenames is { Count: > 0 } loaded)
                 {
-                    progress?.Report($"Loaded {loaded.Count} persisted mesh rename(s) from {Path.GetFileName(sidecar)}.");
+                    progress?.Report(
+                        $"Loaded {loaded.Count} persisted mesh rename(s) from {Path.GetFileName(sidecar)}.");
                 }
             }
         }

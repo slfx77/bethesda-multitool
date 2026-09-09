@@ -20,16 +20,16 @@ public sealed class StarfieldPlanetWorldspaceIndexTests
             EditorId = "PlanetBase"
         };
         var overlay = DecodeOverride(
-            [
-                new(removed, StarfieldPlanetWorldspaceOperation.Removed),
-                new(added, StarfieldPlanetWorldspaceOperation.Added)
-            ],
-            systemId: 77,
-            atmosphereFormId: 0xABC) with
-        {
-            FormId = 0x500,
-            EditorId = "PlanetOverride"
-        };
+                [
+                    new StarfieldPlanetWorldspaceDelta(removed, StarfieldPlanetWorldspaceOperation.Removed),
+                    new StarfieldPlanetWorldspaceDelta(added, StarfieldPlanetWorldspaceOperation.Added)
+                ],
+                77,
+                0xABC) with
+            {
+                FormId = 0x500,
+                EditorId = "PlanetOverride"
+            };
 
         var result = StarfieldPlanetWorldspaceIndex.Build([master, overlay]);
 
@@ -75,10 +75,10 @@ public sealed class StarfieldPlanetWorldspaceIndexTests
         var validWorldspace = new StarfieldPlanetWorldspaceEntry(1d, 1d, 0x100);
         var valid = DecodeMaster([validWorldspace]) with { FormId = 0x501 };
         var deltaOnly = DecodeOverride(
-            [new(validWorldspace, StarfieldPlanetWorldspaceOperation.Added)]) with
-        {
-            FormId = 0x502
-        };
+                [new StarfieldPlanetWorldspaceDelta(validWorldspace, StarfieldPlanetWorldspaceOperation.Added)]) with
+            {
+                FormId = 0x502
+            };
         var zeroFormId = DecodeMaster([]);
 
         var result = StarfieldPlanetWorldspaceIndex.Build([deltaOnly, zeroFormId, valid]);

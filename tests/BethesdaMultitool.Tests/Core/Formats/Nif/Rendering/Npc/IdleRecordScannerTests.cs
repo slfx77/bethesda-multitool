@@ -54,7 +54,8 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
         var esm = EsmFileLoader.Load(samples.Xbox360FinalEsm!, false);
         Assert.NotNull(esm);
 
-        var index = NpcAppearanceIndexBuilder.Build(esm!.Data, esm.IsBigEndian);
+        var index = NpcAppearanceIndexBuilder.Build(esm.Data, esm.IsBigEndian,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         var npcWeaponIdles = Assert.Contains(NpcWeaponIdlesFormId, index.Idles);
         Assert.Equal("NPCWeaponIdles", npcWeaponIdles.EditorId);
@@ -85,7 +86,8 @@ public sealed class IdleRecordScannerTests(SampleFileFixture samples)
         var esm = EsmFileLoader.Load(samples.Xbox360FinalEsm!, false);
         Assert.NotNull(esm);
 
-        var index = NpcAppearanceIndexBuilder.Build(esm!.Data, esm.IsBigEndian);
+        var index = NpcAppearanceIndexBuilder.Build(esm.Data, esm.IsBigEndian,
+            cancellationToken: TestContext.Current.CancellationToken);
 
         var powerFistIdles = index.Idles.Values
             .Where(idle => !string.IsNullOrWhiteSpace(idle.EditorId) &&

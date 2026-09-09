@@ -31,7 +31,7 @@ internal sealed class InstallShieldBackend : IArchiveBackend
         _folders = cabinet.Directories
             .Select(static d => d.Replace('\\', '/').Trim('/'))
             .ToList();
-        _handle = File.OpenHandle(cabinet.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        _handle = File.OpenHandle(cabinet.FilePath);
     }
 
     public string FormatName => "InstallShield CAB";
@@ -84,6 +84,8 @@ internal sealed class InstallShieldBackend : IArchiveBackend
         _handle.Dispose();
     }
 
-    private static string FullPathOf(string folder, string name) =>
-        folder.Length == 0 ? name : folder + "/" + name;
+    private static string FullPathOf(string folder, string name)
+    {
+        return folder.Length == 0 ? name : folder + "/" + name;
+    }
 }

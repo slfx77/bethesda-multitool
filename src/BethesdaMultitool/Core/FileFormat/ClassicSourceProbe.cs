@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Bsa.Index;
+using BethesdaMultitool.Core.Formats.DiscImage;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.FileFormat;
@@ -39,8 +40,8 @@ internal static class ClassicSourceProbe
 
     /// <summary>
     ///     The classic game packaged as a CD/DVD image — Fallout: Brotherhood of Steel ships as one
-    ///     PS2 disc, the way the J2ME titles ship as one JAR. Null for anything that is not such an
-    ///     image, or whose contents match no profile's install markers.
+    ///     PS2 disc AND one original-Xbox disc, the way the J2ME titles ship as one JAR. Null for
+    ///     anything that is not such an image, or whose contents match no profile's install markers.
     ///     <para>
     ///         ⚠ <see cref="ClassicGameLocator.DetectFromArchive" /> cannot do this: it reads
     ///         archives with the BCL zip reader, which covers a JAR and nothing else. Mounting an
@@ -48,14 +49,21 @@ internal static class ClassicSourceProbe
     ///         to the locator's marker matching.
     ///     </para>
     ///     <para>
-    ///         The mount is gated behind the ISO9660 descriptor signature so an ordinary file never
-    ///         pays for one — this runs inside <see cref="FileTypeDetector.Detect" />, which is
-    ///         called on arbitrary paths.
+    ///         The mount is gated behind a cheap signature check so an ordinary file never pays for
+    ///         one — this runs inside <see cref="FileTypeDetector.Detect" />, which is called on
+    ///         arbitrary paths. ⚠ That gate is now TWO signatures, either of which admits an image:
+    ///         the ISO9660 descriptor (the PS2 disc) and the XDVDFS one (the Xbox disc). An earlier
+    ///         revision of this sentence named only ISO9660 and was left behind by the body below.
     ///     </para>
     /// </summary>
     public static GameProfile? TryDetectDiscImage(string filePath)
     {
-        if (!HasIso9660Descriptor(filePath))
+        // Two gates, either of which admits an image: the ISO9660 signature (the PS2 disc) and the
+        // XDVDFS one (the Xbox disc). ⚠ The Xbox disc happens to carry a STUB ISO9660 descriptor as
+        // well, so the first gate alone would in fact let it through — but only by accident, and an
+        // Xbox title mastered without that stub would then be invisible here. The XDVDFS check is
+        // the honest one for that family; both stay cheap, since this runs on arbitrary paths.
+        if (!HasIso9660Descriptor(filePath) && !XdvdfsVolume.TryProbe(filePath))
         {
             return null;
         }
@@ -78,7 +86,7 @@ internal static class ClassicSourceProbe
     /// </summary>
     private static bool HasIso9660Descriptor(string filePath)
     {
-        const int descriptorOffset = (16 * 2048) + 1;
+        const int descriptorOffset = 16 * 2048 + 1;
         try
         {
             using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
@@ -89,7 +97,7 @@ internal static class ClassicSourceProbe
 
             stream.Seek(descriptorOffset, SeekOrigin.Begin);
             Span<byte> signature = stackalloc byte[5];
-            return stream.ReadAtLeast(signature, 5, throwOnEndOfStream: false) == 5 &&
+            return stream.ReadAtLeast(signature, 5, false) == 5 &&
                    signature.SequenceEqual("CD001"u8);
         }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException)

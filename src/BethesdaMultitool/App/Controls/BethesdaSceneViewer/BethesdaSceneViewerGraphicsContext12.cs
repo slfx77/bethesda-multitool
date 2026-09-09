@@ -24,9 +24,9 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
     private static readonly Logger Log = Logger.Instance;
     private static BethesdaSceneViewerGraphicsContext12? _shared;
     private static int _sharedLeaseCount;
+    private readonly ID3D12DescriptorHeap[] _descriptorHeaps;
 
     private readonly object _frameGate = new();
-    private readonly ID3D12DescriptorHeap[] _descriptorHeaps;
     private readonly Dictionary<BethesdaGame, ReferencePipelineFactory12> _referencePipelines = [];
     private bool _deviceTerminal;
     private bool _disposed;
@@ -238,6 +238,7 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
         {
             DisposeOwnedNoThrow(pipelines, $"{game} reference pipelines");
         }
+
         _referencePipelines.Clear();
         DisposeOwnedNoThrow(DeletionQueue, "deletion queue");
         DisposeOwnedNoThrow(RootSignature, "root signature");

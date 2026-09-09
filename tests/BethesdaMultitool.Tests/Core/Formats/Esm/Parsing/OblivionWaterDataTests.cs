@@ -187,7 +187,7 @@ public sealed class OblivionWaterDataTests
                 BuildOblivionData(bigEndian), bigEndian), null);
 
         Assert.NotNull(appearance);
-        Assert.Equal((R: (byte)0x10, G: (byte)0x20, B: (byte)0x30), appearance!.Shallow);
+        Assert.Equal((R: (byte)0x10, G: (byte)0x20, B: (byte)0x30), appearance.Shallow);
         Assert.Equal((R: (byte)0x40, G: (byte)0x50, B: (byte)0x60), appearance.Deep);
         Assert.Equal((R: (byte)0x70, G: (byte)0x80, B: (byte)0x90), appearance.Reflection);
         Assert.Equal(1.25f, appearance.Surface.WaveAmplitude, 4);

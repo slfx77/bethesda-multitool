@@ -82,12 +82,11 @@ public sealed class IngredientParserTests
             "FalloutNV.esm not found (set BETHESDA_TEST_DATA_ROOT or install Fallout: New Vegas).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
         var ingredient = Assert.Single(result.Records.Ingredients);
 
         Assert.Equal(0x0003135Bu, ingredient.FormId);
         Assert.Equal(RetailEditorId, ingredient.EditorId);
         Assert.True(float.IsFinite(ingredient.Weight));
     }
-
 }

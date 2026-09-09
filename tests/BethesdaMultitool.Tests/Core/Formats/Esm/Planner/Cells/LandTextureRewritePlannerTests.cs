@@ -125,5 +125,4 @@ public sealed class LandTextureRewritePlannerTests
             }
         };
     }
-
 }

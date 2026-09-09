@@ -1,3 +1,5 @@
+using System.Collections.ObjectModel;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
@@ -44,7 +46,7 @@ public record GenericEsmRecord
     ///     </para>
     /// </summary>
     public IReadOnlyDictionary<string, object?> Fields { get; init; } =
-        System.Collections.ObjectModel.ReadOnlyDictionary<string, object?>.Empty;
+        ReadOnlyDictionary<string, object?>.Empty;
 
     /// <summary>
     ///     The schema-decoded, ordered, labeled field tree, when this record was read by the schema-driven
@@ -72,7 +74,7 @@ public record GenericEsmRecord
     ///         one shared source, and the descriptor the scan result already holds.
     ///     </para>
     /// </summary>
-    internal Parsing.DecodedTreeSource? TreeSource { get; init; }
+    internal DecodedTreeSource? TreeSource { get; init; }
 
     /// <summary>
     ///     This record's on-disk header descriptor, carried so <see cref="TreeSource" /> can re-read and

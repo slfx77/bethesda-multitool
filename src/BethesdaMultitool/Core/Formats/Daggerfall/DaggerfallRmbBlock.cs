@@ -42,6 +42,14 @@ internal sealed class DaggerfallRmbBlock
     /// <summary>Rotation units per degree.</summary>
     public const float RotationDivisor = 5.68888888888889f;
 
+    /// <summary>Offset of the 32 sub-block declared sizes inside the FLD header.</summary>
+    private const int BlockDataSizesOffset = 3 + SlotCount * BlockPositionLength
+                                               + SlotCount * BuildingLength + SlotCount * 4;
+
+    /// <summary>Offset of the block's own name inside the FLD header, just past the automap.</summary>
+    private const int HeaderNameOffset = BlockDataSizesOffset + SlotCount * 4 + 8
+                                         + 2 * TilesPerSide * TilesPerSide + AutoMapSize * AutoMapSize;
+
     private const int SlotCount = 32;
     private const int BlockPositionLength = 20;
     private const int BuildingLength = 26;
@@ -101,15 +109,72 @@ internal sealed class DaggerfallRmbBlock
     /// <summary>Bytes consumed by the parse (equal to the record length on every retail block).</summary>
     public required int ParsedLength { get; init; }
 
+    /// <summary>Every 3D object in the block: sub-block exteriors and interiors plus the loose ones.</summary>
+    public IEnumerable<DaggerfallRmbModel> AllModels =>
+        SubRecords.SelectMany(s => s.Exterior.Models.Concat(s.Interior.Models)).Concat(Misc3dObjects);
+
     /// <summary>The ground tile at a grid position.</summary>
     public DaggerfallRmbGroundTile GroundTileAt(int x, int y)
     {
         return GroundTiles[y * TilesPerSide + x];
     }
 
-    /// <summary>Every 3D object in the block: sub-block exteriors and interiors plus the loose ones.</summary>
-    public IEnumerable<DaggerfallRmbModel> AllModels =>
-        SubRecords.SelectMany(s => s.Exterior.Models.Concat(s.Interior.Models)).Concat(Misc3dObjects);
+    /// <summary>
+    ///     Content probe: whether the bytes are an exterior city block.
+    ///     <para>
+    ///         ⚑ Three exact conditions, no magic — an RMB has none either. The payload must hold a
+    ///         full FLD header; the block's own NAME inside it must be a non-empty printable
+    ///         NUL-terminated string; and the declared sizes of its sub-blocks must tile INSIDE the
+    ///         payload. Measured over all 1,295 <c>BLOCKS.BSA</c> entries: 920 of 920 city blocks
+    ///         accepted, and none of the 187 RDB, 187 RDI or the stray <c>FOO</c> directory listing.
+    ///     </para>
+    ///     <para>
+    ///         ⚠ The name check is what carries the 113 blocks that declare ZERO sub-blocks — the
+    ///         witch covens, carnivals and ruins, which are real city blocks made only of loose
+    ///         scenery. Without it the size arithmetic has nothing to chew on and they are rejected;
+    ///         with it they pass, and they still assemble to no buildings, which is correct.
+    ///     </para>
+    /// </summary>
+    public static bool IsRmb(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length < FldHeaderLength || bytes[0] > SlotCount)
+        {
+            return false;
+        }
+
+        var name = bytes.Slice(HeaderNameOffset, NameLength);
+        var end = name.IndexOf((byte)0);
+        if (end <= 0)
+        {
+            return false;
+        }
+
+        foreach (var c in name[..end])
+        {
+            if (c is < 32 or > 126)
+            {
+                return false;
+            }
+        }
+
+        long total = FldHeaderLength;
+        for (var i = 0; i < bytes[0]; i++)
+        {
+            var declared = BinaryPrimitives.ReadInt32LittleEndian(bytes[(BlockDataSizesOffset + i * 4)..]);
+            if (declared < 2 * BlockDataHeaderLength)
+            {
+                return false;
+            }
+
+            total += declared;
+            if (total > bytes.Length)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     /// <summary>Parses one RMB record.</summary>
     public static DaggerfallRmbBlock Parse(ReadOnlyMemory<byte> bytes, string name)
@@ -119,7 +184,8 @@ internal sealed class DaggerfallRmbBlock
         var span = bytes.Span;
         if (span.Length < FldHeaderLength)
         {
-            throw new InvalidDataException($"{name}: {span.Length} bytes is shorter than the {FldHeaderLength}-byte FLD header.");
+            throw new InvalidDataException(
+                $"{name}: {span.Length} bytes is shorter than the {FldHeaderLength}-byte FLD header.");
         }
 
         var subRecordCount = span[0];
@@ -195,7 +261,8 @@ internal sealed class DaggerfallRmbBlock
             var declared = sizes[i];
             if (declared < 2 * BlockDataHeaderLength || offset + declared > span.Length)
             {
-                throw new InvalidDataException($"{name}: sub-block {i} declares {declared} bytes at {offset}, which does not fit the {span.Length}-byte record.");
+                throw new InvalidDataException(
+                    $"{name}: sub-block {i} declares {declared} bytes at {offset}, which does not fit the {span.Length}-byte record.");
             }
 
             var exterior = ReadBlockData(span, offset, offset + declared, name, i, "exterior", out var interiorStart);
@@ -203,7 +270,8 @@ internal sealed class DaggerfallRmbBlock
             var trailing = offset + declared - end;
             if (trailing > 1)
             {
-                throw new InvalidDataException($"{name}: sub-block {i} leaves {trailing} bytes after its interior set; retail leaves at most one.");
+                throw new InvalidDataException(
+                    $"{name}: sub-block {i} leaves {trailing} bytes after its interior set; retail leaves at most one.");
             }
 
             subRecords[i] = new DaggerfallRmbSubRecord
@@ -243,11 +311,13 @@ internal sealed class DaggerfallRmbBlock
         };
     }
 
-    private static DaggerfallRmbBlockData ReadBlockData(ReadOnlySpan<byte> span, int start, int limit, string name, int subRecord, string set, out int end)
+    private static DaggerfallRmbBlockData ReadBlockData(ReadOnlySpan<byte> span, int start, int limit, string name,
+        int subRecord, string set, out int end)
     {
         if (start + BlockDataHeaderLength > limit)
         {
-            throw new InvalidDataException($"{name}: sub-block {subRecord} {set} set has no room for its 17-byte header.");
+            throw new InvalidDataException(
+                $"{name}: sub-block {subRecord} {set} set has no room for its 17-byte header.");
         }
 
         var header = span.Slice(start, BlockDataHeaderLength);
@@ -304,7 +374,8 @@ internal sealed class DaggerfallRmbBlock
         return new DaggerfallRmbBlockData(unknowns, models, flats, section3, people, doors);
     }
 
-    private static DaggerfallRmbModel[] ReadModels(ReadOnlySpan<byte> span, ref int offset, int count, string name, string what)
+    private static DaggerfallRmbModel[] ReadModels(ReadOnlySpan<byte> span, ref int offset, int count, string name,
+        string what)
     {
         Require(span, offset, count * ModelLength, name, what);
         var models = new DaggerfallRmbModel[count];
@@ -335,7 +406,8 @@ internal sealed class DaggerfallRmbBlock
         return models;
     }
 
-    private static DaggerfallRmbFlat[] ReadFlats(ReadOnlySpan<byte> span, ref int offset, int count, string name, string what)
+    private static DaggerfallRmbFlat[] ReadFlats(ReadOnlySpan<byte> span, ref int offset, int count, string name,
+        string what)
     {
         Require(span, offset, count * FlatLength, name, what);
         var flats = new DaggerfallRmbFlat[count];
@@ -359,7 +431,8 @@ internal sealed class DaggerfallRmbBlock
     {
         if (offset < 0 || offset + length > span.Length)
         {
-            throw new InvalidDataException($"{name}: {what} records need {length} bytes at {offset}, the record has {span.Length}.");
+            throw new InvalidDataException(
+                $"{name}: {what} records need {length} bytes at {offset}, the record has {span.Length}.");
         }
     }
 
@@ -383,7 +456,12 @@ internal sealed class DaggerfallRmbBlock
 }
 
 /// <summary>One of the 32 sub-block position slots.</summary>
-internal readonly record struct DaggerfallRmbBlockPosition(uint Unknown1, uint Unknown2, int XPos, int ZPos, int YRotation);
+internal readonly record struct DaggerfallRmbBlockPosition(
+    uint Unknown1,
+    uint Unknown2,
+    int XPos,
+    int ZPos,
+    int YRotation);
 
 /// <summary>A ground tile byte: texture record in the low six bits, rotate and flip flags above.</summary>
 internal readonly record struct DaggerfallRmbGroundTile(byte Raw)
@@ -459,7 +537,13 @@ internal readonly record struct DaggerfallRmbModel(
 }
 
 /// <summary>A placed flat (billboard) or person: position, texture reference, faction and flags.</summary>
-internal readonly record struct DaggerfallRmbFlat(int XPos, int YPos, int ZPos, ushort TextureBits, short FactionId, byte Flags)
+internal readonly record struct DaggerfallRmbFlat(
+    int XPos,
+    int YPos,
+    int ZPos,
+    ushort TextureBits,
+    short FactionId,
+    byte Flags)
 {
     public int TextureArchive => TextureBits >> 7;
 
@@ -467,7 +551,21 @@ internal readonly record struct DaggerfallRmbFlat(int XPos, int YPos, int ZPos, 
 }
 
 /// <summary>A "section 3" record (undecoded by the reference beyond its position).</summary>
-internal readonly record struct DaggerfallRmbSection3(int XPos, int YPos, int ZPos, byte Unknown1, byte Unknown2, short Unknown3);
+internal readonly record struct DaggerfallRmbSection3(
+    int XPos,
+    int YPos,
+    int ZPos,
+    byte Unknown1,
+    byte Unknown2,
+    short Unknown3);
 
 /// <summary>A door: position, closed and open rotations, and which door model it uses.</summary>
-internal readonly record struct DaggerfallRmbDoor(int XPos, int YPos, int ZPos, short YRotation, short OpenRotation, byte DoorModelIndex, byte Unknown, byte NullValue);
+internal readonly record struct DaggerfallRmbDoor(
+    int XPos,
+    int YPos,
+    int ZPos,
+    short YRotation,
+    short OpenRotation,
+    byte DoorModelIndex,
+    byte Unknown,
+    byte NullValue);

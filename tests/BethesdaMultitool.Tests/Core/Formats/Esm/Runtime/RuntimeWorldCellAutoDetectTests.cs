@@ -39,7 +39,7 @@ public sealed class RuntimeWorldCellAutoDetectTests : RuntimeStructReaderTestBas
 
         var worldspace = reader.ReadRuntimeWorldspace(worldEntry);
         Assert.NotNull(worldspace);
-        Assert.Equal(512, worldspace!.MapUsableWidth);
+        Assert.Equal(512, worldspace.MapUsableWidth);
         Assert.Equal(256, worldspace.MapUsableHeight);
 
         var worldCellMaps = reader.ReadAllWorldspaceCellMaps([worldEntry]);
@@ -49,7 +49,7 @@ public sealed class RuntimeWorldCellAutoDetectTests : RuntimeStructReaderTestBas
 
         var cell = reader.ReadRuntimeCell(cellEntry);
         Assert.NotNull(cell);
-        Assert.Equal(worldEntry.FormId, cell!.WorldspaceFormId);
+        Assert.Equal(worldEntry.FormId, cell.WorldspaceFormId);
         Assert.Equal(96f, cell.WaterHeight);
         Assert.Equal(0x02u, cell.Flags);
     }
@@ -86,7 +86,7 @@ public sealed class RuntimeWorldCellAutoDetectTests : RuntimeStructReaderTestBas
 
         var worldspace = reader.ReadRuntimeWorldspace(worldEntry);
         Assert.NotNull(worldspace);
-        Assert.Equal("Fallback World", worldspace!.FullName);
+        Assert.Equal("Fallback World", worldspace.FullName);
     }
 
     private static MinidumpInfo SingleRegionMinidumpInfo(long size)

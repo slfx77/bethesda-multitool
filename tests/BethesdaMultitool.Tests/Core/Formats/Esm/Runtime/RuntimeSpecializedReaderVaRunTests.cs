@@ -35,7 +35,7 @@ public sealed class RuntimeSpecializedReaderVaRunTests
         var layouts = new RuntimeItemLayouts(16);
         var logical = SyntheticStructFactory.BuildAmmo(
             formId,
-            ammoDataOffset: 184,
+            184,
             value: expectedValue,
             bufferSize: layouts.AmmoStructSize);
         WriteBsStringHeader(logical, layouts.WeapModelPathOffset, modelStringVa, expectedModelPath.Length);
@@ -159,8 +159,8 @@ public sealed class RuntimeSpecializedReaderVaRunTests
         var logical = SyntheticStructFactory.BuildAmmo(
             formId,
             expectedAmmoDataOffset,
-            speed: 1500f,
-            flags: 2,
+            1500f,
+            2,
             bufferSize: 224);
         var file = new byte[600];
         CopySplit(logical, splitOffset, file, firstFileOffset, secondFileOffset);

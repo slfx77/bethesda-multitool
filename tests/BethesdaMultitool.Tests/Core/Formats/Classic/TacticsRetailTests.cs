@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Tactics;
@@ -24,7 +20,70 @@ public sealed class TacticsRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var core = RealAssetPaths.Classics.FalloutTactics();
         Assert.SkipWhen(core is null, RealAssetPaths.SkipMessage("Fallout Tactics"));
-        return core!;
+        return core;
+    }
+
+    [Fact]
+    public void EveryTaggedAssetInTheInstallCarriesTheSharedFraming()
+    {
+        // ⚑ THE FRAMING IS THE WHOLE GAME'S FILE HEADER, not one format's: '<' name '>' NUL,
+        // an ASCII version, NUL. Measured 2026-09-06 over every entry in core\*.bos — 33,368
+        // tagged files, ZERO malformed, across seven tags.
+        var core = RequireCore();
+        var archives = Directory.GetFiles(core, "*.bos")
+            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        Assert.SkipWhen(archives.Count == 0, RealAssetPaths.SkipMessage("Fallout Tactics .bos archives"));
+
+        var byTag = new Dictionary<string, int>(StringComparer.Ordinal);
+        var versionsByTag = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        var malformed = 0;
+
+        foreach (var path in archives)
+        {
+            using var archive = ArchiveReader.Open(path);
+            foreach (var entry in archive.ListFiles())
+            {
+                var bytes = archive.ReadFile(entry.FullPath);
+                if (bytes is null || bytes.Length == 0 || bytes[0] != (byte)'<')
+                {
+                    continue;
+                }
+
+                if (!TacticsTagChunk.TryRead(bytes, out var chunk))
+                {
+                    malformed++;
+                    continue;
+                }
+
+                byTag[chunk.Tag] = byTag.GetValueOrDefault(chunk.Tag) + 1;
+                if (!versionsByTag.TryGetValue(chunk.Tag, out var versions))
+                {
+                    versions = new HashSet<string>(StringComparer.Ordinal);
+                    versionsByTag[chunk.Tag] = versions;
+                }
+
+                versions.Add(chunk.Version);
+            }
+        }
+
+        // ⚑ Not one file that OPENS with '<' fails the framing.
+        Assert.Equal(0, malformed);
+
+        // The seven tags the install ships. ⛔ There is no <esh> — the .chr tag is <character>.
+        Assert.Equal(
+            ["campaign", "character", "entity", "sprite", "tile", "world", "zar"],
+            byTag.Keys.OrderBy(k => k, StringComparer.Ordinal));
+        Assert.DoesNotContain("esh", byTag.Keys);
+
+        Assert.True(byTag["tile"] > 29_000, $"expected ~29,957 tiles, saw {byTag["tile"]}");
+        Assert.True(byTag["zar"] >= 839, $"expected at least 839 ZARs, saw {byTag["zar"]}");
+
+        // ⚠ The version is a STRING of varying length — <tile> alone spans "6".."10" — so a body
+        // offset can never be a per-format constant.
+        Assert.True(versionsByTag["tile"].Count > 1);
+        Assert.Contains("68", versionsByTag["world"]);
+        Assert.Contains("69", versionsByTag["world"]);
     }
 
     [Fact]
@@ -32,7 +91,11 @@ public sealed class TacticsRetailTests
     {
         // ⚑ The header carries the uncompressed size TWICE, and the stream must inflate to exactly
         // that — so the format self-checks and a truncated file cannot pass. Measured 2026-09-06
-        // over all 103 retail missions.
+        // over the 103 ARCHIVED missions; the 25 LOOSE .mis that also ship are walked by
+        // Tactics.TacticsLooseMissionRetailTests, and 103 + 25 = the 128 shipped missions.
+        // ⚠ Windows file patterns are case-INSENSITIVE, so "mis*.bos" already matches Mis-Main_0.bos
+        // and the second enumeration below is a duplicate that only Distinct() saves — counting
+        // without it is how a "206 missions" figure was once published. Do not drop the Distinct.
         var core = RequireCore();
         var archives = Directory.GetFiles(core, "mis*.bos").Concat(Directory.GetFiles(core, "Mis*.bos"))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -72,6 +135,7 @@ public sealed class TacticsRetailTests
                     rosters++;
                     teamCounts.Add(mission.Teams.Count);
                 }
+
                 Assert.Equal('8', mission.WorldVersion);
 
                 // Every inflated world opens with the family's tag framing.

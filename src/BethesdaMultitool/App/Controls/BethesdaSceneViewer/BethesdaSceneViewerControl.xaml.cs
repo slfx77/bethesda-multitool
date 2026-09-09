@@ -17,34 +17,34 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     private static readonly Logger Log = Logger.Instance;
 
     private readonly BethesdaSceneViewerCamera _camera = new();
-    private BethesdaSceneViewerGraphicsContext12.BethesdaSceneViewerGraphicsLease12? _graphicsLease;
-    private IBethesdaSceneViewerRenderSession12? _renderSession;
-    private GpuSwapChainSurface12? _surface;
-    private BethesdaViewerScene? _scene;
-    private BethesdaSceneViewerRenderState _renderState = BethesdaSceneViewerRenderState.Initializing;
-    private string? _renderStatusMessage = "Waiting for the native Bethesda renderer session.";
-    private BethesdaSceneViewerRenderState? _lastNotifiedRenderState;
-    private string? _lastNotifiedRenderStatusMessage;
-    private string? _hostFaultMessage;
-    private bool _disposed;
-    private bool _isAnimationPlaying;
-    private bool _isPresentationActive = true;
-    private bool _isLoaded;
-    private bool _renderLoopAttached;
-    private bool _frameInvalidated;
-    private bool _renderingFrame;
-    private bool _hasPresentedFrame;
-    private bool _sessionInitialized;
-    private long _lastFrameTimestamp;
-    private int _streamingGpuIdleDrainCount;
-    private double _streamingGpuIdleDrainMilliseconds;
-    private bool _streamingGpuIdleDrainSummaryLogged;
 
     // Pointer state is intentionally local to this presentation camera; no world-view picking,
     // collision, cell navigation, or fly/walk state leaks into the asset viewer.
     private uint? _capturedPointerId;
-    private Vector2 _previousPointerPosition;
+    private bool _disposed;
+    private bool _frameInvalidated;
+    private BethesdaSceneViewerGraphicsContext12.BethesdaSceneViewerGraphicsLease12? _graphicsLease;
+    private bool _hasPresentedFrame;
+    private string? _hostFaultMessage;
+    private bool _isAnimationPlaying;
+    private bool _isLoaded;
+    private bool _isPresentationActive = true;
+    private long _lastFrameTimestamp;
+    private BethesdaSceneViewerRenderState? _lastNotifiedRenderState;
+    private string? _lastNotifiedRenderStatusMessage;
     private BethesdaSceneViewerPointerGesture _pointerGesture;
+    private Vector2 _previousPointerPosition;
+    private bool _renderingFrame;
+    private bool _renderLoopAttached;
+    private IBethesdaSceneViewerRenderSession12? _renderSession;
+    private BethesdaSceneViewerRenderState _renderState = BethesdaSceneViewerRenderState.Initializing;
+    private string? _renderStatusMessage = "Waiting for the native Bethesda renderer session.";
+    private BethesdaViewerScene? _scene;
+    private bool _sessionInitialized;
+    private int _streamingGpuIdleDrainCount;
+    private double _streamingGpuIdleDrainMilliseconds;
+    private bool _streamingGpuIdleDrainSummaryLogged;
+    private GpuSwapChainSurface12? _surface;
 
     public BethesdaSceneViewerControl()
     {
@@ -58,12 +58,6 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
         Unloaded += OnUnloaded;
         ApplyRenderStateVisuals();
     }
-
-    /// <summary>
-    ///     Raised on the UI thread whenever native readiness or its diagnostic message changes.
-    ///     Hosts use the exact scene outcome to promote after first Present or cold-start fallback.
-    /// </summary>
-    internal event EventHandler<BethesdaSceneViewerRenderStateChangedEventArgs>? RenderStateChanged;
 
     internal BethesdaViewerScene? Scene => _scene;
 
@@ -84,6 +78,12 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
             InvalidateViewport();
         }
     }
+
+    /// <summary>
+    ///     Raised on the UI thread whenever native readiness or its diagnostic message changes.
+    ///     Hosts use the exact scene outcome to promote after first Present or cold-start fallback.
+    /// </summary>
+    internal event EventHandler<BethesdaSceneViewerRenderStateChangedEventArgs>? RenderStateChanged;
 
     /// <summary>Stops continuous water/controller frames while this viewer's containing tab is hidden.</summary>
     internal void SetPresentationActive(bool active)
@@ -146,7 +146,8 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     /// <summary>Publishes a renderer-neutral scene directly, with no GLB serialization boundary.</summary>
     internal void SetScene(
         BethesdaViewerScene? scene,
-        [System.Runtime.CompilerServices.CallerMemberName] string traceReason = "")
+        [System.Runtime.CompilerServices.CallerMemberName]
+        string traceReason = "")
     {
         VerifyUiThread();
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -168,6 +169,7 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
         {
             _animationKfLoadGeneration++;
         }
+
         _animationKfLoadInProgress = false;
         _animationLoadStatus = null;
         _streamingGpuIdleDrainCount = 0;
@@ -212,7 +214,8 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     internal void ClearScene() => SetScene(null);
 
     internal void FrameScene(
-        [System.Runtime.CompilerServices.CallerMemberName] string traceReason = "")
+        [System.Runtime.CompilerServices.CallerMemberName]
+        string traceReason = "")
     {
         VerifyUiThread();
         var traceCameraBefore = TraceCameraState();
@@ -255,6 +258,7 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
         {
             _animationKfLoadGeneration++;
         }
+
         Loaded -= OnLoaded;
         Unloaded -= OnUnloaded;
         DisposeControlResources();

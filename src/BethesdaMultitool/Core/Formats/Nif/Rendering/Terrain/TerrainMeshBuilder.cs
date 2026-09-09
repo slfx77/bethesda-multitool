@@ -416,6 +416,9 @@ internal static class TerrainMeshBuilder
     public readonly record struct TerrainMesh(TerrainVertex[] Vertices, ushort[] Indices, TerrainCellGrid Grid)
     {
         /// <summary>World position of vertex <paramref name="index" />, as the vertex shader rebuilds it.</summary>
-        public Vector3 PositionOf(int index) => Grid.PositionOf(index, Vertices[index].Height);
+        public Vector3 PositionOf(int index)
+        {
+            return Grid.PositionOf(index, Vertices[index].Height);
+        }
     }
 }

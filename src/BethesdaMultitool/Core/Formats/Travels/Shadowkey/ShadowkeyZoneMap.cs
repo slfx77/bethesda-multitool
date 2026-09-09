@@ -129,7 +129,7 @@ internal sealed class ShadowkeyZoneMap
                 $"'{name}': grid is {width}x{height} at byte 128; both dimensions must be positive.");
         }
 
-        var expected = HeaderLength + ((long)width * height * CellLength);
+        var expected = HeaderLength + (long)width * height * CellLength;
         if (expected != bytes.Length)
         {
             throw new InvalidDataException(
@@ -142,7 +142,7 @@ internal sealed class ShadowkeyZoneMap
         var lowBitsClear = true;
         for (var i = 0; i < cells.Length; i++)
         {
-            var offset = HeaderLength + (i * CellLength);
+            var offset = HeaderLength + i * CellLength;
             var raw = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 2)..]);
             var prototype = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 4)..]);
             var cell = new ShadowkeyMapCell(bytes[offset], bytes[offset + 1], raw, prototype);
@@ -165,7 +165,7 @@ internal sealed class ShadowkeyZoneMap
         {
             BlockedCellCount = blocked,
             MaxPrototypeIndex = maxIndex,
-            RawLowBitsClear = lowBitsClear,
+            RawLowBitsClear = lowBitsClear
         };
     }
 
@@ -182,7 +182,7 @@ internal sealed class ShadowkeyZoneMap
             throw new ArgumentOutOfRangeException(nameof(y), y, $"'{Name}': y must be 0..{Height - 1}.");
         }
 
-        return _cells[(y * Width) + x];
+        return _cells[y * Width + x];
     }
 
     /// <summary>True when the cell at (<paramref name="x" />, <paramref name="y" />) is solid.</summary>

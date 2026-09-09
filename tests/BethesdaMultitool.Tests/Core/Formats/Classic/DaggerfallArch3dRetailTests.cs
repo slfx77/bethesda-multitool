@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
@@ -26,7 +21,7 @@ public sealed class DaggerfallArch3dRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Classics.Daggerfall();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Daggerfall (ARENA2)"));
-        return root!;
+        return root;
     }
 
     private static DaggerfallArch3DFile OpenArchive()
@@ -113,7 +108,8 @@ public sealed class DaggerfallArch3dRetailTests
 
         // Fanning every authored polygon would give more; the corner filter drops the collinear
         // points the authored polygons carry. The decomposed count is this decomposer's own pin.
-        Assert.True(fanTriangles > triangles, $"Corner filtering should reduce {fanTriangles} fan triangles, saw {triangles}.");
+        Assert.True(fanTriangles > triangles,
+            $"Corner filtering should reduce {fanTriangles} fan triangles, saw {triangles}.");
         Assert.Equal(388_474, triangles);
 
         var textures = new DaggerfallMeshTextureSource(arena2);

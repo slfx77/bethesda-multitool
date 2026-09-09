@@ -5,7 +5,10 @@ namespace BethesdaMultitool.Tests.App;
 
 public sealed class NpcViewerStarfieldWaterSourceContractTests
 {
-    private static string ViewerSource() => SourceContract.ReadAppSource("npc-viewer.html");
+    private static string ViewerSource()
+    {
+        return SourceContract.ReadAppSource("npc-viewer.html");
+    }
 
     [Fact]
     public void MarkedWaterMaterialIsValidatedBeforeAnimationStarts()

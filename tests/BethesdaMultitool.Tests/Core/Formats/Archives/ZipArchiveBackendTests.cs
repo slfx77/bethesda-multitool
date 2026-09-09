@@ -1,9 +1,5 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Zip;
@@ -23,14 +19,6 @@ public sealed class ZipArchiveBackendTests : IDisposable
 {
     private readonly List<string> _tempFiles = [];
 
-    private string WriteTemp(byte[] bytes, string extension = ".jar")
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"pkzip-{Guid.NewGuid():N}{extension}");
-        File.WriteAllBytes(path, bytes);
-        _tempFiles.Add(path);
-        return path;
-    }
-
     public void Dispose()
     {
         foreach (var path in _tempFiles)
@@ -44,6 +32,14 @@ public sealed class ZipArchiveBackendTests : IDisposable
                 // Temp cleanup only.
             }
         }
+    }
+
+    private string WriteTemp(byte[] bytes, string extension = ".jar")
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"pkzip-{Guid.NewGuid():N}{extension}");
+        File.WriteAllBytes(path, bytes);
+        _tempFiles.Add(path);
+        return path;
     }
 
     private static byte[] Build(params (string Name, byte[] Data, CompressionLevel Level)[] members)
@@ -62,10 +58,16 @@ public sealed class ZipArchiveBackendTests : IDisposable
         return stream.ToArray();
     }
 
-    private static byte[] Text(string value) => Encoding.ASCII.GetBytes(value);
+    private static byte[] Text(string value)
+    {
+        return Encoding.ASCII.GetBytes(value);
+    }
 
     /// <summary>A payload long enough that DEFLATE actually shrinks it, so the two methods are distinguishable.</summary>
-    private static byte[] Repetitive(int length) => Enumerable.Range(0, length).Select(i => (byte)(i % 7 == 0 ? 'A' : 'B')).ToArray();
+    private static byte[] Repetitive(int length)
+    {
+        return Enumerable.Range(0, length).Select(i => (byte)(i % 7 == 0 ? 'A' : 'B')).ToArray();
+    }
 
     [Fact]
     public void Parse_ReadsEveryMemberWithItsMethodAndSizes()
@@ -286,7 +288,7 @@ public sealed class ZipArchiveBackendTests : IDisposable
     public void TryProbe_RejectsAnArchiveThatIsNotAZipAtAll()
     {
         Assert.False(PkZipParser.TryProbe(WriteTemp(Encoding.ASCII.GetBytes("BSA\0not really"), ".bsa")));
-        Assert.False(PkZipParser.TryProbe(WriteTemp([], ".jar")));
+        Assert.False(PkZipParser.TryProbe(WriteTemp([])));
     }
 
     [Fact]

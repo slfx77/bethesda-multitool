@@ -15,9 +15,11 @@ public sealed class AudioPlaybackService : IDisposable
     private readonly int _maxCacheSize;
     private readonly Dictionary<string, ArchiveReader> _readers = new();
     private RawSourceWaveStream? _currentStream;
+    private bool _disposed;
     private Dictionary<string, ArchiveReader.ArchiveEntry> _fileRecords = new();
 
     private WaveOutEvent? _waveOut;
+    private int _playbackGeneration;
 
     public AudioPlaybackService(int maxCacheSize = 50)
     {
@@ -35,6 +37,12 @@ public sealed class AudioPlaybackService : IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         Stop();
 
         foreach (var reader in _readers.Values)
@@ -51,6 +59,8 @@ public sealed class AudioPlaybackService : IDisposable
     /// </summary>
     public void SetFileRecords(Dictionary<string, ArchiveReader.ArchiveEntry> fileRecords)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _cache.Clear();
         _fileRecords = fileRecords;
     }
 
@@ -62,10 +72,12 @@ public sealed class AudioPlaybackService : IDisposable
     /// </summary>
     public async Task PlayAsync(VoiceFileEntry entry, CancellationToken ct = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         Stop();
+        var generation = _playbackGeneration;
 
         var wavData = await ExtractWavAsync(entry, ct);
-        if (wavData == null || wavData.Length == 0)
+        if (_disposed || generation != _playbackGeneration || wavData == null || wavData.Length == 0)
         {
             return;
         }
@@ -116,6 +128,7 @@ public sealed class AudioPlaybackService : IDisposable
     /// <summary>Stop playback.</summary>
     public void Stop()
     {
+        _playbackGeneration++;
         _waveOut?.Stop();
         _waveOut?.Dispose();
         _waveOut = null;
@@ -140,6 +153,7 @@ public sealed class AudioPlaybackService : IDisposable
     /// </summary>
     public async Task<byte[]?> ExtractWavAsync(VoiceFileEntry entry, CancellationToken ct = default)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         // Check cache
         var cacheKey = $"{entry.BsaFilePath}|{entry.BsaPath}";
         var cacheNode = _cache.First;
@@ -186,6 +200,11 @@ public sealed class AudioPlaybackService : IDisposable
         }
 
         // Add to cache
+        if (_disposed)
+        {
+            return null;
+        }
+
         _cache.AddFirst((cacheKey, wavData));
         while (_cache.Count > _maxCacheSize)
         {

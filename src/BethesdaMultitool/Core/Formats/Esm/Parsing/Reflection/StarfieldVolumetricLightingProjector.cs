@@ -48,7 +48,7 @@ internal static class StarfieldVolumetricLightingReflectionSchema
     private const int HeaderSize = 24;
 
     private static readonly Dictionary<string, ExpectedClass> ExpectedClasses =
-        new Dictionary<string, ExpectedClass>(StringComparer.Ordinal)
+        new(StringComparer.Ordinal)
         {
             ["XMFLOAT4"] = Class(8,
                 ("x", "Float"), ("y", "Float"), ("z", "Float"), ("w", "Float")),
@@ -284,7 +284,7 @@ internal static class StarfieldVolumetricLightingReflectionSchema
 
         var flags = BinaryPrimitives.ReadUInt16LittleEndian(body[8..]);
         var fieldCount = BinaryPrimitives.ReadUInt16LittleEndian(body[10..]);
-        if (body.Length != 12 + (fieldCount * 12))
+        if (body.Length != 12 + fieldCount * 12)
         {
             error = $"VOLI CLAS '{className}' has a malformed field table.";
             return false;
@@ -293,7 +293,7 @@ internal static class StarfieldVolumetricLightingReflectionSchema
         var fields = new List<ExpectedField>(fieldCount);
         for (var fieldIndex = 0; fieldIndex < fieldCount; fieldIndex++)
         {
-            var field = body.Slice(12 + (fieldIndex * 12), 12);
+            var field = body.Slice(12 + fieldIndex * 12, 12);
             if (!strings.TryGetValue(BinaryPrimitives.ReadUInt32LittleEndian(field), out var fieldName) ||
                 !TryResolveType(
                     BinaryPrimitives.ReadUInt32LittleEndian(field[4..]), strings, out var fieldType))
@@ -343,12 +343,16 @@ internal static class StarfieldVolumetricLightingReflectionSchema
         return type is not null;
     }
 
-    private static ExpectedClass Class(ushort flags, params (string Name, string Type)[] fields) =>
-        new(flags, Array.AsReadOnly(fields.Select(field =>
+    private static ExpectedClass Class(ushort flags, params (string Name, string Type)[] fields)
+    {
+        return new ExpectedClass(flags, Array.AsReadOnly(fields.Select(field =>
             new ExpectedField(field.Name, field.Type)).ToArray()));
+    }
 
     private sealed record ExpectedClass(ushort Flags, IReadOnlyList<ExpectedField> Fields);
+
     private sealed record ActualClass(ushort Flags, IReadOnlyList<ExpectedField> Fields);
+
     private readonly record struct ExpectedField(string Name, string Type);
 }
 
@@ -361,15 +365,19 @@ internal static class StarfieldVolumetricLightingProjector
 {
     private const string RootType = "BGSVolumetricLighting";
     private const string SettingsType = "BGSVolumetricLightingSettings";
+
     private const string ExteriorAndInteriorType =
         "BGSVolumetricLightingSettings::ExteriorAndInteriorSettings";
+
     private const string ExteriorType = "BGSVolumetricLightingSettings::ExteriorSettings";
     private const string FogThicknessType = "BGSVolumetricLightingSettings::FogThicknessSettings";
     private const string FogDensityType = "BGSVolumetricLightingSettings::FogDensitySettings";
     private const string HorizonFogType = "BGSVolumetricLightingSettings::HorizonFogSettings";
     private const string FogMapType = "BGSVolumetricLightingSettings::FogMapSettings";
+
     private const string DistantLightingType =
         "BGSVolumetricLightingSettings::DistantLightingSettings";
+
     private const string Float4Type = "XMFLOAT4";
 
     internal static bool TryProject(

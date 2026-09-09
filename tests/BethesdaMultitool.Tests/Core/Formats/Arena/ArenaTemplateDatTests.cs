@@ -1,4 +1,4 @@
-using System.Linq;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Arena;
 using Xunit;
 
@@ -109,7 +109,7 @@ public class ArenaTemplateDatTests
     [Fact]
     public void Parse_ReadsLatin1Bytes()
     {
-        var bytes = System.Text.Encoding.Latin1.GetBytes("#0010\r\nCafé sign&\r\n");
+        var bytes = Encoding.Latin1.GetBytes("#0010\r\nCafé sign&\r\n");
 
         Assert.Equal(["Café sign"], Assert.Single(ArenaTemplateDat.Parse(bytes).Entries).Values);
     }

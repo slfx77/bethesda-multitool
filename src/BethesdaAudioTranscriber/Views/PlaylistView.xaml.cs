@@ -13,7 +13,7 @@ using WinRT.Interop;
 
 namespace BethesdaAudioTranscriber.Views;
 
-#pragma warning disable CA1001 // WinUI 3 UserControls don't implement IDisposable
+#pragma warning disable CA1001 // PrepareForCloseAsync releases owned resources after pending work completes.
 public sealed partial class PlaylistView : UserControl
 {
     private readonly DispatcherTimer? _autoSaveTimer;
@@ -25,12 +25,21 @@ public sealed partial class PlaylistView : UserControl
     // ────────────────────────────────────────────────────
 
     private readonly object _projectLock = new();
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
     private readonly WhisperTranscriptionService _whisperService = new();
     private List<VoiceFileEntry> _allEntries = [];
+    private bool _autoSaveInProgress;
+    private bool _batchInProgress;
     private CancellationTokenSource? _batchCts;
+    private bool _clearInProgress;
     private string? _dataDirectory;
+    private bool _disposed;
+    private bool _exportInProgress;
     private bool _filtersInitialized;
     private bool _hasUnsavedChanges;
+    private int _projectGeneration;
+    private bool _singleTranscriptionInProgress;
+    private bool _switchingProject;
 
     // Transcription state
     private TranscriptionProject? _project;
@@ -48,6 +57,7 @@ public sealed partial class PlaylistView : UserControl
     private string _sortColumn = "Status";
     private bool _transcribeEsmLines;
     private bool _whisperInitialized;
+    private Task? _whisperInitializationTask;
 
     public PlaylistView()
     {
@@ -62,56 +72,152 @@ public sealed partial class PlaylistView : UserControl
         DetailPanel.TranscribeRequested += DetailPanel_TranscribeRequested;
         DetailPanel.RejectRequested += DetailPanel_RejectRequested;
         DetailPanel.DismissReviewRequested += DetailPanel_DismissReviewRequested;
+        BatchDrawer.CancelRequested += BatchDrawer_CancelRequested;
     }
 
     /// <summary>
     ///     Set the build result and initialize the transcription workflow.
     /// </summary>
-    public async void SetBuildResult(BuildLoadResult result, string? dataDirectory = null)
+    public async Task SetBuildResultAsync(BuildLoadResult result, string? dataDirectory = null)
     {
-        _allEntries = result.Entries;
-        _dataDirectory = dataDirectory;
-        _playbackService.SetFileRecords(result.FileRecords);
-
-        // Load transcription project
-        if (dataDirectory != null)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_switchingProject || _batchInProgress || _singleTranscriptionInProgress ||
+            _clearInProgress || _autoSaveInProgress || _exportInProgress)
         {
-            _project = await TranscriptionFileService.LoadAsync(dataDirectory)
-                       ?? new TranscriptionProject
-                       {
-                           DataDirectory = dataDirectory,
-                           CreatedAt = DateTimeOffset.UtcNow
-                       };
-
-            TranscriptionFileService.ApplyToEntries(_project, _allEntries);
-
-            // Load suspected-typo flags (.fnvreview.json), if present
-            _reviewFile = await ReviewFileService.LoadAsync(dataDirectory);
-            if (_reviewFile != null)
-            {
-                var pending = ReviewFileService.ApplyToEntries(_reviewFile, _allEntries);
-                FlaggedOnlyCheck.Visibility = Visibility.Visible;
-                MainWindow.Instance?.SetStatus($"{pending:N0} suspected typos flagged for review");
-            }
+            throw new InvalidOperationException(
+                "Finish or cancel the current transcription/save operation before opening another project.");
         }
 
-        // Populate filter dropdowns
-        PopulateFilterDropdowns();
-
-        // Apply filters
-        _filtersInitialized = true;
-        DetailPanel.SetTranscribeEsmMode(_transcribeEsmLines);
-        ApplyFilters();
-
-        // Enable buttons
-        UpdateBatchButtonState();
-        ExportButton.IsEnabled = BatchOperationHelper.ShouldEnableExport(_project, _allEntries);
-        ClearWhisperButton.IsEnabled = _project?.Entries.Values.Any(e => e.Source == "whisper") == true;
-
-        // Initialize Whisper in background
-        if (PlaylistFilterHelper.HasWorkItems(_allEntries, _transcribeEsmLines))
+        _switchingProject = true;
+        IsEnabled = false;
+        _autoSaveTimer?.Stop();
+        try
         {
-            _ = InitializeWhisperAsync();
+            // Flush to the old project's directory before reading another project, including a
+            // reload of the same path. A failed save/load leaves the existing session available.
+            await SavePendingChangesAsync();
+            TranscriptionProject? project = null;
+            ReviewFile? review = null;
+            var pendingReviews = 0;
+            if (dataDirectory != null)
+            {
+                project = await TranscriptionFileService.LoadAsync(dataDirectory)
+                          ?? new TranscriptionProject
+                          {
+                              DataDirectory = dataDirectory,
+                              CreatedAt = DateTimeOffset.UtcNow
+                          };
+                review = await ReviewFileService.LoadAsync(dataDirectory);
+                TranscriptionFileService.ApplyToEntries(project, result.Entries);
+                if (review != null)
+                {
+                    pendingReviews = ReviewFileService.ApplyToEntries(review, result.Entries);
+                }
+            }
+
+            _projectGeneration++;
+            _project = project;
+            _reviewFile = review;
+            _allEntries = result.Entries;
+            _dataDirectory = dataDirectory;
+            _hasUnsavedChanges = false;
+            _reviewDirty = false;
+            _playbackService.Stop();
+            _playbackService.SetFileRecords(result.FileRecords);
+            AudioPlayer.SetPlaybackService(_playbackService);
+            _filtersInitialized = false;
+            FlaggedOnlyCheck.IsChecked = false;
+            FlaggedOnlyCheck.Visibility = review != null ? Visibility.Visible : Visibility.Collapsed;
+            if (review != null)
+            {
+                MainWindow.Instance?.SetStatus($"{pendingReviews:N0} suspected typos flagged for review");
+            }
+
+            PopulateFilterDropdowns();
+
+            _filtersInitialized = true;
+            DetailPanel.SetTranscribeEsmMode(_transcribeEsmLines);
+            ApplyFilters();
+
+            UpdateBatchButtonState();
+            ExportButton.IsEnabled = BatchOperationHelper.ShouldEnableExport(_project, _allEntries);
+            ClearWhisperButton.IsEnabled = _project?.Entries.Values.Any(e => e.Source == "whisper") == true;
+
+            if (!_whisperInitialized && _whisperInitializationTask?.IsCompleted != false &&
+                PlaylistFilterHelper.HasWorkItems(_allEntries, _transcribeEsmLines))
+            {
+                _whisperInitializationTask = InitializeWhisperAsync();
+            }
+        }
+        finally
+        {
+            _switchingProject = false;
+            IsEnabled = true;
+            DetailPanel.SetWhisperAvailable(_whisperInitialized);
+        }
+    }
+
+    public async Task PrepareForCloseAsync()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (_switchingProject || _batchInProgress || _singleTranscriptionInProgress ||
+            _clearInProgress || _autoSaveInProgress || _exportInProgress)
+        {
+            throw new InvalidOperationException(
+                "Finish or cancel the current transcription/save operation before closing.");
+        }
+
+        _switchingProject = true;
+        IsEnabled = false;
+        _autoSaveTimer?.Stop();
+        try
+        {
+            await SavePendingChangesAsync();
+            if (_whisperInitializationTask != null)
+            {
+                await _whisperInitializationTask;
+            }
+
+            _disposed = true;
+            _projectGeneration++;
+            if (_autoSaveTimer != null)
+            {
+                _autoSaveTimer.Tick -= AutoSaveTimer_Tick;
+            }
+            DetailPanel.ApproveRequested -= DetailPanel_ApproveRequested;
+            DetailPanel.TranscribeRequested -= DetailPanel_TranscribeRequested;
+            DetailPanel.RejectRequested -= DetailPanel_RejectRequested;
+            DetailPanel.DismissReviewRequested -= DetailPanel_DismissReviewRequested;
+            BatchDrawer.CancelRequested -= BatchDrawer_CancelRequested;
+            AudioPlayer.ClearPlaybackService();
+            try
+            {
+                _playbackService.Dispose();
+            }
+            finally
+            {
+                try
+                {
+                    _whisperService.Dispose();
+                }
+                finally
+                {
+                    _saveGate.Dispose();
+                }
+            }
+        }
+        finally
+        {
+            if (!_disposed)
+            {
+                _switchingProject = false;
+                IsEnabled = true;
+                DetailPanel.SetWhisperAvailable(_whisperInitialized);
+            }
         }
     }
 
@@ -138,14 +244,26 @@ public sealed partial class PlaylistView : UserControl
             MainWindow.Instance?.SetStatus("Initializing Whisper model...");
             await _whisperService.InitializeAsync(
                 new Progress<(string message, double percent)>(p =>
-                    DispatcherQueue.TryEnqueue(() => MainWindow.Instance?.SetStatus(p.message))));
+                    DispatcherQueue.TryEnqueue(() =>
+                    {
+                        if (!_switchingProject && !_disposed)
+                        {
+                            MainWindow.Instance?.SetStatus(p.message);
+                        }
+                    })));
             _whisperInitialized = true;
-            DetailPanel.SetWhisperAvailable(true);
-            MainWindow.Instance?.SetStatus("Whisper ready");
+            if (!_switchingProject && !_disposed)
+            {
+                DetailPanel.SetWhisperAvailable(true);
+                MainWindow.Instance?.SetStatus("Whisper ready");
+            }
         }
         catch (Exception ex)
         {
-            MainWindow.Instance?.SetStatus($"Whisper init failed: {ex.Message}");
+            if (!_switchingProject && !_disposed)
+            {
+                MainWindow.Instance?.SetStatus($"Whisper init failed: {ex.Message}");
+            }
         }
     }
 
@@ -293,15 +411,16 @@ public sealed partial class PlaylistView : UserControl
     private async void DetailPanel_TranscribeRequested(object? sender, EventArgs e)
     {
         var selected = FileListView.SelectedItem as VoiceFileEntry;
-        if (selected == null || !_whisperInitialized)
+        if (selected == null || !_whisperInitialized || _switchingProject || _singleTranscriptionInProgress ||
+            _batchInProgress || _clearInProgress)
         {
             return;
         }
 
-        DetailPanel.ShowWhisperProgress("Transcribing...");
-
+        _singleTranscriptionInProgress = true;
         try
         {
+            DetailPanel.ShowWhisperProgress("Transcribing...");
             var wavData = await _playbackService.ExtractWavAsync(selected);
             if (wavData != null)
             {
@@ -316,7 +435,10 @@ public sealed partial class PlaylistView : UserControl
                 // Save as automatic (pending review)
                 if (_project != null)
                 {
-                    BatchOperationHelper.ApplyTranscription(selected, text, "whisper", _project);
+                    lock (_projectLock)
+                    {
+                        BatchOperationHelper.ApplyTranscription(selected, text, "whisper", _project);
+                    }
                     _hasUnsavedChanges = true;
                     _autoSaveTimer?.Start();
                 }
@@ -326,25 +448,29 @@ public sealed partial class PlaylistView : UserControl
                     selected.TranscriptionSource = "whisper";
                 }
             }
+
+            DetailPanel.HideWhisperProgress();
         }
         catch (Exception ex)
         {
             DetailPanel.ShowWhisperProgress($"Error: {ex.Message}");
             return;
         }
-
-        DetailPanel.HideWhisperProgress();
+        finally
+        {
+            _singleTranscriptionInProgress = false;
+        }
     }
 
     private void DetailPanel_ApproveRequested(object? sender, EventArgs e)
     {
-        _ = ApproveCurrentAsync();
+        ApproveCurrent();
     }
 
-    private async Task ApproveCurrentAsync()
+    private void ApproveCurrent()
     {
         var selected = FileListView.SelectedItem as VoiceFileEntry;
-        if (selected == null || _project == null)
+        if (selected == null || _project == null || _switchingProject)
         {
             return;
         }
@@ -355,7 +481,10 @@ public sealed partial class PlaylistView : UserControl
             return;
         }
 
-        BatchOperationHelper.ApplyTranscription(selected, text, "accepted", _project);
+        lock (_projectLock)
+        {
+            BatchOperationHelper.ApplyTranscription(selected, text, "accepted", _project);
+        }
         ResolveReviewFlag(selected);
 
         _hasUnsavedChanges = true;
@@ -429,7 +558,7 @@ public sealed partial class PlaylistView : UserControl
     private void DetailPanel_DismissReviewRequested(object? sender, EventArgs e)
     {
         var selected = FileListView.SelectedItem as VoiceFileEntry;
-        if (selected == null)
+        if (selected == null || _switchingProject)
         {
             return;
         }
@@ -441,14 +570,17 @@ public sealed partial class PlaylistView : UserControl
     private void DetailPanel_RejectRequested(object? sender, EventArgs e)
     {
         var selected = FileListView.SelectedItem as VoiceFileEntry;
-        if (selected == null || _project == null)
+        if (selected == null || _project == null || _switchingProject)
         {
             return;
         }
 
-        if (!BatchOperationHelper.RevertToEsm(selected, _project))
+        lock (_projectLock)
         {
-            return;
+            if (!BatchOperationHelper.RevertToEsm(selected, _project))
+            {
+                return;
+            }
         }
 
         ResolveReviewFlag(selected);
@@ -467,7 +599,7 @@ public sealed partial class PlaylistView : UserControl
     private void Approve_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
     {
         args.Handled = true;
-        _ = ApproveCurrentAsync();
+        ApproveCurrent();
     }
 
     // ────────────────────────────────────────────────────
@@ -476,23 +608,46 @@ public sealed partial class PlaylistView : UserControl
 
     private async void ClearWhisper_Click(object sender, RoutedEventArgs e)
     {
-        if (_project == null || _dataDirectory == null)
+        if (_project == null || _dataDirectory == null || _switchingProject || _clearInProgress ||
+            _batchInProgress || _singleTranscriptionInProgress)
         {
             return;
         }
 
-        ClearWhisperFlyout.Hide();
+        _clearInProgress = true;
+        try
+        {
+            ClearWhisperFlyout.Hide();
 
-        var cleared = TranscriptionFileService.ClearBySource(_project, _allEntries, "whisper");
+            int cleared;
+            lock (_projectLock)
+            {
+                cleared = TranscriptionFileService.ClearBySource(_project, _allEntries, "whisper");
+            }
+            _hasUnsavedChanges = true;
 
-        await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
+            ClearWhisperButton.IsEnabled = false;
+            UpdateBatchButtonState();
+            ExportButton.IsEnabled = BatchOperationHelper.ShouldEnableExport(_project, _allEntries);
+            ApplyFilters();
 
-        ClearWhisperButton.IsEnabled = false;
-        UpdateBatchButtonState();
-        ExportButton.IsEnabled = BatchOperationHelper.ShouldEnableExport(_project, _allEntries);
-
-        ApplyFilters();
-        MainWindow.Instance?.SetStatus($"Cleared {cleared} Whisper transcriptions");
+            await SavePendingChangesAsync();
+            MainWindow.Instance?.SetStatus($"Cleared {cleared} Whisper transcriptions");
+        }
+        catch (Exception ex)
+        {
+            _hasUnsavedChanges = true;
+            _autoSaveTimer?.Start();
+            MainWindow.Instance?.SetStatus($"Could not save cleared transcriptions: {ex.Message}");
+        }
+        finally
+        {
+            _clearInProgress = false;
+            if (!_switchingProject && (_hasUnsavedChanges || _reviewDirty))
+            {
+                _autoSaveTimer?.Start();
+            }
+        }
     }
 
     // ────────────────────────────────────────────────────
@@ -503,44 +658,155 @@ public sealed partial class PlaylistView : UserControl
     {
         _autoSaveTimer?.Stop();
 
-        if (_dataDirectory == null)
+        if (_dataDirectory == null || _autoSaveInProgress || _switchingProject || _clearInProgress)
         {
             return;
         }
 
+        _autoSaveInProgress = true;
+        var saveSucceeded = false;
         try
         {
-            if (_hasUnsavedChanges && _project != null)
-            {
-                _hasUnsavedChanges = false;
-                await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
-                MainWindow.Instance?.SetStatus($"Saved {_project.Entries.Count} transcriptions");
-            }
-
-            if (_reviewDirty && _reviewFile != null)
-            {
-                _reviewDirty = false;
-                await ReviewFileService.SaveAsync(_dataDirectory, _reviewFile);
-            }
+            await SavePendingChangesAsync();
+            saveSucceeded = true;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"[Playlist] Auto-save error: {ex.Message}");
+            MainWindow.Instance?.SetStatus($"Auto-save failed: {ex.Message}");
         }
+        finally
+        {
+            _autoSaveInProgress = false;
+            if (saveSucceeded && !_switchingProject &&
+                ((_hasUnsavedChanges && _project != null) || (_reviewDirty && _reviewFile != null)))
+            {
+                _autoSaveTimer?.Start();
+            }
+        }
+    }
+
+    private async Task SavePendingChangesAsync()
+    {
+        var directory = _dataDirectory;
+        var project = _project;
+        var review = _reviewFile;
+        if (directory == null)
+        {
+            return;
+        }
+
+        var transcriptionWritePending = false;
+        var reviewWritePending = false;
+        try
+        {
+            if (_hasUnsavedChanges && project != null)
+            {
+                transcriptionWritePending = true;
+                _hasUnsavedChanges = false;
+                await SaveProjectAsync(directory, project);
+                transcriptionWritePending = false;
+                MainWindow.Instance?.SetStatus($"Saved {project.Entries.Count} transcriptions");
+            }
+
+            if (_reviewDirty && review != null)
+            {
+                reviewWritePending = true;
+                _reviewDirty = false;
+                await _saveGate.WaitAsync();
+                try
+                {
+                    await ReviewFileService.SaveAsync(directory, review);
+                }
+                finally
+                {
+                    _saveGate.Release();
+                }
+                reviewWritePending = false;
+            }
+        }
+        catch
+        {
+            // Preserve edits that arrived during a write and restore only failed write attempts.
+            _hasUnsavedChanges |= transcriptionWritePending;
+            _reviewDirty |= reviewWritePending;
+            throw;
+        }
+    }
+
+    private async Task SaveProjectAsync(
+        string directory, TranscriptionProject project, CancellationToken ct = default)
+    {
+        await _saveGate.WaitAsync(ct);
+        try
+        {
+            TranscriptionProject snapshot;
+            lock (_projectLock)
+            {
+                // Snapshot after acquiring the write gate: a queued older checkpoint must not
+                // overwrite a later save with state captured before it started waiting.
+                snapshot = BatchOperationHelper.CreateProjectSnapshot(
+                    project, new Dictionary<string, TranscriptionEntry>(project.Entries));
+            }
+            await TranscriptionFileService.SaveAsync(directory, snapshot, ct);
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
+    }
+
+    private void BatchDrawer_CancelRequested(object? sender, EventArgs e)
+    {
+        _batchCts?.Cancel();
     }
 
     private async void Batch_Click(object sender, RoutedEventArgs e)
     {
-        if (_project == null || _dataDirectory == null || !_whisperInitialized)
+        if (_batchInProgress || _switchingProject)
+        {
+            return;
+        }
+
+        _batchInProgress = true;
+        try
+        {
+            await RunBatchAsync();
+        }
+        catch (Exception ex)
+        {
+            if (_project != null && _dataDirectory != null)
+            {
+                _hasUnsavedChanges = true;
+                _autoSaveTimer?.Start();
+            }
+
+            MainWindow.Instance?.SetStatus($"Batch failed: {ex.Message}");
+            BatchDrawer.CompleteBatch($"Error: {ex.Message}");
+        }
+        finally
+        {
+            // Cover setup failures that occur before RunBatchAsync enters its pipeline try/finally.
+            _batchCts?.Dispose();
+            _batchCts = null;
+            _batchInProgress = false;
+        }
+    }
+
+    private async Task RunBatchAsync()
+    {
+        if (_project == null || _dataDirectory == null || !_whisperInitialized || _batchCts != null ||
+            _switchingProject || _singleTranscriptionInProgress || _clearInProgress)
         {
             return;
         }
 
         _batchCts = new CancellationTokenSource();
         var ct = _batchCts.Token;
-
-        // Wire drawer cancel
-        BatchDrawer.CancelRequested += (_, _) => _batchCts?.Cancel();
+        var project = _project;
+        var directory = _dataDirectory;
+        var generation = _projectGeneration;
+        _hasUnsavedChanges = true;
 
         var untranscribed = BatchOperationHelper.GetBatchWorkItems(_allEntries, _transcribeEsmLines);
         var processed = 0;
@@ -556,7 +822,6 @@ public sealed partial class PlaylistView : UserControl
         // Bounded channel: producer fills ahead, consumers drain
         var channel = Channel.CreateBounded<(VoiceFileEntry entry, byte[] wavData)>(workerCount * 2);
         var processors = new List<WhisperProcessor>();
-        Task? producerTask = null;
         Task[]? consumerTasks = null;
 
         try
@@ -568,7 +833,7 @@ public sealed partial class PlaylistView : UserControl
             }
 
             // Producer: extract WAV data from BSA (I/O-bound)
-            producerTask = Task.Run(async () =>
+            var producerTask = Task.Run(async () =>
             {
                 try
                 {
@@ -586,26 +851,36 @@ public sealed partial class PlaylistView : UserControl
                             else
                             {
                                 var count = Interlocked.Increment(ref processed);
-                                Interlocked.Increment(ref errors);
+                                var errorCount = Interlocked.Increment(ref errors);
                                 DispatcherQueue.TryEnqueue(() =>
                                 {
+                                    if (generation != _projectGeneration || _switchingProject)
+                                    {
+                                        return;
+                                    }
+
                                     BatchDrawer.AddResult(
                                         BatchOperationHelper.CreateProgressItem(
                                             entry, BatchItemStatus.Error, "extraction returned null"));
-                                    BatchDrawer.UpdateStats(count, total, errors, stopwatch.Elapsed);
+                                    BatchDrawer.UpdateStats(count, total, errorCount, stopwatch.Elapsed);
                                 });
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException)
                         {
                             var count = Interlocked.Increment(ref processed);
-                            Interlocked.Increment(ref errors);
+                            var errorCount = Interlocked.Increment(ref errors);
                             DispatcherQueue.TryEnqueue(() =>
                             {
+                                if (generation != _projectGeneration || _switchingProject)
+                                {
+                                    return;
+                                }
+
                                 BatchDrawer.AddResult(
                                     BatchOperationHelper.CreateProgressItem(
                                         entry, BatchItemStatus.Error, ex.Message));
-                                BatchDrawer.UpdateStats(count, total, errors, stopwatch.Elapsed);
+                                BatchDrawer.UpdateStats(count, total, errorCount, stopwatch.Elapsed);
                             });
                         }
                     }
@@ -641,7 +916,7 @@ public sealed partial class PlaylistView : UserControl
                                 lock (_projectLock)
                                 {
                                     var key = BatchOperationHelper.BuildProjectKey(entry);
-                                    _project!.Entries[key] =
+                                    project.Entries[key] =
                                         BatchOperationHelper.CreateTranscriptionEntry(
                                             transcribedText, "whisper", entry);
                                 }
@@ -657,10 +932,15 @@ public sealed partial class PlaylistView : UserControl
                         var count = Interlocked.Increment(ref processed);
                         var capturedStatus = itemStatus;
                         var capturedText = transcribedText;
-                        var capturedErrors = errors;
+                        var capturedErrors = Volatile.Read(ref errors);
 
                         DispatcherQueue.TryEnqueue(() =>
                         {
+                            if (generation != _projectGeneration || _switchingProject)
+                            {
+                                return;
+                            }
+
                             BatchDrawer.AddResult(
                                 BatchOperationHelper.CreateProgressItem(
                                     entry, capturedStatus, capturedText));
@@ -670,18 +950,9 @@ public sealed partial class PlaylistView : UserControl
                         // Auto-save every 10 entries
                         if (count % 10 == 0)
                         {
-                            Dictionary<string, TranscriptionEntry> snapshotEntries;
-                            lock (_projectLock)
-                            {
-                                snapshotEntries = new Dictionary<string, TranscriptionEntry>(_project!.Entries);
-                            }
-
-                            var projectSnapshot =
-                                BatchOperationHelper.CreateProjectSnapshot(_project!, snapshotEntries);
-
                             try
                             {
-                                await TranscriptionFileService.SaveAsync(_dataDirectory!, projectSnapshot, ct);
+                                await SaveProjectAsync(directory, project, ct);
                             }
                             catch
                             {
@@ -702,7 +973,7 @@ public sealed partial class PlaylistView : UserControl
 
             // Final save
             stopwatch.Stop();
-            await TranscriptionFileService.SaveAsync(_dataDirectory, _project, ct);
+            await SaveProjectAsync(directory, project, ct);
             BatchDrawer.CompleteBatch(
                 BatchOperationHelper.FormatCompletionMessage(processed, errors, stopwatch.Elapsed));
         }
@@ -710,30 +981,34 @@ public sealed partial class PlaylistView : UserControl
         {
             stopwatch.Stop();
             await BatchOperationHelper.DrainConsumersAsync(consumerTasks);
-            await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
+            await SaveProjectAsync(directory, project);
             BatchDrawer.CompleteBatch(BatchOperationHelper.FormatCancellationMessage(processed));
         }
         catch (Exception ex)
         {
             stopwatch.Stop();
             await BatchOperationHelper.DrainConsumersAsync(consumerTasks);
-            await TranscriptionFileService.SaveAsync(_dataDirectory, _project);
+            await SaveProjectAsync(directory, project);
             BatchDrawer.CompleteBatch($"Error: {ex.Message}");
         }
         finally
         {
-            // All consumers are done -- safe to dispose processors
-            foreach (var p in processors)
+            try
             {
-                await p.DisposeAsync();
+                // All consumers are done -- safe to dispose processors
+                foreach (var p in processors)
+                {
+                    await p.DisposeAsync();
+                }
             }
-
-            UpdateBatchButtonState();
-            ExportButton.IsEnabled = BatchOperationHelper.ShouldEnableExport(_project, _allEntries);
-            _batchCts?.Dispose();
-            _batchCts = null;
-
-            ApplyFilters();
+            finally
+            {
+                _batchCts?.Dispose();
+                _batchCts = null;
+                UpdateBatchButtonState();
+                ExportButton.IsEnabled = BatchOperationHelper.ShouldEnableExport(_project, _allEntries);
+                ApplyFilters();
+            }
         }
     }
 
@@ -743,45 +1018,73 @@ public sealed partial class PlaylistView : UserControl
 
     private async void Export_Click(object sender, RoutedEventArgs e)
     {
-        if (!BatchOperationHelper.HasExportableContent(_project, _showEsmSubtitles, _allEntries))
+        if (_switchingProject || _exportInProgress ||
+            !BatchOperationHelper.HasExportableContent(_project, _showEsmSubtitles, _allEntries))
         {
             return;
         }
 
-        var hwnd = WindowNative.GetWindowHandle(MainWindow.Instance!);
-        var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
-        var picker = new FileSavePicker(windowId)
+        var project = _project;
+        var entries = _allEntries;
+        var includeEsm = _showEsmSubtitles;
+        var generation = _projectGeneration;
+        var exportStarted = false;
+        try
         {
-            SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
-            SuggestedFileName = "transcriptions"
-        };
-        picker.FileTypeChoices.Add("CSV", [".csv"]);
-        picker.FileTypeChoices.Add("Plain Text", [".txt"]);
-
-        var result = await picker.PickSaveFileAsync();
-        if (result != null)
-        {
-            try
+            var hwnd = WindowNative.GetWindowHandle(MainWindow.Instance!);
+            var windowId = Win32Interop.GetWindowIdFromWindow(hwnd);
+            var picker = new FileSavePicker(windowId)
             {
-                _project ??= new TranscriptionProject();
+                SuggestedStartLocation = PickerLocationId.DocumentsLibrary,
+                SuggestedFileName = "transcriptions"
+            };
+            picker.FileTypeChoices.Add("CSV", [".csv"]);
+            picker.FileTypeChoices.Add("Plain Text", [".txt"]);
+
+            var result = await picker.PickSaveFileAsync();
+            if (result != null && generation == _projectGeneration && !_switchingProject && !_exportInProgress)
+            {
+                exportStarted = true;
+                _exportInProgress = true;
+                TranscriptionProject snapshot;
+                lock (_projectLock)
+                {
+                    snapshot = project == null
+                        ? new TranscriptionProject()
+                        : BatchOperationHelper.CreateProjectSnapshot(
+                            project, new Dictionary<string, TranscriptionEntry>(project.Entries));
+                }
 
                 var path = result.Path;
                 var ext = Path.GetExtension(path);
                 if (string.Equals(ext, ".csv", StringComparison.OrdinalIgnoreCase))
                 {
-                    await TranscriptionFileService.ExportCsvAsync(path, _project, _allEntries, _showEsmSubtitles);
+                    await TranscriptionFileService.ExportCsvAsync(path, snapshot, entries, includeEsm);
                 }
                 else
                 {
-                    await TranscriptionFileService.ExportTextAsync(path, _project, _allEntries, _showEsmSubtitles);
+                    await TranscriptionFileService.ExportTextAsync(path, snapshot, entries, includeEsm);
                 }
 
-                var esmNote = _showEsmSubtitles ? " (including ESM subtitles)" : "";
-                MainWindow.Instance?.SetStatus($"Exported transcriptions to {Path.GetFileName(path)}{esmNote}");
+                if (generation == _projectGeneration && !_switchingProject)
+                {
+                    var esmNote = includeEsm ? " (including ESM subtitles)" : "";
+                    MainWindow.Instance?.SetStatus($"Exported transcriptions to {Path.GetFileName(path)}{esmNote}");
+                }
             }
-            catch (Exception ex)
+        }
+        catch (Exception ex)
+        {
+            if (generation == _projectGeneration && !_switchingProject)
             {
                 MainWindow.Instance?.SetStatus($"Export error: {ex.Message}");
+            }
+        }
+        finally
+        {
+            if (exportStarted)
+            {
+                _exportInProgress = false;
             }
         }
     }

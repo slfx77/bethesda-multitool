@@ -9,6 +9,17 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Materials;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class StarfieldMaterialAlphaPolicyTests(ITestOutputHelper output)
 {
+    public enum AlphaUvFixture
+    {
+        None,
+        Identity,
+        Scaled,
+        MissingTarget,
+        WrongTypeTarget,
+        MalformedWrapper,
+        TrailingData
+    }
+
     private const string MaterialPath = @"materials\test\cutout.mat";
 
     [Fact]
@@ -118,8 +129,8 @@ public sealed class StarfieldMaterialAlphaPolicyTests(ITestOutputHelper output)
     {
         var db = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(BuildDatabase(
-                layerIsFlipbook: true,
-                flipbookDiffHasLeadingField: diffWritesAnotherFieldFirst)));
+                true,
+                diffWritesAnotherFieldFirst)));
 
         var policy = db.ResolveAlphaPolicy(MaterialPath);
 
@@ -138,11 +149,11 @@ public sealed class StarfieldMaterialAlphaPolicyTests(ITestOutputHelper output)
             archivePath is not null,
             RealAssetPaths.SkipMessage("Starfield materials archive"));
 
-        using var extractor = new Ba2Extractor(archivePath!);
+        using var extractor = new Ba2Extractor(archivePath);
         var entry = extractor.Archive.FindFile(@"materials\materialsbeta.cdb");
         Assert.NotNull(entry);
         var db = Assert.IsType<StarfieldMaterialDatabase>(
-            StarfieldMaterialDatabase.Parse(extractor.ExtractFile(entry!)));
+            StarfieldMaterialDatabase.Parse(extractor.ExtractFile(entry)));
 
         var census = db.BuildAlphaCensus();
         output.WriteLine("{0}", census);
@@ -230,6 +241,7 @@ public sealed class StarfieldMaterialAlphaPolicyTests(ITestOutputHelper output)
                 uvRootResource.Dir,
                 uvStreamRoot));
         }
+
         objects.AddRange(ObjectRecord(
             layeredMaterialsRootResource.File,
             layeredMaterialsRootResource.Ext,
@@ -299,6 +311,7 @@ public sealed class StarfieldMaterialAlphaPolicyTests(ITestOutputHelper output)
                 "OBJT",
                 Concat(F32(alphaUvFixture == AlphaUvFixture.Scaled ? 2f : 1f), F32(1f))));
         }
+
         if (layerIsFlipbook)
         {
             components.Add(flipbookDiffHasLeadingField
@@ -335,34 +348,40 @@ public sealed class StarfieldMaterialAlphaPolicyTests(ITestOutputHelper output)
         return [.. file];
     }
 
-    private static byte[] ObjectRecord(uint file, uint ext, uint dir, uint id, uint baseId = 0) =>
-        Concat(U32(file), U32(ext), U32(dir), U32(id), U32(baseId), [1]);
+    private static byte[] ObjectRecord(uint file, uint ext, uint dir, uint id, uint baseId = 0)
+    {
+        return Concat(U32(file), U32(ext), U32(dir), U32(id), U32(baseId), [1]);
+    }
 
-    private static byte[] Chunk(string tag, byte[] body) =>
-        Concat(Encoding.ASCII.GetBytes(tag), U32((uint)body.Length), body);
+    private static byte[] Chunk(string tag, byte[] body)
+    {
+        return Concat(Encoding.ASCII.GetBytes(tag), U32((uint)body.Length), body);
+    }
 
-    private static byte[] Str(string value) =>
-        Concat(U16((ushort)value.Length), Encoding.ASCII.GetBytes(value));
+    private static byte[] Str(string value)
+    {
+        return Concat(U16((ushort)value.Length), Encoding.ASCII.GetBytes(value));
+    }
 
-    private static byte[] F32(float value) => BitConverter.GetBytes(value);
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
+    private static byte[] F32(float value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {
         var result = new List<byte>();
         foreach (var part in parts) result.AddRange(part);
         return [.. result];
-    }
-
-    public enum AlphaUvFixture
-    {
-        None,
-        Identity,
-        Scaled,
-        MissingTarget,
-        WrongTypeTarget,
-        MalformedWrapper,
-        TrailingData
     }
 }

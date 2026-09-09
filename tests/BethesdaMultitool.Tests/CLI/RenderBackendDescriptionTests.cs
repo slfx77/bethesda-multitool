@@ -90,6 +90,6 @@ public class RenderBackendDescriptionTests
         Assert.True(option is not null,
             $"`{command.Name}` exposes no `{name}` option; found: "
             + string.Join(", ", command.Options.Select(o => o.Name)));
-        return option!;
+        return option;
     }
 }

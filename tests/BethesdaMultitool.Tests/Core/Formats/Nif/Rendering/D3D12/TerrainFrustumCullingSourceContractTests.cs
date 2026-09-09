@@ -9,8 +9,11 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.D3D12;
 /// </summary>
 public sealed class TerrainFrustumCullingSourceContractTests
 {
-    private static string Source(string fileName) => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", fileName);
+    private static string Source(string fileName)
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", fileName);
+    }
 
     [Fact]
     public void ExactHeightBounds_PropagateThroughBothAsyncAndSyncCachePaths()

@@ -84,23 +84,37 @@ internal struct TerrainVertex
     ///     Packs straight from the source bytes, so the LAND <c>VCLR</c> path never passes through a
     ///     float. Alpha is opaque: terrain vertex colour is a tint, and LAND carries no alpha.
     /// </summary>
-    public static uint PackColor(byte r, byte g, byte b) => PackColor(r, g, b, 255);
+    public static uint PackColor(byte r, byte g, byte b)
+    {
+        return PackColor(r, g, b, 255);
+    }
 
-    public static uint PackColor(byte r, byte g, byte b, byte a) =>
-        r | ((uint)g << 8) | ((uint)b << 16) | ((uint)a << 24);
+    public static uint PackColor(byte r, byte g, byte b, byte a)
+    {
+        return r | ((uint)g << 8) | ((uint)b << 16) | ((uint)a << 24);
+    }
 
     /// <summary>
     ///     Packs a float colour, clamping and rounding to the nearest representable byte. Used only
     ///     where a caller already holds floats; the <c>VCLR</c> path uses the byte overload.
     /// </summary>
-    public static uint PackColor(Vector4 color) => PackColor(
-        ToByte(color.X), ToByte(color.Y), ToByte(color.Z), ToByte(color.W));
+    public static uint PackColor(Vector4 color)
+    {
+        return PackColor(
+            ToByte(color.X), ToByte(color.Y), ToByte(color.Z), ToByte(color.W));
+    }
 
-    public static Vector4 UnpackColor(uint packed) => new(
-        (packed & 0xFF) / 255f,
-        ((packed >> 8) & 0xFF) / 255f,
-        ((packed >> 16) & 0xFF) / 255f,
-        ((packed >> 24) & 0xFF) / 255f);
+    public static Vector4 UnpackColor(uint packed)
+    {
+        return new Vector4(
+            (packed & 0xFF) / 255f,
+            ((packed >> 8) & 0xFF) / 255f,
+            ((packed >> 16) & 0xFF) / 255f,
+            ((packed >> 24) & 0xFF) / 255f);
+    }
 
-    private static byte ToByte(float value) => (byte)MathF.Round(Math.Clamp(value, 0f, 1f) * 255f);
+    private static byte ToByte(float value)
+    {
+        return (byte)MathF.Round(Math.Clamp(value, 0f, 1f) * 255f);
+    }
 }

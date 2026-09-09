@@ -1,6 +1,5 @@
 using System.Numerics;
 using System.Runtime.InteropServices;
-using BethesdaMultitool;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
@@ -31,9 +30,15 @@ public sealed class SkyrimDirectionalAmbientTransformTests
     [Fact]
     public void DragonsreachFixture_UpNormalUsesRetailAffineResultInsteadOfDarkPositiveZFace()
     {
-        static Vector3 Rgb(float r, float g, float b) => new(r / 255f, g / 255f, b / 255f);
-        static Vector4 Rgba(float r, float g, float b, float a) =>
-            new(r / 255f, g / 255f, b / 255f, a / 255f);
+        static Vector3 Rgb(float r, float g, float b)
+        {
+            return new Vector3(r / 255f, g / 255f, b / 255f);
+        }
+
+        static Vector4 Rgba(float r, float g, float b, float a)
+        {
+            return new Vector4(r / 255f, g / 255f, b / 255f, a / 255f);
+        }
 
         // CELL 0x000165A3 after its LTMP inheritance is applied. Order is the authored X+/X-,
         // Y+/Y-, Z+/Z- order passed by retail Sky::UpdateColors to AE ID 105643.
@@ -169,6 +174,8 @@ public sealed class SkyrimDirectionalAmbientTransformTests
         AssertScalar(expected.Z, actual.Z);
     }
 
-    private static void AssertScalar(float expected, float actual) =>
+    private static void AssertScalar(float expected, float actual)
+    {
         Assert.InRange(MathF.Abs(expected - actual), 0f, 0.000002f);
+    }
 }

@@ -32,8 +32,9 @@ internal sealed class OblivionMobileLevel2DSource : ILevel2DSource
     private static readonly Level2DLayer[] LayerOrder =
         [Level2DLayer.Floor, Level2DLayer.Overlay, Level2DLayer.Walls];
 
-    private readonly OblivionMobileTileMap _map;
     private readonly OblivionMobileAtlas _atlas;
+
+    private readonly OblivionMobileTileMap _map;
     private readonly Func<string, byte[]?> _sheetLoader;
     private readonly Dictionary<string, DecodedTexture?> _sheets = new(StringComparer.OrdinalIgnoreCase);
 
@@ -55,6 +56,24 @@ internal sealed class OblivionMobileLevel2DSource : ILevel2DSource
     /// <inheritdoc />
     public IReadOnlyList<Level2DLayer> Layers => LayerOrder;
 
+    /// <inheritdoc />
+    public Level2DRender? Render(Level2DLayer layer)
+    {
+        if (layer == Level2DLayer.Walls)
+        {
+            return RenderPassability();
+        }
+
+        var layers = layer switch
+        {
+            Level2DLayer.Floor => Enumerable.Range(0, Math.Max(0, _map.TileLayers.Count - 1)).ToArray(),
+            Level2DLayer.Overlay => _map.TileLayers.Count > 0 ? [_map.TileLayers.Count - 1] : [],
+            _ => []
+        };
+
+        return layers.Length == 0 ? null : Composite(layers);
+    }
+
     /// <summary>
     ///     Wraps one level. <paramref name="sheetLoader" /> resolves an atlas sheet PATH to its PNG
     ///     bytes — from the JAR, a directory, or anywhere else — and returns null when the sheet is
@@ -72,24 +91,6 @@ internal sealed class OblivionMobileLevel2DSource : ILevel2DSource
 
         return new OblivionMobileLevel2DSource(
             displayName ?? map.Name, map, atlas, sheetLoader);
-    }
-
-    /// <inheritdoc />
-    public Level2DRender? Render(Level2DLayer layer)
-    {
-        if (layer == Level2DLayer.Walls)
-        {
-            return RenderPassability();
-        }
-
-        var layers = layer switch
-        {
-            Level2DLayer.Floor => Enumerable.Range(0, Math.Max(0, _map.TileLayers.Count - 1)).ToArray(),
-            Level2DLayer.Overlay => _map.TileLayers.Count > 0 ? [_map.TileLayers.Count - 1] : [],
-            _ => (int[])[]
-        };
-
-        return layers.Length == 0 ? null : Composite(layers);
     }
 
     /// <summary>
@@ -186,7 +187,10 @@ internal sealed class OblivionMobileLevel2DSource : ILevel2DSource
     ///     tile layers alone. Passing one index to the other reads the passability plane as tile
     ///     ids, which renders a full, plausible-looking level built entirely from the wrong tile.
     /// </summary>
-    private byte TileAt(int tileLayer, int i, int j) => _map.Cell(tileLayer + 1, i, j);
+    private byte TileAt(int tileLayer, int i, int j)
+    {
+        return _map.Cell(tileLayer + 1, i, j);
+    }
 
     /// <summary>Decodes a sheet once and remembers the outcome, including a failure.</summary>
     private DecodedTexture? LoadSheet(string path)
@@ -240,14 +244,14 @@ internal sealed class OblivionMobileLevel2DSource : ILevel2DSource
                     continue;
                 }
 
-                var source = ((sourceY * sheet.Width) + sourceX) * 4;
+                var source = (sourceY * sheet.Width + sourceX) * 4;
                 var alpha = pixels[source + 3];
                 if (alpha == 0)
                 {
                     continue;
                 }
 
-                var target = ((y * canvasWidth) + x) * 4;
+                var target = (y * canvasWidth + x) * 4;
                 if (alpha == 255)
                 {
                     canvas[target] = pixels[source];
@@ -265,8 +269,10 @@ internal sealed class OblivionMobileLevel2DSource : ILevel2DSource
         }
     }
 
-    private static byte Over(byte source, byte destination, byte alpha) =>
-        (byte)(((source * alpha) + (destination * (255 - alpha))) / 255);
+    private static byte Over(byte source, byte destination, byte alpha)
+    {
+        return (byte)(((source * alpha) + (destination * (255 - alpha))) / 255);
+    }
 
     /// <summary>
     ///     The passability grid as diamonds — the one layer that is not art. Drawn in the same
@@ -282,7 +288,7 @@ internal sealed class OblivionMobileLevel2DSource : ILevel2DSource
 
         foreach (var (i, j) in OblivionMobileIsometric.DrawOrder(_map.Width, _map.Height))
         {
-            var value = _map.Passability[(j * _map.Width) + i];
+            var value = _map.Passability[j * _map.Width + i];
             var (r, g, b) = value == 0 ? ((byte)44, (byte)46, (byte)56) : ((byte)96, (byte)176, (byte)120);
             var (cellX, cellY) = OblivionMobileIsometric.CellOrigin(i, j);
             FillDiamond(rgba, width, height, cellX + originX, cellY, r, g, b);
@@ -298,7 +304,7 @@ internal sealed class OblivionMobileLevel2DSource : ILevel2DSource
         for (var row = 0; row < OblivionMobileIsometric.TileHeight; row++)
         {
             // Half-width of the diamond at this row: widest at the middle, a point at each end.
-            var fromMiddle = Math.Abs(row - (OblivionMobileIsometric.TileHeight / 2)) * 2;
+            var fromMiddle = Math.Abs(row - OblivionMobileIsometric.TileHeight / 2) * 2;
             var half = OblivionMobileIsometric.TileWidth / 2 - fromMiddle;
             var py = y + row;
             if (half <= 0 || py < 0 || py >= canvasHeight)
@@ -308,13 +314,13 @@ internal sealed class OblivionMobileLevel2DSource : ILevel2DSource
 
             for (var column = -half; column < half; column++)
             {
-                var px = x + (OblivionMobileIsometric.TileWidth / 2) + column;
+                var px = x + OblivionMobileIsometric.TileWidth / 2 + column;
                 if (px < 0 || px >= canvasWidth)
                 {
                     continue;
                 }
 
-                var offset = ((py * canvasWidth) + px) * 4;
+                var offset = (py * canvasWidth + px) * 4;
                 canvas[offset] = r;
                 canvas[offset + 1] = g;
                 canvas[offset + 2] = b;

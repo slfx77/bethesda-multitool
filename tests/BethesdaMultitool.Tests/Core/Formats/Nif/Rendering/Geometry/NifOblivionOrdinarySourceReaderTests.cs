@@ -240,8 +240,10 @@ public sealed class NifOblivionOrdinarySourceReaderTests
         Assert.Null(unknown.AuthoredOblivionOrdinaryDiffusePath);
     }
 
-    private static string? Read(NifOblivionBodySkinTestData fixture) =>
-        NifOblivionOrdinarySourceReader.ReadDiffusePath(fixture.Data, fixture.Info, 0);
+    private static string? Read(NifOblivionBodySkinTestData fixture)
+    {
+        return NifOblivionOrdinarySourceReader.ReadDiffusePath(fixture.Data, fixture.Info, 0);
+    }
 
     private static (byte[] Data, Dictionary<string, int> Offsets) AppendNode(
         NifOblivionBodySkinTestData fixture, ushort flags)
@@ -250,19 +252,29 @@ public sealed class NifOblivionOrdinarySourceReaderTests
         using var stream = new MemoryStream();
         stream.Write(fixture.Data);
         var start = checked((int)stream.Position);
-        using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
-        writer.Write(4u); writer.Write(Encoding.ASCII.GetBytes("Root"));
-        Mark("extra"); writer.Write(0u);
-        Mark("controller"); writer.Write(-1);
+        using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
+        writer.Write(4u);
+        writer.Write(Encoding.ASCII.GetBytes("Root"));
+        Mark("extra");
+        writer.Write(0u);
+        Mark("controller");
+        writer.Write(-1);
         writer.Write(flags);
         WriteVector(Vector3.Zero);
-        WriteVector(Vector3.UnitX); WriteVector(Vector3.UnitY); WriteVector(Vector3.UnitZ);
+        WriteVector(Vector3.UnitX);
+        WriteVector(Vector3.UnitY);
+        WriteVector(Vector3.UnitZ);
         writer.Write(1f);
-        Mark("properties"); writer.Write(0u);
-        Mark("collision"); writer.Write(-1);
-        Mark("children"); writer.Write(1u);
-        Mark("child"); writer.Write(0);
-        Mark("effects"); writer.Write(0u);
+        Mark("properties");
+        writer.Write(0u);
+        Mark("collision");
+        writer.Write(-1);
+        Mark("children");
+        writer.Write(1u);
+        Mark("child");
+        writer.Write(0);
+        Mark("effects");
+        writer.Write(0u);
         writer.Flush();
         fixture.Info.Blocks.Add(new BlockInfo
         {
@@ -274,10 +286,16 @@ public sealed class NifOblivionOrdinarySourceReaderTests
         fixture.Info.BlockCount++;
         return (stream.ToArray(), offsets);
 
-        void Mark(string name) => offsets.Add(name, checked((int)stream.Position));
+        void Mark(string name)
+        {
+            offsets.Add(name, checked((int)stream.Position));
+        }
+
         void WriteVector(Vector3 value)
         {
-            writer.Write(value.X); writer.Write(value.Y); writer.Write(value.Z);
+            writer.Write(value.X);
+            writer.Write(value.Y);
+            writer.Write(value.Z);
         }
     }
 }

@@ -23,10 +23,10 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
         Assert.SkipUnless(dataDir is not null, RealAssetPaths.SkipMessage("Fallout 76 Data folder"));
 
         AssertMeshViewerGlb(
-            Path.Combine(dataDir!, "SeventySix - Meshes.ba2"),
+            Path.Combine(dataDir, "SeventySix - Meshes.ba2"),
             @"meshes\architecture\warehouse\wrhsplatfloor01.nif",
             "fo76-warehouse-floor",
-            requireNormalMap: true);
+            true);
     }
 
     [Fact]
@@ -37,10 +37,10 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
         Assert.SkipUnless(dataDir is not null, RealAssetPaths.SkipMessage("Fallout 76 Data folder"));
 
         AssertMeshViewerGlb(
-            Path.Combine(dataDir!, "SeventySix - Meshes.ba2"),
+            Path.Combine(dataDir, "SeventySix - Meshes.ba2"),
             @"meshes\landscape\trees\mtntoppinetree_med01.nif",
             "fo76-mountaintop-pine",
-            requireNormalMap: true);
+            true);
     }
 
     [Fact]
@@ -51,13 +51,13 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
         Assert.SkipUnless(dataDir is not null, RealAssetPaths.SkipMessage("Starfield Data folder"));
 
         AssertMeshViewerGlb(
-            Path.Combine(dataDir!, "Starfield - Meshes01.ba2"),
+            Path.Combine(dataDir, "Starfield - Meshes01.ba2"),
             @"meshes\architecture\catwalks\industrial\walks\catindwalksm2waya01.nif",
             "starfield-industrial-catwalk",
-            requireNormalMap: true,
-            requireConstantLerpBake: true,
-            requireCompleteExternalGeometry: true,
-            requireSiblingExternalGeometry: true);
+            true,
+            true,
+            true,
+            true);
     }
 
     [Fact]
@@ -68,10 +68,10 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
         Assert.SkipUnless(dataDir is not null, RealAssetPaths.SkipMessage("Starfield Data folder"));
 
         AssertMeshViewerGlb(
-            Path.Combine(dataDir!, "Starfield - Meshes01.ba2"),
+            Path.Combine(dataDir, "Starfield - Meshes01.ba2"),
             @"meshes\animobjects\animobjectspacesuit_constellation_helmet.nif",
             "starfield-constellation-helmet",
-            requireNormalMap: true,
+            true,
             requireCompleteExternalGeometry: true,
             requireSiblingExternalGeometry: true);
     }
@@ -89,9 +89,10 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
 
         using var service = NifBrowserService.CreateFromBsa(archivePath);
         var nifData = service.ReadNifData(nifPath);
-        Assert.SkipUnless(nifData is not null, $"Retail fixture is absent from {Path.GetFileName(archivePath)}: {nifPath}");
+        Assert.SkipUnless(nifData is not null,
+            $"Retail fixture is absent from {Path.GetFileName(archivePath)}: {nifPath}");
 
-        var build = service.BuildGlbWithDiagnostics(nifData!, nifPath);
+        var build = service.BuildGlbWithDiagnostics(nifData, nifPath);
         var glb = build.GlbBytes;
 
         Assert.NotNull(glb);
@@ -124,7 +125,7 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
                     StringComparison.OrdinalIgnoreCase));
         }
 
-        Assert.True(glb!.Length > 1_000, $"Mesh Viewer GLB was unexpectedly small ({glb.Length} bytes).");
+        Assert.True(glb.Length > 1_000, $"Mesh Viewer GLB was unexpectedly small ({glb.Length} bytes).");
         var artifactDirectory = Path.Combine(
             SourceContract.RepoRoot,
             "TestOutput",
@@ -134,7 +135,7 @@ public sealed class ModernNifBrowserIntegrationTests(ITestOutputHelper output)
         var artifactPath = Path.Combine(artifactDirectory, artifactName + ".glb");
         File.WriteAllBytes(artifactPath, glb);
         output.WriteLine("Mesh Viewer review artifact: {0}", artifactPath);
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         var model = ModelRoot.ReadGLB(stream);
         Assert.NotEmpty(model.LogicalMeshes);
         Assert.Contains(model.LogicalMeshes, mesh => mesh.Primitives.Count > 0);

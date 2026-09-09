@@ -144,7 +144,7 @@ public class EsmParserTests
         var header = EsmParser.ParseRecordHeader(buf, bigEndian);
 
         Assert.NotNull(header);
-        Assert.Equal("WEAP", header!.Signature);
+        Assert.Equal("WEAP", header.Signature);
         Assert.Equal(100u, header.DataSize);
         Assert.Equal(0x00012345u, header.FormId);
     }
@@ -180,7 +180,7 @@ public class EsmParserTests
         var header = EsmParser.ParseRecordHeader(buf);
 
         Assert.NotNull(header);
-        Assert.True(header!.IsCompressed);
+        Assert.True(header.IsCompressed);
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public class EsmParserTests
         var header = EsmParser.ParseRecordHeader(buf);
 
         Assert.NotNull(header);
-        Assert.Equal("NPC_", header!.Signature);
+        Assert.Equal("NPC_", header.Signature);
     }
 
     #endregion
@@ -214,7 +214,7 @@ public class EsmParserTests
         var header = EsmParser.ParseGroupHeader(buf);
 
         Assert.NotNull(header);
-        Assert.Equal(100u, header!.GroupSize);
+        Assert.Equal(100u, header.GroupSize);
         Assert.Equal(0, header.GroupType);
         Assert.Equal("WEAP", header.LabelAsSignature);
     }
@@ -370,7 +370,7 @@ public class EsmParserTests
         var header = EsmParser.ParseFileHeader(buf);
 
         Assert.NotNull(header);
-        Assert.False(header!.IsBigEndian);
+        Assert.False(header.IsBigEndian);
         Assert.Equal(1.34f, header.Version, 0.01f);
         Assert.Equal(0x001000u, header.NextObjectId);
     }
@@ -402,7 +402,7 @@ public class EsmParserTests
         var header = EsmParser.ParseFileHeader(buf);
 
         Assert.NotNull(header);
-        Assert.Equal("TestAuthor", header!.Author);
+        Assert.Equal("TestAuthor", header.Author);
     }
 
     [Fact]

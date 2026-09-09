@@ -30,7 +30,7 @@ public sealed class ArmorAddonRecordScannerTests
         var scanEntry = ArmorAddonRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(scanEntry);
-        Assert.Equal(0x10u, scanEntry!.BipedFlags);
+        Assert.Equal(0x10u, scanEntry.BipedFlags);
         Assert.Equal(@"weapons\hand2hand\powerfist.nif", scanEntry.MaleModelPath);
     }
 }

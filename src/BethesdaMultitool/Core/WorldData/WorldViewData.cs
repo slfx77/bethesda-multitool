@@ -1,4 +1,3 @@
-using System.Numerics;
 using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;

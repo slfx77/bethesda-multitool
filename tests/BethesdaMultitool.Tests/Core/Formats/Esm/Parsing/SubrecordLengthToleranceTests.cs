@@ -1,11 +1,10 @@
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
-using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;

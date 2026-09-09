@@ -324,6 +324,12 @@ internal sealed class RenderableSubmesh
     /// <summary>True if BSShaderFlags bit 17 (Eye_Environment_Mapping = 0x20000) is set.</summary>
     public bool IsEyeEnvmap { get; set; }
 
+    /// <summary>Exact stock TES4 eye provenance, assigned only by actor eye preparation.</summary>
+    internal bool HasReviewedOblivionEyeSource { get; set; }
+
+    /// <summary>Stored eye NiBound, carried through attachment transforms independently of FaceGen deformation.</summary>
+    internal NifLocalBounds? OblivionEyeBounds { get; set; }
+
     /// <summary>BSShaderProperty EnvMapScale — controls eye cubemap reflection strength. Typical 0.5-1.0.</summary>
     public float EnvMapScale { get; init; }
 
@@ -362,6 +368,9 @@ internal sealed class RenderableSubmesh
     ///     SKIN2000 normal/direct/cubic-rim lighting specialization.
     /// </summary>
     public bool IsFaceGen { get; set; }
+
+    /// <summary>Original stock TES4 head maps; the composed diffuse remains the CPU/export input.</summary>
+    internal ClassicSkinAuthoredAlbedo? AuthoredSkinAlbedo { get; set; }
 
     /// <summary>
     ///     Legacy sampled color retained from the sibling <c>_sk</c> texture for descriptor

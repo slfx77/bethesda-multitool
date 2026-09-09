@@ -1,9 +1,5 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
 using System.IO.Compression;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -39,7 +35,7 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
     {
         try
         {
-            Directory.Delete(_root, recursive: true);
+            Directory.Delete(_root, true);
         }
         catch (IOException)
         {
@@ -99,9 +95,9 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
 
         // Palette facts are measured, not assumed: a component over 63 is what says these are
         // RGB888 rather than 6-bit VGA, and the magenta key is present at the fixture's entry 6.
-        Assert.Equal(true, zone.Fields["PaletteIs8Bit"]);
+        Assert.True(Assert.IsType<bool>(zone.Fields["PaletteIs8Bit"]));
         Assert.Equal(255, zone.Fields["PaletteMaxComponent"]);
-        Assert.Equal(true, zone.Fields["PaletteHasColourKey"]);
+        Assert.True(Assert.IsType<bool>(zone.Fields["PaletteHasColourKey"]));
         Assert.Equal(6, zone.Fields["PaletteColourKeyIndex"]);
 
         // The two tables too small to deserve a family ride inline on the zone.
@@ -128,15 +124,15 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
         Assert.Equal(1f, placement.Fields["Scale"]);
         Assert.Equal(16384, placement.Fields["Angle2"]);
 
-        Assert.Equal(true, placement.Fields["EntityResolved"]);
+        Assert.True(Assert.IsType<bool>(placement.Fields["EntityResolved"]));
         Assert.Equal("door.s", placement.Fields["EntityName"]);
         Assert.Equal(11, placement.Fields["EntityKind"]);
         Assert.Equal(1, placement.Fields["ModelIndex"]);
         Assert.Equal("door.bin", placement.Fields["ModelFile"]);
-        Assert.Equal(true, placement.Fields["ModelResident"]);
+        Assert.True(Assert.IsType<bool>(placement.Fields["ModelResident"]));
 
         // Its script field restates the entity's own, so it is not a per-instance override.
-        Assert.Equal(false, placement.Fields["ScriptOverride"]);
+        Assert.False(Assert.IsType<bool>(placement.Fields["ScriptOverride"]));
     }
 
     [Fact]
@@ -148,13 +144,13 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
         var overridden = records.Single(r => r.RecordType == ShadowkeyRecordSource.EntityRecordType
                                              && (string?)r.Fields["InstanceName"] == "skelos2");
         Assert.Equal(@"monsters\Skelos_Azra.s", overridden.FullName);
-        Assert.Equal(true, overridden.Fields["ScriptOverride"]);
+        Assert.True(Assert.IsType<bool>(overridden.Fields["ScriptOverride"]));
 
         // Entity 40 points at model slot 2, which this zone's residency list blanks to NULL.bin.
         var absent = records.Single(r => r.RecordType == ShadowkeyRecordSource.EntityRecordType
                                          && (string?)r.Fields["InstanceName"] == "ghost");
         Assert.Equal(2, absent.Fields["ModelIndex"]);
-        Assert.Equal(false, absent.Fields["ModelResident"]);
+        Assert.False(Assert.IsType<bool>(absent.Fields["ModelResident"]));
     }
 
     [Fact]
@@ -164,11 +160,11 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
         // one-to-many: the record has to report the ambiguity rather than pretend it picked one.
         WriteZoneFiles(
             "beta",
-            zon: Zon(("gate", 0, 0, 1, 1)),
-            stn: Stn(("resistDisarm[4]", "noname")),
-            pth: Pth(),
-            sur: Sur((7, 7, 0, 0, 0, 0)),
-            ent: Ent(
+            Zon(("gate", 0, 0, 1, 1)),
+            Stn(("resistDisarm[4]", "noname")),
+            Pth(),
+            Sur((7, 7, 0, 0, 0, 0)),
+            Ent(
                 Placement(0, 0, 0, 0, 10, "noname", "chest_loot"),
                 Placement(0, 0, 0, 0, 10, "noname", "chest_loot")));
 
@@ -327,11 +323,11 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
     {
         WriteZoneFiles(
             stem,
-            zon: Zon(("temple", 0, 0, 3, 1), ("queue", 2, 0, 2, 0)),
-            stn: Stn(("resistDisarm[15]", "chest1")),
-            pth: Pth(("Patrol", [(256u, 512u), (768u, 1152u)])),
-            sur: Sur((7, 7, 0, 0, 0, 0), (6, 6, 765, -150, 1, 1), (5, 5, -720, 830, 32, 1)),
-            ent: Ent(
+            Zon(("temple", 0, 0, 3, 1), ("queue", 2, 0, 2, 0)),
+            Stn(("resistDisarm[15]", "chest1")),
+            Pth(("Patrol", [(256u, 512u), (768u, 1152u)])),
+            Sur((7, 7, 0, 0, 0, 0), (6, 6, 765, -150, 1, 1), (5, 5, -720, 830, 32, 1)),
+            Ent(
                 Placement(896, 1088, -256, 16384, 10, "door12", "door.s"),
                 Placement(0, 0, 0, 0, 30, "skelos2", @"monsters\Skelos_Azra.s"),
                 Placement(0, 0, 0, 0, 40, "ghost", @"monsters\ghost.s"),
@@ -371,7 +367,7 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
         // Three slots, matching the three lines of the models.txt the zone fixture writes: the
         // packed triangle plus the two placeholders that carry no data.
         var mesh = Mesh();
-        var index = new byte[4 + (3 * 8)];
+        var index = new byte[4 + 3 * 8];
         BinaryPrimitives.WriteUInt32LittleEndian(index, 3);
         BinaryPrimitives.WriteUInt32LittleEndian(index.AsSpan(4), 0);
         BinaryPrimitives.WriteUInt32LittleEndian(index.AsSpan(8), (uint)mesh.Length);
@@ -392,11 +388,11 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
 
     private static byte[] Zon(params (string Name, ushort X0, ushort Y0, ushort X1, ushort Y1)[] rectangles)
     {
-        var bytes = new byte[2 + (72 * rectangles.Length)];
+        var bytes = new byte[2 + 72 * rectangles.Length];
         BinaryPrimitives.WriteUInt16LittleEndian(bytes, (ushort)rectangles.Length);
         for (var i = 0; i < rectangles.Length; i++)
         {
-            var record = bytes.AsSpan(2 + (i * 72));
+            var record = bytes.AsSpan(2 + i * 72);
             BinaryPrimitives.WriteUInt16LittleEndian(record, rectangles[i].X0);
             BinaryPrimitives.WriteUInt16LittleEndian(record[2..], rectangles[i].Y0);
             BinaryPrimitives.WriteUInt16LittleEndian(record[4..], rectangles[i].X1);
@@ -443,11 +439,11 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
 
     private static byte[] Sur(params (byte A, byte B, short P, short Q, byte Flags, byte Texture)[] rows)
     {
-        var bytes = new byte[1 + (8 * rows.Length)];
+        var bytes = new byte[1 + 8 * rows.Length];
         bytes[0] = (byte)rows.Length;
         for (var i = 0; i < rows.Length; i++)
         {
-            var record = bytes.AsSpan(1 + (i * 8));
+            var record = bytes.AsSpan(1 + i * 8);
             record[0] = rows[i].A;
             record[1] = rows[i].B;
             BinaryPrimitives.WriteInt16LittleEndian(record[2..], rows[i].P);
@@ -461,11 +457,11 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
 
     private static byte[] Ent(params byte[][] placements)
     {
-        var bytes = new byte[4 + (72 * placements.Length)];
+        var bytes = new byte[4 + 72 * placements.Length];
         BinaryPrimitives.WriteUInt32LittleEndian(bytes, (uint)placements.Length);
         for (var i = 0; i < placements.Length; i++)
         {
-            placements[i].CopyTo(bytes.AsSpan(4 + (i * 72)));
+            placements[i].CopyTo(bytes.AsSpan(4 + i * 72));
         }
 
         return bytes;
@@ -492,9 +488,9 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
         var bytes = new byte[768];
         for (var i = 0; i < 256; i++)
         {
-            bytes[(i * 3) + 0] = (byte)i;
-            bytes[(i * 3) + 1] = (byte)(255 - i);
-            bytes[(i * 3) + 2] = 128;
+            bytes[i * 3 + 0] = (byte)i;
+            bytes[i * 3 + 1] = (byte)(255 - i);
+            bytes[i * 3 + 2] = 128;
         }
 
         bytes[18] = 0xFF;
@@ -505,7 +501,7 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
 
     private static byte[] Zmp(string zoneName, int width, int height)
     {
-        var bytes = new byte[132 + (width * height * 6)];
+        var bytes = new byte[132 + width * height * 6];
         WriteFixedText(bytes.AsSpan(0, 32), zoneName);
         WriteFixedText(bytes.AsSpan(32, 32), "tester");
         WriteFixedText(bytes.AsSpan(64, 64), "synthetic");
@@ -516,7 +512,7 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
 
     private static byte[] Ztx(int count)
     {
-        var bytes = new byte[1 + (count * 128 * 128)];
+        var bytes = new byte[1 + count * 128 * 128];
         bytes[0] = (byte)count;
         return bytes;
     }
@@ -525,7 +521,7 @@ public sealed class ShadowkeyRecordSourceTests : IDisposable
     private static byte[] Envelope(byte[] payload)
     {
         using var buffer = new MemoryStream();
-        using (var deflater = new ZLibStream(buffer, CompressionLevel.Fastest, leaveOpen: true))
+        using (var deflater = new ZLibStream(buffer, CompressionLevel.Fastest, true))
         {
             deflater.Write(payload, 0, payload.Length);
         }

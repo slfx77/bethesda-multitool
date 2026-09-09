@@ -4,6 +4,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
@@ -29,8 +30,19 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
     private const float RawSkyPreviewHour = 12f;
     private static readonly Logger Log = Logger.Instance;
 
+    // Capture once for this session. The app-wide pipeline cache owns resources, never this switch.
+    private readonly bool _classicSkinFactorOneRequested =
+        BethesdaViewerClassicSkinDiagnosticPolicy.IsRequested(Environment.GetEnvironmentVariable(
+            BethesdaViewerClassicSkinDiagnosticPolicy.EnvironmentVariable));
     private readonly List<RawSkyCandidate> _rawSkyCandidates = [];
     private readonly List<GpuTextureCache12.Entry> _waterTextureEntries = [];
+    private readonly bool _independentSkinAlbedoRequested =
+        BethesdaViewerClassicSkinAlbedoPolicy.IsRequested(Environment.GetEnvironmentVariable(
+            BethesdaViewerClassicSkinAlbedoPolicy.EnvironmentVariable));
+    private readonly Dictionary<int, ClassicSkinIndependentGpuBinding12> _independentSkinBindings = [];
+    private readonly bool _oblivionEyesRequested = BethesdaViewerOblivionEyePolicy.IsRequested(
+        Environment.GetEnvironmentVariable(BethesdaViewerOblivionEyePolicy.EnvironmentVariable));
+    private OblivionEyeGpuBinding12? _eyeBinding;
     private BethesdaViewerScene? _scene;
     private DecodedBethesdaViewerScene12? _decodedScene;
     private BethesdaViewerPosedScene12? _posedScene;
@@ -457,6 +469,8 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
     private bool TexturesSettled =>
         _mesh?.TexturesReady == true &&
         _waterTextureEntries.All(static entry => entry.IsReady) &&
+        _independentSkinBindings.Values.All(static binding => binding.IsReady) &&
+        (_eyeBinding?.IsReady ?? true) &&
         _textureCache is
         {
             PendingResolveCount: 0,
@@ -585,9 +599,23 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
                     _pipelines,
                     graphics.RingBuffer,
                     graphics.DescriptorHeap,
-                    _textureCache.WhitePixel.BindlessIndex);
+                    _textureCache.WhitePixel.BindlessIndex,
+                    _classicSkinFactorOneRequested,
+                    _independentSkinAlbedoRequested,
+                    AcquireIndependentSkinAlbedo,
+                    _oblivionEyesRequested,
+                    AcquireEyeCube);
                 staticRendererMilliseconds =
                     Stopwatch.GetElapsedTime(staticRendererStarted).TotalMilliseconds;
+                Log.Info(
+                    "BethesdaSceneViewer: skin-factor-one diagnostic game={0} requested={1} " +
+                    "eligibleDraws={2} selectedDraws={3}",
+                    posed.Source.Game,
+                    _classicSkinFactorOneRequested,
+                    _staticRenderer.ClassicSkinEligibleDrawCount,
+                    _staticRenderer.ClassicSkinFactorOneDrawCount);
+                Log.Info("BethesdaSceneViewer: independent-skin diagnostic game={0} requested={1} selectedDraws={2}",
+                    posed.Source.Game, _independentSkinAlbedoRequested, _staticRenderer.IndependentSkinAlbedoDrawCount);
                 hasGeometry = _staticRenderer.DrawableCount > 0;
                 alphaToCoverageFallbackCount = _staticRenderer.AlphaToCoverageFallbackCount;
                 alphaToCoverageFallbackReason = _staticRenderer.AlphaToCoverageFallbackReason;
@@ -1033,6 +1061,19 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
             normalMapBindlessIndices: normalIndices.Count == 0 ? null : normalIndices);
     }
 
+    private ClassicSkinIndependentGpuBinding12 AcquireIndependentSkinAlbedo(int sourceIndex, ClassicSkinAuthoredAlbedo albedo)
+    {
+        if (_independentSkinBindings.TryGetValue(sourceIndex, out var existing)) return existing;
+        var binding = ClassicSkinIndependentGpuBinding12.Acquire(
+            _textureCache ?? throw new InvalidOperationException("The scene texture cache is unavailable."), albedo);
+        try { _independentSkinBindings.Add(sourceIndex, binding); }
+        catch { binding.Dispose(); throw; }
+        return binding;
+    }
+
+    private OblivionEyeGpuBinding12 AcquireEyeCube() => _eyeBinding ??= new OblivionEyeGpuBinding12(
+        _textureCache ?? throw new InvalidOperationException("The scene texture cache is unavailable."));
+
     private void ReleaseGpuScene(bool waitForIdle)
     {
         if (waitForIdle &&
@@ -1091,6 +1132,11 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
             }
         }
         _waterTextureEntries.Clear();
+        foreach (var binding in _independentSkinBindings.Values)
+            DisposeSceneResourceNoThrow(binding, "independent skin textures");
+        _independentSkinBindings.Clear();
+        DisposeSceneResourceNoThrow(_eyeBinding, "eye reflection cube");
+        _eyeBinding = null;
 
         var waterRenderer = _waterRenderer;
         _waterRenderer = null;
@@ -1253,7 +1299,8 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
         }
         if (hasWater)
         {
-            message += " Standalone water has no record-level WATR context; the existing game-profile fallback is explicit.";
+            message +=
+ " Standalone water has no record-level WATR context; the existing game-profile fallback is explicit.";
         }
         if (_animatedPose?.HasAnimatedGeometry == true && SelectedClip is { } clip)
         {

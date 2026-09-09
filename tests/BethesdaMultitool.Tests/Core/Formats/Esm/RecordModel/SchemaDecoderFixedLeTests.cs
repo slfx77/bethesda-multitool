@@ -29,7 +29,7 @@ public class SchemaDecoderFixedLeTests
         var map = SubrecordSchemaRegistry.GetFixedLeLayout("INDX", "QUST", 2);
 
         Assert.NotNull(map);
-        Assert.Equal(LeFieldKind.LittleEndian, map![0]);
+        Assert.Equal(LeFieldKind.LittleEndian, map[0]);
     }
 
     [Fact]
@@ -38,7 +38,7 @@ public class SchemaDecoderFixedLeTests
         var map = SubrecordSchemaRegistry.GetFixedLeLayout("DATA", "RGDL", 14);
 
         Assert.NotNull(map);
-        Assert.Equal(LeFieldKind.WordSwapped, map![0]);
+        Assert.Equal(LeFieldKind.WordSwapped, map[0]);
     }
 
     [Fact]
@@ -49,7 +49,7 @@ public class SchemaDecoderFixedLeTests
         var map = SubrecordSchemaRegistry.GetFixedLeLayout("BPND", "BPTD", 84);
 
         Assert.NotNull(map);
-        Assert.NotEmpty(map!);
+        Assert.NotEmpty(map);
     }
 
     [Fact]

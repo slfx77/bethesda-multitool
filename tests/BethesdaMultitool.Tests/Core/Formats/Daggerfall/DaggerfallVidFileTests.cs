@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 
@@ -11,6 +7,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Daggerfall;
 /// <summary>VID movie parsing: header, block walk, persistent canvas and the two run-length rules.</summary>
 public class DaggerfallVidFileTests
 {
+    internal static readonly byte[] EndOfFile = [20];
+
     /// <summary>A movie with the retail header, a palette block, then the given blocks verbatim.</summary>
     internal static byte[] Movie(int frameCount, int width, int height, params byte[][] blocks)
     {
@@ -65,8 +63,6 @@ public class DaggerfallVidFileTests
     {
         return [125, (byte)(samples.Length & 0xFF), (byte)(samples.Length >> 8), .. samples];
     }
-
-    internal static readonly byte[] EndOfFile = [20];
 
     [Fact]
     public void Parse_ReadsTheHeaderPaletteAudioAndBlockCensus()

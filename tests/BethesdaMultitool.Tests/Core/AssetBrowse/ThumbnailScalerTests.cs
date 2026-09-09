@@ -2,7 +2,6 @@
 //   tests/AweMultitool.Tests/Core/Formats/Canvas/CanvasThumbnailerTests.cs — and restated for this
 //   repo's classic-catalogue sizes.
 
-using System;
 using BethesdaMultitool.Core.AssetBrowse;
 using Xunit;
 
@@ -91,7 +90,7 @@ public sealed class ThumbnailScalerTests
         {
             for (var x = 0; x < size; x++)
             {
-                var i = ((y * size) + x) * 4;
+                var i = (y * size + x) * 4;
                 var transparent = x < size / 2;
 
                 rgba[i] = transparent ? (byte)0xFF : (byte)0x00; // magenta key vs black
@@ -149,7 +148,7 @@ public sealed class ThumbnailScalerTests
         {
             for (var x = 0; x < 4; x++)
             {
-                var i = ((y * 4) + x) * 4;
+                var i = (y * 4 + x) * 4;
                 Assert.Equal(x < 2 ? 255 : 0, fitted.Rgba[i]);
                 Assert.Equal(x < 2 ? 0 : 255, fitted.Rgba[i + 1]);
             }

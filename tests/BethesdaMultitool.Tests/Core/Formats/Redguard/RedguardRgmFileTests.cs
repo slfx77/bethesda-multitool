@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Redguard;
 using Xunit;
@@ -36,23 +32,25 @@ public sealed class RedguardRgmFileTests
         _ = width;
     }
 
-    private static byte[] ObjectRecord(string label, int index, string scriptName, int nameOffset, int refCount, int refOffset, int animCount = 0)
+    private static byte[] ObjectRecord(string label, int index, string scriptName, int nameOffset, int refCount,
+        int refOffset, int animCount = 0)
     {
         var r = new byte[RedguardRgmFile.ObjectRecordLength];
         Name(r, 4, 9, label);
-        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(13), 1);                                // instanceCount
-        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(21), (uint)(scriptName.Length == 0 ? 0 : scriptName.Length + 1));
+        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(13), 1); // instanceCount
+        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(21),
+            (uint)(scriptName.Length == 0 ? 0 : scriptName.Length + 1));
         BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(25), (uint)nameOffset);
-        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(29), (uint)(256 * index));             // raatOffset
+        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(29), (uint)(256 * index)); // raatOffset
         BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(33), (uint)animCount);
         BinaryPrimitives.WriteInt32LittleEndian(r.AsSpan(45), -1);
         BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(65), (uint)refCount);
         BinaryPrimitives.WriteInt32LittleEndian(r.AsSpan(73), refCount == 0 ? -1 : refOffset);
-        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(77), 5);                                // scriptLength
-        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(81), (uint)(5 + 5 * index));           // scriptOffset
+        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(77), 5); // scriptLength
+        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(81), (uint)(5 + 5 * index)); // scriptOffset
         BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(109), 30);
         BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(113), (uint)(30 * index));
-        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(117), 2);                               // variablesPerInstance
+        BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(117), 2); // variablesPerInstance
         BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(121), 8);
         BinaryPrimitives.WriteUInt32LittleEndian(r.AsSpan(125), (uint)(4 + 8 * index));
         BinaryPrimitives.WriteInt32LittleEndian(r.AsSpan(137), -1);
@@ -70,7 +68,8 @@ public sealed class RedguardRgmFileTests
         return [.. header, .. records.SelectMany(static r => r)];
     }
 
-    private static byte[] Placement(ushort type, string objectName, string meshName, int x, int y, int z, int yaw = 0, ushort worldIndex = 0)
+    private static byte[] Placement(ushort type, string objectName, string meshName, int x, int y, int z, int yaw = 0,
+        ushort worldIndex = 0)
     {
         var r = new byte[RedguardRgmFile.PlacementRecordLength];
         BinaryPrimitives.WriteUInt16LittleEndian(r.AsSpan(4), type);
@@ -119,7 +118,7 @@ public sealed class RedguardRgmFileTests
         body.AddRange(BitConverter.GetBytes((uint)nodes.Length));
         body.AddRange(BitConverter.GetBytes((uint)nodes.Length));
         body.AddRange(BitConverter.GetBytes(10)); // centre x
-        body.AddRange(BitConverter.GetBytes(0));  // centre y
+        body.AddRange(BitConverter.GetBytes(0)); // centre y
         body.AddRange(BitConverter.GetBytes(10)); // centre z
         body.AddRange(BitConverter.GetBytes(200u));
         foreach (var (x, y, z, routes) in nodes)
@@ -150,7 +149,7 @@ public sealed class RedguardRgmFileTests
         var names = "\0gremlin\0bell\0"u8.ToArray();
         objectTable ??= ObjectTable(
             ObjectRecord("GREMLIN", 0, "gremlin", 1, 1, 0),
-            ObjectRecord("BELL", 1, "bell", 9, 0, -1, animCount: animation is null ? 0 : 1));
+            ObjectRecord("BELL", 1, "bell", 9, 0, -1, animation is null ? 0 : 1));
 
         var bytes = new List<byte>();
         bytes.AddRange(Chunk("RAHD", objectTable));
@@ -166,7 +165,9 @@ public sealed class RedguardRgmFileTests
         bytes.AddRange(Chunk("RAAN", animation ?? []));
         bytes.AddRange(Chunk("RAGR", new byte[4]));
         bytes.AddRange(Chunk("RANM", names));
-        bytes.AddRange(Chunk("MPOB", placements ?? Counted(66, Placement(1, "BELL", "BELL.3D", 2000, -96, 2400, yaw: 512), Placement(2, "ENT1", "", 1900, -96, 2300))));
+        bytes.AddRange(Chunk("MPOB",
+            placements ?? Counted(66, Placement(1, "BELL", "BELL.3D", 2000, -96, 2400, 512),
+                Placement(2, "ENT1", "", 1900, -96, 2300))));
         bytes.AddRange(Chunk("MPRP", BitConverter.GetBytes(0u)));
         bytes.AddRange(Chunk("MPSO", statics ?? Counted(66, StaticMesh("GR_COMP", 1800, 0, 2200))));
         bytes.AddRange(Chunk("MPSL", BitConverter.GetBytes(0u)));
@@ -189,7 +190,10 @@ public sealed class RedguardRgmFileTests
         var file = RedguardRgmFile.Parse(Build(), "TEST.RGM");
 
         Assert.Equal(
-            ["RAHD", "RAFS", "RAST", "RASB", "RAVA", "RASC", "RAHK", "RALC", "RAEX", "RAAT", "RAAN", "RAGR", "RANM", "MPOB", "MPRP", "MPSO", "MPSL", "MPSF", "MPMK", "MPSZ", "WDNM", "FLAT"],
+            [
+                "RAHD", "RAFS", "RAST", "RASB", "RAVA", "RASC", "RAHK", "RALC", "RAEX", "RAAT", "RAAN", "RAGR", "RANM",
+                "MPOB", "MPRP", "MPSO", "MPSL", "MPSF", "MPMK", "MPSZ", "WDNM", "FLAT"
+            ],
             file.Chunks.Select(c => c.Tag));
         Assert.Equal(0x37801Bu, file.CompileWord);
         Assert.Equal(4, file.ChunkLength("MPSL"));
@@ -218,7 +222,9 @@ public sealed class RedguardRgmFileTests
         Assert.Equal(["gremlin", "bell"], file.Objects.Select(o => o.ScriptName));
         Assert.Equal(["gremlin"], file.Objects[0].StringReferences);
         Assert.Empty(file.Objects[1].StringReferences);
-        Assert.Equal((1, 2, 5, 10), (file.Objects[1].InstanceCount, file.Objects[1].VariablesPerInstance, file.Objects[1].ScriptLength, file.Objects[1].ScriptOffset));
+        Assert.Equal((1, 2, 5, 10),
+            (file.Objects[1].InstanceCount, file.Objects[1].VariablesPerInstance, file.Objects[1].ScriptLength,
+                file.Objects[1].ScriptOffset));
         Assert.Equal(["ngasball", "gremlin"], file.Strings);
     }
 
@@ -228,7 +234,7 @@ public sealed class RedguardRgmFileTests
         var table = ObjectTable(ObjectRecord("GREMLIN", 0, "gremlin", 1, 0, -1));
         BinaryPrimitives.WriteUInt32LittleEndian(table, 2);
 
-        Assert.Throws<InvalidDataException>(() => RedguardRgmFile.Parse(Build(objectTable: table), "BAD.RGM"));
+        Assert.Throws<InvalidDataException>(() => RedguardRgmFile.Parse(Build(table), "BAD.RGM"));
     }
 
     [Fact]
@@ -237,7 +243,8 @@ public sealed class RedguardRgmFileTests
         var file = RedguardRgmFile.Parse(Build(), "TEST.RGM");
 
         var bell = file.Placements[0];
-        Assert.Equal((1, "BELL", "BELL.3D", "BELL", true), (bell.Type, bell.ObjectName, bell.MeshName, bell.MeshStem, bell.HasMesh));
+        Assert.Equal((1, "BELL", "BELL.3D", "BELL", true),
+            (bell.Type, bell.ObjectName, bell.MeshName, bell.MeshStem, bell.HasMesh));
         Assert.Equal((2000, -96, 2400), bell.Position.WorldUnits);
         Assert.Equal(512, bell.Rotation.Y);
         Assert.Equal(0, bell.MeshSlot);
@@ -322,7 +329,8 @@ public sealed class RedguardRgmFileTests
         var file = RedguardRgmFile.Parse(Build(animation: [.. entry]), "TEST.RGM");
 
         var mesh = Assert.Single(file.AnimationMeshes);
-        Assert.Equal((1, "3dart\\bella001.3d", 471, (byte)13, 'c'), (mesh.ObjectIndex, mesh.Path, mesh.PlaneCount, mesh.FrameCount, mesh.Flag));
+        Assert.Equal((1, "3dart\\bella001.3d", 471, (byte)13, 'c'),
+            (mesh.ObjectIndex, mesh.Path, mesh.PlaneCount, mesh.FrameCount, mesh.Flag));
     }
 
     [Fact]

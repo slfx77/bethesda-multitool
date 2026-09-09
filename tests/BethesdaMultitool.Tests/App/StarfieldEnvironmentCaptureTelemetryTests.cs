@@ -413,85 +413,94 @@ public sealed class StarfieldEnvironmentCaptureTelemetryTests
             "_data = data;");
     }
 
-    private static StarfieldVolumetricLightingSettings VolumetricSettings() => new(
-        new StarfieldVolumetricExteriorAndInteriorSettings(1f, 2f, 3f, 4f),
-        new StarfieldVolumetricExteriorSettings(
-            new StarfieldVolumetricFogThicknessSettings(5f, 6f, 7f, 8f),
-            new StarfieldVolumetricFogDensitySettings(9f, 10f, 11f, 12f, 13f, 14f, 15f),
-            new StarfieldVolumetricHorizonFogSettings(16f, 17f, 18f, 19f),
-            new StarfieldVolumetricFogMapSettings(
-                20f,
-                21f,
-                new StarfieldVolumetricFloat4(22f, 23f, 24f, 25f),
-                26f,
-                27f,
-                28f,
-                29f,
-                30f)),
-        new StarfieldVolumetricDistantLightingSettings(31f, 32f));
+    private static StarfieldVolumetricLightingSettings VolumetricSettings()
+    {
+        return new StarfieldVolumetricLightingSettings(
+            new StarfieldVolumetricExteriorAndInteriorSettings(1f, 2f, 3f, 4f),
+            new StarfieldVolumetricExteriorSettings(
+                new StarfieldVolumetricFogThicknessSettings(5f, 6f, 7f, 8f),
+                new StarfieldVolumetricFogDensitySettings(9f, 10f, 11f, 12f, 13f, 14f, 15f),
+                new StarfieldVolumetricHorizonFogSettings(16f, 17f, 18f, 19f),
+                new StarfieldVolumetricFogMapSettings(
+                    20f,
+                    21f,
+                    new StarfieldVolumetricFloat4(22f, 23f, 24f, 25f),
+                    26f,
+                    27f,
+                    28f,
+                    29f,
+                    30f)),
+            new StarfieldVolumetricDistantLightingSettings(31f, 32f));
+    }
 
-    private static StarfieldCloudFormDefinition CloudDefinition() => new(
-        new StarfieldCloudShadowParams(
-            true,
-            "textures/clouds/shadow.dds",
-            1f,
-            2f,
-            3f,
-            4f),
-        [
-            new StarfieldCloudLayer(
-                "Layer",
-                "layer-color.dds",
-                "layer-thickness.dds",
-                "layer-normal.dds",
-                "layer-opacity.dds",
+    private static StarfieldCloudFormDefinition CloudDefinition()
+    {
+        return new StarfieldCloudFormDefinition(
+            new StarfieldCloudShadowParams(
+                true,
+                "textures/clouds/shadow.dds",
                 1f,
                 2f,
                 3f,
-                4f,
-                5f,
-                6f,
-                7f,
-                8,
-                9,
-                10f,
-                11f,
-                12f,
-                13f,
-                14f,
-                15f,
-                16f,
-                17f,
-                18f,
-                new StarfieldCloudTint(19, 20, 21, 22))
-        ],
-        [
-            new StarfieldCloudPlane(
-                "Plane",
-                "plane-color.dds",
-                "plane-thickness.dds",
-                "plane-normal.dds",
-                "plane-opacity.dds",
-                1f,
-                2f,
-                3f,
-                4f,
-                5f,
-                6f,
-                7f,
-                8f,
-                9f,
-                10f,
-                11f,
-                12f,
-                13f,
-                new StarfieldCloudTint(23, 24, 25, 26))
-        ],
-        0x00ABCDEF);
+                4f),
+            [
+                new StarfieldCloudLayer(
+                    "Layer",
+                    "layer-color.dds",
+                    "layer-thickness.dds",
+                    "layer-normal.dds",
+                    "layer-opacity.dds",
+                    1f,
+                    2f,
+                    3f,
+                    4f,
+                    5f,
+                    6f,
+                    7f,
+                    8,
+                    9,
+                    10f,
+                    11f,
+                    12f,
+                    13f,
+                    14f,
+                    15f,
+                    16f,
+                    17f,
+                    18f,
+                    new StarfieldCloudTint(19, 20, 21, 22))
+            ],
+            [
+                new StarfieldCloudPlane(
+                    "Plane",
+                    "plane-color.dds",
+                    "plane-thickness.dds",
+                    "plane-normal.dds",
+                    "plane-opacity.dds",
+                    1f,
+                    2f,
+                    3f,
+                    4f,
+                    5f,
+                    6f,
+                    7f,
+                    8f,
+                    9f,
+                    10f,
+                    11f,
+                    12f,
+                    13f,
+                    new StarfieldCloudTint(23, 24, 25, 26))
+            ],
+            0x00ABCDEF);
+    }
 
     private static Dictionary<string, object?> Object(
-        IReadOnlyDictionary<string, object?> parent,
-        string key) => Assert.IsType<Dictionary<string, object?>>(parent[key]);
+        Dictionary<string, object?> parent,
+        string key)
+    {
+        return Assert.IsType<Dictionary<string, object?>>(parent[key]);
+    }
 
     private static IEnumerable<float> FloatLeaves(object? value)
     {

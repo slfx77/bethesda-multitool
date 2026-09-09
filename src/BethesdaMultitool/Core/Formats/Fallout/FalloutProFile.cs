@@ -27,18 +27,28 @@ internal enum FalloutProType
 ///     </para>
 ///     <list type="bullet">
 ///         <item><c>+0 PID</c> — its high byte equals the owning directory's type on <b>4,306/4,306</b>.</item>
-///         <item><c>+4 text id</c> — resolves in the type's <c>PRO_*.MSG</c> to real prose
-///         ("Leather Armor"), with the DESCRIPTION at <c>id + 1</c>. Ids run in hundreds.</item>
-///         <item><c>+8 FID</c> — the art reference. Its high byte equals the prototype's type on
-///         <b>4,306/4,306</b>, and its index lies inside that type's <c>ART\*.LST</c> on
-///         <b>3,994/3,994</b> non-critter prototypes (critter art lives in CRITTER.DAT, so those 312
-///         cannot resolve against MASTER.DAT and are not counted).</item>
-///         <item><c>+12</c> light distance (0-8), <c>+16</c> light intensity (0-65,536),
-///         <c>+20</c> flags.</item>
+///         <item>
+///             <c>+4 text id</c> — resolves in the type's <c>PRO_*.MSG</c> to real prose
+///             ("Leather Armor"), with the DESCRIPTION at <c>id + 1</c>. Ids run in hundreds.
+///         </item>
+///         <item>
+///             <c>+8 FID</c> — the art reference. Its high byte equals the prototype's type on
+///             <b>4,306/4,306</b>, and its index lies inside that type's <c>ART\*.LST</c> on
+///             <b>3,994/3,994</b> non-critter prototypes (critter art lives in CRITTER.DAT, so those 312
+///             cannot resolve against MASTER.DAT and are not counted).
+///         </item>
+///         <item>
+///             <c>+12</c> light distance (0-8), <c>+16</c> light intensity (0-65,536),
+///             <c>+20</c> flags.
+///         </item>
 ///     </list>
 ///     <para>
-///         ⚠ <b>The file name is NOT the prototype id.</b> The PID's low 24 bits are a <b>1-based line
-///         number in the type's <c>.LST</c></b>, and that line names the file — which resolves
+///         ⚠ <b>The file name is NOT the prototype id.</b> The PID's low 24 bits are a
+///         <b>
+///             1-based line
+///             number in the type's <c>.LST</c>
+///         </b>
+///         , and that line names the file — which resolves
 ///         4,306/4,306 while assuming <c>&lt;pid&gt;.PRO</c> is wrong for 1,151 of them (886 scenery
 ///         alone). See <see cref="FalloutProList" />.
 ///     </para>
@@ -72,15 +82,15 @@ internal sealed class FalloutProFile
     /// <summary>A script id of -1: no script attached. 2,607 of the 2,638 prototypes that have the field.</summary>
     public const uint NoScript = 0xFFFFFFFF;
 
+    private FalloutProFile()
+    {
+    }
+
     /// <summary>Record size per item subtype, indexed by subtype 0-6.</summary>
     public static ReadOnlySpan<int> ItemSizes => [129, 65, 125, 122, 81, 69, 61];
 
     /// <summary>Record size per scenery subtype, indexed by subtype 0-5.</summary>
     public static ReadOnlySpan<int> ScenerySizes => [49, 49, 49, 45, 45, 45];
-
-    private FalloutProFile()
-    {
-    }
 
     /// <summary>Source file name, for messages.</summary>
     public required string Name { get; init; }
@@ -138,6 +148,10 @@ internal sealed class FalloutProFile
     /// </summary>
     public static ReadOnlySpan<int> CritterSizes => [416, 412];
 
+    private static ReadOnlySpan<int> TwentyEight => [28];
+
+    private static ReadOnlySpan<int> ThirtySix => [36];
+
     /// <summary>The size this record must have, or -1 when the type/subtype pair is unknown.</summary>
     public static int ExpectedSize(FalloutProType type, int subtype)
     {
@@ -167,10 +181,6 @@ internal sealed class FalloutProFile
                 return default;
         }
     }
-
-    private static ReadOnlySpan<int> TwentyEight => [28];
-
-    private static ReadOnlySpan<int> ThirtySix => [36];
 
     /// <summary>Parses one prototype, throwing <see cref="InvalidDataException" /> when it does not fit.</summary>
     public static FalloutProFile Parse(ReadOnlyMemory<byte> bytes, string name)

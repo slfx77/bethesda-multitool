@@ -56,6 +56,13 @@ internal sealed class GpuRootSignature12 : IDisposable
     /// </summary>
     public const uint SrvTableSize = 8;
 
+    /// <summary>
+    ///     DWORDs in the <see cref="Slots.TerrainCellGridConstants" /> block: <c>origin.x</c>,
+    ///     <c>origin.y</c>, <c>spacing</c>, <c>gridSize</c>. Root constants cost one DWORD each of
+    ///     the 64-DWORD root-signature budget, of which this signature now uses 23.
+    /// </summary>
+    public const int TerrainCellGridConstantCount = 4;
+
     private bool _disposed;
 
     private GpuRootSignature12(ID3D12RootSignature root)
@@ -475,11 +482,4 @@ internal sealed class GpuRootSignature12 : IDisposable
         /// </summary>
         public const int PointLightTilesSrv = 12;
     }
-
-    /// <summary>
-    ///     DWORDs in the <see cref="Slots.TerrainCellGridConstants" /> block: <c>origin.x</c>,
-    ///     <c>origin.y</c>, <c>spacing</c>, <c>gridSize</c>. Root constants cost one DWORD each of
-    ///     the 64-DWORD root-signature budget, of which this signature now uses 23.
-    /// </summary>
-    public const int TerrainCellGridConstantCount = 4;
 }

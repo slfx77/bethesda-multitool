@@ -22,7 +22,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Conversion;
 public sealed class HavokFilterEndianRegressionTests
 {
     private const string JulyMeshesBsa =
-        @"Sample\Full_Builds\Fallout New Vegas (July 21, 2010)\FalloutNV\Data\Fallout - Meshes.bsa";
+        @"Sample\Builds\Fallout - New Vegas (2010-7-21, X360 - Prototype)\FalloutNV\Data\Fallout - Meshes.bsa";
 
     private const int HavokFilterOffsetInBlock = 4;
 
@@ -91,14 +91,14 @@ public sealed class HavokFilterEndianRegressionTests
             .FirstOrDefault(f => f.FullPath.EndsWith(nifSuffix, StringComparison.OrdinalIgnoreCase));
         Assert.SkipWhen(entry is null, $"No entry ending in `{nifSuffix}` inside {JulyMeshesBsa}.");
 
-        var nifBytes = extractor.ExtractFile(entry!);
+        var nifBytes = extractor.ExtractFile(entry);
         var result = NifConverter.Convert(nifBytes);
         Assert.True(result.Success, $"Conversion of {entry.FullPath} failed");
         var converted = result.OutputData!;
 
         var info = NifParser.Parse(converted);
         Assert.NotNull(info);
-        Assert.False(info!.IsBigEndian, "Converted NIF should be little-endian");
+        Assert.False(info.IsBigEndian, "Converted NIF should be little-endian");
 
         var filters = new List<uint>();
         foreach (var block in info.Blocks.Where(b => b.TypeName == blockType))

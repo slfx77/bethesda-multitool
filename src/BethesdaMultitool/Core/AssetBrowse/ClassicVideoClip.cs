@@ -1,5 +1,8 @@
+using BethesdaMultitool.Core.Formats.Bink;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Formats.Dds;
+using BethesdaMultitool.Core.Formats.Interplay;
+using BethesdaMultitool.Core.Formats.Smacker;
 using BethesdaMultitool.Core.Formats.Xngine.Flic;
 using BethesdaMultitool.Core.Imaging;
 
@@ -89,6 +92,60 @@ internal sealed class ClassicVideoClip : IVideoFrameSource
                || extension.Equals(".vid", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    ///     True for any movie extension this build can play — the classic indexed formats plus Bink
+    ///     and Smacker. Pairs with <see cref="TryOpenAnyVideo" />.
+    /// </summary>
+    public static bool CanOpenAnyVideo(AssetNode node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        return CanOpen(node) || BinkVideoClip.CanOpen(node.Name) || SmackerVideoClip.CanOpen(node.Name)
+               || InterplayMveVideoClip.CanOpen(node.Name);
+    }
+
+    /// <summary>
+    ///     Opens any movie this build can play out of the session — the classic indexed formats here
+    ///     plus Bink (<c>.bik</c>) and Smacker (<c>.smk</c>: Redguard's cutscenes and the
+    ///     Battlespire CD's movies), both of which decode on demand rather than materialising every
+    ///     frame. Each is validated up front by its content probe (the container arithmetic, not
+    ///     the extension), so a mis-named file returns null instead of a clip that fails mid-play.
+    ///     Callers that just want a playable clip should use this rather than <see cref="TryOpen" />.
+    /// </summary>
+    public static IVideoFrameSource? TryOpenAnyVideo(
+        AssetBrowseSession session, AssetNode node, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(node);
+
+        if (BinkVideoClip.CanOpen(node.Name))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var bytes = session.FileSystem.TryReadAllBytes(node.VirtualPath);
+            if (bytes is null)
+            {
+                return null;
+            }
+
+            // Two formats share the .mve extension: Van Buren's two Movies\*.mve are Bink under
+            // that name, while Fallout's and Fallout 2's ART\CUTS\*.MVE are Interplay's own MVE.
+            // Each probe is by content, so the order only decides which is asked first.
+            return (IVideoFrameSource?)BinkVideoClip.TryOpen(bytes, node.Name)
+                   ?? (InterplayMveVideoClip.CanOpen(node.Name)
+                       ? InterplayMveVideoClip.TryOpen(bytes, node.Name)
+                       : null);
+        }
+
+        if (SmackerVideoClip.CanOpen(node.Name))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var bytes = session.FileSystem.TryReadAllBytes(node.VirtualPath);
+            return bytes is null ? null : SmackerVideoClip.TryOpen(bytes, node.Name);
+        }
+
+        return TryOpen(session, node, cancellationToken);
+    }
+
     /// <summary>Decodes a movie out of the session, or returns null when it will not open.</summary>
     public static ClassicVideoClip? TryOpen(
         AssetBrowseSession session, AssetNode node, CancellationToken cancellationToken = default)
@@ -116,7 +173,7 @@ internal sealed class ClassicVideoClip : IVideoFrameSource
                 : FromVid(DaggerfallVidFile.Parse(bytes, node.Name));
         }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException
-                                     or IOException or ArgumentException)
+                                      or IOException or ArgumentException)
         {
             return null;
         }

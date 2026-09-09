@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
@@ -81,7 +82,7 @@ public sealed class ArmorWorldModelParsingTests
             Assert.Single(ObjectBoundsIndex.BuildModelPathIndex(new RecordCollection { Armor = [armor] })).Value);
     }
 
-    private static BethesdaMultitool.Core.Formats.Esm.Models.Records.Item.ArmorRecord ParseSingleArmor(
+    private static ArmorRecord ParseSingleArmor(
         byte[] recordBytes,
         uint formId,
         bool bigEndian,
@@ -128,7 +129,7 @@ public sealed class ArmorWorldModelRetailTests
         Assert.SkipUnless(esm is not null, RealAssetPaths.SkipMessage("Skyrim.esm"));
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         Assert.Equal(
             @"Armor\Iron\Male\BootsGND.nif",

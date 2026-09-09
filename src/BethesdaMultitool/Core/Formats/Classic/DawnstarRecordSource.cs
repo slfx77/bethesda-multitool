@@ -75,7 +75,8 @@ internal static class DawnstarRecordSource
     public const string StringRecordType = SignaturePrefix + TravelsRecordSynthesizer.StringCode;
 
     /// <summary>Reads the mounted install and appends every synthesized record.</summary>
-    public static void Populate(IGameFileSystem install, RecordCollection records, CancellationToken cancellationToken = default)
+    public static void Populate(IGameFileSystem install, RecordCollection records,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(install);
         ArgumentNullException.ThrowIfNull(records);

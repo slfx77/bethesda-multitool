@@ -78,7 +78,7 @@ internal readonly record struct CpuBudget
         var count = ResolveCores(cores);
         var workloads = Enum.GetValues<CpuWorkload>().Length;
         var reserve = Math.Min(InteractiveReserveCores, Math.Max(0, count - workloads));
-        return new CpuBudget(Math.Max(1, count - reserve), interactive: true);
+        return new CpuBudget(Math.Max(1, count - reserve), true);
     }
 
     /// <summary>
@@ -87,15 +87,19 @@ internal readonly record struct CpuBudget
     ///     reserve is zero here (there is no interactive frame to reserve for) and the total is
     ///     oversubscribed by <see cref="BulkOversubscription" /> because the work blocks on I/O.
     /// </summary>
-    public static CpuBudget Bulk(int? cores = null) =>
-        new(Math.Max(1, ResolveCores(cores) * BulkOversubscription), interactive: false);
+    public static CpuBudget Bulk(int? cores = null)
+    {
+        return new CpuBudget(Math.Max(1, ResolveCores(cores) * BulkOversubscription), false);
+    }
 
     /// <summary>
     ///     Picks the budget matching a renderer's <c>StreamingThrottled</c> flag: throttled means a
     ///     live frame loop, so interactive; unthrottled means a bulk fill.
     /// </summary>
-    public static CpuBudget For(bool streamingThrottled, int? cores = null) =>
-        streamingThrottled ? Interactive(cores) : Bulk(cores);
+    public static CpuBudget For(bool streamingThrottled, int? cores = null)
+    {
+        return streamingThrottled ? Interactive(cores) : Bulk(cores);
+    }
 
     /// <summary>
     ///     Workers <paramref name="workload" /> may run, as its weighted share of
@@ -142,13 +146,19 @@ internal readonly record struct CpuBudget
     ///         get, which is where the oversubscription actually bit.
     ///     </para>
     /// </summary>
-    private static (int Weight, int Ceiling) Shape(CpuWorkload workload) => workload switch
+    private static (int Weight, int Ceiling) Shape(CpuWorkload workload)
     {
-        CpuWorkload.ReferenceMeshDecode => (3, 16),
-        CpuWorkload.TextureResolve => (2, 12),
-        CpuWorkload.TerrainCellBuild => (3, 16),
-        _ => (1, 8)
-    };
+        return workload switch
+        {
+            CpuWorkload.ReferenceMeshDecode => (3, 16),
+            CpuWorkload.TextureResolve => (2, 12),
+            CpuWorkload.TerrainCellBuild => (3, 16),
+            _ => (1, 8)
+        };
+    }
 
-    private static int ResolveCores(int? cores) => Math.Max(1, cores ?? Environment.ProcessorCount);
+    private static int ResolveCores(int? cores)
+    {
+        return Math.Max(1, cores ?? Environment.ProcessorCount);
+    }
 }

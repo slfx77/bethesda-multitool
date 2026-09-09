@@ -23,7 +23,7 @@ def _dstmod_suffix(dst_tok):
     return ("_sat" if mod & 1 else "") + ("_pp" if mod & 2 else "") + ("_centroid" if mod & 4 else "")
 
 DEFAULT_SDP = Path(
-    "Sample/Full_Builds/Fallout New Vegas (PC Final)/Data/Shaders/shaderpackage003.sdp"
+    "Sample/Builds/Fallout - New Vegas (2022-5-24, Steam - Final)/Data/Shaders/shaderpackage003.sdp"
 )
 
 

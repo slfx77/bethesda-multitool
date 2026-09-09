@@ -1,13 +1,13 @@
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using System.Buffers.Binary;
+using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Core.Formats.Esm.Parsing.Reflection;
-using System.Buffers.Binary;
-using System.IO.MemoryMappedFiles;
 using Xunit;
 using static BethesdaMultitool.Tests.Helpers.EsmTestRecordBuilder;
 
@@ -32,14 +32,14 @@ public sealed class StarfieldStdtSunpProductionParsingTests
                 rootSunPresetFormId,
                 ("EDID", NullTermString("SunPresetRoot")),
                 ("REFL", StarfieldSunPresetTestStreamBuilder.BuildFull(
-                    reflectedParent: 0,
-                    diskTexture: "Data/Textures/Sky/SunDisk_color.dds"))),
+                    0,
+                    "Data/Textures/Sky/SunDisk_color.dds"))),
             Sunp(
                 diffSunPresetFormId,
                 ("EDID", NullTermString("SunPresetSol")),
                 ("RFDP", U32(rootSunPresetFormId)),
                 ("RDIF", StarfieldSunPresetTestStreamBuilder.BuildDiff(
-                    reflectedParent: rootSunPresetFormId,
+                    rootSunPresetFormId,
                     diskTexture: string.Empty))));
 
         var star = Assert.Single(parsed.StarData);
@@ -168,7 +168,7 @@ public sealed class StarfieldStdtSunpProductionParsingTests
             ("RFDP", U32(0x200)),
             ("RDIF", StarfieldSunPresetTestStreamBuilder.BuildDiff(
                 0x200,
-                omitReflectedParent: true)))).SunPresets);
+                true)))).SunPresets);
         Assert.Equal(StarfieldSunPresetPayloadKind.Diff, omittedReflectedParent.PayloadKind);
         Assert.Contains("explicitly authored", omittedReflectedParent.DecodeFailure,
             StringComparison.OrdinalIgnoreCase);
@@ -327,18 +327,24 @@ public sealed class StarfieldStdtSunpProductionParsingTests
         uint formId,
         byte[] bytes,
         long offset,
-        bool isBigEndian) =>
-        new(recordType, checked((uint)(bytes.Length - 24)), 0, formId, offset, isBigEndian);
+        bool isBigEndian)
+    {
+        return new DetectedMainRecord(recordType, checked((uint)(bytes.Length - 24)), 0, formId, offset, isBigEndian);
+    }
 
     private static Fixture Stdt(
         uint formId,
-        params (string Signature, byte[] Data)[] fields) =>
-        new("STDT", formId, BuildRecordBytes(formId, "STDT", false, fields));
+        params (string Signature, byte[] Data)[] fields)
+    {
+        return new Fixture("STDT", formId, BuildRecordBytes(formId, "STDT", false, fields));
+    }
 
     private static Fixture Sunp(
         uint formId,
-        params (string Signature, byte[] Data)[] fields) =>
-        new("SUNP", formId, BuildRecordBytes(formId, "SUNP", false, fields));
+        params (string Signature, byte[] Data)[] fields)
+    {
+        return new Fixture("SUNP", formId, BuildRecordBytes(formId, "SUNP", false, fields));
+    }
 
     private static byte[] U32(uint value)
     {

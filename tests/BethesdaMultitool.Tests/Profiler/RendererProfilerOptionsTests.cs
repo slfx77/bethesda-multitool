@@ -1,5 +1,5 @@
-using BethesdaRendererProfiler;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaRendererProfiler;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Profiler;

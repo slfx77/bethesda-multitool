@@ -43,7 +43,7 @@ public sealed class PlannedLandEncoderParityTests
             plan, new PluginBuildOptions { CompressRecords = false });
 
         Assert.NotNull(bytes);
-        Assert.Equal("LAND", Encoding.ASCII.GetString(bytes!, 0, 4));
+        Assert.Equal("LAND", Encoding.ASCII.GetString(bytes, 0, 4));
         Assert.Equal(0x000ABC01u, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(12, 4)));
     }
 

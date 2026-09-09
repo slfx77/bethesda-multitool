@@ -31,12 +31,12 @@ public sealed partial class SingleFileTab
     // percentages restart low, which made the bar visibly jump backwards. All writers go through
     // SetAnalysisProgress so the bar only ever advances until the next operation resets it.
     private double _analysisProgressFloor;
-    private Dictionary<int, DecodedFormData>? _pendingDecodedForms;
 
     // A classic install is analyzed and semantically loaded in ONE step -- there is no record
     // stream to scan separately, so ClassicGameAnalyzer synthesizes the collection directly. The
     // loaded result is stashed here for the parse phase that follows the shared plumbing.
     private UnifiedAnalysisResult? _pendingClassicResult;
+    private Dictionary<int, DecodedFormData>? _pendingDecodedForms;
 
     // Temporary fields to pass save data from AnalyzeSaveFileAsync to the session
     private SaveFile? _pendingSaveData;
@@ -475,6 +475,10 @@ public sealed partial class SingleFileTab
 
     private Task PopulateDataBrowserAsync()
     {
+        Core.Diagnostics.Logger.Instance.Debug(
+            "[Records] populate requested: inFlight={0} treeBuilt={1}",
+            _populateDataBrowserTask is { IsCompleted: false }, _esmBrowserTree != null);
+
         if (_populateDataBrowserTask is { IsCompleted: false } inFlight) return inFlight;
         if (_esmBrowserTree != null) return Task.CompletedTask; // already built for this session state
         var task = PopulateDataBrowserCoreAsync();
@@ -490,6 +494,8 @@ public sealed partial class SingleFileTab
         ParseProgressBar.IsIndeterminate = true;
         ParseStatusText.Text = Strings.Status_BuildingDataBrowserTree;
         StatusTextBlock.Text = Strings.Status_BuildingDataBrowserTree;
+
+        string? populateError = null;
 
         try
         {
@@ -521,22 +527,27 @@ public sealed partial class SingleFileTab
                 {
                     // Merge load order records so DLC content appears in the browser. An ESM/ESP primary's
                     // MAST list anchors the slots, so entries land where its raw FormIDs already point.
+                    Core.Diagnostics.Logger.Instance.Debug("[Records] step: merge");
                     var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFilePath);
                     var merged = loadOrderRecords != null
                         ? loadOrderRecords.MergeWith(primaryResult)
                         : primaryResult;
 
                     ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
+                    Core.Diagnostics.Logger.Instance.Debug("[Records] step: buildTree");
                     var builtTree = EsmBrowserTreeBuilder.BuildTree(merged, resolver);
                     EsmBrowserTreeBuilder.AppendRecoverableGapCategory(builtTree, recoverableGaps);
 
                     // Build reverse placement index for Count (base FormID → world placements)
+                    Core.Diagnostics.Logger.Instance.Debug("[Records] step: placements");
                     var placementIndex = merged.BuildBaseToPlacementsMap();
 
                     // Build reverse usage index for GECK-style Use (scripts, lists, containers, packages)
+                    Core.Diagnostics.Logger.Instance.Debug("[Records] step: formUsage");
                     var formUsageIndex = FormUsageIndex.Build(merged);
 
                     // Build reverse faction index (faction FormID → NPC/creature members)
+                    Core.Diagnostics.Logger.Instance.Debug("[Records] step: factions");
                     var factionIndex = merged.BuildFactionMembersIndex();
 
                     // Build race lookup for FaceGen slider computation in property panels
@@ -549,9 +560,11 @@ public sealed partial class SingleFileTab
                     ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
                     EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
 
+                    Core.Diagnostics.Logger.Instance.Debug("[Records] step: workerDone");
                     return (builtTree, placementIndex, formUsageIndex, factionIndex, races, merged);
                 });
 
+            Core.Diagnostics.Logger.Instance.Debug("[Records] worker returned; building tree view");
             _esmBrowserTree = tree;
             _placementIndex = placements;
             _usageIndex = usageIndex;
@@ -570,6 +583,7 @@ public sealed partial class SingleFileTab
                 EsmTreeView.RootNodes.Add(treeNode);
             }
 
+            Core.Diagnostics.Logger.Instance.Debug("[Records] populate COMPLETE");
             DataBrowserPlaceholder.Visibility = Visibility.Collapsed;
             DataBrowserContent.Visibility = Visibility.Visible;
             StatusTextBlock.Text = Strings.Status_BuildingNavIndex;
@@ -590,11 +604,22 @@ public sealed partial class SingleFileTab
                 DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = "");
             });
         }
+        catch (Exception ex)
+        {
+            // ⚠ This method was try/finally with NO catch, and the finally blanked both status
+            // lines. A populate that threw therefore left the placeholder up and the status bar
+            // empty — pixel-identical to "nothing was loaded". That is exactly how a real failure
+            // here went unnoticed while 9,365 parsed records sat in memory the whole time.
+            Core.Diagnostics.Logger.Instance.Error(
+                "[Records] populate FAILED: {0}: {1}{2}{3}",
+                ex.GetType().Name, ex.Message, Environment.NewLine, ex.StackTrace);
+            populateError = $"Could not build the record browser: {ex.GetType().Name}: {ex.Message}";
+        }
         finally
         {
             ParseProgressBar.Visibility = Visibility.Collapsed;
             ParseProgressBar.IsIndeterminate = false;
-            ParseStatusText.Text = "";
+            ParseStatusText.Text = populateError ?? "";
             // The background nav-index build owns StatusTextBlock past this method's end (it sets
             // "Building navigation index…" above and clears it itself when done) — blanket-clearing
             // here erased that status instantly, leaving the long index wait with no feedback.
@@ -631,7 +656,31 @@ public sealed partial class SingleFileTab
             return;
         }
 
-        if (!_session.HasEsmRecords) return;
+        // A classic install takes the Actors tab over entirely, exactly as the selection handler
+        // does. It has to be repeated here because ConfigureSubTabsForFileType runs while the
+        // phase is still Scanning, so every SelectionChanged it raises early-returns — analyzing
+        // with Actors already selected would otherwise leave the panel stale until the user
+        // clicked away and back.
+        if (ReferenceEquals(selectedTab, NpcBrowserTab) && TryShowClassicActors(_session.FileType))
+        {
+            return;
+        }
+
+        Core.Diagnostics.Logger.Instance.Debug(
+            "[AutoPopulate] tab={0} browsable={1} semantic={2}",
+            selectedTab switch
+            {
+                _ when ReferenceEquals(selectedTab, DataBrowserTab) => "Records",
+                _ when ReferenceEquals(selectedTab, SummaryTab) => "Summary",
+                _ when ReferenceEquals(selectedTab, DialogueViewerTab) => "Dialogue",
+                _ when ReferenceEquals(selectedTab, NpcBrowserTab) => "Actors",
+                null => "(null)",
+                _ => "(other)"
+            },
+            _session.HasBrowsableRecords,
+            _session.SemanticResult != null);
+
+        if (!_session.HasBrowsableRecords) return;
 
         var selected = selectedTab;
 
@@ -647,15 +696,15 @@ public sealed partial class SingleFileTab
         {
             _tasks.Post("populate-dialogue", PopulateDialogueViewerAsync);
         }
-        else if (ReferenceEquals(selected, WorldMapTab))
+        else if (ReferenceEquals(selected, WorldMapTab) && _session.HasEsmRecords)
         {
             _tasks.Post("populate-worldmap", PopulateWorldMapAsync);
         }
-        else if (ReferenceEquals(selected, NpcBrowserTab))
+        else if (ReferenceEquals(selected, NpcBrowserTab) && _session.HasEsmRecords)
         {
             _tasks.Post("populate-npcs", PopulateNpcBrowserAsync);
         }
-        else if (ReferenceEquals(selected, ReportsTab))
+        else if (ReferenceEquals(selected, ReportsTab) && _session.HasEsmRecords)
         {
             await _tasks.RunExclusiveAsync("generate-reports", GenerateReportsAsync);
         }

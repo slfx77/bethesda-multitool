@@ -56,7 +56,7 @@ public class EsmEditorIdValidatorTests
     public void IsValidEditorId_ExactlyMaxLength_ReturnsTrue()
     {
         // 200 chars should be accepted (use non-repeating pattern to avoid HasRepeatedPattern)
-        var maxName = string.Concat(Enumerable.Range(0, 20).Select(i => "AbCdEfGhIj"));
+        var maxName = string.Concat(Enumerable.Repeat("AbCdEfGhIj", 20));
         Assert.Equal(200, maxName.Length);
         Assert.True(EsmEditorIdValidator.IsValidEditorId(maxName));
     }
@@ -77,7 +77,7 @@ public class EsmEditorIdValidatorTests
     [InlineData("Has-Dash")]
     [InlineData("Tab\there")]
     [InlineData("New\nLine")]
-    [InlineData("Control\x01Char")]
+    [InlineData("Control\u0001Char")]
     public void IsValidEditorId_InvalidChars_ReturnsFalse(string name)
     {
         Assert.False(EsmEditorIdValidator.IsValidEditorId(name));

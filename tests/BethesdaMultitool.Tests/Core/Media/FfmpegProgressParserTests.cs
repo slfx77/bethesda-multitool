@@ -22,7 +22,7 @@ public class FfmpegProgressParserTests
     [Fact]
     public void TryReadElapsedSeconds_ReadsHoursMinutesAndSeconds()
     {
-        Assert.Equal((2 * 3600) + (3 * 60) + 4.25, FfmpegProgressParser.TryReadElapsedSeconds("time=02:03:04.25"));
+        Assert.Equal(2 * 3600 + 3 * 60 + 4.25, FfmpegProgressParser.TryReadElapsedSeconds("time=02:03:04.25"));
     }
 
     /// <summary>

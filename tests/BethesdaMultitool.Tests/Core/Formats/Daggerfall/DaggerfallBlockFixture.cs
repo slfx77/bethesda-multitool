@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Daggerfall;
@@ -14,16 +11,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Daggerfall;
 /// </summary>
 internal static class DaggerfallBlockFixture
 {
-    public sealed record Model(short Id1, byte Id2, byte ObjectType, int X, int Y, int Z, short YRotation);
-
-    public sealed record Flat(int X, int Y, int Z, ushort TextureBits, short FactionId, byte Flags);
-
-    public sealed record Door(int X, int Y, int Z, short YRotation, short OpenRotation, byte ModelIndex);
-
-    public sealed record BlockData(IReadOnlyList<Model> Models, IReadOnlyList<Flat> Flats, int Section3 = 0, IReadOnlyList<Flat>? People = null, IReadOnlyList<Door>? Doors = null);
-
-    public sealed record SubRecord(int X, int Z, int YRotation, byte BuildingType, byte Quality, BlockData Exterior, BlockData Interior, byte? Trailing = null);
-
     public static byte[] Rmb(
         string headerName,
         IReadOnlyList<SubRecord> subRecords,
@@ -35,7 +22,9 @@ internal static class DaggerfallBlockFixture
     {
         misc3d ??= [];
         miscFlats ??= [];
-        var subBytes = subRecords.Select(s => (byte[])[.. Data(s.Exterior), .. Data(s.Interior), .. (s.Trailing is { } t ? new[] { t } : Array.Empty<byte>())]).ToList();
+        var subBytes = subRecords.Select(s => (byte[])
+                [.. Data(s.Exterior), .. Data(s.Interior), .. s.Trailing is { } t ? new[] { t } : Array.Empty<byte>()])
+            .ToList();
 
         var fld = new byte[6776];
         fld[0] = (byte)subRecords.Count;
@@ -70,7 +59,10 @@ internal static class DaggerfallBlockFixture
         Encoding.ASCII.GetBytes(headerName).CopyTo(fld, 6347);
         Encoding.ASCII.GetBytes("OTHER01").CopyTo(fld, 6360);
 
-        return [.. fld, .. subBytes.SelectMany(b => b), .. misc3d.SelectMany(ModelBytes), .. miscFlats.SelectMany(FlatBytes)];
+        return
+        [
+            .. fld, .. subBytes.SelectMany(b => b), .. misc3d.SelectMany(ModelBytes), .. miscFlats.SelectMany(FlatBytes)
+        ];
     }
 
     private static byte[] Data(BlockData data)
@@ -149,15 +141,13 @@ internal static class DaggerfallBlockFixture
         return bytes;
     }
 
-    /// <summary>An RDB object to lay out: its kind, position and resource fields.</summary>
-    public sealed record RdbObject(byte Type, int X, int Y, int Z, ushort ModelIndex = 0, int YRotation = 0, int ActionNextObject = -1, ushort TextureBits = 0, ushort Radius = 0);
-
     /// <summary>
     ///     Builds an RDB with the given model reference ids, a cell grid and per-cell object lists.
     ///     <paramref name="cells" /> maps cell index → objects (cells absent get a -1 root). An
     ///     object's <c>ActionNextObject</c> is the index of another object in the same cell.
     /// </summary>
-    public static byte[] Rdb(int width, int height, IReadOnlyList<(string Id, string Description)> modelReferences, IReadOnlyDictionary<int, IReadOnlyList<RdbObject>> cells)
+    public static byte[] Rdb(int width, int height, IReadOnlyList<(string Id, string Description)> modelReferences,
+        IReadOnlyDictionary<int, IReadOnlyList<RdbObject>> cells)
     {
         var fixedPart = new byte[9532];
         BinaryPrimitives.WriteUInt32LittleEndian(fixedPart, 0xDEAD0001);
@@ -234,7 +224,8 @@ internal static class DaggerfallBlockFixture
                         BinaryPrimitives.WriteUInt16LittleEndian(model.AsSpan(12), o.ModelIndex);
                         BinaryPrimitives.WriteUInt32LittleEndian(model.AsSpan(14), 0x00000004);
                         model[18] = 9;
-                        BinaryPrimitives.WriteInt32LittleEndian(model.AsSpan(19), o.ActionNextObject >= 0 ? actionOffsets[i] : 0);
+                        BinaryPrimitives.WriteInt32LittleEndian(model.AsSpan(19),
+                            o.ActionNextObject >= 0 ? actionOffsets[i] : 0);
                         body.AddRange(model);
                         if (o.ActionNextObject >= 0)
                         {
@@ -242,7 +233,8 @@ internal static class DaggerfallBlockFixture
                             action[0] = 2;
                             BinaryPrimitives.WriteUInt16LittleEndian(action.AsSpan(1), 30);
                             BinaryPrimitives.WriteUInt16LittleEndian(action.AsSpan(3), 64);
-                            BinaryPrimitives.WriteInt32LittleEndian(action.AsSpan(5), listStart + o.ActionNextObject * 25);
+                            BinaryPrimitives.WriteInt32LittleEndian(action.AsSpan(5),
+                                listStart + o.ActionNextObject * 25);
                             action[9] = 1;
                             body.AddRange(action);
                         }
@@ -315,4 +307,39 @@ internal static class DaggerfallBlockFixture
 
         return [.. bytes];
     }
+
+    public sealed record Model(short Id1, byte Id2, byte ObjectType, int X, int Y, int Z, short YRotation);
+
+    public sealed record Flat(int X, int Y, int Z, ushort TextureBits, short FactionId, byte Flags);
+
+    public sealed record Door(int X, int Y, int Z, short YRotation, short OpenRotation, byte ModelIndex);
+
+    public sealed record BlockData(
+        IReadOnlyList<Model> Models,
+        IReadOnlyList<Flat> Flats,
+        int Section3 = 0,
+        IReadOnlyList<Flat>? People = null,
+        IReadOnlyList<Door>? Doors = null);
+
+    public sealed record SubRecord(
+        int X,
+        int Z,
+        int YRotation,
+        byte BuildingType,
+        byte Quality,
+        BlockData Exterior,
+        BlockData Interior,
+        byte? Trailing = null);
+
+    /// <summary>An RDB object to lay out: its kind, position and resource fields.</summary>
+    public sealed record RdbObject(
+        byte Type,
+        int X,
+        int Y,
+        int Z,
+        ushort ModelIndex = 0,
+        int YRotation = 0,
+        int ActionNextObject = -1,
+        ushort TextureBits = 0,
+        ushort Radius = 0);
 }

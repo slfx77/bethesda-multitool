@@ -43,7 +43,7 @@ internal sealed class TopDownStillScenario : TopDownScenarioBase
         await Task.Delay(150);
 
         var smallPanWatch = Stopwatch.StartNew();
-        TopDownProfilerSnapshot afterSmallPan = default;
+        TopDownProfilerSnapshot afterSmallPan;
         while (smallPanWatch.Elapsed < TimeSpan.FromSeconds(1))
         {
             afterSmallPan = await SnapshotAsync(control, queue);

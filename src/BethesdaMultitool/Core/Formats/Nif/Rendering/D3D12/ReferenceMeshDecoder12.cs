@@ -713,7 +713,8 @@ internal sealed class ReferenceMeshDecoder12
             {
                 if (track is null) continue;
                 total += track.RotationKeys.Length * 20L;
-                total += (long)track.TranslationKeys.Length * System.Runtime.CompilerServices.Unsafe.SizeOf<NifVec3Key>();
+                total +=
+ (long)track.TranslationKeys.Length * System.Runtime.CompilerServices.Unsafe.SizeOf<NifVec3Key>();
                 total += track.ScaleKeys.Length * 8L;
             }
         }

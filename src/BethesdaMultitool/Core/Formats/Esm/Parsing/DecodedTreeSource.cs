@@ -2,7 +2,6 @@ using System.Buffers;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
-using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing;

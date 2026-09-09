@@ -7,11 +7,11 @@ reverified against the pinned final Xbox build on 2026-08-13.
 
 | File                      | Path                                                                                     | Notes                                                    |
 | ------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Prototype debug type dump | `Sample/PDB/Proto/Fallout_Debug/types_full.txt`                                            | Historical supporting struct/enum source                |
-| Prototype debug globals   | `Sample/PDB/Proto/Fallout_Debug/globals.txt`                                               | Historical supporting symbols                           |
-| Final build PDB           | `Sample/Full_Builds/Fallout New Vegas (Aug 22, 2010)/Diskuild_1.0.0.252/Fallout.pdb`      | Generator authority for layouts and table globals       |
-| Final build executable    | `Sample/Full_Builds/Fallout New Vegas (Aug 22, 2010)/Diskuild_1.0.0.252/Fallout.exe`      | Xbox 360 PowerPC PE (machine 0x1F2), base 0x82000000    |
-| Prototype executable      | `Sample/Full_Builds/Fallout New Vegas (July 21, 2010)/FalloutNV/Fallout.exe`               | Earlier prototype (2 parameter differences vs final)    |
+| Prototype debug type dump | `Sample/DebugSymbols/Fallout - New Vegas (X360)/Proto/Fallout_Debug/types_full.txt`                                            | Historical supporting struct/enum source                |
+| Prototype debug globals   | `Sample/DebugSymbols/Fallout - New Vegas (X360)/Proto/Fallout_Debug/globals.txt`                                               | Historical supporting symbols                           |
+| Final build PDB           | `Sample/Builds/Fallout - New Vegas (2010-8-22, X360 - Prototype)/Diskuild_1.0.0.252/Fallout.pdb`      | Generator authority for layouts and table globals       |
+| Final build executable    | `Sample/Builds/Fallout - New Vegas (2010-8-22, X360 - Prototype)/Diskuild_1.0.0.252/Fallout.exe`      | Xbox 360 PowerPC PE (machine 0x1F2), base 0x82000000    |
+| Prototype executable      | `Sample/Builds/Fallout - New Vegas (2010-7-21, X360 - Prototype)/FalloutNV/Fallout.exe`               | Earlier prototype (2 parameter differences vs final)    |
 
 The reproducible generator pins the final executable SHA-256 to
 `A43DFE9025A0FACD0EF862E89A83C05C11A5CB3A9FE53EFEEC18C0278F75F0A6` and the paired PDB

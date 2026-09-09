@@ -29,7 +29,7 @@ public static class SpriteCommand
         return new Option<string>("--game", "-g")
         {
             Description =
-                "Which game's decoders to use: auto (default), arena, daggerfall, battlespire, redguard, stormhold or fallout",
+                "Which game's decoders to use: auto (default), arena, daggerfall, battlespire, redguard, stormhold, shadowkey, fallout, tactics or bos",
             DefaultValueFactory = _ => "auto"
         };
     }
@@ -44,9 +44,12 @@ public static class SpriteCommand
             "battlespire" or "bs" => ClassicSpriteGame.Battlespire,
             "redguard" or "rg" => ClassicSpriteGame.Redguard,
             "stormhold" or "sh" => ClassicSpriteGame.Stormhold,
+            "shadowkey" or "sk" => ClassicSpriteGame.Shadowkey,
             "fallout" or "fo" => ClassicSpriteGame.Fallout,
+            "tactics" or "ft" => ClassicSpriteGame.Tactics,
+            "bos" or "brotherhood" => ClassicSpriteGame.BrotherhoodOfSteel,
             _ => throw new NotSupportedException(
-                $"Unknown --game '{value}'. Use auto, arena, daggerfall, battlespire, redguard, stormhold, or fallout.")
+                $"Unknown --game '{value}'. Use auto, arena, daggerfall, battlespire, redguard, stormhold, shadowkey, fallout, tactics, or bos.")
         };
     }
 
@@ -55,7 +58,9 @@ public static class SpriteCommand
         var command = new Command("render", "Decode a sprite/image (loose file or archive entry) to PNG frames");
         var inputArg = new Argument<string>("input")
         {
-            Description = "Loose image file (IMG/MNU/SET/CIF/DFA), or an archive when --entry is given"
+            Description = "Loose image file (IMG/MNU/SET/CIF/DFA, a BoS .tex, a Tactics .zar/.til/.spr), or an " +
+                          "archive when --entry is given (a Brotherhood of Steel .CLP entry inside the disc image " +
+                          "renders every .tex it holds; a Tactics .spr renders every animation unless --animation narrows it)"
         };
         var entryOption = new Option<string?>("--entry", "-e")
         {
@@ -71,12 +76,18 @@ public static class SpriteCommand
             Description = "Palette file (776-byte Arena COL or raw 768-byte 6-bit RGB); " +
                           "default: embedded palette, else PAL.COL beside the source"
         };
+        var animationOption = new Option<string?>("--animation", "-a")
+        {
+            Description = "Fallout Tactics .spr only: render one animation, by 0-based index or name substring " +
+                          "(default: every animation, which can be several hundred frames)"
+        };
         command.Arguments.Add(inputArg);
         var gameOption = CreateGameOption();
         command.Options.Add(entryOption);
         command.Options.Add(outputOption);
         command.Options.Add(paletteOption);
         command.Options.Add(gameOption);
+        command.Options.Add(animationOption);
         command.SetAction((parseResult, _) =>
         {
             try
@@ -86,7 +97,8 @@ public static class SpriteCommand
                     parseResult.GetValue(entryOption),
                     parseResult.GetValue(outputOption)!,
                     parseResult.GetValue(paletteOption),
-                    ParseGame(parseResult.GetValue(gameOption)!));
+                    ParseGame(parseResult.GetValue(gameOption)!),
+                    parseResult.GetValue(animationOption));
 
                 AnsiConsole.MarkupLine(
                     "[green]Wrote {0} frame(s)[/] ({1}; palette: {2})",
@@ -131,23 +143,26 @@ public static class SpriteCommand
         {
             try
             {
-                var frames = SpriteRenderPipeline.Inspect(
+                var frames = SpriteRenderPipeline.Describe(
                     parseResult.GetValue(inputArg)!,
                     parseResult.GetValue(entryOption),
                     ParseGame(parseResult.GetValue(gameOption)!),
                     out var logicalName,
-                    out var resolvedGame);
+                    out var resolvedGame,
+                    out var summary);
 
                 var table = new Table { Border = TableBorder.Rounded };
                 table.AddColumn("Frame");
                 table.AddColumn("Size");
                 table.AddColumn("Offset");
-                for (var i = 0; i < frames.Count; i++)
+                table.AddColumn("Detail");
+                foreach (var frame in frames)
                 {
                     table.AddRow(
-                        i.ToString(),
-                        $"{frames[i].Width}x{frames[i].Height}",
-                        $"({frames[i].XOffset},{frames[i].YOffset})");
+                        Markup.Escape(frame.Label),
+                        $"{frame.Width}x{frame.Height}",
+                        $"({frame.XOffset},{frame.YOffset})",
+                        Markup.Escape(frame.Detail));
                 }
 
                 AnsiConsole.MarkupLine(
@@ -155,6 +170,11 @@ public static class SpriteCommand
                     Markup.Escape(logicalName),
                     frames.Count,
                     resolvedGame);
+                if (summary.Length > 0)
+                {
+                    AnsiConsole.MarkupLine("[grey]{0}[/]", Markup.Escape(summary));
+                }
+
                 AnsiConsole.Write(table);
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)

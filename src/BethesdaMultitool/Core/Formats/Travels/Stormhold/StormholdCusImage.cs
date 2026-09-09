@@ -161,8 +161,8 @@ internal sealed class StormholdCusImage
         }
 
         var expected = HeaderLength
-            + ((long)PaletteEntryLength * bytes[PaletteCountOffset])
-            + ((long)width * height);
+                       + (long)PaletteEntryLength * bytes[PaletteCountOffset]
+                       + (long)width * height;
         return expected == bytes.Length;
     }
 
@@ -199,7 +199,7 @@ internal sealed class StormholdCusImage
         var keyColour = BinaryPrimitives.ReadUInt16BigEndian(bytes[9..]);
         int paletteCount = bytes[PaletteCountOffset];
 
-        var pixelOffset = HeaderLength + (PaletteEntryLength * paletteCount);
+        var pixelOffset = HeaderLength + PaletteEntryLength * paletteCount;
         if (pixelOffset > bytes.Length)
         {
             throw new InvalidDataException(
@@ -218,7 +218,7 @@ internal sealed class StormholdCusImage
         var transparentIndex = -1;
         for (var i = 0; i < paletteCount; i++)
         {
-            var entry = BinaryPrimitives.ReadUInt16BigEndian(bytes[(HeaderLength + (i * PaletteEntryLength))..]);
+            var entry = BinaryPrimitives.ReadUInt16BigEndian(bytes[(HeaderLength + i * PaletteEntryLength)..]);
             palette444.Add(entry);
 
             // FIRST match wins, and the match is not always slot 0 (see the type remarks).
@@ -285,7 +285,7 @@ internal sealed class StormholdCusImage
         var frame = new byte[frameWidth * Height];
         for (var y = 0; y < Height; y++)
         {
-            Array.Copy(_indices, (y * Width) + left, frame, y * frameWidth, frameWidth);
+            Array.Copy(_indices, y * Width + left, frame, y * frameWidth, frameWidth);
         }
 
         return new IndexedBitmap(frameWidth, Height, frame);
@@ -303,8 +303,8 @@ internal sealed class StormholdCusImage
         {
             var entry = palette444[i];
             rgb[i * 3] = (byte)(((entry >> 8) & 0xF) * 17);
-            rgb[(i * 3) + 1] = (byte)(((entry >> 4) & 0xF) * 17);
-            rgb[(i * 3) + 2] = (byte)((entry & 0xF) * 17);
+            rgb[i * 3 + 1] = (byte)(((entry >> 4) & 0xF) * 17);
+            rgb[i * 3 + 2] = (byte)((entry & 0xF) * 17);
         }
 
         var palette = Palette.FromRgb8(rgb);

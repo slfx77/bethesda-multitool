@@ -25,9 +25,9 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
 
     private readonly ID3D12Resource[] _buffers;
     private readonly IntPtr[] _cpuPointers;
+    private readonly IDisposable _footprint;
     private readonly int _framesInFlight;
     private readonly ulong[] _gpuAddresses;
-    private readonly IDisposable _footprint;
     private bool _disposed;
 
     public GpuRingBuffer12(GpuDevice12 gpu, int framesInFlight, uint bytesPerFrame)
@@ -67,7 +67,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
         // big-RAM default this ring is 512 MB × slots of committed memory that used to appear in no
         // accounting at all.
         _footprint = GpuFixedFootprintTracker12.NonLocalInstance.Add(
-            "upload-ring", (long)bytesPerFrame * framesInFlight);
+            "upload-ring", bytesPerFrame * framesInFlight);
     }
 
     /// <summary>Total bytes available in each frame slot. Allocations beyond this throw.</summary>

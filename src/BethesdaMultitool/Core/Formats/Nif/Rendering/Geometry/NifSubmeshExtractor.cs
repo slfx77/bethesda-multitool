@@ -95,8 +95,8 @@ internal static class NifSubmeshExtractor
                     useDualQuaternionSkinning,
                     preSkinMorphDeltas,
                     shapeName,
-                    sourceNif: nif,
-                    sourceShapeIndex: shapeIndex),
+                    nif,
+                    shapeIndex),
                 // BSTriShape and its variants are self-contained (the shape block IS its own data block,
                 // so dataIndex == shapeIndex). Skyrim SE / Fallout 4 / Fallout 76 geometry.
                 "BSTriShape" or "BSSubIndexTriShape" or "BSMeshLODTriShape" or "BSDynamicTriShape"
@@ -129,8 +129,8 @@ internal static class NifSubmeshExtractor
                 preSkinMorphDeltas,
                 shapeName,
                 partitionTriangles,
-                sourceNif: nif,
-                sourceShapeIndex: shapeIndex);
+                nif,
+                shapeIndex);
         }
 
         if (submesh == null)

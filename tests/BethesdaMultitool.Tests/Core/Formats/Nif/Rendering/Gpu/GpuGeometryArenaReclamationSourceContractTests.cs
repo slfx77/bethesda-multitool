@@ -10,9 +10,12 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
 /// </summary>
 public sealed class GpuGeometryArenaReclamationSourceContractTests
 {
-    private static string ArenaSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
-        "GpuGeometryArena12.cs");
+    private static string ArenaSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
+            "GpuGeometryArena12.cs");
+    }
 
     [Fact]
     public void Reclamation_generation_is_a_monotonic_public_arena_signal()
@@ -75,7 +78,7 @@ public sealed class GpuGeometryArenaReclamationSourceContractTests
             "if (_disposed)",
             "return;",
             "_pendingBlockCopies[blockIndex]--;",
-            "_pendingCopyCount--;",
+            "PendingCopyCount--;",
             "AdvanceReclamationGeneration();");
         Assert.Contains("arena.CompleteCopy(blockIndex);", source, StringComparison.Ordinal);
     }

@@ -21,6 +21,7 @@ internal sealed record RendererProfilerOptions
     ///     (see <c>WorldViewData.AssetDataDirectories</c>).
     /// </summary>
     internal IReadOnlyList<string> AssetDataDirectories { get; init; } = [];
+
     internal string ProfileOutputPath { get; init; } = CreateDefaultProfileOutputPath();
 
     internal string ProfileJsonlOutputPath { get; init; } =
@@ -829,7 +830,8 @@ internal sealed record RendererProfilerOptions
                             captureBatchProjection = TopDownProjection.Straight;
                             break;
                         default:
-                            error = $"--capture-batch-projection expects 'trimetric' or 'top-down', got '{projectionValue}'.";
+                            error =
+                                $"--capture-batch-projection expects 'trimetric' or 'top-down', got '{projectionValue}'.";
                             return Fail(out options);
                     }
 
@@ -1409,7 +1411,7 @@ internal sealed record RendererProfilerOptions
             CaptureTopDownBatchDirectory = string.IsNullOrWhiteSpace(captureTopDownBatch)
                 ? null
                 : Path.GetFullPath(captureTopDownBatch),
-            CaptureNamePrefix = captureNamePrefix ?? "",
+            CaptureNamePrefix = captureNamePrefix,
             CaptureBatchScale = captureBatchScale,
             CaptureBatchMaxPixels = captureBatchMaxPixels,
             CaptureBatchFullBright = captureBatchFullBright,

@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Audio;
 using Xunit;
 
@@ -18,12 +15,15 @@ public sealed class XmidiFileTests
     /// <summary>Wraps an EVNT payload in the container Arena ships: FORM XDIR + CAT XMID + FORM XMID.</summary>
     private static byte[] Container(params byte[] events)
     {
-        static byte[] Chunk(string tag, byte[] body) =>
-        [
-            .. System.Text.Encoding.ASCII.GetBytes(tag),
-            (byte)(body.Length >> 24), (byte)(body.Length >> 16), (byte)(body.Length >> 8), (byte)body.Length,
-            .. body
-        ];
+        static byte[] Chunk(string tag, byte[] body)
+        {
+            return
+            [
+                .. Encoding.ASCII.GetBytes(tag),
+                (byte)(body.Length >> 24), (byte)(body.Length >> 16), (byte)(body.Length >> 8), (byte)body.Length,
+                .. body
+            ];
+        }
 
         var evnt = Chunk("EVNT", events);
         var xmidForm = Chunk("FORM", [.. "XMID"u8, .. evnt]);
@@ -94,8 +94,8 @@ public sealed class XmidiFileTests
         var midi = XmidiFile.Parse(Container(0xFF, 0x2F, 0x00), "T.XMI").ToStandardMidi();
 
         Assert.Equal("MThd"u8.ToArray(), midi[..4]);
-        Assert.Equal(0, (midi[8] << 8) | midi[9]);                     // format 0
-        Assert.Equal(1, (midi[10] << 8) | midi[11]);                   // one track
+        Assert.Equal(0, (midi[8] << 8) | midi[9]); // format 0
+        Assert.Equal(1, (midi[10] << 8) | midi[11]); // one track
         Assert.Equal(XmidiFile.TicksPerQuarterNote, (midi[12] << 8) | midi[13]);
         Assert.Equal("MTrk"u8.ToArray(), midi[14..18]);
 

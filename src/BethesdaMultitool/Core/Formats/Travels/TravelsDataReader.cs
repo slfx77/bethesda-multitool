@@ -42,7 +42,6 @@ internal ref struct TravelsDataReader
 
     private readonly ReadOnlySpan<byte> _bytes;
     private readonly string _name;
-    private int _position;
 
     /// <summary>Wraps one table payload; <paramref name="name" /> appears in every message.</summary>
     public TravelsDataReader(ReadOnlySpan<byte> bytes, string name)
@@ -50,24 +49,24 @@ internal ref struct TravelsDataReader
         ArgumentNullException.ThrowIfNull(name);
         _bytes = bytes;
         _name = name;
-        _position = 0;
+        Position = 0;
     }
 
     /// <summary>Byte offset of the next read, from the start of the payload.</summary>
-    public readonly int Position => _position;
+    public int Position { get; private set; }
 
     /// <summary>Total payload length.</summary>
     public readonly int Length => _bytes.Length;
 
     /// <summary>Bytes left unread.</summary>
-    public readonly int Remaining => _bytes.Length - _position;
+    public readonly int Remaining => _bytes.Length - Position;
 
     /// <summary>Java <c>readByte</c>: one SIGNED byte.</summary>
     public sbyte ReadInt8()
     {
         Require(1, "a signed byte");
-        var value = (sbyte)_bytes[_position];
-        _position++;
+        var value = (sbyte)_bytes[Position];
+        Position++;
         return value;
     }
 
@@ -75,8 +74,8 @@ internal ref struct TravelsDataReader
     public byte ReadUInt8()
     {
         Require(1, "an unsigned byte");
-        var value = _bytes[_position];
-        _position++;
+        var value = _bytes[Position];
+        Position++;
         return value;
     }
 
@@ -84,8 +83,8 @@ internal ref struct TravelsDataReader
     public short ReadInt16()
     {
         Require(2, "a signed 16-bit value");
-        var value = BinaryPrimitives.ReadInt16BigEndian(_bytes[_position..]);
-        _position += 2;
+        var value = BinaryPrimitives.ReadInt16BigEndian(_bytes[Position..]);
+        Position += 2;
         return value;
     }
 
@@ -93,8 +92,8 @@ internal ref struct TravelsDataReader
     public ushort ReadUInt16()
     {
         Require(2, "an unsigned 16-bit value");
-        var value = BinaryPrimitives.ReadUInt16BigEndian(_bytes[_position..]);
-        _position += 2;
+        var value = BinaryPrimitives.ReadUInt16BigEndian(_bytes[Position..]);
+        Position += 2;
         return value;
     }
 
@@ -102,8 +101,8 @@ internal ref struct TravelsDataReader
     public int ReadInt32()
     {
         Require(4, "a signed 32-bit value");
-        var value = BinaryPrimitives.ReadInt32BigEndian(_bytes[_position..]);
-        _position += 4;
+        var value = BinaryPrimitives.ReadInt32BigEndian(_bytes[Position..]);
+        Position += 4;
         return value;
     }
 
@@ -115,12 +114,12 @@ internal ref struct TravelsDataReader
     /// </summary>
     public string ReadUtf()
     {
-        var start = _position;
+        var start = Position;
         int length = ReadUInt16();
         Require(length, $"a {length}-byte string");
 
-        var raw = _bytes.Slice(_position, length);
-        _position += length;
+        var raw = _bytes.Slice(Position, length);
+        Position += length;
 
         try
         {
@@ -140,7 +139,7 @@ internal ref struct TravelsDataReader
     /// </summary>
     public ImmutableArray<string> ReadUtfList16()
     {
-        var start = _position;
+        var start = Position;
         int count = ReadInt16();
         if (count < 0)
         {
@@ -162,7 +161,7 @@ internal ref struct TravelsDataReader
         {
             throw new InvalidDataException(
                 $"'{_name}': {count} strings need at least {(long)count * UtfLengthPrefixBytes} bytes "
-                + $"at byte {_position}, past the {_bytes.Length}-byte file.");
+                + $"at byte {Position}, past the {_bytes.Length}-byte file.");
         }
 
         var builder = ImmutableArray.CreateBuilder<string>(count);
@@ -181,10 +180,10 @@ internal ref struct TravelsDataReader
     /// </summary>
     public readonly void ExpectEnd()
     {
-        if (_position != _bytes.Length)
+        if (Position != _bytes.Length)
         {
             throw new InvalidDataException(
-                $"'{_name}': the layout ends at byte {_position} but the file is {_bytes.Length} bytes "
+                $"'{_name}': the layout ends at byte {Position} but the file is {_bytes.Length} bytes "
                 + $"({Remaining} trailing bytes).");
         }
     }
@@ -194,7 +193,7 @@ internal ref struct TravelsDataReader
         if (count > Remaining)
         {
             throw new InvalidDataException(
-                $"'{_name}': {what} needs {count} bytes at byte {_position}, past the {_bytes.Length}-byte file.");
+                $"'{_name}': {what} needs {count} bytes at byte {Position}, past the {_bytes.Length}-byte file.");
         }
     }
 }

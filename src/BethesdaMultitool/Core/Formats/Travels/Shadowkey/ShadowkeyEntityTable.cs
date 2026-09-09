@@ -28,5 +28,8 @@ internal sealed class ShadowkeyEntityTable
     public IReadOnlyList<ShadowkeyEntityDef> Entities { get; }
 
     /// <summary>The row for <paramref name="id" />, or <see langword="null" /> when absent.</summary>
-    public ShadowkeyEntityDef? Find(uint id) => _byId.GetValueOrDefault(id);
+    public ShadowkeyEntityDef? Find(uint id)
+    {
+        return _byId.GetValueOrDefault(id);
+    }
 }

@@ -10,9 +10,12 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
 /// </summary>
 public sealed class GpuTonemapSubmissionTransactionSourceContractTests
 {
-    private static string TonemapSource() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
-        "GpuTonemapPass12.cs");
+    private static string TonemapSource()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
+            "GpuTonemapPass12.cs");
+    }
 
     [Fact]
     public void Logical_history_enlists_before_record_mutates_it_and_abort_restores_it()

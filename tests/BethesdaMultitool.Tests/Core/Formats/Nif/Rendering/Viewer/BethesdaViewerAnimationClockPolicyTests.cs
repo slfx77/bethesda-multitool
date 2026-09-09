@@ -9,7 +9,7 @@ public sealed class BethesdaViewerAnimationClockPolicyTests
     [Fact]
     public void Resolve_NonUnitClockUsesAuthoredBoundaryTimesForClamp()
     {
-        var clip = Clip(loops: false, Track(frequency: 0.5f, phase: 0f));
+        var clip = Clip(false, Track(0.5f, 0f));
 
         var window = BethesdaViewerAnimationClockPolicy.Resolve(clip);
 
@@ -23,9 +23,9 @@ public sealed class BethesdaViewerAnimationClockPolicyTests
     public void Resolve_MixedSignedClocksCoversEveryTrackWithoutDoubleWrapping()
     {
         var clip = Clip(
-            loops: false,
-            Track(frequency: 0.5f, phase: 0f),
-            Track(frequency: -2f, phase: 12f, nodeIndex: 1));
+            false,
+            Track(0.5f, 0f),
+            Track(-2f, 12f, 1));
 
         var window = BethesdaViewerAnimationClockPolicy.Resolve(clip);
 
@@ -39,9 +39,9 @@ public sealed class BethesdaViewerAnimationClockPolicyTests
     public void Resolve_LoopUsesLongestTrackPeriodOnlyAsDisplayHorizon()
     {
         var clip = Clip(
-            loops: true,
-            Track(frequency: 0.5f, phase: 0f),
-            Track(frequency: 2f, phase: 0f, nodeIndex: 1));
+            true,
+            Track(0.5f, 0f),
+            Track(2f, 0f, 1));
 
         var window = BethesdaViewerAnimationClockPolicy.Resolve(clip);
 
@@ -54,11 +54,11 @@ public sealed class BethesdaViewerAnimationClockPolicyTests
     public void Resolve_PingPongUsesTheFullForwardAndBackwardDisplayHorizon()
     {
         var clip = Clip(
-            loops: true,
-            Track(frequency: 0.5f, phase: 0f)) with
-        {
-            PingPongs = true
-        };
+                true,
+                Track(0.5f, 0f)) with
+            {
+                PingPongs = true
+            };
 
         var window = BethesdaViewerAnimationClockPolicy.Resolve(clip);
 
@@ -70,7 +70,7 @@ public sealed class BethesdaViewerAnimationClockPolicyTests
     [Fact]
     public void Resolve_ZeroFrequencyNodeClockIsDormant()
     {
-        var clip = Clip(loops: true, Track(frequency: 0f, phase: 3f));
+        var clip = Clip(true, Track(0f, 3f));
 
         var window = BethesdaViewerAnimationClockPolicy.Resolve(clip);
 

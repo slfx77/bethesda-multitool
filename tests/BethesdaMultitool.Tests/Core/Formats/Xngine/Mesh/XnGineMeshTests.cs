@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
 using Xunit;
 
@@ -15,10 +12,12 @@ public class XnGineMeshTests
         var bytes = XnGineMeshFixture.Build("v2.7",
             [(0, 0, 0), (256, 0, 0), (256, -512, 0), (0, -512, 0)],
             [
-                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(24, 3), [(0, 16, 32), (1, 8, 0), (2, 0, 8)], (0, 0, -256)),
-                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(321, 4), [(2, 0, 0), (3, 0, 0), (0, 0, 0), (1, 0, 0)], (0, 0, 256))
+                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(24, 3), [(0, 16, 32), (1, 8, 0), (2, 0, 8)],
+                    (0, 0, -256)),
+                new XnGineMeshFixture.Plane(XnGineMeshFixture.Texture(321, 4),
+                    [(2, 0, 0), (3, 0, 0), (0, 0, 0), (1, 0, 0)], (0, 0, 256))
             ],
-            radius: 37094);
+            37094);
 
         var mesh = XnGineMesh.Parse(bytes, 44005);
 

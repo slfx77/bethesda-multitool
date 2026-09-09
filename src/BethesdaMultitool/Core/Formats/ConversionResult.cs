@@ -8,6 +8,7 @@ public class ConversionResult
     public bool Success { get; init; }
     public byte[]? OutputData { get; init; }
     public byte[]? AtlasData { get; init; }
+
     /// <summary>
     ///     Set by a converter when its <b>own</b> output is incomplete for a reason the carver
     ///     cannot see from the source bytes — not when the source was gapped, which the carver
@@ -20,6 +21,7 @@ public class ConversionResult
     ///     </para>
     /// </summary>
     public bool IsPartial { get; init; }
+
     public string? Notes { get; init; }
     public string? ConsoleOutput { get; init; }
 

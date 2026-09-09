@@ -25,13 +25,6 @@ internal sealed class NifTextureResolver : IDisposable
 
     private readonly List<INifTextureSource> _sources;
 
-    /// <summary>
-    ///     Identity of the ordered sources containing Starfield's compiled material database, or
-    ///     null for games/source sets without a candidate. Decoded-mesh persistence includes this
-    ///     dependency because Starfield material policy is baked into its vertex output.
-    /// </summary>
-    internal string? StarfieldMaterialDatabaseCacheIdentity { get; }
-
     public NifTextureResolver(params string[] texturesBsaPaths)
     {
         _sources = NifTextureArchiveSourceFactory.Create(texturesBsaPaths);
@@ -59,6 +52,13 @@ internal sealed class NifTextureResolver : IDisposable
             MaterialTexturePathResolver.ResolveStarfieldMaterialDatabaseCacheIdentity(_sources);
         _cache = CreateCache();
     }
+
+    /// <summary>
+    ///     Identity of the ordered sources containing Starfield's compiled material database, or
+    ///     null for games/source sets without a candidate. Decoded-mesh persistence includes this
+    ///     dependency because Starfield material policy is baked into its vertex output.
+    /// </summary>
+    internal string? StarfieldMaterialDatabaseCacheIdentity { get; }
 
     public int CacheHits => (int)_cache.Hits;
 
@@ -158,8 +158,7 @@ internal sealed class NifTextureResolver : IDisposable
             LoadTexture,
             static texture =>
                 texture.MipLevels.Sum(static mip => (long)mip.Pixels.Length) + ByteSize.ObjectOverhead,
-            StringComparer.OrdinalIgnoreCase,
-            10);
+            StringComparer.OrdinalIgnoreCase);
     }
 
     private DecodedTexture? LoadTexture(string path)
@@ -203,7 +202,7 @@ internal sealed class NifTextureResolver : IDisposable
                 : MaterialTexturePathResolver.ResolveStarfieldSlot(
                     materialPath,
                     _sources,
-                    normalMap: starfieldNormal);
+                    starfieldNormal);
             if (slot.TexturePath is { Length: > 0 } starfieldTexture)
             {
                 return NifTextureLoader.TryLoadFromSources(starfieldTexture, _sources);

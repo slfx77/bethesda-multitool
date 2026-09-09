@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
@@ -105,6 +106,132 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         return isBigEndian
             ? BinaryPrimitives.ReadSingleBigEndian(data[offset..])
             : BinaryPrimitives.ReadSingleLittleEndian(data[offset..]);
+    }
+
+    /// <summary>
+    ///     Reads the exact outer subrecord envelope shared by standalone Starfield reflection
+    ///     definitions. The typed decoder receives bytes only after the complete little-endian
+    ///     framing and the one-full-REFL/no-inheritance contract have been established.
+    /// </summary>
+    private bool TryReadStandaloneStarfieldReflection(
+        DetectedMainRecord record,
+        byte[] buffer,
+        string recordType,
+        out string? editorId,
+        out byte[]? reflectionPayload,
+        out string? failure)
+    {
+        editorId = Context.GetEditorId(record.FormId);
+        reflectionPayload = null;
+        failure = null;
+
+        var recordData = Context.ReadRecordData(record, buffer);
+        if (recordData == null)
+        {
+            failure = $"{recordType} record bytes could not be read.";
+            return false;
+        }
+
+        var (data, dataSize) = recordData.Value;
+        CaptureStandaloneReflectionEditorIdPrefix(
+            data, dataSize, record.IsBigEndian, record.FormId, ref editorId);
+
+        if (record.IsBigEndian)
+        {
+            failure = $"Starfield {recordType} reflection streams are supported only in little-endian records.";
+            return false;
+        }
+
+        if (Context.NonContiguousRecordFormIds.Contains(record.FormId) ||
+            Context.PartiallyRecoveredFormIds.Contains(record.FormId))
+        {
+            failure =
+                $"{recordType} reflection decoding rejects non-contiguous or partially recovered record bytes.";
+            return false;
+        }
+
+        if (!HasCompleteLittleEndianSubrecordLayout(data, dataSize))
+        {
+            failure = $"{recordType} has a truncated or malformed outer subrecord layout.";
+            return false;
+        }
+
+        var editorIdSeen = false;
+        var reflectionPayloadCount = 0;
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, false))
+        {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            switch (sub.Signature)
+            {
+                case "EDID":
+                    if (editorIdSeen)
+                    {
+                        failure ??= $"{recordType} has duplicate EDID subrecords.";
+                        break;
+                    }
+
+                    editorIdSeen = true;
+                    editorId = EsmStringUtils.ReadNullTermString(subData);
+                    if (!string.IsNullOrEmpty(editorId))
+                    {
+                        Context.FormIdToEditorId[record.FormId] = editorId;
+                    }
+
+                    break;
+                case "REFL":
+                    reflectionPayloadCount++;
+                    reflectionPayload ??= subData.ToArray();
+                    break;
+                case "RDIF":
+                    failure ??= $"{recordType} does not support RDIF reflection diffs.";
+                    break;
+                case "RFDP":
+                    failure ??= $"{recordType} does not support RFDP reflection inheritance.";
+                    break;
+                default:
+                    NoteUnmodeledSubrecord(recordType, sub.Signature, sub.DataLength);
+                    failure ??=
+                        $"{recordType} has unsupported outer subrecord '{sub.Signature}'.";
+                    break;
+            }
+        }
+
+        if (reflectionPayloadCount != 1)
+        {
+            failure ??= $"{recordType} must contain exactly one REFL payload.";
+        }
+
+        return failure == null;
+    }
+
+    /// <summary>
+    ///     Preserves a complete leading EDID even when a later subrecord is malformed or truncated.
+    ///     The ordinary iterator yields only wholly resident subrecords, so this never consumes the
+    ///     damaged tail and does not weaken the complete-layout gate above.
+    /// </summary>
+    private void CaptureStandaloneReflectionEditorIdPrefix(
+        byte[] data,
+        int dataSize,
+        bool isBigEndian,
+        uint formId,
+        ref string? editorId)
+    {
+        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, isBigEndian))
+        {
+            if (sub.Signature != "EDID")
+            {
+                continue;
+            }
+
+            editorId = EsmStringUtils.ReadNullTermString(
+                data.AsSpan(sub.DataOffset, sub.DataLength));
+            if (!string.IsNullOrEmpty(editorId))
+            {
+                Context.FormIdToEditorId[formId] = editorId;
+            }
+
+            return;
+        }
     }
 
     #region Water
@@ -322,7 +449,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 // some into arbitrary colors made from float bytes). Exact-size gate this recovered
                 // layout; malformed or future variants remain unresolved instead of being guessed.
                 case "DNAM" when Context.Game == BethesdaGame.Fallout76 &&
-                                      !record.IsBigEndian && sub.DataLength == 148:
+                                 !record.IsBigEndian && sub.DataLength == 148:
                     visualProps = ReadFallout76WaterData(subData, record.IsBigEndian);
                     break;
                 // Skyrim's active set and FO4/FO76's only set ship as NAM2/NAM3/NAM4 zstrings
@@ -348,7 +475,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 // future FO76/Starfield payload with the same size cannot silently fall through to
                 // a physically unrelated decoder after failing its own exact layout gate above.
                 case "DNAM" when
-                    (Context.Game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas) &&
+                    Context.Game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas &&
                     sub.DataLength == 196:
                 {
                     if (SubrecordSchemaView.TryRead("DNAM", "WATR", subData, record.IsBigEndian) is { } v)
@@ -638,6 +765,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         {
             props["SkyrimWaterOptics"] = optics;
         }
+
         return props;
     }
 
@@ -696,8 +824,10 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             }
         }
 
-        static float F(ReadOnlySpan<byte> source, int offset) =>
-            BinaryPrimitives.ReadSingleLittleEndian(source.Slice(offset, sizeof(float)));
+        static float F(ReadOnlySpan<byte> source, int offset)
+        {
+            return BinaryPrimitives.ReadSingleLittleEndian(source.Slice(offset, sizeof(float)));
+        }
 
         return new StarfieldWaterDnam
         {
@@ -887,11 +1017,11 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
     private static WaterNoiseLayer? ReadFallout76NoiseLayer(ReadOnlySpan<byte> data, int layer)
     {
-        var direction = ReadFloat(data, 84 + (layer * sizeof(float)), false);
-        var speed = ReadFloat(data, 96 + (layer * sizeof(float)), false);
-        var amplitude = ReadFloat(data, 108 + (layer * sizeof(float)), false);
-        var uvScale = ReadFloat(data, 120 + (layer * sizeof(float)), false);
-        var falloff = ReadFloat(data, 132 + (layer * sizeof(float)), false);
+        var direction = ReadFloat(data, 84 + layer * sizeof(float), false);
+        var speed = ReadFloat(data, 96 + layer * sizeof(float), false);
+        var amplitude = ReadFloat(data, 108 + layer * sizeof(float), false);
+        var uvScale = ReadFloat(data, 120 + layer * sizeof(float), false);
+        var falloff = ReadFloat(data, 132 + layer * sizeof(float), false);
         return float.IsFinite(direction) && direction is >= 0f and <= 360f &&
                float.IsFinite(speed) && speed >= 0f &&
                float.IsFinite(amplitude) && amplitude >= 0f &&
@@ -908,7 +1038,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     {
         var r = ReadFloat(data, offset, isBigEndian);
         var g = ReadFloat(data, offset + sizeof(float), isBigEndian);
-        var b = ReadFloat(data, offset + (2 * sizeof(float)), isBigEndian);
+        var b = ReadFloat(data, offset + 2 * sizeof(float), isBigEndian);
         return float.IsFinite(r) && float.IsFinite(g) && float.IsFinite(b) &&
                r is >= 0f and <= 1f && g is >= 0f and <= 1f && b is >= 0f and <= 1f
             ? (r, g, b)
@@ -917,8 +1047,10 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
 
     private static uint PackNormalizedRgb((float R, float G, float B) color)
     {
-        static byte ToByte(float value) =>
-            (byte)Math.Clamp((int)MathF.Round(value * byte.MaxValue), byte.MinValue, byte.MaxValue);
+        static byte ToByte(float value)
+        {
+            return (byte)Math.Clamp((int)MathF.Round(value * byte.MaxValue), byte.MinValue, byte.MaxValue);
+        }
 
         return (uint)(ToByte(color.R) | (ToByte(color.G) << 8) | (ToByte(color.B) << 16));
     }
@@ -2022,7 +2154,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 return false;
             }
 
-            var signature = System.Text.Encoding.ASCII.GetString(
+            var signature = Encoding.ASCII.GetString(
                 data.Slice(offset, sizeof(uint)));
             var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(data[(offset + sizeof(uint))..]);
             offset += EsmSubrecordUtils.SubrecordHeaderSize;
@@ -2306,7 +2438,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
         };
         if (structuralFailure == null)
         {
-            if ((fullPayload == null) == (diffPayload == null))
+            if (fullPayload == null == (diffPayload == null))
             {
                 structuralFailure = "WTHS must contain exactly one REFL or RDIF payload.";
             }
@@ -2572,7 +2704,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 return false;
             }
 
-            var signature = System.Text.Encoding.ASCII.GetString(data.Slice(offset, sizeof(uint)));
+            var signature = Encoding.ASCII.GetString(data.Slice(offset, sizeof(uint)));
             var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(data[(offset + sizeof(uint))..]);
             offset += EsmSubrecordUtils.SubrecordHeaderSize;
 
@@ -2992,7 +3124,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 return false;
             }
 
-            var signature = System.Text.Encoding.ASCII.GetString(data.Slice(offset, sizeof(uint)));
+            var signature = Encoding.ASCII.GetString(data.Slice(offset, sizeof(uint)));
             var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(data[(offset + sizeof(uint))..]);
             offset += EsmSubrecordUtils.SubrecordHeaderSize;
 
@@ -3256,7 +3388,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
                 return false;
             }
 
-            var signature = System.Text.Encoding.ASCII.GetString(data.Slice(offset, sizeof(uint)));
+            var signature = Encoding.ASCII.GetString(data.Slice(offset, sizeof(uint)));
             var dataLength = BinaryPrimitives.ReadUInt16LittleEndian(data[(offset + sizeof(uint))..]);
             offset += EsmSubrecordUtils.SubrecordHeaderSize;
 
@@ -3314,7 +3446,7 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
             return false;
         }
 
-        editorId = System.Text.Encoding.ASCII.GetString(edidBytes[..^1]);
+        editorId = Encoding.ASCII.GetString(edidBytes[..^1]);
         if (string.IsNullOrWhiteSpace(editorId))
         {
             failure = "CUR3 EDID is empty.";
@@ -3491,132 +3623,6 @@ internal sealed class MiscEnvironmentHandler(RecordParserContext context) : Reco
     }
 
     #endregion
-
-    /// <summary>
-    ///     Reads the exact outer subrecord envelope shared by standalone Starfield reflection
-    ///     definitions. The typed decoder receives bytes only after the complete little-endian
-    ///     framing and the one-full-REFL/no-inheritance contract have been established.
-    /// </summary>
-    private bool TryReadStandaloneStarfieldReflection(
-        DetectedMainRecord record,
-        byte[] buffer,
-        string recordType,
-        out string? editorId,
-        out byte[]? reflectionPayload,
-        out string? failure)
-    {
-        editorId = Context.GetEditorId(record.FormId);
-        reflectionPayload = null;
-        failure = null;
-
-        var recordData = Context.ReadRecordData(record, buffer);
-        if (recordData == null)
-        {
-            failure = $"{recordType} record bytes could not be read.";
-            return false;
-        }
-
-        var (data, dataSize) = recordData.Value;
-        CaptureStandaloneReflectionEditorIdPrefix(
-            data, dataSize, record.IsBigEndian, record.FormId, ref editorId);
-
-        if (record.IsBigEndian)
-        {
-            failure = $"Starfield {recordType} reflection streams are supported only in little-endian records.";
-            return false;
-        }
-
-        if (Context.NonContiguousRecordFormIds.Contains(record.FormId) ||
-            Context.PartiallyRecoveredFormIds.Contains(record.FormId))
-        {
-            failure =
-                $"{recordType} reflection decoding rejects non-contiguous or partially recovered record bytes.";
-            return false;
-        }
-
-        if (!HasCompleteLittleEndianSubrecordLayout(data, dataSize))
-        {
-            failure = $"{recordType} has a truncated or malformed outer subrecord layout.";
-            return false;
-        }
-
-        var editorIdSeen = false;
-        var reflectionPayloadCount = 0;
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, false))
-        {
-            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
-            switch (sub.Signature)
-            {
-                case "EDID":
-                    if (editorIdSeen)
-                    {
-                        failure ??= $"{recordType} has duplicate EDID subrecords.";
-                        break;
-                    }
-
-                    editorIdSeen = true;
-                    editorId = EsmStringUtils.ReadNullTermString(subData);
-                    if (!string.IsNullOrEmpty(editorId))
-                    {
-                        Context.FormIdToEditorId[record.FormId] = editorId;
-                    }
-
-                    break;
-                case "REFL":
-                    reflectionPayloadCount++;
-                    reflectionPayload ??= subData.ToArray();
-                    break;
-                case "RDIF":
-                    failure ??= $"{recordType} does not support RDIF reflection diffs.";
-                    break;
-                case "RFDP":
-                    failure ??= $"{recordType} does not support RFDP reflection inheritance.";
-                    break;
-                default:
-                    NoteUnmodeledSubrecord(recordType, sub.Signature, sub.DataLength);
-                    failure ??=
-                        $"{recordType} has unsupported outer subrecord '{sub.Signature}'.";
-                    break;
-            }
-        }
-
-        if (reflectionPayloadCount != 1)
-        {
-            failure ??= $"{recordType} must contain exactly one REFL payload.";
-        }
-
-        return failure == null;
-    }
-
-    /// <summary>
-    ///     Preserves a complete leading EDID even when a later subrecord is malformed or truncated.
-    ///     The ordinary iterator yields only wholly resident subrecords, so this never consumes the
-    ///     damaged tail and does not weaken the complete-layout gate above.
-    /// </summary>
-    private void CaptureStandaloneReflectionEditorIdPrefix(
-        byte[] data,
-        int dataSize,
-        bool isBigEndian,
-        uint formId,
-        ref string? editorId)
-    {
-        foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, isBigEndian))
-        {
-            if (sub.Signature != "EDID")
-            {
-                continue;
-            }
-
-            editorId = EsmStringUtils.ReadNullTermString(
-                data.AsSpan(sub.DataOffset, sub.DataLength));
-            if (!string.IsNullOrEmpty(editorId))
-            {
-                Context.FormIdToEditorId[formId] = editorId;
-            }
-
-            return;
-        }
-    }
 
     #region Climate
 

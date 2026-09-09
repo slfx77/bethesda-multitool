@@ -1,7 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 using Xunit;
@@ -23,11 +20,11 @@ public sealed class ShadowkeyZoneFileTests
 {
     private static byte[] Zon(params (ushort X0, ushort Y0, ushort X1, ushort Y1, byte[] Name)[] rectangles)
     {
-        var bytes = new byte[2 + (rectangles.Length * ShadowkeyZoneFiles.TriggerRecordLength)];
+        var bytes = new byte[2 + rectangles.Length * ShadowkeyZoneFiles.TriggerRecordLength];
         BinaryPrimitives.WriteUInt16LittleEndian(bytes, (ushort)rectangles.Length);
         for (var i = 0; i < rectangles.Length; i++)
         {
-            var at = 2 + (i * ShadowkeyZoneFiles.TriggerRecordLength);
+            var at = 2 + i * ShadowkeyZoneFiles.TriggerRecordLength;
             var (x0, y0, x1, y1, name) = rectangles[i];
             BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(at), x0);
             BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(at + 2), y0);
@@ -299,8 +296,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParsePth_RejectsHeaderPastEndOfFile()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyZoneFiles.ParsePth(Concat([0x01, 0x00], new byte[10]), "crypt1.pth"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyZoneFiles.ParsePth(Concat([0x01, 0x00], new byte[10]), "crypt1.pth"));
 
         Assert.Contains("crypt1.pth", error.Message, StringComparison.Ordinal);
         Assert.Contains("byte 2", error.Message, StringComparison.Ordinal);
@@ -312,8 +309,8 @@ public sealed class ShadowkeyZoneFileTests
         var header = new byte[ShadowkeyZoneFiles.PathHeaderLength];
         BinaryPrimitives.WriteUInt16LittleEndian(header.AsSpan(ShadowkeyZoneFiles.NameFieldLength), 9);
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyZoneFiles.ParsePth(Concat([0x01, 0x00], header, new byte[8]), "crypt1.pth"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyZoneFiles.ParsePth(Concat([0x01, 0x00], header, new byte[8]), "crypt1.pth"));
 
         Assert.Contains("9 points", error.Message, StringComparison.Ordinal);
     }
@@ -323,8 +320,8 @@ public sealed class ShadowkeyZoneFileTests
     {
         var header = new byte[ShadowkeyZoneFiles.PathHeaderLength];
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyZoneFiles.ParsePth(Concat([0x01, 0x00], header, [0x00, 0x00]), "crypt1.pth"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyZoneFiles.ParsePth(Concat([0x01, 0x00], header, [0x00, 0x00]), "crypt1.pth"));
 
         Assert.Contains("leaving 2 unread", error.Message, StringComparison.Ordinal);
     }
@@ -346,7 +343,7 @@ public sealed class ShadowkeyZoneFileTests
         [
             0x02,
             6, 6, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            5, 7, 0xFD, 0xFC, 0x58, 0x02, 0x20, 0x0F,
+            5, 7, 0xFD, 0xFC, 0x58, 0x02, 0x20, 0x0F
         ];
 
         var surfaces = ShadowkeyZoneFiles.ParseSur(bytes, "azra.sur");
@@ -373,8 +370,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParseSur_RejectsTilingMismatch()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyZoneFiles.ParseSur([0x02, 1, 2, 3, 4, 5, 6, 7, 8], "azra.sur"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyZoneFiles.ParseSur([0x02, 1, 2, 3, 4, 5, 6, 7, 8], "azra.sur"));
 
         Assert.Contains("17 bytes", error.Message, StringComparison.Ordinal);
     }
@@ -465,8 +462,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParseEnt_RejectsShortFile()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyZoneFiles.ParseEnt([0x01, 0x00, 0x00], "azra.ent"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyZoneFiles.ParseEnt([0x01, 0x00, 0x00], "azra.ent"));
 
         Assert.Contains("azra.ent", error.Message, StringComparison.Ordinal);
     }
@@ -476,8 +473,8 @@ public sealed class ShadowkeyZoneFileTests
     {
         var record = EntityRecord(0, 0, 0, 0, 256, 1, new byte[8], new byte[32]);
 
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyZoneFiles.ParseEnt(EntityFile(2, record), "azra.ent"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyZoneFiles.ParseEnt(EntityFile(2, record), "azra.ent"));
 
         Assert.Contains("2 records of 72 bytes", error.Message, StringComparison.Ordinal);
     }
@@ -516,8 +513,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParseSta_RejectsTilingMismatch()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyZoneFiles.ParseSta(EntityFile(3, EntityRecord(0, 0, 0, 0, 256, 1)), "azra.sta"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyZoneFiles.ParseSta(EntityFile(3, EntityRecord(0, 0, 0, 0, 256, 1)), "azra.sta"));
 
         Assert.Contains("3 records of 32 bytes", error.Message, StringComparison.Ordinal);
     }
@@ -525,7 +522,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParseEntities_ReadsWhitespaceSeparatedRows()
     {
-        const string text = "0 0 1 !NO_ENTITY\r\n\r\n8\t7\t11\tdoor.s\r\n4208  9  2  monsters\\Azra.s\r\n4202 9 2 !bag_loot\r\n";
+        const string text =
+            "0 0 1 !NO_ENTITY\r\n\r\n8\t7\t11\tdoor.s\r\n4208  9  2  monsters\\Azra.s\r\n4202 9 2 !bag_loot\r\n";
 
         var table = ShadowkeyTextTables.ParseEntities(text, "entities.txt");
 
@@ -549,8 +547,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParseEntities_RejectsWrongFieldCount()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyTextTables.ParseEntities("0 0 1 !NO_ENTITY\n5 6 7\n", "entities.txt"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyTextTables.ParseEntities("0 0 1 !NO_ENTITY\n5 6 7\n", "entities.txt"));
 
         Assert.Contains("line 2", error.Message, StringComparison.Ordinal);
     }
@@ -558,8 +556,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParseEntities_RejectsNonNumericId()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyTextTables.ParseEntities("x 0 1 !NO_ENTITY\n", "entities.txt"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyTextTables.ParseEntities("x 0 1 !NO_ENTITY\n", "entities.txt"));
 
         Assert.Contains("not a non-negative number", error.Message, StringComparison.Ordinal);
     }
@@ -567,8 +565,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParseEntities_RejectsDuplicateId()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyTextTables.ParseEntities("7 0 1 a.s\n7 1 1 b.s\n", "entities.txt"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyTextTables.ParseEntities("7 0 1 a.s\n7 1 1 b.s\n", "entities.txt"));
 
         Assert.Contains("appears twice", error.Message, StringComparison.Ordinal);
     }
@@ -593,8 +591,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParseModels_RejectsNonContiguousIndex()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyTextTables.ParseModels("0 0 0 0 a.bin\n2 0 0 0 b.bin\n", "models.txt"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyTextTables.ParseModels("0 0 0 0 a.bin\n2 0 0 0 b.bin\n", "models.txt"));
 
         Assert.Contains("breaks the run", error.Message, StringComparison.Ordinal);
     }
@@ -602,8 +600,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParseModels_RejectsWrongFieldCount()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyTextTables.ParseModels("0 0 0 a.bin\n", "models.txt"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyTextTables.ParseModels("0 0 0 a.bin\n", "models.txt"));
 
         Assert.Contains("line 1", error.Message, StringComparison.Ordinal);
     }
@@ -611,8 +609,8 @@ public sealed class ShadowkeyZoneFileTests
     [Fact]
     public void ParseModels_RejectsNonNumericField()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => ShadowkeyTextTables.ParseModels("0 x 0 0 a.bin\n", "models.txt"));
+        var error = Assert.Throws<InvalidDataException>(() =>
+            ShadowkeyTextTables.ParseModels("0 x 0 0 a.bin\n", "models.txt"));
 
         Assert.Contains("the flag field reads 'x'", error.Message, StringComparison.Ordinal);
     }

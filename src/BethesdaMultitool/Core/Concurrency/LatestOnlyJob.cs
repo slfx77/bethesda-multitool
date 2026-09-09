@@ -1,7 +1,7 @@
 // Ported from JimmyPCTool / AweMultitool (https://github.com/slfx77/JimmyPCTool), MIT licence,
 // src/AweMultitool/Core/Concurrency/LatestOnlyJob.cs. Copied essentially verbatim — the ordering
 // this class encodes is subtle and was arrived at by fixing real races, so it is deliberately NOT
-// re-derived here. Only the namespace and doc wording differ.
+// re-derived here. Adapted with an optional discard callback for resource-owning preview results.
 
 namespace BethesdaMultitool.Core.Concurrency;
 
@@ -25,11 +25,29 @@ internal sealed class LatestOnlyJob : IDisposable
     private CancellationTokenSource? _current;
     private bool _disposed;
 
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            var current = _current;
+            _current = null;
+            current?.Cancel();
+        }
+    }
+
     /// <summary>
     ///     Runs <paramref name="work" /> off the calling thread, then invokes <paramref name="apply" />
     ///     on the captured context — but only if no newer job has started in the meantime.
+    ///     When a completed result is rejected, <paramref name="discard" /> releases any resources
+    ///     it owns. Applied results transfer ownership to <paramref name="apply" /> instead.
     /// </summary>
-    public async Task RunAsync<T>(Func<CancellationToken, T> work, Action<T> apply)
+    public async Task RunAsync<T>(Func<CancellationToken, T> work, Action<T> apply, Action<T>? discard = null)
     {
         ArgumentNullException.ThrowIfNull(work);
         ArgumentNullException.ThrowIfNull(apply);
@@ -45,11 +63,13 @@ internal sealed class LatestOnlyJob : IDisposable
             // callback can let that continuation resume.
             var previous = _current;
             _current = cts;
+#pragma warning disable S6966 // Cancel synchronously under the gate before an invocation can dispose its token source.
             previous?.Cancel();
             if (_disposed)
             {
                 cts.Cancel();
             }
+#pragma warning restore S6966
         }
 
         try
@@ -66,8 +86,11 @@ internal sealed class LatestOnlyJob : IDisposable
                 if (!token.IsCancellationRequested && ReferenceEquals(_current, cts))
                 {
                     apply(result);
+                    return;
                 }
             }
+
+            discard?.Invoke(result);
         }
         catch (OperationCanceledException)
         {
@@ -97,22 +120,6 @@ internal sealed class LatestOnlyJob : IDisposable
     {
         lock (_gate)
         {
-            var current = _current;
-            _current = null;
-            current?.Cancel();
-        }
-    }
-
-    public void Dispose()
-    {
-        lock (_gate)
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
             var current = _current;
             _current = null;
             current?.Cancel();

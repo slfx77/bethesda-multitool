@@ -41,16 +41,18 @@ internal static class BendableSplineGeometry
     internal const int CurveSubdivisionCount = 48;
     internal const int MinimumSegmentCount = 8;
 
+    private const float PositionEpsilon = 1e-6f;
+    private const float EndDistanceEpsilon = 0.001f;
+
     // BSGraphics::State::CreateDefaultTextures creates DefaultTexture_SplineMap as one
     // FORMAT_R8G8B8A8_UNORM pixel containing 0xff808080. Keep the byte-derived value instead of
     // rounding it to 0.5 so the synthetic texture is byte-identical to the retail fallback.
     internal static readonly Vector3 DefaultSplineMapColor = new(128f / 255f);
 
-    private const float PositionEpsilon = 1e-6f;
-    private const float EndDistanceEpsilon = 0.001f;
-
-    internal static string BuildCacheKey(uint referenceFormId) =>
-        $"fallout:generated/bnds/{referenceFormId:x8}";
+    internal static string BuildCacheKey(uint referenceFormId)
+    {
+        return $"fallout:generated/bnds/{referenceFormId:x8}";
+    }
 
     internal static BendableSplineRenderMesh? TryBuild(
         uint referenceFormId,
@@ -427,8 +429,10 @@ internal static class BendableSplineGeometry
         return maximum;
     }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 
     private readonly record struct SampledCurve(
         Vector3[] Points,

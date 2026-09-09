@@ -52,8 +52,10 @@ internal static class ShadowkeySceneBuilder
     ///     The scene texture key a built mesh uses for its skin. Generated textures have no
     ///     archive behind them, so the key only has to be stable and unique within the scene.
     /// </summary>
-    internal static string SkinTextureKey(string meshName, int skin) =>
-        $"shadowkey:{meshName}#skin{skin}";
+    internal static string SkinTextureKey(string meshName, int skin)
+    {
+        return $"shadowkey:{meshName}#skin{skin}";
+    }
 
     /// <summary>
     ///     Builds a single-mesh scene showing <paramref name="frame" /> of <paramref name="mesh" />
@@ -125,9 +127,9 @@ internal static class ShadowkeySceneBuilder
         for (var i = 0; i < cornerCount; i++)
         {
             var p = Orient(triangles.Positions[i], axes);
-            positions[(i * 3) + 0] = p.X;
-            positions[(i * 3) + 1] = p.Y;
-            positions[(i * 3) + 2] = p.Z;
+            positions[i * 3 + 0] = p.X;
+            positions[i * 3 + 1] = p.Y;
+            positions[i * 3 + 2] = p.Z;
         }
 
         // Texel UVs normalise against the SKIN's dimensions, which is why this needs the texture
@@ -137,8 +139,8 @@ internal static class ShadowkeySceneBuilder
         var uvs = new float[cornerCount * 2];
         for (var i = 0; i < cornerCount; i++)
         {
-            uvs[(i * 2) + 0] = triangles.TexelUvs[i].X * uvScaleU;
-            uvs[(i * 2) + 1] = triangles.TexelUvs[i].Y * uvScaleV;
+            uvs[i * 2 + 0] = triangles.TexelUvs[i].X * uvScaleU;
+            uvs[i * 2 + 1] = triangles.TexelUvs[i].Y * uvScaleV;
         }
 
         // ToUnrolledTriangles emits one index per corner in order, so the index buffer is the
@@ -160,10 +162,12 @@ internal static class ShadowkeySceneBuilder
     }
 
     /// <summary>Applies the axis convention to one source position.</summary>
-    private static Vector3 Orient(Vector3 source, ShadowkeyAxisConvention axes) =>
-        axes == ShadowkeyAxisConvention.ZUp
+    private static Vector3 Orient(Vector3 source, ShadowkeyAxisConvention axes)
+    {
+        return axes == ShadowkeyAxisConvention.ZUp
             ? new Vector3(source.X, source.Z, source.Y)
             : source;
+    }
 
     /// <summary>Axis-aligned bounds over a flattened xyz position array.</summary>
     private static BethesdaViewerBounds? ComputeBounds(float[] positions)

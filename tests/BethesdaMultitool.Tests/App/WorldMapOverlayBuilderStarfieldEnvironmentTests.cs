@@ -1,6 +1,6 @@
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
-using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.SaveGame.Models;
 using Xunit;
 
@@ -81,24 +81,30 @@ public sealed class WorldMapOverlayBuilderStarfieldEnvironmentTests
         Assert.Same(atmosphere, world.AtmospheresByFormId[atmosphere.FormId]);
     }
 
-    private static StarfieldVolumetricLightingRecord Volumetric(uint formId, string editorId) =>
-        new()
+    private static StarfieldVolumetricLightingRecord Volumetric(uint formId, string editorId)
+    {
+        return new StarfieldVolumetricLightingRecord
         {
             FormId = formId,
             EditorId = editorId
         };
+    }
 
-    private static StarfieldCloudFormRecord Cloud(uint formId, string editorId) =>
-        new()
+    private static StarfieldCloudFormRecord Cloud(uint formId, string editorId)
+    {
+        return new StarfieldCloudFormRecord
         {
             FormId = formId,
             EditorId = editorId
         };
+    }
 
-    private static StarfieldAtmosphereRecord Atmosphere(uint formId, string editorId) =>
-        new()
+    private static StarfieldAtmosphereRecord Atmosphere(uint formId, string editorId)
+    {
+        return new StarfieldAtmosphereRecord
         {
             FormId = formId,
             EditorId = editorId
         };
+    }
 }

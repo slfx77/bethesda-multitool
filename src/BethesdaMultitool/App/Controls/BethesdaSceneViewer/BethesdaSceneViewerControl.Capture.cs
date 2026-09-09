@@ -255,8 +255,10 @@ public sealed partial class BethesdaSceneViewerControl
         request.TrySetException(exception);
     }
 
-    /// <summary>Fails a request that has not entered a submitted GPU frame. Submitted copies retain
-    /// their fence/readback ownership until the worker observes completion.</summary>
+    /// <summary>
+    ///     Fails a request that has not entered a submitted GPU frame. Submitted copies retain
+    ///     their fence/readback ownership until the worker observes completion.
+    /// </summary>
     private void CancelPendingCapture(string reason)
     {
         BethesdaSceneViewerCaptureRequest12? pending = null;
@@ -302,14 +304,16 @@ public sealed partial class BethesdaSceneViewerControl
     private sealed unsafe class BethesdaSceneViewerCaptureRequest12 : IDisposable
     {
         private readonly CancellationToken _cancellationToken;
+
         private readonly TaskCompletionSource<BethesdaSceneViewerFrameCapture> _completion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         private CancellationTokenRegistration _cancellationRegistration;
+        private int _disposed;
         private ID3D12Fence? _fence;
         private ID3D12Resource? _readback;
         private PlacedSubresourceFootPrint _readbackFootprint;
         private uint _readbackRowPitch;
-        private int _disposed;
 
         internal BethesdaSceneViewerCaptureRequest12(CancellationToken cancellationToken)
         {

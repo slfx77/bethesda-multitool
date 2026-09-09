@@ -602,9 +602,6 @@
   <data name="Expander_FileTypes.Header" xml:space="preserve">
     <value>File Types to Extract</value>
   </data>
-  <data name="Checkbox_ConvertFormats.Content" xml:space="preserve">
-    <value>Convert Formats</value>
-  </data>
   <data name="Checkbox_ConvertFormats.ToolTipService.ToolTip" xml:space="preserve">
     <value>Convert DDX -> DDS textures</value>
   </data>
@@ -659,14 +656,8 @@
   <data name="Input_ConvertOutputDir.PlaceholderText" xml:space="preserve">
     <value>Select or enter output directory for converted files...</value>
   </data>
-  <data name="Checkbox_PreserveFolderStructure.Content" xml:space="preserve">
-    <value>Preserve folder structure</value>
-  </data>
   <data name="Checkbox_OverwriteExisting.Content" xml:space="preserve">
     <value>Overwrite existing files</value>
-  </data>
-  <data name="Checkbox_VerboseOutput.Content" xml:space="preserve">
-    <value>Verbose output</value>
   </data>
   <data name="Label_InputDirectory.Text" xml:space="preserve">
     <value>Input Directory</value>

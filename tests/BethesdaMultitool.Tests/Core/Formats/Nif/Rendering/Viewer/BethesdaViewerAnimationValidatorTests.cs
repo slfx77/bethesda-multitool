@@ -9,7 +9,7 @@ public sealed class BethesdaViewerAnimationValidatorTests
     [Fact]
     public void RejectsNonFiniteTrackClock()
     {
-        var clip = Clip(Track(frequency: float.NaN));
+        var clip = Clip(Track(float.NaN));
 
         Assert.False(BethesdaViewerAnimationValidator.TryValidate(clip, 1, 0, out var error));
         Assert.NotNull(error);

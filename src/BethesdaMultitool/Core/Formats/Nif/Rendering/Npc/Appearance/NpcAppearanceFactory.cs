@@ -13,6 +13,7 @@ internal sealed class NpcAppearanceFactory
 {
     /// <summary>The player's base NPC_ record ("PlayerBase", engine-reserved FormID).</summary>
     private const uint PlayerBaseFormId = 0x7;
+
     private const string HumanoidSkeletonNifPath = @"meshes\characters\_Male\skeleton.nif";
     private const string Tes4BeastSkeletonNifPath = @"meshes\characters\_Male\skeletonbeast.nif";
 
@@ -181,6 +182,7 @@ internal sealed class NpcAppearanceFactory
             // TES4 uses one both-hands mesh and ships no FO3-style left/right hand EGTs.
             bodyEgtPaths = (bodyEgtPaths.BodyEgt, null, null);
         }
+
         var baseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath);
         var tailNifPath = NpcAppearancePathDeriver.AsMeshPath(tailPath);
 
@@ -419,6 +421,7 @@ internal sealed class NpcAppearanceFactory
         {
             bodyEgtPaths = (bodyEgtPaths.BodyEgt, null, null);
         }
+
         var baseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath);
         var tailNifPath = NpcAppearancePathDeriver.AsMeshPath(tailPath);
 

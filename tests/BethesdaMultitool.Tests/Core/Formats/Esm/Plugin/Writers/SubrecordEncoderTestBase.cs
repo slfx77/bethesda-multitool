@@ -95,7 +95,7 @@ public abstract class SubrecordEncoderTestBase<TModel>
         Assert.SkipUnless(parsed && model is not null,
             $"No parser available for {GetType().Name}; round-trip coverage is a known gap.");
 
-        var roundTripped = EncodeModel(model!);
+        var roundTripped = EncodeModel(model);
         Assert.Equal(GetExpectedBytes(), roundTripped);
     }
 

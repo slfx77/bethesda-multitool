@@ -22,16 +22,16 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Materials;
 [Collection(SequentialIntegrationGroup.Name)]
 public sealed class NifTextureEffectRetailTests
 {
+    private const string GlassBootsPath = @"meshes\a\a_glass_boots_gnd.nif";
+
+    private const string LeyawiinWindowPath =
+        @"meshes\architecture\castle\leyawiin\leyawiinwindow01.nif";
+
     private static readonly string? MorrowindBsa =
         RealAssetPaths.SteamGameFile("Morrowind", @"Data Files\Morrowind.bsa");
 
     private static readonly string? OblivionMeshesBsa =
         RealAssetPaths.SteamGameFile("Oblivion", @"Data\Oblivion - Meshes.bsa");
-
-    private const string GlassBootsPath = @"meshes\a\a_glass_boots_gnd.nif";
-
-    private const string LeyawiinWindowPath =
-        @"meshes\architecture\castle\leyawiin\leyawiinwindow01.nif";
 
     public NifTextureEffectRetailTests()
     {

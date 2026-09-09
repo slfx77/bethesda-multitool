@@ -30,7 +30,7 @@ public class StarfieldMeshFileTests
         Assert.NotNull(mesh);
         // Landing on the exact final byte is the real assertion: it proves the field ORDER is right,
         // not merely that each individual reader is self-consistent.
-        Assert.Equal(blob.Length, mesh!.BytesConsumed);
+        Assert.Equal(blob.Length, mesh.BytesConsumed);
         Assert.Equal([0, 1, 2, 3, 4, 5], mesh.Triangles);
         Assert.Equal(6 * 3, mesh.Positions.Length);
         Assert.Equal(6 * 2, mesh.Uvs!.Length);
@@ -50,7 +50,7 @@ public class StarfieldMeshFileTests
         var mesh = StarfieldMeshFile.Parse(blob);
 
         Assert.NotNull(mesh);
-        Assert.Equal(Scale * 16383f / 32767f, mesh!.Positions[0], 4);
+        Assert.Equal(Scale * 16383f / 32767f, mesh.Positions[0], 4);
         Assert.Equal(Scale * -16384f / 32767f, mesh.Positions[1], 4);
         Assert.Equal(0f, mesh.Positions[2], 5);
     }
@@ -67,7 +67,7 @@ public class StarfieldMeshFileTests
         var mesh = StarfieldMeshFile.Parse(blob);
 
         Assert.NotNull(mesh);
-        Assert.Equal(1f, mesh!.Normals![0], 3);
+        Assert.Equal(1f, mesh.Normals![0], 3);
         Assert.Equal(-1f, mesh.Normals[1], 3);
         Assert.Equal(0.001f, mesh.Normals[2], 2);
     }
@@ -133,9 +133,9 @@ public class StarfieldMeshFileTests
             return Assert.IsType<RenderableSubmesh>(NifBlockParsers.ExtractSubmesh(
                 nifData,
                 nif,
-                shapeIndex: 0,
-                dataIndex: 0,
-                worldTransforms: new Dictionary<int, Matrix4x4>(),
+                0,
+                0,
+                new Dictionary<int, Matrix4x4>(),
                 externalMeshLoader: path => path == @"test\colourmesh" ? meshBlob : null,
                 starfieldColorPolicy: policy));
         }
@@ -163,7 +163,7 @@ public class StarfieldMeshFileTests
         Assert.Equal(
             Enumerable.Repeat(new byte[] { 13, 55, 133, 255 }, 6).SelectMany(x => x).ToArray(),
             constantMultiply.VertexColors);
-        Assert.Equal(default(StarfieldMaterialColorRenderState),
+        Assert.Equal(default,
             constantMultiply.StarfieldMaterialColor);
 
         // Constant Lerp uses a distinct persistent operation because affine composition cannot be
@@ -201,7 +201,7 @@ public class StarfieldMeshFileTests
         var withheld = Extract(default);
         Assert.False(withheld.UseVertexColors);
         Assert.Null(withheld.VertexColors);
-        Assert.Equal(default(StarfieldMaterialColorRenderState),
+        Assert.Equal(default,
             withheld.StarfieldMaterialColor);
     }
 

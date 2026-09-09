@@ -87,17 +87,20 @@ internal static class BethesdaViewerScenePoseMaterializer12
                         var clip = scene.AnimationClips.First(candidate =>
                             candidate.GeometryMorphTracks?.Any(track => track.MeshPartIndex == partIndex) == true);
                         var startClock = BethesdaViewerAnimationClockPolicy.Resolve(clip).RawOriginSeconds;
-                        BethesdaViewerGeometryMorphPolicy.Pose(morph, startClock, vertices, new float[morph.Targets.Length]);
+                        BethesdaViewerGeometryMorphPolicy.Pose(morph, startClock, vertices,
+                            new float[morph.Targets.Length]);
                         foreach (var track in morphTracks.Where(candidate => candidate.MeshPartIndex == partIndex))
                         {
                             var envelope = BethesdaViewerGeometryMorphPolicy.GetWorldBounds(track.Morph, world);
-                            if (!envelope.IsFinite) throw new InvalidDataException("Morph bounds contain non-finite values.");
+                            if (!envelope.IsFinite)
+                                throw new InvalidDataException("Morph bounds contain non-finite values.");
                             morphBounds[partIndex] = morphBounds.TryGetValue(partIndex, out var existing)
                                 ? new BethesdaViewerBounds(Vector3.Min(existing.Minimum, envelope.Minimum),
                                     Vector3.Max(existing.Maximum, envelope.Maximum))
                                 : envelope;
                         }
                     }
+
                     TransformRigid(vertices, world);
                 }
 
@@ -133,6 +136,7 @@ internal static class BethesdaViewerScenePoseMaterializer12
             {
                 eyeEnvmapPartCount++;
             }
+
             if (native.SkyType is not null &&
                 !BethesdaViewerNativeSkyPolicy.IsDedicatedRawNifLayer(
                     scene.Purpose,
@@ -141,21 +145,25 @@ internal static class BethesdaViewerScenePoseMaterializer12
                 nonDedicatedSkyPartCount++;
             }
         }
+
         if (eyeEnvmapPartCount > 0)
         {
             warnings.Add(
                 $"{eyeEnvmapPartCount} eye-environment part(s) retain authored textures and material state, but the shared reference shader has no dedicated eye-reflection lane; eye env-map scale is approximate.");
         }
+
         if (nonDedicatedSkyPartCount > 0)
         {
             warnings.Add(
                 $"{nonDedicatedSkyPartCount} sky-tagged part(s) are outside the exact raw-NIF Sky/Stars/Clouds route and remain assembled scene geometry; camera centering is disabled.");
         }
+
         if (linearSkinningFallbackPartCount > 0)
         {
             warnings.Add(
                 $"{linearSkinningFallbackPartCount} skinned part(s) contained non-rigid bone transforms and used the established linear-skinning fallback.");
         }
+
         if (liveParticleSnapshotPartCount > 0)
         {
             warnings.Add(
@@ -192,7 +200,7 @@ internal static class BethesdaViewerScenePoseMaterializer12
                     Vertices = [],
                     Indices = [],
                     LocalBoundsCenter = Vector3.Zero,
-                    LocalBoundsRadius = 0f,
+                    LocalBoundsRadius = 0f
                 };
                 continue;
             }
@@ -204,6 +212,7 @@ internal static class BethesdaViewerScenePoseMaterializer12
                 center = envelope.Center;
                 radius = envelope.Size.Length() * 0.5f;
             }
+
             var effectTint = ResolveEffectTint(
                 source.EffectTint,
                 scene.MeshParts[partIndex].NativeSemantics.TintColor);
@@ -218,7 +227,7 @@ internal static class BethesdaViewerScenePoseMaterializer12
                 // The persistent upload is the assembled rest/current pose. Viewer animation keeps
                 // its node-indexed skin beside this payload and supplies a frame-ring VBV override;
                 // the placed-world skinner's differently-indexed skin contract stays unset here.
-                Skin = null,
+                Skin = null
             };
         }
 
@@ -239,6 +248,28 @@ internal static class BethesdaViewerScenePoseMaterializer12
             supported[index] = false;
             unsupported.Add(new BethesdaViewerUnsupportedMeshPart12(index, name, reason));
         }
+    }
+
+    /// <summary>
+    ///     Retail unskinned eyes transform the stored NiGeometryData sphere (00722AA0/0072A820).
+    ///     FaceGen changes positions without recomputing it. Keep this reflection input separate
+    ///     from the posed vertex bounds used for framing, culling, and ordinary draws.
+    /// </summary>
+    internal static NifLocalBounds? ResolveReviewedEyeBounds(DecodedBethesdaViewerScene12 scene, int partIndex)
+    {
+        if ((uint)partIndex >= (uint)scene.MeshParts.Count) return null;
+        var part = scene.MeshParts[partIndex];
+        if (!part.NativeSemantics.HasReviewedOblivionEyeSource || part.Skin is not null ||
+            part.NativeSemantics.OblivionEyeBounds is not { Radius: > 0f } bound ||
+            scene.AnimationClips.Any(clip =>
+                clip.GeometryMorphTracks?.Any(track => track.MeshPartIndex == partIndex) == true))
+        {
+            return null;
+        }
+
+        var world = ResolveRigidWorld(scene, partIndex, part.Name, part.NodeIndex);
+        var transformed = NifLocalBoundsResolver.TransformAuthored(bound, world, [], false);
+        return transformed is { Radius: > 0f } ? transformed : null;
     }
 
     private static Matrix4x4 ResolveRigidWorld(
@@ -323,6 +354,7 @@ internal static class BethesdaViewerScenePoseMaterializer12
                     throw new InvalidDataException(
                         $"vertex {vertexIndex} has an invalid bone influence");
                 }
+
                 if (weight > 0f)
                 {
                     positiveCount++;
@@ -342,9 +374,11 @@ internal static class BethesdaViewerScenePoseMaterializer12
                         positive[destination++] = influence;
                     }
                 }
+
                 filteredInfluences[vertexIndex] = positive;
             }
         }
+
         var effectiveInfluences = filteredInfluences ?? skin.PerVertexInfluences;
 
         var positions = new float[vertices.Length * 3];
@@ -412,8 +446,10 @@ internal static class BethesdaViewerScenePoseMaterializer12
             target[offset + 2] = value.Z;
         }
 
-        static Vector3 ReadVector(float[] source, int offset) =>
-            new(source[offset], source[offset + 1], source[offset + 2]);
+        static Vector3 ReadVector(float[] source, int offset)
+        {
+            return new Vector3(source[offset], source[offset + 1], source[offset + 2]);
+        }
     }
 
     internal static void TransformRigid(
@@ -616,18 +652,22 @@ internal static class BethesdaViewerScenePoseMaterializer12
         return foundVertex ? new BethesdaViewerBounds(minimum, maximum) : null;
     }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 
-    private static bool IsFinite(Matrix4x4 value) =>
-        float.IsFinite(value.M11) && float.IsFinite(value.M12) &&
-        float.IsFinite(value.M13) && float.IsFinite(value.M14) &&
-        float.IsFinite(value.M21) && float.IsFinite(value.M22) &&
-        float.IsFinite(value.M23) && float.IsFinite(value.M24) &&
-        float.IsFinite(value.M31) && float.IsFinite(value.M32) &&
-        float.IsFinite(value.M33) && float.IsFinite(value.M34) &&
-        float.IsFinite(value.M41) && float.IsFinite(value.M42) &&
-        float.IsFinite(value.M43) && float.IsFinite(value.M44);
+    private static bool IsFinite(Matrix4x4 value)
+    {
+        return float.IsFinite(value.M11) && float.IsFinite(value.M12) &&
+               float.IsFinite(value.M13) && float.IsFinite(value.M14) &&
+               float.IsFinite(value.M21) && float.IsFinite(value.M22) &&
+               float.IsFinite(value.M23) && float.IsFinite(value.M24) &&
+               float.IsFinite(value.M31) && float.IsFinite(value.M32) &&
+               float.IsFinite(value.M33) && float.IsFinite(value.M34) &&
+               float.IsFinite(value.M41) && float.IsFinite(value.M42) &&
+               float.IsFinite(value.M43) && float.IsFinite(value.M44);
+    }
 
     private static void AddPath(HashSet<string> paths, string? path)
     {

@@ -66,6 +66,16 @@ internal sealed class DaggerfallImgFile
     /// <summary>Compression word of a byte-code RLE image (defined for the shared header; no retail IMG uses it).</summary>
     private const ushort CompressionRleCompressed = 0x0002;
 
+    private DaggerfallImgFile(string name, IndexedBitmap bitmap, Palette? embeddedPalette, ushort compression,
+        bool hasHeader)
+    {
+        Name = name;
+        Bitmap = bitmap;
+        EmbeddedPalette = embeddedPalette;
+        Compression = compression;
+        HasHeader = hasHeader;
+    }
+
     /// <summary>
     ///     The headerless dimension table, ported verbatim from the reference's
     ///     <c>GetHeaderlessFileImageDimensions</c>. A file whose total size matches a key has no
@@ -93,7 +103,7 @@ internal sealed class DaggerfallImgFile
             [64000] = (320, 200),
             [64768] = (320, 200),
             [68800] = (320, 215),
-            [112128] = (512, 219),
+            [112128] = (512, 219)
         };
 
     /// <summary>
@@ -107,7 +117,7 @@ internal sealed class DaggerfallImgFile
         "PICK02I0.IMG",
         "PICK03I0.IMG",
         "PRIS00I0.IMG",
-        "TITL00I0.IMG",
+        "TITL00I0.IMG"
     ];
 
     /// <summary>
@@ -117,17 +127,8 @@ internal sealed class DaggerfallImgFile
     [
         "FMAP0I00.IMG",
         "FMAP0I01.IMG",
-        "FMAP0I16.IMG",
+        "FMAP0I16.IMG"
     ];
-
-    private DaggerfallImgFile(string name, IndexedBitmap bitmap, Palette? embeddedPalette, ushort compression, bool hasHeader)
-    {
-        Name = name;
-        Bitmap = bitmap;
-        EmbeddedPalette = embeddedPalette;
-        Compression = compression;
-        HasHeader = hasHeader;
-    }
 
     /// <summary>Logical file name (e.g. <c>BANK00I0.IMG</c>).</summary>
     public string Name { get; }
@@ -194,7 +195,7 @@ internal sealed class DaggerfallImgFile
         {
             "DANK02I0.IMG" => "DANKBMAP.COL",
             "TMAP00I0.IMG" => "MAP.PAL",
-            _ => "ART_PAL.COL",
+            _ => "ART_PAL.COL"
         };
     }
 

@@ -96,7 +96,7 @@ public static class GenFaceGenCommands
         offset = newOffset;
         var (newOffset2, gaControls) = ReadSection(data, offset, (int)gaSize);
         offset = newOffset2;
-        var (newOffset3, tsControls) = ReadSection(data, offset, (int)tsSize);
+        var (_, tsControls) = ReadSection(data, offset, (int)tsSize);
 
         return new CtlData
         {

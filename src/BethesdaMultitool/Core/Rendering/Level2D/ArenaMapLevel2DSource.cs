@@ -13,10 +13,13 @@ namespace BethesdaMultitool.Core.Rendering.Level2D;
 /// </summary>
 internal sealed class ArenaMapLevel2DSource : ILevel2DSource
 {
-    private readonly Dictionary<Level2DLayer, ushort[]> _planes = [];
-    private readonly int _width;
+    private static readonly Level2DLayer[] LayerOrder =
+        [Level2DLayer.Floor, Level2DLayer.Walls, Level2DLayer.Ceiling];
+
     private readonly int _depth;
+    private readonly Dictionary<Level2DLayer, ushort[]> _planes = [];
     private readonly int _scale;
+    private readonly int _width;
 
     private ArenaMapLevel2DSource(string displayName, int width, int depth, int scale)
     {
@@ -33,8 +36,18 @@ internal sealed class ArenaMapLevel2DSource : ILevel2DSource
     public IReadOnlyList<Level2DLayer> Layers =>
         [.. LayerOrder.Where(layer => _planes.TryGetValue(layer, out var plane) && plane.Length > 0)];
 
-    private static readonly Level2DLayer[] LayerOrder =
-        [Level2DLayer.Floor, Level2DLayer.Walls, Level2DLayer.Ceiling];
+    /// <inheritdoc />
+    public Level2DRender? Render(Level2DLayer layer)
+    {
+        if (!_planes.TryGetValue(layer, out var voxels) || voxels.Length == 0)
+        {
+            return null;
+        }
+
+        var (pixels, width, height, _) = VoxelLayerRasterizer.Rasterize(
+            _width, _depth, _scale, (x, z) => ArenaMifLevel.VoxelAt(voxels, _width, x, z));
+        return new Level2DRender(width, height, pixels);
+    }
 
     /// <summary>Wraps one level of a <c>.MIF</c>.</summary>
     public static ArenaMapLevel2DSource ForMifLevel(ArenaMifFile map, int levelIndex, int scale = 1)
@@ -70,18 +83,5 @@ internal sealed class ArenaMapLevel2DSource : ILevel2DSource
     private void Add(Level2DLayer layer, ushort[] voxels)
     {
         _planes[layer] = voxels;
-    }
-
-    /// <inheritdoc />
-    public Level2DRender? Render(Level2DLayer layer)
-    {
-        if (!_planes.TryGetValue(layer, out var voxels) || voxels.Length == 0)
-        {
-            return null;
-        }
-
-        var (pixels, width, height, _) = VoxelLayerRasterizer.Rasterize(
-            _width, _depth, _scale, (x, z) => ArenaMifLevel.VoxelAt(voxels, _width, x, z));
-        return new Level2DRender(width, height, pixels);
     }
 }

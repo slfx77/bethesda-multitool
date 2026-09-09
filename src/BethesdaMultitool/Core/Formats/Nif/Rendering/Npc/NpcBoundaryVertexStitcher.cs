@@ -259,12 +259,11 @@ internal static class NpcBoundaryVertexStitcher
         var ix = (int)MathF.Floor(x / CellSize);
         var iy = (int)MathF.Floor(y / CellSize);
         var iz = (int)MathF.Floor(z / CellSize);
-        // Pack three 21-bit integers into a 64-bit key
-        // Each component is cast after masking: without it the third operand stays int and
-        // sign-extends into the upper 43 bits, colliding cells whose iz is negative.
-        return ((long)(ix & 0x1FFFFF) << 42) |
-               ((long)(iy & 0x1FFFFF) << 21) |
-               (long)(iz & 0x1FFFFF);
+        // Pack three 21-bit integers into a 64-bit key. Mask as long values so all operands
+        // have the same width and retain only their component's low 21 bits.
+        return ((ix & 0x1FFFFFL) << 42) |
+               ((iy & 0x1FFFFFL) << 21) |
+               (iz & 0x1FFFFFL);
     }
 
     private static HashSet<string> CollectDistinctSources(

@@ -54,7 +54,7 @@ public sealed class PdbStructViewTests
         var view = OpenView(buffer, 0x00012345);
 
         Assert.NotNull(view);
-        Assert.Equal(OffsetFromVa(StructVa), view!.FileOffset);
+        Assert.Equal(OffsetFromVa(StructVa), view.FileOffset);
         Assert.Equal(TestFormType, view.Layout.FormType);
         Assert.True(view.Buffer.Length >= view.Layout.StructSize);
     }
@@ -73,7 +73,7 @@ public sealed class PdbStructViewTests
         var view = OpenView(buffer, 0x00012345);
 
         Assert.NotNull(view);
-        Assert.Equal(425, view!.Int32("iValue", "TESValueForm"));
+        Assert.Equal(425, view.Int32("iValue", "TESValueForm"));
         Assert.Equal(2.5f, view.Float("fWeight", "TESWeightForm"));
     }
 
@@ -88,7 +88,7 @@ public sealed class PdbStructViewTests
         var view = OpenView(buffer, 0x00012345);
 
         Assert.NotNull(view);
-        Assert.Equal(0, view!.Int32Range("iValue", "TESValueForm", 0, 1_000_000));
+        Assert.Equal(0, view.Int32Range("iValue", "TESValueForm", 0, 1_000_000));
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public sealed class PdbStructViewTests
         var view = OpenView(buffer, 0x00012345);
 
         Assert.NotNull(view);
-        Assert.Equal(-1, view!.Int32("NotARealField", def: -1));
+        Assert.Equal(-1, view.Int32("NotARealField", def: -1));
         Assert.Null(view.Offset("NotARealField"));
     }
 

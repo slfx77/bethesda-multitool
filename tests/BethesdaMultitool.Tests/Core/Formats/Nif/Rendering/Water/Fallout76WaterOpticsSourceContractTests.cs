@@ -130,18 +130,22 @@ public sealed class Fallout76WaterOpticsSourceContractTests
     {
         var permutations = ShaderPermutations.Water
             .Where(permutation => permutation.File == "water_fo4.frag.hlsl")
-            .Where(permutation => permutation.Macros.Any(
-                macro => macro.Name == "FO76_WATER_OPTICS" && macro.Definition == "1"))
+            .Where(permutation =>
+                permutation.Macros.Any(macro => macro.Name == "FO76_WATER_OPTICS" && macro.Definition == "1"))
             .ToArray();
 
         Assert.Equal(2, permutations.Length);
-        Assert.Single(permutations, permutation => permutation.Macros.All(
-            macro => macro.Name != "WATER_HARDWARE_OCCLUSION"));
-        Assert.Single(permutations, permutation => permutation.Macros.Any(
-            macro => macro.Name == "WATER_HARDWARE_OCCLUSION" && macro.Definition == "1"));
+        Assert.Single(permutations,
+            permutation => permutation.Macros.All(macro => macro.Name != "WATER_HARDWARE_OCCLUSION"));
+        Assert.Single(permutations,
+            permutation =>
+                permutation.Macros.Any(macro => macro.Name == "WATER_HARDWARE_OCCLUSION" && macro.Definition == "1"));
     }
 
-    private static string ReadRenderer() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-        "WaterRenderer12.cs");
+    private static string ReadRenderer()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "WaterRenderer12.cs");
+    }
 }

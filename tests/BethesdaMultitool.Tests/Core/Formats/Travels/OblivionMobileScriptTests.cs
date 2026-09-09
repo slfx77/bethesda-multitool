@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Travels.OblivionMobile;
 using Xunit;
@@ -35,20 +31,20 @@ public sealed class OblivionMobileScriptTests
     ///     its <c>00 &lt;id&gt; 01</c> marker. Chunks are given in ascending id order, which is the
     ///     order their code appears in.
     /// </summary>
-    private static byte[] BuildScript(IReadOnlyList<(byte Id, byte[] Code)> chunks, params byte[] definitions)
+    private static byte[] BuildScript((byte Id, byte[] Code)[] chunks, params byte[] definitions)
     {
-        var headerLength = 1 + (OblivionMobileScript.LabelEntryLength * chunks.Count);
-        var offsets = new int[chunks.Count];
+        var headerLength = 1 + OblivionMobileScript.LabelEntryLength * chunks.Length;
+        var offsets = new int[chunks.Length];
         var cursor = headerLength + definitions.Length;
-        for (var i = 0; i < chunks.Count; i++)
+        for (var i = 0; i < chunks.Length; i++)
         {
             cursor += OblivionMobileScript.MarkerLength;
             offsets[i] = cursor;
             cursor += chunks[i].Code.Length;
         }
 
-        var bytes = new List<byte>(cursor) { (byte)chunks.Count };
-        for (var i = chunks.Count - 1; i >= 0; i--)
+        var bytes = new List<byte>(cursor) { (byte)chunks.Length };
+        for (var i = chunks.Length - 1; i >= 0; i--)
         {
             bytes.Add(chunks[i].Id);
             bytes.Add((byte)(offsets[i] >> 8));
@@ -56,7 +52,7 @@ public sealed class OblivionMobileScriptTests
         }
 
         bytes.AddRange(definitions);
-        for (var i = 0; i < chunks.Count; i++)
+        for (var i = 0; i < chunks.Length; i++)
         {
             bytes.Add(OblivionMobileScript.MarkerLead);
             bytes.Add(chunks[i].Id);
@@ -88,12 +84,12 @@ public sealed class OblivionMobileScriptTests
 
         Assert.Equal(bytes.Length, script.Size);
         var label = Assert.Single(script.Labels);
-        Assert.Equal(1, (int)label.Id);
-        Assert.Equal(script.CodeStart, (int)label.Offset);
+        Assert.Equal(1, label.Id);
+        Assert.Equal(script.CodeStart, label.Offset);
 
         var block = Assert.Single(script.Blocks);
         Assert.Equal(OblivionMobileBlockKind.TileAttribute, block.Kind);
-        Assert.Equal(1, (int)block.Slot);
+        Assert.Equal(1, block.Slot);
         Assert.Equal(8, block.Length);
         Assert.Equal(2, block.Fields.Count);
         Assert.Equal(OblivionMobileValueKind.Unsigned, block.Fields[0].ValueKind);
@@ -146,7 +142,7 @@ public sealed class OblivionMobileScriptTests
                 1,
                 0x27, 0xF1, 0x9E, 0x3C, 0x02, 0x00,
                 0x27, 0x00, 0x04, (byte)'J', (byte)'u', (byte)'m', (byte)'p', 0x3C, 0x02, 0x00,
-                0x02),
+                0x02)
         });
 
         var script = OblivionMobileScript.Parse(bytes, "msg.scr");
@@ -206,7 +202,7 @@ public sealed class OblivionMobileScriptTests
         var inline = script.Blocks[1].Fields.Single(f => f.Key == 1);
         Assert.Equal(OblivionMobileValueKind.InlineText, inline.ValueKind);
         Assert.Equal("Axe", inline.Text);
-        Assert.Equal(2, (int)script.Blocks[1].Slot);
+        Assert.Equal(2, script.Blocks[1].Slot);
         Assert.Equal(364, Assert.Single(script.LangIds));
     }
 
@@ -241,7 +237,7 @@ public sealed class OblivionMobileScriptTests
 
         var block = Assert.Single(script.Blocks);
         Assert.Equal(OblivionMobileBlockKind.RawByteList, block.Kind);
-        Assert.Equal(0, (int)block.Slot);
+        Assert.Equal(0, block.Slot);
         Assert.Equal(new[] { 1, 2, 3, 4 }, block.Fields.Select(f => f.Value));
         Assert.All(block.Fields, f => Assert.Equal(OblivionMobileValueKind.RawByte, f.ValueKind));
     }
@@ -256,7 +252,7 @@ public sealed class OblivionMobileScriptTests
     {
         var bytes = BuildScript(new[]
         {
-            Chunk(1, 0x22, 0x05, 0x03, 0x09, 0x22, 0x05, 0x07, 0x01, 0x2C, 0x22, 0x05, 0x01, 0x02),
+            Chunk(1, 0x22, 0x05, 0x03, 0x09, 0x22, 0x05, 0x07, 0x01, 0x2C, 0x22, 0x05, 0x01, 0x02)
         });
 
         var script = OblivionMobileScript.Parse(bytes, "sprcmd.scr");
@@ -288,7 +284,7 @@ public sealed class OblivionMobileScriptTests
         Assert.Equal(5, chunk.DeadByteCount);
         Assert.Equal(5, script.DeadByteCount);
         Assert.Equal(6, chunk.Instructions.Count);
-        Assert.Equal(0, (int)chunk.Instructions[2].Opcode);
+        Assert.Equal(0, chunk.Instructions[2].Opcode);
         Assert.Equal(2, script.OpcodeCensus[OblivionMobileScriptOpcodes.Return]);
     }
 
@@ -325,7 +321,7 @@ public sealed class OblivionMobileScriptTests
                 0x48, 0x00, 0x06, (byte)'/', (byte)'1', (byte)'.', (byte)'p', (byte)'n', (byte)'g',
                 0x1D, 0x06, (byte)'/', (byte)'n', (byte)'.', (byte)'s', (byte)'c', (byte)'r',
                 0x38, 0x01, (byte)'x', 0x06,
-                0x02),
+                0x02)
         });
 
         var script = OblivionMobileScript.Parse(bytes, "res.scr");
@@ -479,8 +475,7 @@ public sealed class OblivionMobileScriptTests
     [Fact]
     public void ZeroLabels_Throws()
     {
-        var error = Assert.Throws<InvalidDataException>(
-            () => OblivionMobileScript.Parse(new byte[12], "empty.scr"));
+        var error = Assert.Throws<InvalidDataException>(() => OblivionMobileScript.Parse(new byte[12], "empty.scr"));
 
         Assert.Contains("label count at byte 0 is zero", error.Message, StringComparison.Ordinal);
     }

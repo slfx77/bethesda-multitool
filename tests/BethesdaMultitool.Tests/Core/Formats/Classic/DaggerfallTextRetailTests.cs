@@ -1,7 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using BethesdaMultitool.Core.Games;
@@ -24,7 +20,7 @@ public sealed class DaggerfallTextRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Classics.Daggerfall();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Daggerfall (ARENA2)"));
-        return root!;
+        return root;
     }
 
     [Fact]
@@ -83,7 +79,8 @@ public sealed class DaggerfallTextRetailTests
         Assert.Equal("The First Scroll of Baan Dar", first.Title);
         Assert.Equal("Arkan", first.Author);
         Assert.Equal(9, first.Pages.Count);
-        Assert.StartsWith("The First Scroll of Baan Dar\n\nWhat follows is a translation", first.PageTexts[0], StringComparison.Ordinal);
+        Assert.StartsWith("The First Scroll of Baan Dar\n\nWhat follows is a translation", first.PageTexts[0],
+            StringComparison.Ordinal);
 
         // BOK10000 is German, written in code page 437.
         var german = books.Single(b => b.Number == 10_000);

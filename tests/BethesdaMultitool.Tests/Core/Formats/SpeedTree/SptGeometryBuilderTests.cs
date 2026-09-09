@@ -159,7 +159,7 @@ public class SptGeometryBuilderTests
                    ?? SampleFileFixture.FindSamplePath(@"Sample\Meshes\meshes_360_proto\trees\wastelandshrub01.spt");
         Assert.SkipWhen(path is null, "Missing sample: wastelandshrub01.spt");
 
-        var model = SptFile.Parse(File.ReadAllBytes(path!));
+        var model = SptFile.Parse(File.ReadAllBytes(path));
         var result = SptGeometryBuilder.Build(model, 0x1234);
 
         Assert.True(result.HasGeometry);

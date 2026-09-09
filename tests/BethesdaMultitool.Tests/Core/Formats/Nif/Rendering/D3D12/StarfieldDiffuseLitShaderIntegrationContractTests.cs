@@ -449,14 +449,18 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
             "_textureCache.Release(starfieldOpacity);");
     }
 
-    private static bool IsStarfieldDiffuseLit(ShaderPermutation permutation) =>
-        permutation.Macros.Any(macro => macro.Name == FamilyMacro && macro.Definition == "1");
+    private static bool IsStarfieldDiffuseLit(ShaderPermutation permutation)
+    {
+        return permutation.Macros.Any(macro => macro.Name == FamilyMacro && macro.Definition == "1");
+    }
 
-    private static string VariantKey(ShaderPermutation permutation) =>
-        string.Join(",", permutation.Macros
+    private static string VariantKey(ShaderPermutation permutation)
+    {
+        return string.Join(",", permutation.Macros
             .Where(macro => macro.Name != ShadowComparisonPcf12.ShaderMacroName)
             .Select(macro => macro.Name)
             .Order(StringComparer.Ordinal));
+    }
 
     private static void AssertReferencePixelShader(ShaderPermutation permutation)
     {
@@ -479,6 +483,9 @@ public sealed class StarfieldDiffuseLitShaderIntegrationContractTests
         Assert.Equal("vs_5_1", permutation.Profile);
     }
 
-    private static string D3D12Source(string fileName) => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", fileName);
+    private static string D3D12Source(string fileName)
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", fileName);
+    }
 }

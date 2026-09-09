@@ -20,7 +20,7 @@ public sealed class FaceGenSparseTriMorpherTests
             @"Sample\Meshes\meshes_pc\meshes\characters\head\mouthhuman.tri");
         Assert.SkipWhen(triPath == null, "Sample mouthhuman.tri not available.");
 
-        var tri = Assert.IsType<TriParser>(TriParser.Parse(File.ReadAllBytes(triPath!)));
+        var tri = Assert.IsType<TriParser>(TriParser.Parse(File.ReadAllBytes(triPath)));
         Assert.True(tri.TryGetDifferentialRecord("Aah", out var record));
 
         var deltas = tri.ReadDifferentialRecordDeltas(record);
@@ -37,7 +37,7 @@ public sealed class FaceGenSparseTriMorpherTests
             @"Sample\Meshes\meshes_pc\meshes\characters\head\mouthhuman.tri");
         Assert.SkipWhen(triPath == null, "Sample mouthhuman.tri not available.");
 
-        var tri = Assert.IsType<TriParser>(TriParser.Parse(File.ReadAllBytes(triPath!)));
+        var tri = Assert.IsType<TriParser>(TriParser.Parse(File.ReadAllBytes(triPath)));
         var record = (tri.DifferentialRegionCandidate?.Records.Where(candidate =>
         {
             if (MathF.Abs(candidate.Scale) < 1e-7f)

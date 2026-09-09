@@ -21,11 +21,11 @@ public class Tes3LandVtexTests
         var draft = Tes3LandParser.Parse(land, land.Length);
 
         Assert.NotNull(draft);
-        var tex = draft!.TextureIndices;
+        var tex = draft.TextureIndices;
         Assert.NotNull(tex);
         const int size = 16;
 
-        Assert.Equal(0, tex![0 * size + 0]); // readPos 0  → (0,0)
+        Assert.Equal(0, tex[0 * size + 0]); // readPos 0  → (0,0)
         Assert.Equal(1, tex[0 * size + 1]); // readPos 1  → (1,0)
         Assert.Equal(3, tex[0 * size + 3]); // readPos 3  → (3,0)
         Assert.Equal(4, tex[1 * size + 0]); // readPos 4  → (0,1)  (next inner row of block 0)

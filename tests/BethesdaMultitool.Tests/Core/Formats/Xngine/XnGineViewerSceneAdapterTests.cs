@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
@@ -27,8 +23,10 @@ public sealed class XnGineViewerSceneAdapterTests
         return new XnGineTriangleMesh(42, 1f, Vector3.One, [new XnGineSubMesh(7, 3, vertices, indices)]);
     }
 
-    private static XnGineVertex At(float x, float y, float z) =>
-        new(new Vector3(x, y, z), Vector3.UnitY, Vector2.Zero);
+    private static XnGineVertex At(float x, float y, float z)
+    {
+        return new XnGineVertex(new Vector3(x, y, z), Vector3.UnitY, Vector2.Zero);
+    }
 
     [Fact]
     public void ToViewerSpace_MapsClassicYDownOntoViewerZUp()
@@ -65,7 +63,7 @@ public sealed class XnGineViewerSceneAdapterTests
         // are two nodes and exactly one parentless root.
         Assert.Equal(2, scene.Nodes.Count);
         Assert.Equal("SceneRoot", scene.Nodes[GlbScene.RootNodeIndex].Name);
-        Assert.Single(scene.Nodes.Where(n => n.ParentIndex is null));
+        Assert.Single(scene.Nodes, n => n.ParentIndex is null);
 
         var meshNode = scene.Nodes[1];
         Assert.Equal("ARMOR", meshNode.Name);
@@ -159,8 +157,7 @@ public sealed class XnGineViewerSceneAdapterTests
     [Fact]
     public void ToViewerScene_LevelAssembly_WithNothingPlaced_Throws()
     {
-        Assert.Throws<InvalidDataException>(
-            () => XnGineViewerSceneAdapter.ToViewerScene("EMPTY", []));
+        Assert.Throws<InvalidDataException>(() => XnGineViewerSceneAdapter.ToViewerScene("EMPTY", []));
     }
 
     [Fact]

@@ -43,6 +43,12 @@ internal sealed class RedguardRobMeshArchive : IDisposable
     /// <summary>Segments in the archive, empty placeholders included.</summary>
     public int Count => _entries.Count;
 
+    public void Dispose()
+    {
+        // Bytes are owned outright; the type is IDisposable so callers read like the sibling
+        // archive readers and keep working if a mapped-file backing ever replaces the byte array.
+    }
+
     /// <summary>Opens a ROB archive.</summary>
     public static RedguardRobMeshArchive Open(string path)
     {
@@ -100,7 +106,7 @@ internal sealed class RedguardRobMeshArchive : IDisposable
             throw new InvalidDataException($"{Name} segment '{EntryName(index)}' is empty and holds no mesh.");
         }
 
-        return XnGineMesh.Parse(RecordBytes(index), (uint)index, XnGineMeshLayout.Daggerfall);
+        return XnGineMesh.Parse(RecordBytes(index), (uint)index);
     }
 
     /// <summary>Parses one segment, reporting a malformed or empty record instead of throwing.</summary>
@@ -118,11 +124,5 @@ internal sealed class RedguardRobMeshArchive : IDisposable
             error = e.Message;
             return false;
         }
-    }
-
-    public void Dispose()
-    {
-        // Bytes are owned outright; the type is IDisposable so callers read like the sibling
-        // archive readers and keep working if a mapped-file backing ever replaces the byte array.
     }
 }

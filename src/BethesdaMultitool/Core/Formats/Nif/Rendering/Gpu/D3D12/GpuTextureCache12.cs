@@ -42,6 +42,9 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
     private const long UnthrottledMaxUploadBytesPerDispatch = 1024L * 1024L * 1024L;
 
+    /// <summary>How many unresolvable textures get named individually before rate-limiting.</summary>
+    private const int MaxNamedResolveFailures = 8;
+
     // Scales with cores (GC-guarded: half the logical processors, clamped to [2, 12]) — texture
     // resolve (BSA read + DDX→DDS transcode) is the documented streaming-hitch cost and is
     // embarrassingly parallel + off the render thread, so more workers directly multiply throughput.
@@ -49,9 +52,9 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     // matches the decode-worker raise (high-core machines were idling half their cores cold-loading
     // FO4's texture-heavy Commonwealth). Env override for profiling.
     private static readonly int DefaultMaxConcurrentTextureResolves =
-        BethesdaMultitool.Core.Orchestration.ConcurrencyPolicy
-            .Fixed(BethesdaMultitool.Core.Orchestration.CpuBudget.Interactive()
-                .Claim(BethesdaMultitool.Core.Orchestration.CpuWorkload.TextureResolve))
+        ConcurrencyPolicy
+            .Fixed(CpuBudget.Interactive()
+                .Claim(CpuWorkload.TextureResolve))
             .WithEnvironmentOverride(EnvironmentVariables.Viewer.TextureResolveConcurrency, 1, 12)
             .Resolve();
 
@@ -62,21 +65,13 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private static readonly bool ReleaseTexturePayloadsAfterUpload =
         !EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.RetainTexturePayloads);
 
+    private static readonly Logger Log = Logger.Instance;
+
     // Alias accounting is opt-in with the JSONL profiler. Keep it off the normal hot path entirely:
     // when tracing is disabled, nodes carry no legacy-key set and GetOrUpload performs no extra
     // path normalization or allocations.
     private readonly bool _aliasTraceEnabled;
     private readonly Dictionary<string, TextureUploadNode> _cache = new(StringComparer.OrdinalIgnoreCase);
-
-    private static readonly Logger Log = Logger.Instance;
-
-    /// <summary>How many unresolvable textures get named individually before rate-limiting.</summary>
-    private const int MaxNamedResolveFailures = 8;
-
-    // Resolution runs on background threads, so both of these are touched off the render thread.
-    private readonly List<string> _namedResolveFailures = new(MaxNamedResolveFailures);
-    private readonly Lock _resolveFailureGate = new();
-    private int _resolveFailures;
 
     private readonly ConcurrentQueue<CompletedUpload> _completedUploads = new();
 
@@ -86,10 +81,14 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
     private readonly GpuDevice12 _gpu;
     private readonly GpuDescriptorHeapAllocator12 _heap;
+
+    // Resolution runs on background threads, so both of these are touched off the render thread.
+    private readonly List<string> _namedResolveFailures = new(MaxNamedResolveFailures);
     private readonly List<ID3D12Resource> _ownedTextures = new();
     private readonly Queue<TextureUploadNode> _pendingDispatch = new();
     private readonly List<CompletedUpload> _pendingPromote = new();
     private readonly GpuCommandRecorder12 _recorder;
+    private readonly Lock _resolveFailureGate = new();
     private readonly BoundedResolveQueue<string, GpuTexturePayload> _resolveQueue;
 
     private readonly NifGpuTextureResolver? _resolver;
@@ -107,17 +106,20 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     // Time-based streaming pace for this frame (StreamingFrameBudgetScaler; set by ResetFrameStats).
     private double _frameBudgetScale = 1.0;
     private long _hits;
+
     private long _misses;
+
+    // Fallback singletons + synthesized frames: created once, never released before Dispose, and
+    // outside the refcounted add/release pair that maintains _residentBytes. Counted separately so
+    // the resident total includes them without touching the release-path symmetry.
+    private long _pinnedBytes;
 
     // Diagnostics counters — plain fields written only by the render thread (tracking-only
     // conformance; this cache is refcount-pinned and never trimmed). Snapshot readers tolerate
     // slightly stale values per the ITrackableResource threading contract.
     private ResourceRegistration? _registration;
-    // Fallback singletons + synthesized frames: created once, never released before Dispose, and
-    // outside the refcounted add/release pair that maintains _residentBytes. Counted separately so
-    // the resident total includes them without touching the release-path symmetry.
-    private long _pinnedBytes;
     private long _residentBytes;
+    private int _resolveFailures;
     private string _traceCacheTag = "unregistered";
     private bool _traceSummaryEmitted;
     private Entry? _waterSurface;
@@ -164,17 +166,6 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     /// </summary>
     public Entry WaterSurface => _waterSurface ??= CreatePinnedSolid(38, 82, 107, 255);
 
-    /// <summary>
-    ///     Creates a pinned fallback singleton AND counts it: pinned entries never pass through the
-    ///     refcounted add/release pair, so before this they were invisible to the resident total.
-    /// </summary>
-    private Entry CreatePinnedSolid(byte r, byte g, byte b, byte a)
-    {
-        var entry = _solidTextureFactory.CreateSolid(r, g, b, a);
-        _pinnedBytes += entry.ByteSize;
-        return entry;
-    }
-
     public int MaxUploadsPerFrame { get; init; } = DefaultMaxUploadsPerFrame;
 
     /// <summary>
@@ -212,6 +203,17 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
     /// <summary>Upload work items handed to the uploader thread but not yet processed.</summary>
     public int PendingUploadDispatch => _uploadDispatcher.PendingCount;
+
+    /// <summary>
+    ///     Background-thread payload resolution (BSA read + DDX→DDS + BCn decode). Runs through the
+    ///     resolver's own thread-safe cache; never touches render-thread state.
+    /// </summary>
+    /// <summary>
+    ///     Textures this cache looked for and could not find in any source, for the session.
+    ///     Non-zero is always a real asset problem: a wrong path root, a missing archive, or a
+    ///     load-order gap.
+    /// </summary>
+    internal int ResolveFailureCount => Volatile.Read(ref _resolveFailures);
 
     public void Dispose()
     {
@@ -264,21 +266,25 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             DisposeResource(wp.Texture);
             RetirePersistentSlot(wp.BindlessIndex, retiredPersistentSlots);
         }
+
         if (_flatNormal is Entry fn)
         {
             DisposeResource(fn.Texture);
             RetirePersistentSlot(fn.BindlessIndex, retiredPersistentSlots);
         }
+
         if (_waterSurface is Entry ws)
         {
             DisposeResource(ws.Texture);
             RetirePersistentSlot(ws.BindlessIndex, retiredPersistentSlots);
         }
+
         foreach (var synthetic in _syntheticEntries.Values)
         {
             DisposeResource(synthetic.Texture);
             RetirePersistentSlot(synthetic.BindlessIndex, retiredPersistentSlots);
         }
+
         _syntheticEntries.Clear();
         _ownedTextures.Clear();
         _pendingDispatch.Clear();
@@ -315,6 +321,17 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             InFlight = _resolveQueue.ActiveCount,
             Segment = GpuMemorySegment.Local
         };
+    }
+
+    /// <summary>
+    ///     Creates a pinned fallback singleton AND counts it: pinned entries never pass through the
+    ///     refcounted add/release pair, so before this they were invisible to the resident total.
+    /// </summary>
+    private Entry CreatePinnedSolid(byte r, byte g, byte b, byte a)
+    {
+        var entry = _solidTextureFactory.CreateSolid(r, g, b, a);
+        _pinnedBytes += entry.ByteSize;
+        return entry;
     }
 
     /// <summary>
@@ -751,17 +768,6 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     }
 
     /// <summary>
-    ///     Background-thread payload resolution (BSA read + DDX→DDS + BCn decode). Runs through the
-    ///     resolver's own thread-safe cache; never touches render-thread state.
-    /// </summary>
-    /// <summary>
-    ///     Textures this cache looked for and could not find in any source, for the session.
-    ///     Non-zero is always a real asset problem: a wrong path root, a missing archive, or a
-    ///     load-order gap.
-    /// </summary>
-    internal int ResolveFailureCount => Volatile.Read(ref _resolveFailures);
-
-    /// <summary>
     ///     Records a texture that resolved to nothing, and says so in the log.
     ///     <para>
     ///         This existed only as a profiler trace field before, so a missing texture was SILENT
@@ -798,11 +804,17 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
         // 25, 100, 1000, 10000, … — enough to show a systemic failure escalating, few enough that a
         // worldspace missing thousands of textures adds a handful of lines rather than thousands.
-        if (count == 25 || count == 100 || count == 1_000 || (count % 10_000) == 0)
+        if (count == 25 || count == 100 || count == 1_000 || count % 10_000 == 0)
         {
+            string firstFailures;
+            lock (_resolveFailureGate)
+            {
+                firstFailures = string.Join(", ", _namedResolveFailures);
+            }
+
             Log.Warn(
                 "GpuTextureCache12[{0}]: {1:N0} textures unresolved so far. First few: {2}.",
-                _traceCacheTag, count, string.Join(", ", _namedResolveFailures));
+                _traceCacheTag, count, firstFailures);
         }
     }
 

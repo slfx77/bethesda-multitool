@@ -43,7 +43,7 @@ public sealed class TerrainTextureWeightTableTests
         Assert.NotNull(table);
 
         // (vx=4, vy=4) — NW quadrant interior (vy=0 is north).
-        AssertSingleEntry(table!.At(4, 4), BtxtNw, 1f);
+        AssertSingleEntry(table.At(4, 4), BtxtNw, 1f);
         // (vx=4, vy=28) — SW quadrant interior.
         AssertSingleEntry(table.At(4, 28), BtxtSw, 1f);
         // (vx=28, vy=4) — NE quadrant interior.
@@ -61,7 +61,7 @@ public sealed class TerrainTextureWeightTableTests
 
         Assert.NotNull(table);
         // (vx=16, vy=24) — boundary between SW and SE quadrants on the southern half.
-        AssertTwoEntries(table!.At(16, 24),
+        AssertTwoEntries(table.At(16, 24),
             (BtxtSw, 0.5f), (BtxtSe, 0.5f));
     }
 
@@ -74,7 +74,7 @@ public sealed class TerrainTextureWeightTableTests
 
         Assert.NotNull(table);
         // (vx=8, vy=16) — boundary between NW and SW quadrants on the western half.
-        AssertTwoEntries(table!.At(8, 16),
+        AssertTwoEntries(table.At(8, 16),
             (BtxtNw, 0.5f), (BtxtSw, 0.5f));
     }
 
@@ -86,7 +86,7 @@ public sealed class TerrainTextureWeightTableTests
         var table = CellLayerWeightTable.Build(layers);
 
         Assert.NotNull(table);
-        ref readonly var center = ref table!.Vertices[16 * 33 + 16];
+        ref readonly var center = ref table.Vertices[16 * 33 + 16];
         Assert.Equal(4, center.Count);
 
         var weights = new Dictionary<uint, float>
@@ -122,7 +122,7 @@ public sealed class TerrainTextureWeightTableTests
         Assert.NotNull(table);
         // Cell center vertex (16, 16): all 4 quadrants contribute BtxtSw with weight 1 each;
         // merge collapses to a single entry of raw weight 4, then renormalize to 1.
-        AssertSingleEntry(table!.At(16, 16), BtxtSw, 1f);
+        AssertSingleEntry(table.At(16, 16), BtxtSw, 1f);
         // Shared east boundary of south half (16, 24): SW + SE contribute, both BtxtSw;
         // merge collapses to weight 2, renormalize to 1.
         AssertSingleEntry(table.At(16, 24), BtxtSw, 1f);
@@ -144,7 +144,7 @@ public sealed class TerrainTextureWeightTableTests
         var table = CellLayerWeightTable.Build(layers);
 
         Assert.NotNull(table);
-        AssertSingleEntry(table!.At(4, 28), BtxtSw, 1f); // SW interior
+        AssertSingleEntry(table.At(4, 28), BtxtSw, 1f); // SW interior
         AssertSingleEntry(table.At(4, 4), 0u, 1f); // NW interior — engine default
         AssertSingleEntry(table.At(28, 4), 0u, 1f); // NE interior — engine default
     }
@@ -179,7 +179,7 @@ public sealed class TerrainTextureWeightTableTests
         var table = CellLayerWeightTable.Build(layers);
 
         Assert.NotNull(table);
-        AssertTwoEntries(table!.At(16, 24),
+        AssertTwoEntries(table.At(16, 24),
             (sweAtxt, 0.5f), (BtxtSe, 0.5f));
 
         // One pixel column inside SW (vx=15, vy=24): only SW contributes (interior of SW).
@@ -214,7 +214,7 @@ public sealed class TerrainTextureWeightTableTests
 
         Assert.NotNull(table);
         // South half of A's east edge.
-        AssertTwoEntries(table!.At(32, 24), (BtxtSe, 0.5f), (NeighborBtxtWest, 0.5f));
+        AssertTwoEntries(table.At(32, 24), (BtxtSe, 0.5f), (NeighborBtxtWest, 0.5f));
         // North half of A's east edge.
         AssertTwoEntries(table.At(32, 8), (BtxtNe, 0.5f), (NeighborBtxtWest, 0.5f));
         // One column inside A: only A's own quadrant contributes.
@@ -234,7 +234,7 @@ public sealed class TerrainTextureWeightTableTests
         var table = CellLayerWeightTable.Build(aLayers, westNeighborLayers: westNeighbor);
 
         Assert.NotNull(table);
-        AssertTwoEntries(table!.At(0, 24), (BtxtSw, 0.5f), (NeighborBtxtEast, 0.5f));
+        AssertTwoEntries(table.At(0, 24), (BtxtSw, 0.5f), (NeighborBtxtEast, 0.5f));
         AssertTwoEntries(table.At(0, 8), (BtxtNw, 0.5f), (NeighborBtxtEast, 0.5f));
         AssertSingleEntry(table.At(4, 24), BtxtSw, 1f);
     }
@@ -253,7 +253,7 @@ public sealed class TerrainTextureWeightTableTests
 
         Assert.NotNull(table);
         // West half of A's north edge.
-        AssertTwoEntries(table!.At(8, 0), (BtxtNw, 0.5f), (NeighborBtxtSouth, 0.5f));
+        AssertTwoEntries(table.At(8, 0), (BtxtNw, 0.5f), (NeighborBtxtSouth, 0.5f));
         // East half of A's north edge.
         AssertTwoEntries(table.At(24, 0), (BtxtNe, 0.5f), (NeighborBtxtSouth, 0.5f));
         // One row inside A.
@@ -273,7 +273,7 @@ public sealed class TerrainTextureWeightTableTests
         var table = CellLayerWeightTable.Build(aLayers, southNeighborLayers: southNeighbor);
 
         Assert.NotNull(table);
-        AssertTwoEntries(table!.At(8, 32), (BtxtSw, 0.5f), (NeighborBtxtNorth, 0.5f));
+        AssertTwoEntries(table.At(8, 32), (BtxtSw, 0.5f), (NeighborBtxtNorth, 0.5f));
         AssertTwoEntries(table.At(24, 32), (BtxtSe, 0.5f), (NeighborBtxtNorth, 0.5f));
         AssertSingleEntry(table.At(8, 28), BtxtSw, 1f);
     }
@@ -289,7 +289,7 @@ public sealed class TerrainTextureWeightTableTests
         var table = CellLayerWeightTable.Build(aLayers);
 
         Assert.NotNull(table);
-        AssertSingleEntry(table!.At(32, 24), BtxtSe, 1f);
+        AssertSingleEntry(table.At(32, 24), BtxtSe, 1f);
         AssertSingleEntry(table.At(0, 8), BtxtNw, 1f);
         AssertSingleEntry(table.At(8, 0), BtxtNw, 1f);
         AssertSingleEntry(table.At(24, 32), BtxtSe, 1f);
@@ -320,7 +320,7 @@ public sealed class TerrainTextureWeightTableTests
             northNeighborLayers: northNeighbor);
 
         Assert.NotNull(table);
-        ref readonly var corner = ref table!.Vertices[0 * 33 + 0]; // NW corner
+        ref readonly var corner = ref table.Vertices[0 * 33 + 0]; // NW corner
         Assert.Equal(3, corner.Count);
 
         var weights = new Dictionary<uint, float>
@@ -346,7 +346,7 @@ public sealed class TerrainTextureWeightTableTests
             new List<LandTextureLayer>());
 
         Assert.NotNull(table);
-        AssertSingleEntry(table!.At(32, 24), BtxtSe, 1f);
+        AssertSingleEntry(table.At(32, 24), BtxtSe, 1f);
     }
 
     [Fact]
@@ -373,7 +373,7 @@ public sealed class TerrainTextureWeightTableTests
 
         Assert.NotNull(table);
         // West edge: 50% engine-default (this cell's own), 50% west neighbor's east BTXT.
-        AssertTwoEntries(table!.At(0, 24), (0u, 0.5f), (NeighborBtxtEast, 0.5f));
+        AssertTwoEntries(table.At(0, 24), (0u, 0.5f), (NeighborBtxtEast, 0.5f));
         // One column inside: pure engine-default.
         AssertSingleEntry(table.At(4, 24), 0u, 1f);
     }
@@ -425,14 +425,14 @@ public sealed class TerrainTextureWeightTableTests
         var built1 = CellLayerWeightTable.BuildInto(
             pooled, layers, eastNeighbor, northNeighborLayers: northNeighbor);
         Assert.True(built1);
-        AssertTablesEqual(reference!, pooled);
+        AssertTablesEqual(reference, pooled);
 
         // Invoke BuildInto a SECOND time on the same instance to catch reset bugs (e.g., a
         // vertex with Count==0 still carrying stale E0 from the prior call). Output must match.
         var built2 = CellLayerWeightTable.BuildInto(
             pooled, layers, eastNeighbor, northNeighborLayers: northNeighbor);
         Assert.True(built2);
-        AssertTablesEqual(reference!, pooled);
+        AssertTablesEqual(reference, pooled);
     }
 
     [Fact]

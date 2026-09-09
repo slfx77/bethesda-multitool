@@ -350,7 +350,7 @@ public sealed class NpcExportHelperTests
             true);
 
         Assert.NotNull(packed);
-        Assert.True(packed!.Pixels[1] < packed.Pixels[5],
+        Assert.True(packed.Pixels[1] < packed.Pixels[5],
             "Masked glossy texel should be less rough than the matte texel.");
     }
 
@@ -381,7 +381,7 @@ public sealed class NpcExportHelperTests
             true);
 
         Assert.NotNull(packed);
-        Assert.Equal(255, packed!.Pixels[3]);
+        Assert.Equal(255, packed.Pixels[3]);
         Assert.Equal(0, packed.Pixels[7]);
     }
 
@@ -400,7 +400,7 @@ public sealed class NpcExportHelperTests
         var occlusion = NpcGlbMaterialTexturePacker.BuildOcclusionTexture(heightTexture);
 
         Assert.NotNull(occlusion);
-        Assert.Equal(0, occlusion!.Pixels[0]);
+        Assert.Equal(0, occlusion.Pixels[0]);
         Assert.Equal(255, occlusion.Pixels[4]);
     }
 
@@ -537,7 +537,7 @@ public sealed class NpcExportHelperTests
         var tinted = NpcGlbTintColorEncoder.BakeDiffuseTexture(submesh, diffuseTexture);
 
         Assert.NotNull(tinted);
-        Assert.Equal(120, tinted!.Pixels[0]);
+        Assert.Equal(120, tinted.Pixels[0]);
         Assert.Equal(50, tinted.Pixels[1]);
         Assert.Equal(20, tinted.Pixels[2]);
         Assert.Equal(255, tinted.Pixels[3]);

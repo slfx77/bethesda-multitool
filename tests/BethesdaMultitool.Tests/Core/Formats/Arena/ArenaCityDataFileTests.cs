@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Arena;
 using Xunit;
@@ -27,9 +25,9 @@ public class ArenaCityDataFileTests
 
     private static int LocationOffset(int province, int slot)
     {
-        return (province * ArenaCityDataFile.ProvinceRecordLength)
+        return province * ArenaCityDataFile.ProvinceRecordLength
                + ArenaCityDataFile.NameLength + 8
-               + (slot * ArenaCityDataFile.LocationRecordLength);
+               + slot * ArenaCityDataFile.LocationRecordLength;
     }
 
     private static byte[] BuildTable()
@@ -59,7 +57,8 @@ public class ArenaCityDataFileTests
         Assert.Equal(1228, ArenaCityDataFile.ProvinceRecordLength);
         Assert.Equal(
             ArenaCityDataFile.NameLength + 8
-            + (ArenaCityDataFile.LocationsPerProvince * ArenaCityDataFile.LocationRecordLength),
+                                         + ArenaCityDataFile.LocationsPerProvince *
+                                         ArenaCityDataFile.LocationRecordLength,
             ArenaCityDataFile.ProvinceRecordLength);
 
         // The retail file's exact size.
@@ -69,10 +68,10 @@ public class ArenaCityDataFileTests
     [Fact]
     public void Parse_WrongLength_Throws()
     {
-        Assert.Throws<InvalidDataException>(
-            () => ArenaCityDataFile.Parse(new byte[ArenaCityDataFile.FileLength - 1], "BAD"));
-        Assert.Throws<InvalidDataException>(
-            () => ArenaCityDataFile.Parse(new byte[ArenaCityDataFile.FileLength + 1], "BAD"));
+        Assert.Throws<InvalidDataException>(() =>
+            ArenaCityDataFile.Parse(new byte[ArenaCityDataFile.FileLength - 1], "BAD"));
+        Assert.Throws<InvalidDataException>(() =>
+            ArenaCityDataFile.Parse(new byte[ArenaCityDataFile.FileLength + 1], "BAD"));
     }
 
     [Fact]
@@ -142,8 +141,8 @@ public class ArenaCityDataFileTests
     [Fact]
     public void KindOfSlot_OutOfRange_Throws()
     {
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => ArenaCityDataFile.KindOfSlot(ArenaCityDataFile.LocationsPerProvince));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            ArenaCityDataFile.KindOfSlot(ArenaCityDataFile.LocationsPerProvince));
     }
 
     [Fact]

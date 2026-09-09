@@ -17,6 +17,16 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export.Csv;
 
 internal static class CsvSupplementalWriter
 {
+    /// <summary>Builds a set of named CSVs describing which runtime structures own each detected runtime string.</summary>
+    /// <summary>
+    ///     Rows written per unreferenced/unknown-owner CSV. Since the 2026-09-03 change that feeds
+    ///     ALL strings through ownership analysis (not just shape-classified ones), these two sets
+    ///     run to hundreds of thousands of rows on a real dump — 550k <c>Other</c> strings on
+    ///     xex44 alone. The counts in the summary report stay exact; only the row dumps are capped,
+    ///     and each capped file says so on its last line.
+    /// </summary>
+    private const int MaxUnattributedCsvRows = 20_000;
+
     /// <summary>Builds a CSV of Globals.</summary>
     public static string GenerateGlobalsCsv(List<GlobalRecord> globals)
     {
@@ -304,16 +314,6 @@ internal static class CsvSupplementalWriter
 
         return sb.ToString();
     }
-
-    /// <summary>Builds a set of named CSVs describing which runtime structures own each detected runtime string.</summary>
-    /// <summary>
-    ///     Rows written per unreferenced/unknown-owner CSV. Since the 2026-09-03 change that feeds
-    ///     ALL strings through ownership analysis (not just shape-classified ones), these two sets
-    ///     run to hundreds of thousands of rows on a real dump — 550k <c>Other</c> strings on
-    ///     xex44 alone. The counts in the summary report stay exact; only the row dumps are capped,
-    ///     and each capped file says so on its last line.
-    /// </summary>
-    private const int MaxUnattributedCsvRows = 20_000;
 
     /// <summary>
     ///     Say so in the file when rows were dropped, so a reader never mistakes a capped dump for

@@ -116,16 +116,16 @@ public sealed class WalkHorizontalCollisionTests
         var bsaPath = FindRetailMeshesBsa();
         Assert.SkipWhen(bsaPath is null, "Retail Fallout - Meshes.bsa is not available.");
 
-        using var extractor = new BsaExtractor(bsaPath!);
+        using var extractor = new BsaExtractor(bsaPath);
         var file = extractor.Archive.FindFile(
             @"meshes\landscape\rocks\cliffs\cliffverti_c2.nif");
         Assert.NotNull(file);
-        var data = extractor.ExtractFile(file!);
+        var data = extractor.ExtractFile(file);
         var nif = NifParser.Parse(data);
         Assert.NotNull(nif);
-        var soup = HavokCollisionExtractor.Extract(data, nif!).Soup;
+        var soup = HavokCollisionExtractor.Extract(data, nif).Soup;
         Assert.NotNull(soup);
-        var extracted = soup!.Value;
+        var extracted = soup.Value;
 
         // FalloutNV.esm retail authority:
         //   STAT 0x0015626B CliffVertiC2
@@ -179,7 +179,7 @@ public sealed class WalkHorizontalCollisionTests
         var bsaPath = FindRetailMeshesBsa();
         Assert.SkipWhen(bsaPath is null, "Retail Fallout - Meshes.bsa is not available.");
 
-        using var extractor = new BsaExtractor(bsaPath!);
+        using var extractor = new BsaExtractor(bsaPath);
         string[] paths =
         [
             @"meshes\effects\nv\nvlimestoneduststormhalfviz.nif",
@@ -189,7 +189,7 @@ public sealed class WalkHorizontalCollisionTests
         {
             var file = extractor.Archive.FindFile(path);
             Assert.NotNull(file);
-            var data = extractor.ExtractFile(file!);
+            var data = extractor.ExtractFile(file);
             var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
 
             Assert.Null(HavokCollisionExtractor.Extract(data, nif).Soup);
@@ -204,11 +204,11 @@ public sealed class WalkHorizontalCollisionTests
         var bsaPath = FindRetailMeshesBsa();
         Assert.SkipWhen(bsaPath is null, "Retail Fallout - Meshes.bsa is not available.");
 
-        using var extractor = new BsaExtractor(bsaPath!);
+        using var extractor = new BsaExtractor(bsaPath);
         const string path = @"meshes\effects\box03.nif";
         var file = extractor.Archive.FindFile(path);
         Assert.NotNull(file);
-        var data = extractor.ExtractFile(file!);
+        var data = extractor.ExtractFile(file);
         var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
         var soup = HavokCollisionExtractor.Extract(data, nif).Soup;
         Assert.NotNull(soup);
@@ -314,7 +314,7 @@ public sealed class WalkHorizontalCollisionTests
         {
             Path.Combine(Environment.GetEnvironmentVariable("BETHESDA_TEST_DATA_ROOT") ?? string.Empty,
                 "Fallout - Meshes.bsa"),
-            Path.GetFullPath(Path.Combine("Sample", "Full_Builds", "Fallout New Vegas (PC Final)",
+            Path.GetFullPath(Path.Combine("Sample", "Builds", "Fallout - New Vegas (2022-5-24, Steam - Final)",
                 "Data", "Fallout - Meshes.bsa")),
             RealAssetPaths.SteamGameFile("Fallout New Vegas", @"Data\Fallout - Meshes.bsa")
         };

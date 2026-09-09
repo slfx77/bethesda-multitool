@@ -55,32 +55,23 @@ public sealed partial class WorldView3DControl
     private readonly List<PlacedLight> _framePlacedLights = new(MaxPlacedLightsPerFrame);
     private readonly List<WorldSpatialCell> _placedLightCellScratch = [];
     private readonly HashSet<uint> _placedLightClipLoggedCells = [];
-    private ulong[] _placedLightTileMaskScratch = new ulong[1];
-    private ulong[] _placedLightTileCachedMasks = new ulong[1];
     private readonly List<PlacedLight> _placedLightTileCachedLights = new(MaxPlacedLightsPerFrame);
-    private bool _placedLightTileCacheValid;
-    private Matrix4x4 _placedLightTileCachedViewProjection;
-    private Vector3 _placedLightTileCachedRenderOrigin;
-    private int _placedLightTileCachedViewportWidth;
-    private int _placedLightTileCachedViewportHeight;
-    private int _placedLightTileCachedMaskCount;
-    private PlacedLightTileCullResult _placedLightTileCachedResult;
-    private long _placedLightTileCachedTotalLights;
-    private int _placedLightTileCachedMaxLights;
-    private int _placedLightTileCachedEmptyTiles;
     private bool _framePlacedLightCapLogged;
-    private ulong _lastPointLightTilesGpuAddress;
-
-    private readonly record struct PlacedLightTileFrameTelemetry(
-        double BuildMilliseconds,
-        int TileCount,
-        int UploadBytes,
-        double AverageLightsPerTile,
-        int MaxLightsPerTile,
-        double EmptyTilePercent,
-        string? FallbackReason);
 
     private PlacedLightTileFrameTelemetry _lastPlacedLightTileTelemetry;
+    private ulong _lastPointLightTilesGpuAddress;
+    private int _placedLightTileCachedEmptyTiles;
+    private int _placedLightTileCachedMaskCount;
+    private ulong[] _placedLightTileCachedMasks = new ulong[1];
+    private int _placedLightTileCachedMaxLights;
+    private Vector3 _placedLightTileCachedRenderOrigin;
+    private PlacedLightTileCullResult _placedLightTileCachedResult;
+    private long _placedLightTileCachedTotalLights;
+    private int _placedLightTileCachedViewportHeight;
+    private int _placedLightTileCachedViewportWidth;
+    private Matrix4x4 _placedLightTileCachedViewProjection;
+    private bool _placedLightTileCacheValid;
+    private ulong[] _placedLightTileMaskScratch = new ulong[1];
 
     /// <summary>
     ///     Selects visible-cell emitters, uploads one global structured buffer, and binds root SRV
@@ -416,4 +407,13 @@ public sealed partial class WorldView3DControl
             maxPerCell,
             clipped);
     }
+
+    private readonly record struct PlacedLightTileFrameTelemetry(
+        double BuildMilliseconds,
+        int TileCount,
+        int UploadBytes,
+        double AverageLightsPerTile,
+        int MaxLightsPerTile,
+        double EmptyTilePercent,
+        string? FallbackReason);
 }

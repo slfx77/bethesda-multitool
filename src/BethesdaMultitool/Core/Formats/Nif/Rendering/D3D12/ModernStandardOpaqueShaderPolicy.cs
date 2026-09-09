@@ -33,10 +33,8 @@ internal static class ModernStandardShaderActivationPolicy
     {
         var explicitlyEnabled = string.Equals(overrideValue, "1", StringComparison.Ordinal);
         return new ModernStandardShaderActivation(
-            FalloutModernStandardRequested:
-                (game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76) && explicitlyEnabled,
-            StarfieldDiffuseLitRequested:
-                game == BethesdaGame.Starfield && (overrideValue is null || explicitlyEnabled));
+            game is BethesdaGame.Fallout4 or BethesdaGame.Fallout76 && explicitlyEnabled,
+            game == BethesdaGame.Starfield && (overrideValue is null || explicitlyEnabled));
     }
 }
 
@@ -87,6 +85,7 @@ internal readonly record struct ModernStandardOpaqueShaderFacts(
 internal static class ModernStandardOpaqueShaderPolicy
 {
     private const byte GreaterAlphaTestFunction = 4;
+
     // Bit 0 is the declared modern specular map. TREE_ANIM bit 17 changes only alpha provenance
     // and is implemented by the same specialized pixel shader; every other authored shader-visible
     // bit belongs to a removed route and fails closed until deliberately audited.

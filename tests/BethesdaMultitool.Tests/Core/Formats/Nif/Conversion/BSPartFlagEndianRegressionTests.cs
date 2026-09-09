@@ -103,7 +103,7 @@ public sealed class BSPartFlagEndianRegressionTests
     {
         var path = SampleFileFixture.FindSamplePath(UlyssesProtoNifPath);
         Assert.SkipWhen(path is null, $"Sample NIF not available: {UlyssesProtoNifPath}");
-        return File.ReadAllBytes(path!);
+        return File.ReadAllBytes(path);
     }
 
     private static (NifInfo Info, byte[] Bytes) ConvertAndReparseAsPc(byte[] xboxBytes)
@@ -113,7 +113,7 @@ public sealed class BSPartFlagEndianRegressionTests
         Assert.NotNull(result.OutputData);
         var info = NifParser.Parse(result.OutputData!);
         Assert.NotNull(info);
-        Assert.False(info!.IsBigEndian, "Converted NIF must be little-endian");
+        Assert.False(info.IsBigEndian, "Converted NIF must be little-endian");
         return (info, result.OutputData!);
     }
 

@@ -28,6 +28,9 @@ internal sealed class BethesdaViewerStaticRenderer12
     private readonly int _classicSkinSpecializationEligibleCount;
     private readonly int _classicSkinSpecializationUsedCount;
     private readonly DepthOrderedDraw[] _depthOrdered;
+    private readonly ViewerDraw[] _oblivionEyes;
+    private readonly OblivionEyeGpuBinding12? _eyeBinding;
+    private readonly ID3D12PipelineState? _eyePipeline;
     private readonly int _falloutSpecializationEligibleCount;
     private readonly int _falloutSpecializationUsedCount;
     private readonly uint _neutralTextureIndex;
@@ -48,7 +51,12 @@ internal sealed class BethesdaViewerStaticRenderer12
         ReferencePipelineFactory12 pipelines,
         GpuRingBuffer12 ringBuffer,
         GpuDescriptorHeapAllocator12 descriptorHeap,
-        uint neutralTextureIndex)
+        uint neutralTextureIndex,
+        bool classicSkinFactorOneRequested = false,
+        bool independentSkinAlbedoRequested = false,
+        Func<int, ClassicSkinAuthoredAlbedo, ClassicSkinIndependentGpuBinding12>? acquireIndependentAlbedo = null,
+        bool oblivionEyesRequested = false,
+        Func<OblivionEyeGpuBinding12>? acquireEyeCube = null)
     {
         ArgumentNullException.ThrowIfNull(mesh);
         ArgumentNullException.ThrowIfNull(posedScene);
@@ -69,6 +77,21 @@ internal sealed class BethesdaViewerStaticRenderer12
                 posedScene.Source.Purpose,
                 draw.NativeSemantics.SkyType))
             .ToArray();
+        _oblivionEyes = routedDraws.Where(draw => BethesdaViewerOblivionEyePolicy.IsEnabledFor(
+            oblivionEyesRequested, posedScene.Source.Game, posedScene.Source.Purpose,
+            draw.NativeSemantics.HasReviewedOblivionEyeSource,
+            draw.NativeSemantics.NativeAlphaRenderMode == NifAlphaRenderMode.Opaque &&
+                !draw.Submesh.AlphaBlend && !draw.Submesh.AlphaTest && !draw.Submesh.DoubleSided &&
+                !draw.Submesh.DepthTestOff,
+            draw.Submesh.IsBillboard) && draw.OblivionEyeBounds is not null).ToArray();
+        if (_oblivionEyes.Length > 0)
+        {
+            _eyeBinding = (acquireEyeCube ??
+                throw new InvalidOperationException("Eye cube acquisition is unavailable."))();
+            _eyePipeline = pipelines.GetOblivionEyePso();
+        }
+        Logger.Instance.Info("BethesdaSceneViewer: ordinary-eye diagnostic requested={0} selectedDraws={1}",
+            oblivionEyesRequested, _oblivionEyes.Length);
         var alphaToCoverageMode = BethesdaViewerAlphaToCoveragePolicy.Resolve(
             _pipelines.AlphaToCoverageAvailable,
             Environment.GetEnvironmentVariable(BethesdaViewerAlphaToCoveragePolicy.EnvironmentVariable));
@@ -98,6 +121,8 @@ internal sealed class BethesdaViewerStaticRenderer12
         var falloutUsed = 0;
         var classicSkinEligible = 0;
         var classicSkinUsed = 0;
+        var classicSkinFactorOneUsed = 0;
+        var independentSkinUsed = 0;
         var starfieldEligible = 0;
         var starfieldUsed = 0;
         foreach (var draw in routedDraws)
@@ -114,12 +139,35 @@ internal sealed class BethesdaViewerStaticRenderer12
                 var specialization = ResolveOpaqueSpecialization(
                     posedScene.Source.Game,
                     draw,
-                    _pipelines);
+                    _pipelines,
+                    classicSkinFactorOneRequested,
+                    independentSkinAlbedoRequested,
+                    posedScene.Source.Purpose);
+                ClassicSkinIndependentGpuBinding12? independentAlbedo = null;
+                if (specialization.Family is OpaqueSpecializationFamily.ClassicSkinIndependent or
+                    OpaqueSpecializationFamily.ClassicSkinIndependentFactorOne)
+                {
+                    independentAlbedo = (acquireIndependentAlbedo ??
+                        throw new InvalidOperationException("Independent skin texture acquisition is unavailable."))(
+                        draw.Submesh.MaterializationSourceIndex, draw.NativeSemantics.AuthoredSkinAlbedo!);
+                    independentSkinUsed++;
+                }
                 switch (specialization.Family)
                 {
+                    case OpaqueSpecializationFamily.ClassicSkinFactorOne:
+                    case OpaqueSpecializationFamily.ClassicSkinIndependent:
+                    case OpaqueSpecializationFamily.ClassicSkinIndependentFactorOne:
                     case OpaqueSpecializationFamily.ClassicSkin:
                         classicSkinEligible++;
-                        if (specialization.Pipeline is not null) classicSkinUsed++;
+                        if (specialization.Pipeline is not null)
+                        {
+                            classicSkinUsed++;
+                            if (specialization.Family is OpaqueSpecializationFamily.ClassicSkinFactorOne or
+                                OpaqueSpecializationFamily.ClassicSkinIndependentFactorOne)
+                            {
+                                classicSkinFactorOneUsed++;
+                            }
+                        }
                         break;
                     case OpaqueSpecializationFamily.FalloutModernStandard:
                         falloutEligible++;
@@ -133,7 +181,8 @@ internal sealed class BethesdaViewerStaticRenderer12
                 depthOrdered.Add(new DepthOrderedDraw(
                     draw,
                     DepthDrawKind.Opaque,
-                    specialization.Pipeline));
+                    specialization.Pipeline,
+                    independentAlbedo));
             }
             else if (!nativeAlphaToCoverage && !draw.Submesh.EngineZWriteOff)
             {
@@ -180,6 +229,8 @@ internal sealed class BethesdaViewerStaticRenderer12
         _transparentSortOrder = new int[_transparent.Length];
         _classicSkinSpecializationEligibleCount = classicSkinEligible;
         _classicSkinSpecializationUsedCount = classicSkinUsed;
+        ClassicSkinFactorOneDrawCount = classicSkinFactorOneUsed;
+        IndependentSkinAlbedoDrawCount = independentSkinUsed;
         _falloutSpecializationEligibleCount = falloutEligible;
         _falloutSpecializationUsedCount = falloutUsed;
         _starfieldSpecializationEligibleCount = starfieldEligible;
@@ -193,6 +244,11 @@ internal sealed class BethesdaViewerStaticRenderer12
         _sky.Length + _depthOrdered.Length + _transparent.Length;
 
     internal bool RequiresContinuousFrames => _requiresContinuousFrames;
+
+    internal int ClassicSkinFactorOneDrawCount { get; }
+    internal int IndependentSkinAlbedoDrawCount { get; }
+
+    internal int ClassicSkinEligibleDrawCount => _classicSkinSpecializationEligibleCount;
 
     internal int AlphaToCoverageFallbackCount => _alphaToCoverageFallbackCount;
 
@@ -209,7 +265,9 @@ internal sealed class BethesdaViewerStaticRenderer12
         if (_classicSkinSpecializationEligibleCount > 0)
         {
             messages.Add(DescribeSpecializationFamily(
-                "classic-skin SKIN2000",
+                ClassicSkinFactorOneDrawCount > 0
+                    ? "classic-skin factor-one diagnostic"
+                    : "classic-skin SKIN2000",
                 _classicSkinSpecializationEligibleCount,
                 _classicSkinSpecializationUsedCount,
                 _pipelines.DirectClassicSkinRequested,
@@ -346,12 +404,25 @@ internal sealed class BethesdaViewerStaticRenderer12
                     cameraUp,
                     elapsedSeconds,
                     nativeAlphaToCoverage,
-                    ref currentPipeline))
+                    ref currentPipeline,
+                    entry.IndependentAlbedo))
             {
                 draws++;
             }
         }
 
+        // Apply the eye reflection after opaque depth is established and before transparent hair.
+        // Each draw uses the same geometry/transform as its base pass and reversed-Z GreaterEqual.
+        if (_eyeBinding is not null && _eyePipeline is not null)
+        {
+            foreach (var eye in _oblivionEyes)
+            {
+                if (Draw(commandList, frameIndex, eye.Submesh, _eyePipeline, cameraPosition,
+                        cameraForward, cameraRight, cameraUp, elapsedSeconds, false, ref currentPipeline,
+                        eyeBinding: _eyeBinding, eyeBounds: eye.OblivionEyeBounds))
+                    draws++;
+            }
+        }
         return draws;
     }
 
@@ -581,13 +652,17 @@ internal sealed class BethesdaViewerStaticRenderer12
             }
         }
 
-        return new ViewerDraw(submesh, semantics, minZ, maxZ);
+        var eyeBounds = BethesdaViewerScenePoseMaterializer12.ResolveReviewedEyeBounds(posedScene.Source, sourceIndex);
+        return new ViewerDraw(submesh, semantics, minZ, maxZ, eyeBounds);
     }
 
     private static OpaqueSpecializationRoute ResolveOpaqueSpecialization(
         Core.Games.BethesdaGame game,
         ViewerDraw draw,
-        ReferencePipelineFactory12 pipelines)
+        ReferencePipelineFactory12 pipelines,
+        bool classicSkinFactorOneRequested,
+        bool independentSkinAlbedoRequested,
+        BethesdaViewerScenePurpose purpose)
     {
         var submesh = draw.Submesh;
         // These axes require different depth/blend/raster state or generic interpolators. Keep the
@@ -608,6 +683,22 @@ internal sealed class BethesdaViewerStaticRenderer12
         // unwrapped diffuse and cubic view-rim specialization.
         if (game == Core.Games.BethesdaGame.Oblivion && draw.NativeSemantics.IsFaceGen)
         {
+            if (BethesdaViewerClassicSkinAlbedoPolicy.IsEnabledFor(independentSkinAlbedoRequested,
+                    game, purpose, draw.NativeSemantics.IsFaceGen, draw.NativeSemantics.AuthoredSkinAlbedo))
+            {
+                return new OpaqueSpecializationRoute(
+                    classicSkinFactorOneRequested ? OpaqueSpecializationFamily.ClassicSkinIndependentFactorOne :
+                        OpaqueSpecializationFamily.ClassicSkinIndependent,
+                    pipelines.GetDirectClassicSkinIndependentPso(submesh.DoubleSided, classicSkinFactorOneRequested));
+            }
+            if (BethesdaViewerClassicSkinDiagnosticPolicy.IsEnabledFor(
+                    classicSkinFactorOneRequested, game, draw.NativeSemantics.IsFaceGen))
+            {
+                return new OpaqueSpecializationRoute(
+                    OpaqueSpecializationFamily.ClassicSkinFactorOne,
+                    pipelines.GetDirectClassicSkinFactorOnePso(submesh.DoubleSided));
+            }
+
             pipelines.TryGetDirectClassicSkinPso(submesh.DoubleSided, out var classicSkinPipeline);
             return new OpaqueSpecializationRoute(
                 OpaqueSpecializationFamily.ClassicSkin,
@@ -751,8 +842,13 @@ internal sealed class BethesdaViewerStaticRenderer12
         Vector3 cameraUp,
         float elapsedSeconds,
         bool nativeAlphaToCoverage,
-        ref ID3D12PipelineState? currentPipeline)
+        ref ID3D12PipelineState? currentPipeline,
+        ClassicSkinIndependentGpuBinding12? independentAlbedo = null,
+        OblivionEyeGpuBinding12? eyeBinding = null,
+        NifLocalBounds? eyeBounds = null)
     {
+        if (independentAlbedo is not null && !independentAlbedo.AdmitDraw()) return false;
+        if (eyeBinding is not null && (eyeBounds is null || !eyeBinding.AdmitDraw(submesh.Normal))) return false;
         var indexCount = submesh.EffectiveIndexCount;
         if (indexCount <= 0 ||
             !_ringBuffer.TryAllocate(
@@ -787,9 +883,9 @@ internal sealed class BethesdaViewerStaticRenderer12
             RenderState = submesh.RenderState,
             TextureState = submesh.TextureState,
             TexIndices = new TexIndexQuad(
-                submesh.Diffuse.BindlessIndex,
+                independentAlbedo?.BaseMap.BindlessIndex ?? submesh.Diffuse.BindlessIndex,
                 submesh.Normal.BindlessIndex,
-                submesh.ResolveAuxiliaryTextureIndex(_neutralTextureIndex),
+                independentAlbedo?.DeltaMap.BindlessIndex ?? submesh.ResolveAuxiliaryTextureIndex(_neutralTextureIndex),
                 submesh.GradientMap?.BindlessIndex ??
                 submesh.Lighting30GlowMap?.BindlessIndex ?? _neutralTextureIndex),
             Specular = submesh.EffectiveSpecular,
@@ -808,6 +904,15 @@ internal sealed class BethesdaViewerStaticRenderer12
             SoftParticle = Vector4.Zero,
         };
 
+        if (eyeBinding is not null && eyeBounds is { } bound)
+        {
+            constants.TexIndices = new TexIndexQuad(submesh.Diffuse.BindlessIndex,
+                submesh.Normal.BindlessIndex, eyeBinding.Cube.BindlessIndex, _neutralTextureIndex);
+            constants.EnvMap = new Vector4(bound.Center, bound.Radius);
+            constants.UvScroll = new Vector4(BethesdaViewerOblivionEyePolicy.DistanceFade(
+                cameraPosition, bound.Center, bound.Radius), 0f, 0f, 0f);
+            eyeBinding.ObserveBound(bound);
+        }
         *(PerDrawConstants*)allocation.CpuPtr = constants;
         if (!ReferenceEquals(currentPipeline, pipeline))
         {
@@ -877,12 +982,16 @@ internal sealed class BethesdaViewerStaticRenderer12
     private readonly record struct DepthOrderedDraw(
         ViewerDraw Draw,
         DepthDrawKind Kind,
-        ID3D12PipelineState? SpecializedPipeline);
+        ID3D12PipelineState? SpecializedPipeline,
+        ClassicSkinIndependentGpuBinding12? IndependentAlbedo = null);
 
     private enum OpaqueSpecializationFamily
     {
         None,
         ClassicSkin,
+        ClassicSkinFactorOne,
+        ClassicSkinIndependent,
+        ClassicSkinIndependentFactorOne,
         FalloutModernStandard,
         StarfieldDiffuseLit,
     }
@@ -902,6 +1011,7 @@ internal sealed class BethesdaViewerStaticRenderer12
         CachedSubmesh12 Submesh,
         DecodedBethesdaViewerSubmeshSemantics12 NativeSemantics,
         float BoundsMinZ,
-        float BoundsMaxZ);
+        float BoundsMaxZ,
+        NifLocalBounds? OblivionEyeBounds);
 }
 #endif

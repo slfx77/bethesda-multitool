@@ -59,7 +59,7 @@ internal static class NifNodeKeyframeTrackCollector
                 {
                     var dataRef = NifKeyframeDataTrackReader.ReadControllerDataRef(data, controllerBlock, be);
                     var track = NifKeyframeDataTrackReader.TryReadTrack(
-                        data, nif, dataRef, nodeName!, header.Frequency, header.Phase);
+                        data, nif, dataRef, nodeName, header.Frequency, header.Phase);
                     if (track is { HasAnyKeys: true })
                     {
                         tracksByNode[nodeIndex] = track;
@@ -165,10 +165,10 @@ internal static class NifNodeKeyframeTrackCollector
                 foundMovingController = true;
             }
             else if (effectiveFrequency != candidateFrequency ||
-                header.Phase != candidate.Phase ||
-                header.StartTime != candidate.StartTime ||
-                header.StopTime != candidate.StopTime ||
-                header.CycleType != candidate.CycleType)
+                     header.Phase != candidate.Phase ||
+                     header.StartTime != candidate.StartTime ||
+                     header.StopTime != candidate.StopTime ||
+                     header.CycleType != candidate.CycleType)
             {
                 return null;
             }

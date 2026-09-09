@@ -164,11 +164,22 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-NeversoftMultitool - 2D level view seam; RenderWare 3.x chunk walk and BINMESH plugin reader
+NeversoftMultitool - Sample corpus generator; 2D level view seam; RenderWare 3.x chunk walk
+and BINMESH plugin reader
 ================================================================================
 
 Source: https://github.com/slfx77/NeversoftMultitool
 License: MIT
+
+The Sample/Builds corpus generator is ported from it:
+  tools/corpus/SampleGenerator/ <- tools/corpus/SampleGenerator/ (commit a524525a, 2026-09-07)
+The build-directory naming convention ("Game Name (yyyy-M-d, Platform - Kind)"), the
+media-root/research-cache/sample-output model, the mirror-then-repopulate pipeline and
+SampleGeneratorPathSafety (destination canonicalization, strict-descendant checks and
+reparse-point rejection) come from there essentially unchanged. What is new here: a catalog whose
+entries name their own scattered sources instead of one media root; multi-part builds, so a build
+can hold a disc image beside the tree extracted from it; measured date provenance recorded per
+build; and the one-way migration off this repository's older Sample/Full_Builds layout.
 
 The RenderWare 3.x chunk walk and BINMESH plugin reader are also ported from it:
   Core/Formats/RenderWare/RwChunk.cs   <- Core/Formats/Mesh/RenderWare/RwChunkReader.cs
@@ -194,7 +205,19 @@ The CD-image reader behind `archive` for .iso / .cue+.bin (commit 314bc9e0, 2026
   Core/Formats/DiscImage/Iso9660FileSystem.cs  <- Core/Formats/DiscImage/Iso9660FileSystem.cs
   Core/Formats/DiscImage/DiscImageBackend.cs   <- the ISO9660/raw/CD-DA paths of DiscImageArchive.cs,
                                                   reshaped onto this repo's IArchiveBackend seam
-  (the GDI, XDVDFS, GCM and Wii paths are not taken)
+  (the GDI, GCM and Wii paths are not taken)
+
+The XDVDFS reader behind `archive` for original-Xbox and Xbox 360 disc images (2026-09-08):
+  Core/Formats/DiscImage/XdvdfsVolume.cs <- tools/corpus/SampleGenerator/SampleGeneratorXboxIsoOperations.cs
+                                            (descriptor offset 0x10000, the 14-byte directory-entry
+                                            layout, the 0xFFFF subtree sentinel, the 0xFF pad byte
+                                            and the magic)
+                                         <- tools/corpus/SampleGenerator/SampleGeneratorDiscOperations.cs
+                                            (the four redump game-partition bases)
+  Everything else in that file and in Core/Formats/Archives/XdvdfsBackend.cs — the twice-repeated
+  magic as the probe gate, the exact-tiling verification and its refusal semantics, the 0xFF-only
+  filler rule, the depth and shared-table refusals, name validation and the streaming extractor —
+  is this repository's own work measured against the retail images.
 
 MIT License
 
@@ -219,7 +242,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ================================================================================
-JimmyPCTool / AweMultitool - shared GUI helpers
+JimmyPCTool / AweMultitool - shared GUI helpers; Granny 2 (.gr2) reader
 ================================================================================
 
 Source: https://github.com/slfx77/JimmyPCTool
@@ -234,6 +257,21 @@ Core layer, which is UI-framework-independent:
                                          downscale rules; reshaped to take raw RGBA so one
                                          scaler serves every decoder here)
 Their test cases are ported alongside, from the matching files under tests/.
+
+The Granny 2 (RAD Game Tools .gr2) reader that decodes Van Buren's character meshes is ported
+from the same project's Core layer (2026-09-08), src/AweMultitool/Core/Formats/Granny/:
+  Core/Formats/Granny/Gr2Container.cs, Gr2ExpandedFile.cs, Gr2File.cs, Gr2TypeTree.cs,
+  Gr2SchemaDumper.cs, Gr2ModelGlbExporter.cs   <- the matching files (plain repo MIT)
+  Core/Formats/Granny/Gr2Oodle0Decoder.cs      <- Gr2Oodle0Decoder.cs, itself a port of the
+                                                  clean-room MIT readers Rasetsuu/blendergranny
+                                                  and Stitchuuuu/granny-ro-js (entries below)
+  Core/Formats/Granny/Gr2Oodle1Decoder.cs      <- Gr2Oodle1Decoder.cs, itself adapted from
+                                                  carbonenginejs/format-gr2 src/core/oodle1.js
+                                                  (MIT), a port of Arbos/nwn2mdk gr2_decompress.cpp
+                                                  (Boost Software License 1.0) (entries below)
+  ⚠ Its Granny-Bink texture path is NOT taken (those textures return null here), and NOTHING from
+  that project's FFmpeg-derived Bink files (LGPL-2.1) is present: the Bink video decoder under
+  Core/Formats/Bink/ is this repository's own clean-room work — see its section below.
 
 MIT License
 
@@ -280,6 +318,23 @@ DaggerfallConnect API layer (Assets/Scripts/API/):
   DaggerfallVidFile.cs      <- VidFile.cs (VID header, block types, palette scaling, frame RLE)
   DaggerfallRmbBlock.cs     <- BlocksFile.cs (RMB readers), DFBlock.cs (RMB structures)
   DaggerfallRdbBlock.cs     <- BlocksFile.cs (RDB readers), DFBlock.cs (RDB structures)
+  DaggerfallSaveTree.cs     <- Save/{SaveTree,SaveTreeHeader,SaveTreeBaseRecord,SaveTreeBuildingRecords}.cs
+  DaggerfallSaveCharacter.cs<- Save/CharacterRecord.cs, ClassFile.cs (the 74-byte career block)
+  DaggerfallSaveItem.cs     <- Save/ItemRecord.cs
+  DaggerfallSaveSpell.cs    <- Save/SpellRecord.cs
+  DaggerfallSaveVars.cs     <- Save/SaveVars.cs (scalar offsets, region + faction record fields),
+                               FactionFile.cs (faction record layout)
+  DaggerfallSaveRumorFile.cs<- RumorFile.cs (the 34-byte rumour header)
+  DaggerfallSaveSlot.cs     <- Save/SaveGames.cs (the SAVE? directory pattern, "a slot is recognised
+                               by SAVETREE.DAT", the SAVENAME.TXT / BIO.DAT / RUMOR.DAT file names),
+                               Save/SaveImage.cs (IMAGE.RAW = headerless 80 x 50, palette ART_PAL.COL
+                               loaded separately)
+  DaggerfallGameTime.cs     <- Utility/DaggerfallDateTime.cs (epoch 12,566,016,000 s, 30-day months,
+                               12-month years, month names, classic start 523,530)
+  Each save reader's header names where it DIVERGES from the reference, and those divergences are
+  this repository's own measurements, not ports: the SAVETREE trailer (which the reference misreads
+  as type-7 Light records), the STATED faction count, the spell Index semantics, the AT*.AMF files,
+  the BIO.DAT line rule and the region table's end at 0x173A.
 The Battlespire per-entry BSA compression (Core/Compression/LzssCodec.DecompressBattlespire)
 and the 10-byte plane header its .3D meshes use follow ariscop/battlespire-tools
 (https://github.com/ariscop/battlespire-tools), released into the public domain under the
@@ -413,6 +468,198 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+================================================================================
+zlib contrib/blast.c - PKWARE Data Compression Library ("implode") decoder
+================================================================================
+
+Source: https://github.com/madler/zlib/blob/develop/contrib/blast/blast.c
+License: zlib
+Copyright (C) 2003-2019 Mark Adler
+
+Ported to:
+
+  - Core/Compression/PkwareDclDecoder.cs (the decoder, its three fixed Huffman
+    tables and their run-length encoding, and the length base/extra tables)
+
+This software is provided 'as-is', without any express or implied
+warranty.  In no event will the author be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+
+Mark Adler    madler@alumni.caltech.edu
+
+================================================================================
+libacm - Interplay ACM audio decoder
+================================================================================
+
+Source: https://github.com/markokr/libacm
+License: ISC
+Copyright (c) 2004-2010, Marko Kreen
+
+Ported to:
+
+  - Core/Formats/Interplay/InterplayAcmFile.cs (decode.c: the bit reader, the 32-entry
+    filler table with its k/t/linear variants and the four amplitude maps, juggle() /
+    juggle_block(), decode_block() and the acm_read() loop, kept in the same structure so
+    the two can be diffed; util.c's seek/tell helpers are not needed and are omitted)
+
+The channel-count inference (InterplayAcmChannelProbe) and the measurement that the
+header's channel field is wrong on every Fallout speech and effect file are this
+repository's own work, not part of libacm.
+
+libacm - Interplay ACM audio decoder.
+Copyright (c) 2004-2010, Marko Kreen
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+
+================================================================================
+Rasetsuu/blendergranny and Stitchuuuu/granny-ro-js - Granny 2 Oodle0 decompression
+================================================================================
+
+Source: https://github.com/Rasetsuu/blendergranny (commit aec91bbd8e244d82277d1f5435dc20feff3086f9)
+        https://github.com/Stitchuuuu/granny-ro-js (commit 955189e060bf38270cbc3ea8cba610e98c7f62dc)
+License: MIT
+
+Clean-room implementations of the 2002-era Oodle0 codec embedded in Granny 2 files; they do
+not use or redistribute RAD code. Reached here through AweMultitool's Gr2Oodle0Decoder.cs:
+
+  - Core/Formats/Granny/Gr2Oodle0Decoder.cs
+
+This is the codec Van Buren's prototype actually uses (2,735 of its 3,282 Granny sections;
+Oodle1 never occurs there). The notice below is reproduced verbatim from the ported file.
+
+MIT License
+Copyright (c) 2026 ciupix and contributors
+Copyright (c) 2026 Stitchuuuu <stitchuuuu@icloud.com>
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software
+and associated documentation files (the "Software"), to deal in the Software without
+restriction, including without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING
+BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+carbonenginejs/format-gr2 - Granny 2 Oodle1 decompression
+================================================================================
+
+Source: https://github.com/carbonenginejs/format-gr2 (src/core/oodle1.js, revision
+        c88e9c63016b30cb021e7f204ba7af6f6f58b2d7)
+License: MIT
+
+Reached here through AweMultitool's Gr2Oodle1Decoder.cs:
+
+  - Core/Formats/Granny/Gr2Oodle1Decoder.cs
+
+CarbonEngineJS marks that file as a Boost-licensed port from Arbos/nwn2mdk (next entry);
+its own project-level contributions carry this MIT notice, reproduced from the ported file:
+
+MIT License
+
+Copyright (c) 2026 cppctamber / CarbonEngineJS contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
+OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+================================================================================
+Arbos/nwn2mdk - Granny 2 Oodle1 decompression (gr2_decompress.cpp)
+================================================================================
+
+Source: https://github.com/Arbos/nwn2mdk (nwn2mdk-lib/gr2_decompress.cpp, revision
+        2e11e0d2a765d0e60f974f31846efdd220fd48ef), attributed there to berenm
+License: Boost Software License 1.0
+
+The algorithm carbonenginejs/format-gr2 ported and AweMultitool adapted; the same
+Core/Formats/Granny/Gr2Oodle1Decoder.cs. The licence text is reproduced from the ported file:
+
+Boost Software License - Version 1.0 - August 17th, 2003
+
+Permission is hereby granted, free of charge, to any person or organization obtaining a copy of
+the software and accompanying documentation covered by this license (the "Software") to use,
+reproduce, display, distribute, execute, and transmit the Software, and to prepare derivative
+works of the Software, and to permit third-parties to whom the Software is furnished to do so, all
+subject to the following:
+
+The copyright notices in the Software and this entire statement, including the above license
+grant, this restriction and the following disclaimer, must be included in all copies of the
+Software, in whole or in part, and all derivative works of the Software, unless such copies or
+derivative works are solely in the form of machine-executable object code generated by a source
+language processor.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE AND
+NON-INFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE
+LIABLE FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+================================================================================
+Bink video (.bik) decoding - ORIGINAL WORK, NO THIRD-PARTY CODE
+================================================================================
+
+src/BethesdaMultitool/Core/Formats/Bink/ is an original clean-room implementation written for
+this repository. It contains no code, and no transliteration of code, from FFmpeg, libav,
+AweMultitool's FFmpeg-derived Bink files, or any other Bink implementation. It was produced
+solely from:
+
+  * our own reverse engineering of RAD Game Tools' shipped decoder binkw32.dll (as distributed
+    with Fallout Tactics; md5 ecbd8213e89f8afde368f8eb05ff5a9c), through our own Ghidra
+    decompilation and our own disassembly of that file;
+  * the retail Bink bitstreams, read as data;
+  * ffmpeg/ffprobe run as sealed executables, whose OUTPUT PIXELS were compared with ours. No
+    FFmpeg source was read and no FFmpeg documentation of algorithm internals was consulted.
+
+The numeric tables in BinkTables.cs (Huffman code books, scan orders, dequantisers, the
+coefficient permutation) were extracted by us from binkw32.dll's .rdata at the virtual
+addresses recorded in each table's comment. They are facts about a shipped binary, transcribed
+for interoperability, not copied from any third party's source.
+
+An earlier port of AweMultitool's Bink decoder (five files derived from FFmpeg's libavcodec
+bink.c/binkdata.h/binkdsp.c, LGPL-2.1-or-later) was REMOVED from this repository on 2026-09-08
+before any commit, and no LGPL code remains; this entry exists so that history is not misread.
+
+Bink and RAD Game Tools are trademarks of Epic Games / RAD Game Tools. This project is not
+affiliated with, endorsed by, or licensed by them.
 
 ================================================================================
 kaitai_struct_formats game/fallout_dat.ksy - Fallout DAT structure reference

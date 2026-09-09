@@ -55,7 +55,7 @@ public sealed class Fo76BsSkinBindingExtractorTests
     [Fact]
     public void Extract_NonZeroScaleArray_IsExplicitlyUnsupported()
     {
-        var fixture = CreateFixture(scaleCount: 1);
+        var fixture = CreateFixture(1);
 
         var result = Fo76BsSkinBindingExtractor.Extract(
             fixture.Data,
@@ -206,13 +206,16 @@ public sealed class Fo76BsSkinBindingExtractorTests
             new Dictionary<int, List<int>> { [rootIndex] = children });
     }
 
-    private static BlockInfo Block(int index, string type, int offset, int size) => new()
+    private static BlockInfo Block(int index, string type, int offset, int size)
     {
-        Index = index,
-        TypeName = type,
-        DataOffset = offset,
-        Size = size
-    };
+        return new BlockInfo
+        {
+            Index = index,
+            TypeName = type,
+            DataOffset = offset,
+            Size = size
+        };
+    }
 
     private static void WriteBoneTransform(byte[] data, int offset, Vector3 translation)
     {
@@ -290,21 +293,21 @@ public sealed class Fo76BsSkinBindingRetailTests(ITestOutputHelper output)
             archivePath is not null,
             RealAssetPaths.SkipMessage("Fallout 76 SeventySix - Meshes.ba2"));
 
-        using var service = NifBrowserService.CreateFromBsa(archivePath!);
+        using var service = NifBrowserService.CreateFromBsa(archivePath);
         const string meshPath = @"meshes\actors\character\characterassets\femalebody.nif";
         var data = service.ReadNifData(meshPath);
         Assert.SkipUnless(data is not null, $"Retail fixture is absent from {Path.GetFileName(archivePath)}.");
-        var nif = NifParser.Parse(data!);
+        var nif = NifParser.Parse(data);
         Assert.NotNull(nif);
 
         var nodeChildren = new Dictionary<int, List<int>>();
         var shapeDataMap = new Dictionary<int, int>();
-        NifSceneGraphWalker.ClassifyBlocks(data!, nif!, nodeChildren, shapeDataMap);
+        NifSceneGraphWalker.ClassifyBlocks(data, nif, nodeChildren, shapeDataMap);
         var candidate = Assert.Single(
-            shapeDataMap.Keys.Where(shapeIndex =>
-                Fo76BsSkinBindingExtractor.IsCandidate(data!, nif!, shapeIndex)));
+            shapeDataMap.Keys, shapeIndex =>
+                Fo76BsSkinBindingExtractor.IsCandidate(data, nif, shapeIndex));
 
-        var result = Fo76BsSkinBindingExtractor.Extract(data!, nif!, candidate, nodeChildren);
+        var result = Fo76BsSkinBindingExtractor.Extract(data, nif, candidate, nodeChildren);
 
         Assert.Equal(Fo76BsSkinBindingStatus.Success, result.Status);
         var binding = Assert.IsType<Fo76BsSkinBinding>(result.Binding);
@@ -322,18 +325,18 @@ public sealed class Fo76BsSkinBindingRetailTests(ITestOutputHelper output)
         Assert.InRange(Math.Abs(first[3].Weight - 0.01739502f), 0f, 1e-6f);
         Assert.InRange(Math.Abs(first.Sum(influence => influence.Weight) - 1f), 0f, 1e-6f);
 
-        var exported = NifExportExtractor.Extract(data!, nif!);
-        var skinnedPart = Assert.Single(exported.MeshParts.Where(part => part.Skin is not null));
+        var exported = NifExportExtractor.Extract(data, nif);
+        var skinnedPart = Assert.Single(exported.MeshParts, part => part.Skin is not null);
         Assert.Equal(1723, skinnedPart.Submesh.VertexCount);
         Assert.Equal(60, skinnedPart.Skin!.BoneNames.Length);
 
-        var glbScene = NifExportSceneBuilder.Build(data!, nif!, meshPath);
+        var glbScene = NifExportSceneBuilder.Build(data, nif, meshPath);
         Assert.NotNull(glbScene);
-        var glbPart = Assert.Single(glbScene!.MeshParts.Where(part => part.Skin is not null));
+        var glbPart = Assert.Single(glbScene.MeshParts, part => part.Skin is not null);
         Assert.Equal(60, glbPart.Skin!.JointNodeIndices.Length);
         Assert.Equal(1723, glbPart.Skin.PerVertexInfluences.Length);
 
-        var meshViewerGlb = service.BuildGlb(data!, meshPath);
+        var meshViewerGlb = service.BuildGlb(data, meshPath);
         Assert.NotNull(meshViewerGlb);
         var artifactDirectory = Path.Combine(
             SourceContract.RepoRoot,
@@ -342,9 +345,9 @@ public sealed class Fo76BsSkinBindingRetailTests(ITestOutputHelper output)
             "mesh-viewer");
         Directory.CreateDirectory(artifactDirectory);
         var artifactPath = Path.Combine(artifactDirectory, "fo76-femalebody-skinned.glb");
-        File.WriteAllBytes(artifactPath, meshViewerGlb!);
+        File.WriteAllBytes(artifactPath, meshViewerGlb);
         output.WriteLine("Mesh Viewer review artifact: {0}", artifactPath);
-        using var stream = new MemoryStream(meshViewerGlb!, writable: false);
+        using var stream = new MemoryStream(meshViewerGlb, false);
         var model = ModelRoot.ReadGLB(stream);
         var exportedSkin = Assert.Single(model.LogicalSkins);
         Assert.Equal(60, exportedSkin.JointsCount);

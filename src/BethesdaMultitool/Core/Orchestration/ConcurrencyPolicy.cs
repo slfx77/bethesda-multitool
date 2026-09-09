@@ -79,7 +79,10 @@ internal readonly record struct ConcurrencyPolicy
     ///     GC-aware default used by the streaming decode paths. A named
     ///     <see cref="CoresScaled" />(2, …).
     /// </summary>
-    public static ConcurrencyPolicy HalfCoresClamped(int min, int max) => CoresScaled(2, min, max);
+    public static ConcurrencyPolicy HalfCoresClamped(int min, int max)
+    {
+        return CoresScaled(2, min, max);
+    }
 
     /// <summary>
     ///     Lets the environment variable <paramref name="variableName" /> override the preset when

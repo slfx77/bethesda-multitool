@@ -61,6 +61,6 @@ internal sealed class IndexedBitmap
             pixels[dst + 3] = rgba[src + 3];
         }
 
-        return DecodedTexture.FromBaseLevel(pixels, Width, Height, generateMipChain: false);
+        return DecodedTexture.FromBaseLevel(pixels, Width, Height, false);
     }
 }

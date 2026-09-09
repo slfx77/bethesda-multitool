@@ -154,8 +154,8 @@ internal static class SpeedTreeRenderCommands
             {
                 try
                 {
-                    items.Add((SpeedTreeModelPath.ToArchivePath(rec.FullPath!),
-                        Path.GetFileNameWithoutExtension(rec.FullPath!), extractor.ExtractFile(rec)));
+                    items.Add((SpeedTreeModelPath.ToArchivePath(rec.FullPath),
+                        Path.GetFileNameWithoutExtension(rec.FullPath), extractor.ExtractFile(rec)));
                 }
                 catch (Exception ex)
                 {
@@ -202,8 +202,8 @@ internal static class SpeedTreeRenderCommands
             {
                 try
                 {
-                    items.Add((SpeedTreeModelPath.ToArchivePath(rec.FullPath!),
-                        Path.GetFileNameWithoutExtension(rec.FullPath!), extractor.ExtractFile(rec)));
+                    items.Add((SpeedTreeModelPath.ToArchivePath(rec.FullPath),
+                        Path.GetFileNameWithoutExtension(rec.FullPath), extractor.ExtractFile(rec)));
                 }
                 catch (Exception ex)
                 {

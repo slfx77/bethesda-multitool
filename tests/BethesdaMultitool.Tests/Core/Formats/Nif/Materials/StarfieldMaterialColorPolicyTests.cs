@@ -27,7 +27,7 @@ public sealed class StarfieldMaterialColorPolicyTests
         var db = StarfieldMaterialDatabase.Parse(BuildDatabase(useDiffChunks));
 
         Assert.NotNull(db);
-        Assert.Equal(db!.ComponentTableCount, db.ComponentChunkCount);
+        Assert.Equal(db.ComponentTableCount, db.ComponentChunkCount);
         var policy = db.ResolveBaseColorPolicy(MaterialPath);
         Assert.True(policy.IsResolved);
         Assert.True(policy.UsesVertexColorAsTint);
@@ -48,12 +48,12 @@ public sealed class StarfieldMaterialColorPolicyTests
     public void ResolveBaseColorPolicy_DoesNotTreatRootTwoSidedAsVertexTint()
     {
         var db = StarfieldMaterialDatabase.Parse(BuildDatabase(
-            useDiffChunks: true,
-            includeLayerColorComponents: false,
-            rootParamBool: true));
+            true,
+            false,
+            true));
 
         Assert.NotNull(db);
-        var policy = db!.ResolveBaseColorPolicy(MaterialPath);
+        var policy = db.ResolveBaseColorPolicy(MaterialPath);
         Assert.True(policy.IsResolved);
         Assert.False(policy.UsesVertexColorAsTint);
         Assert.Equal(StarfieldMaterialColorOverrideMode.Lerp, policy.OverrideMode);
@@ -70,22 +70,22 @@ public sealed class StarfieldMaterialColorPolicyTests
     public void ResolveRootTwoSided_PreservesOrderedParamBoolAndShaderModelSetters()
     {
         var shaderOnly = StarfieldMaterialDatabase.Parse(BuildDatabase(
-            useDiffChunks: true,
+            true,
             rootShaderModel: "TwoSided1Layer"));
         var shaderThenClear = StarfieldMaterialDatabase.Parse(BuildDatabase(
-            useDiffChunks: true,
+            true,
             rootParamBool: false,
             rootShaderModel: "TwoSided1Layer"));
         var clearThenShader = StarfieldMaterialDatabase.Parse(BuildDatabase(
-            useDiffChunks: true,
+            true,
             rootParamBool: false,
             rootShaderModel: "TwoSided1Layer",
             rootParamBoolBeforeShaderModel: true));
         var layerTintOnly = StarfieldMaterialDatabase.Parse(BuildDatabase(
-            useDiffChunks: true,
-            includeLayerColorComponents: true));
+            true,
+            true));
         var inheritedLateShaderSetter = StarfieldMaterialDatabase.Parse(BuildDatabase(
-            useDiffChunks: true,
+            true,
             rootParamBool: true,
             baseRootParamBool: true,
             baseRootShaderModel: "BaseMaterial",
@@ -96,13 +96,13 @@ public sealed class StarfieldMaterialColorPolicyTests
         Assert.NotNull(clearThenShader);
         Assert.NotNull(layerTintOnly);
         Assert.NotNull(inheritedLateShaderSetter);
-        Assert.True(shaderOnly!.ResolveRootTwoSided(MaterialPath) == true);
-        Assert.True(shaderThenClear!.ResolveRootTwoSided(MaterialPath) == false);
-        Assert.True(clearThenShader!.ResolveRootTwoSided(MaterialPath) == true);
-        Assert.True(layerTintOnly!.ResolveRootTwoSided(MaterialPath) == false);
+        Assert.True(shaderOnly.ResolveRootTwoSided(MaterialPath) == true);
+        Assert.True(shaderThenClear.ResolveRootTwoSided(MaterialPath) == false);
+        Assert.True(clearThenShader.ResolveRootTwoSided(MaterialPath) == true);
+        Assert.True(layerTintOnly.ResolveRootTwoSided(MaterialPath) == false);
         // copyBaseObject replaces the derived ParamBool at its inherited position without moving
         // the later inherited ShaderModel setter; nearest-local-value resolution would return true.
-        Assert.True(inheritedLateShaderSetter!.ResolveRootTwoSided(MaterialPath) == false);
+        Assert.True(inheritedLateShaderSetter.ResolveRootTwoSided(MaterialPath) == false);
         Assert.Null(shaderOnly.ResolveRootTwoSided(@"materials\test\missing.mat"));
     }
 
@@ -110,11 +110,11 @@ public sealed class StarfieldMaterialColorPolicyTests
     public void ResolveBaseColorPolicy_InheritsLayerMaterialComponents()
     {
         var db = StarfieldMaterialDatabase.Parse(BuildDatabase(
-            useDiffChunks: true,
+            true,
             policyOnBaseMaterial: true));
 
         Assert.NotNull(db);
-        var policy = db!.ResolveBaseColorPolicy(MaterialPath);
+        var policy = db.ResolveBaseColorPolicy(MaterialPath);
         Assert.True(policy.IsResolved);
         Assert.True(policy.UsesVertexColorAsTint);
         Assert.Equal(StarfieldMaterialColorOverrideMode.Multiply, policy.OverrideMode);
@@ -163,7 +163,7 @@ public sealed class StarfieldMaterialColorPolicyTests
         {
             Assert.False(policy.TryResolveConstantLerp(out var linearTint));
             Assert.Equal(Vector4.Zero, linearTint);
-            Assert.Equal(default(StarfieldMaterialColorRenderState), policy.ResolveRenderState());
+            Assert.Equal(default, policy.ResolveRenderState());
         }
     }
 
@@ -194,19 +194,19 @@ public sealed class StarfieldMaterialColorPolicyTests
         Assert.Equal(Vector4.Zero, state.LinearTint);
 
         Assert.Null(policy.ResolveSupportedVertexColors(decoded[..^1], 2));
-        Assert.Equal(default(StarfieldMaterialColorRenderState),
+        Assert.Equal(default,
             policy.ResolveRenderState(decoded[..^1], 2));
-        Assert.Equal(default(StarfieldMaterialColorRenderState),
+        Assert.Equal(default,
             policy.ResolveRenderState(null, 2));
     }
 
     [Fact]
     public void ResolveBaseColorPolicy_ReportsAnUnresolvedPath()
     {
-        var db = StarfieldMaterialDatabase.Parse(BuildDatabase(useDiffChunks: false));
+        var db = StarfieldMaterialDatabase.Parse(BuildDatabase(false));
 
         Assert.NotNull(db);
-        Assert.False(db!.ResolveBaseColorPolicy(@"materials\test\missing.mat").IsResolved);
+        Assert.False(db.ResolveBaseColorPolicy(@"materials\test\missing.mat").IsResolved);
         Assert.Null(db.ResolveBlenderColorChannel(@"materials\test\missing.mat"));
     }
 
@@ -221,7 +221,7 @@ public sealed class StarfieldMaterialColorPolicyTests
         try
         {
             File.WriteAllBytes(Path.Combine(materials, "materialsbeta.cdb"), BuildDatabase(
-                useDiffChunks: true,
+                true,
                 rootParamBool: true));
             using var resolver = new NifTextureResolver(root);
 
@@ -239,7 +239,7 @@ public sealed class StarfieldMaterialColorPolicyTests
         {
             if (Directory.Exists(root))
             {
-                Directory.Delete(root, recursive: true);
+                Directory.Delete(root, true);
             }
         }
     }
@@ -328,7 +328,7 @@ public sealed class StarfieldMaterialColorPolicyTests
         {
             if (Directory.Exists(root))
             {
-                Directory.Delete(root, recursive: true);
+                Directory.Delete(root, true);
             }
         }
     }
@@ -350,13 +350,13 @@ public sealed class StarfieldMaterialColorPolicyTests
             archivePath is not null,
             RealAssetPaths.SkipMessage("Starfield materials archive"));
 
-        using var extractor = new Ba2Extractor(archivePath!);
+        using var extractor = new Ba2Extractor(archivePath);
         var entry = extractor.Archive.FindFile(@"materials\materialsbeta.cdb");
         Assert.NotNull(entry);
 
-        var db = StarfieldMaterialDatabase.Parse(extractor.ExtractFile(entry!));
+        var db = StarfieldMaterialDatabase.Parse(extractor.ExtractFile(entry));
         Assert.NotNull(db);
-        Assert.Equal(db!.ComponentTableCount, db.ComponentChunkCount);
+        Assert.Equal(db.ComponentTableCount, db.ComponentChunkCount);
         Assert.InRange(db.MaterialVertexColorPolicyObjectCount, 1, 10_000);
         Assert.InRange(db.BlenderColorChannelObjectCount, 1, 10_000);
     }
@@ -443,10 +443,12 @@ public sealed class StarfieldMaterialColorPolicyTests
         {
             objects.AddRange(ObjectRecord(0, 0, 0, baseMaterialId, materialsRootId));
         }
+
         if (hasBaseRoot)
         {
             objects.AddRange(ObjectRecord(0, 0, 0, baseRootId, layeredMaterialsRootId));
         }
+
         objects.AddRange(ObjectRecord(
             layeredMaterialsRoot.File,
             layeredMaterialsRoot.Ext,

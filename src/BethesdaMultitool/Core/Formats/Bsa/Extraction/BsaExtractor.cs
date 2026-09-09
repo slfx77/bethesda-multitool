@@ -416,7 +416,7 @@ public sealed class BsaExtractor : IDisposable
     /// </summary>
     public byte[] ExtractFile(BsaFileRecord file)
     {
-        return ExtractFileCore(file, maximumOutputBytes: null);
+        return ExtractFileCore(file, null);
     }
 
     /// <summary>
@@ -500,6 +500,7 @@ public sealed class BsaExtractor : IDisposable
                     $"BSA compressed entry '{file.FullPath}' declares uncompressed size " +
                     $"{uncompressedSize} bytes, exceeding the {MaxDecompressedFileSize}-byte cap");
             }
+
             if (maximumOutputBytes is { } outputLimit && uncompressedSize > outputLimit)
             {
                 throw new InvalidDataException(

@@ -134,10 +134,10 @@ public sealed class CpuBudgetTests
     public void The_streaming_flag_selects_the_matching_budget()
     {
         // This is the mapping the renderers rely on: throttled == a live frame loop.
-        Assert.True(CpuBudget.For(streamingThrottled: true, cores: 16).IsInteractive);
-        Assert.False(CpuBudget.For(streamingThrottled: false, cores: 16).IsInteractive);
-        Assert.Equal(CpuBudget.Interactive(16), CpuBudget.For(streamingThrottled: true, cores: 16));
-        Assert.Equal(CpuBudget.Bulk(16), CpuBudget.For(streamingThrottled: false, cores: 16));
+        Assert.True(CpuBudget.For(true, 16).IsInteractive);
+        Assert.False(CpuBudget.For(false, 16).IsInteractive);
+        Assert.Equal(CpuBudget.Interactive(16), CpuBudget.For(true, 16));
+        Assert.Equal(CpuBudget.Bulk(16), CpuBudget.For(false, 16));
     }
 
     [Theory]

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using Xunit;
@@ -29,8 +26,9 @@ public sealed class TravelsDialogueTreeBuilderTests
     /// <summary>The topic labels expected when no speaker names are supplied.</summary>
     private static readonly string[] OrdinalLabels = ["Group 0", "Group 3", "Group 5"];
 
-    private static GenericEsmRecord Line(int group, int line, string text, string signature = Signature) =>
-        new()
+    private static GenericEsmRecord Line(int group, int line, string text, string signature = Signature)
+    {
+        return new GenericEsmRecord
         {
             FormId = (uint)(0x51000000 | (group << 8) | line),
             RecordType = signature,
@@ -44,6 +42,7 @@ public sealed class TravelsDialogueTreeBuilderTests
                 ["Text"] = text
             }
         };
+    }
 
     [Fact]
     public void LinesAreGroupedBySpeakerAndKeptInFileOrder()
@@ -134,7 +133,7 @@ public sealed class TravelsDialogueTreeBuilderTests
     [Fact]
     public void RecordsOfOtherSignaturesAreIgnored()
     {
-        var records = new[] { Line(0, 0, "kept"), Line(0, 1, "dropped", signature: "SITM") };
+        var records = new[] { Line(0, 0, "kept"), Line(0, 1, "dropped", "SITM") };
 
         var tree = TravelsDialogueTreeBuilder.Build(records, Signature);
 

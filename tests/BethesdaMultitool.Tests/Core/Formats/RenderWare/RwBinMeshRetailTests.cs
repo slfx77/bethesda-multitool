@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.RenderWare;
 using BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
 using BethesdaMultitool.Tests.Helpers;
@@ -32,7 +28,7 @@ public sealed class RwBinMeshRetailTests
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP (cancelled betas)"));
 
         var packs = Directory
-            .EnumerateFiles(root!, "GR.ARC", SearchOption.AllDirectories)
+            .EnumerateFiles(root, "GR.ARC", SearchOption.AllDirectories)
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         Assert.SkipWhen(packs.Length == 0, "No GR.ARC packs are staged.");

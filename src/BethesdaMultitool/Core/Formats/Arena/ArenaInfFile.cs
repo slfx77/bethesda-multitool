@@ -112,7 +112,7 @@ internal sealed class ArenaInfFile
         for (var i = 0; i < sampled; i++)
         {
             var b = bytes[i];
-            if (b is (>= 0x20 and <= 0x7E) or 0x09 or 0x0A or 0x0D)
+            if (b is >= 0x20 and <= 0x7E or 0x09 or 0x0A or 0x0D)
             {
                 printable++;
             }
@@ -504,8 +504,6 @@ internal sealed class ArenaInfFile
                 case TextMode.Text:
                     Builder(textState.Id).SetText(textState.Body.ToString(), textState.DisplayedOnce);
                     break;
-                default:
-                    break;
             }
         }
 
@@ -588,7 +586,7 @@ internal sealed class ArenaInfFile
         long value = 0;
         while (index < token.Length && char.IsAsciiDigit(token[index]))
         {
-            value = (value * 10) + (token[index] - '0');
+            value = value * 10 + (token[index] - '0');
             if (value > int.MaxValue)
             {
                 return null;
@@ -745,9 +743,9 @@ internal sealed class ArenaInfFile
     {
         private readonly int _id;
         private bool _displayedOnce;
+        private int? _keyId;
         private ArenaInfRiddle? _riddle;
         private string? _text;
-        private int? _keyId;
 
         public ArenaInfTextBuilder(int id)
         {

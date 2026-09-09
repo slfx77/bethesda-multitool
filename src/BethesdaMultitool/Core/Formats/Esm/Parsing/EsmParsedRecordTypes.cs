@@ -198,18 +198,22 @@ public static class EsmParsedRecordTypes
     ///     are cross-game; CE2 reflection records are explicitly scoped so a same-signature record in an
     ///     older game cannot be falsely claimed as that typed representation.
     /// </summary>
-    public static IReadOnlySet<string> CodesForGame(BethesdaGame game) =>
-        EntriesForGame(game)
+    public static IReadOnlySet<string> CodesForGame(BethesdaGame game)
+    {
+        return EntriesForGame(game)
             .Select(entry => entry.Code)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
 
     /// <summary>
     ///     Typed-output mappings applicable to <paramref name="game" />. At most one entry per signature
     ///     is possible for a game; EsmParsedRecordTypesTests.Mappings_DoNotOverlapGloballyOrWithinAGame
     ///     keeps <see cref="All" /> free of overlapping mappings.
     /// </summary>
-    public static IEnumerable<Entry> EntriesForGame(BethesdaGame game) =>
-        All.Where(entry => entry.Game is null || entry.Game == game);
+    public static IEnumerable<Entry> EntriesForGame(BethesdaGame game)
+    {
+        return All.Where(entry => entry.Game is null || entry.Game == game);
+    }
 
     /// <summary>
     ///     A parsed record type: its 4-char signature and the <see cref="RecordCollection" /> property its

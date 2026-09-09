@@ -23,8 +23,12 @@ internal readonly record struct TerrainAllocation12(
 ///         The reason this matters is not resource count but <b>alignment waste</b>. D3D12 rounds
 ///         every committed buffer up to 64 KiB, and a terrain cell's two streams are small enough
 ///         that the padding is a large fraction of the whole: at the 33×33 grid used by
-///         Fallout/Oblivion/Skyrim a cell asks for 148,104 bytes and is charged 262,144 — <b>43% of
-///         every terrain cell is padding</b>. Sub-allocating from 16 MiB blocks pays the rounding
+///         Fallout/Oblivion/Skyrim a cell asks for 148,104 bytes and is charged 262,144 —
+///         <b>
+///             43% of
+///             every terrain cell is padding
+///         </b>
+///         . Sub-allocating from 16 MiB blocks pays the rounding
 ///         once per block instead of twice per cell. At Fallout 76's 129×129 grid the same waste is
 ///         ~94 KiB/cell, which is ~3.9 GiB across Appalachia.
 ///     </para>
@@ -69,7 +73,6 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
     private readonly GeometryArenaAllocator _allocator;
     private readonly List<ID3D12Resource> _blockResources = new();
     private readonly GpuDevice12 _gpu;
-    private readonly GpuTerrainStagingRing12 _stagingRing;
     private long _committedBytes;
     private bool _disposed;
     private ResourceRegistration? _registration;
@@ -81,7 +84,7 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
         {
             StrictValidation = GeometryArenaDiagnostics.Enabled
         };
-        _stagingRing = new GpuTerrainStagingRing12(gpu);
+        StagingRing = new GpuTerrainStagingRing12(gpu);
     }
 
     /// <summary>Arena blocks currently committed.</summary>
@@ -91,7 +94,7 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
     public long AllocatedBytes => _allocator.AllocatedBytes;
 
     /// <summary>The shared staging buffer cell uploads copy through. Exposed for diagnostics.</summary>
-    public GpuTerrainStagingRing12 StagingRing => _stagingRing;
+    public GpuTerrainStagingRing12 StagingRing { get; }
 
     public void Dispose()
     {
@@ -103,7 +106,7 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
         _disposed = true;
         _registration?.Dispose();
         _registration = null;
-        _stagingRing.Dispose();
+        StagingRing.Dispose();
         foreach (var block in _blockResources)
         {
             block.Dispose();
@@ -138,7 +141,7 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
         _registration = registry.Register(this, instanceTag);
         // The staging ring gets its own row rather than folding into this one: its useful signal is
         // an overflow RATE, which cannot be expressed as a share of the arena's bytes.
-        _stagingRing.RegisterWith(registry, instanceTag);
+        StagingRing.RegisterWith(registry, instanceTag);
         return this;
     }
 
@@ -179,7 +182,7 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
             // step. That ordering is deliberate: a region taken from the ring and then abandoned by
             // an exception could only be handed back out of order, and FIFO release is the shared
             // staging ring's load-bearing invariant.
-            if (_stagingRing.TryReserve(totalBytes, out var region))
+            if (StagingRing.TryReserve(totalBytes, out var region))
             {
                 stagingResource = region.Resource;
                 stagingOffset = region.Offset;
@@ -260,7 +263,10 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
     ///     referencing it have drained — a range recycled too early would be overwritten by the next
     ///     cell while the GPU was still reading the evicted one.
     /// </summary>
-    public IDisposable DeferredFreeHandle(TerrainAllocation12 allocation) => new FreeHandle(this, allocation);
+    public IDisposable DeferredFreeHandle(TerrainAllocation12 allocation)
+    {
+        return new FreeHandle(this, allocation);
+    }
 
     /// <summary>
     ///     Commits blocks in order up to and including <paramref name="requiredBlockIndex" /> —
@@ -300,7 +306,10 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
         }
     }
 
-    private static long AlignUp(long value, int alignment) => (value + alignment - 1) & ~((long)alignment - 1);
+    private static long AlignUp(long value, int alignment)
+    {
+        return (value + alignment - 1) & ~((long)alignment - 1);
+    }
 
     private sealed class FreeHandle(GpuTerrainArena12 arena, TerrainAllocation12 allocation) : IDisposable
     {

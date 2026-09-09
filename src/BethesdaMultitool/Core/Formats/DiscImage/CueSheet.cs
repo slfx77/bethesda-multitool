@@ -66,7 +66,8 @@ internal sealed class CueSheet
                 var name = ExtractQuoted(fileStatement);
                 if (fileStatement.StartsWith('"') && name == null)
                 {
-                    throw new InvalidDataException($"Invalid cue FILE statement: unterminated quoted filename in '{line}'.");
+                    throw new InvalidDataException(
+                        $"Invalid cue FILE statement: unterminated quoted filename in '{line}'.");
                 }
 
                 name ??= fileStatement.Split(' ')[0];
@@ -121,7 +122,8 @@ internal sealed class CueSheet
                 continue;
             }
 
-            regions.Add(new DiscTrackRegion(lba, track.SectorCount, track.FilePath, 0, track.SectorSize, track.IsAudio));
+            regions.Add(new DiscTrackRegion(lba, track.SectorCount, track.FilePath, 0, track.SectorSize,
+                track.IsAudio));
             lba += track.SectorCount;
         }
 

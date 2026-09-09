@@ -49,7 +49,7 @@ internal sealed class DaggerfallPakFile
                 throw new ArgumentOutOfRangeException(nameof(x), $"({x}, {y}) is outside the {Width}x{Height} map.");
             }
 
-            return Values[(y * Width) + x];
+            return Values[y * Width + x];
         }
     }
 

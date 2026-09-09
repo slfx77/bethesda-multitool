@@ -18,7 +18,7 @@ public sealed class TriParserTests
             @"Sample\Meshes\meshes_pc\meshes\characters\head\headhuman.tri");
         Assert.SkipWhen(path == null, "Sample headhuman.tri not available.");
 
-        var data = File.ReadAllBytes(path!);
+        var data = File.ReadAllBytes(path);
         var tri = Assert.IsType<TriParser>(TriParser.Parse(data));
 
         Assert.Equal("FRTRI003", tri.Magic);
@@ -197,7 +197,7 @@ public sealed class TriParserTests
             @"Sample\Meshes\meshes_pc\meshes\characters\head\eyelefthuman.tri");
         Assert.SkipWhen(path == null, "Sample eyelefthuman.tri not available.");
 
-        var data = File.ReadAllBytes(path!);
+        var data = File.ReadAllBytes(path);
         var tri = Assert.IsType<TriParser>(TriParser.Parse(data));
 
         Assert.Equal("FRTRI003", tri.Magic);
@@ -307,7 +307,7 @@ public sealed class TriParserTests
             @"Sample\Meshes\meshes_pc\meshes\characters\head\teethlowerhuman.tri");
         Assert.SkipWhen(path == null, "Sample teethlowerhuman.tri not available.");
 
-        var data = File.ReadAllBytes(path!);
+        var data = File.ReadAllBytes(path);
         var tri = Assert.IsType<TriParser>(TriParser.Parse(data));
 
         Assert.Equal("FRTRI003", tri.Magic);

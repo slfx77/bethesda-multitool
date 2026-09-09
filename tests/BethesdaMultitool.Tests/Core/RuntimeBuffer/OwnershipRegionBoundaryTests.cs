@@ -80,7 +80,7 @@ public sealed class OwnershipRegionBoundaryTests
         var resolved = OwnershipVtableResolver.ResolveVtableMinimal(ctx, ModuleVa + 0x100);
 
         Assert.NotNull(resolved);
-        Assert.Equal("TESModel", resolved!.Value.ClassName);
+        Assert.Equal("TESModel", resolved.Value.ClassName);
         Assert.Equal(0u, resolved.Value.ObjectOffset);
     }
 
@@ -99,8 +99,7 @@ public sealed class OwnershipRegionBoundaryTests
 
         var result = Analyze(
             data,
-            singleRegion: true,
-            runtimeEditorIds:
+            true,
             [
                 new RuntimeEditorIdEntry
                 {

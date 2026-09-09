@@ -289,7 +289,8 @@ internal sealed class FakeGameFileSystem : IGameFileSystem
     {
         var normalizedPrefix = prefix is null ? null : Normalize(prefix);
         return _entries.Where(e => string.IsNullOrEmpty(normalizedPrefix)
-                                   || Normalize(e.Path).StartsWith(normalizedPrefix, StringComparison.OrdinalIgnoreCase));
+                                   || Normalize(e.Path).StartsWith(normalizedPrefix,
+                                       StringComparison.OrdinalIgnoreCase));
     }
 
     public GameFileEnumerationPage EnumerateFilesBounded(string? prefix, int maximumEntries)

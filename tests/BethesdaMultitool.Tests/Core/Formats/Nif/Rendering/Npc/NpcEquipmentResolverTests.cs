@@ -88,7 +88,7 @@ public sealed class NpcEquipmentResolverTests
                 @"meshes\Armor\ImperialWatch\M\Gauntlets.NIF",
                 @"meshes\Armor\ImperialWatch\M\Greaves.NIF"
             ],
-            equippedItems!.Select(item => item.MeshPath).ToArray());
+            equippedItems.Select(item => item.MeshPath).ToArray());
     }
 
     [Fact]
@@ -226,19 +226,19 @@ public sealed class NpcEquipmentResolverTests
             false);
 
         Assert.NotNull(equippedItems);
-        Assert.Equal(2, equippedItems!.Count);
+        Assert.Equal(2, equippedItems.Count);
         Assert.Equal(
             @"meshes\clothes\middleclass\03\m\shirt.nif",
             Assert.Single(equippedItems, item => (item.BipedFlags & 0x04) != 0).MeshPath,
-            ignoreCase: true);
+            true);
         Assert.Equal(
             @"meshes\clothes\middleclass\03\m\shirt.nif",
             Assert.Single(equippedItems, item => (item.BipedFlags & 0x08) != 0).MeshPath,
-            ignoreCase: true);
+            true);
         Assert.Equal(
             @"meshes\clothes\middleclass\02\m\shoes.nif",
             Assert.Single(equippedItems, item => (item.BipedFlags & 0x20) != 0).MeshPath,
-            ignoreCase: true);
+            true);
         Assert.DoesNotContain(
             equippedItems,
             static item => item.MeshPath.EndsWith(
@@ -257,8 +257,8 @@ public sealed class NpcEquipmentResolverTests
             appearance,
             new NpcCompositionOptions(),
             coveredSlots,
-            effectiveBodyTex: null,
-            effectiveHandTex: null);
+            null,
+            null);
 
         Assert.Empty(bodyParts);
     }
@@ -294,7 +294,7 @@ public sealed class NpcEquipmentResolverTests
         Assert.Equal(
             @"meshes\clothes\high-value-shirt.nif",
             equippedItem.MeshPath,
-            ignoreCase: true);
+            true);
     }
 
     [Fact]
@@ -305,10 +305,10 @@ public sealed class NpcEquipmentResolverTests
         var esmPath = RealAssetPaths.Masters.Oblivion();
         Assert.SkipWhen(esmPath is null, RealAssetPaths.SkipMessage("Oblivion.esm"));
 
-        var esm = File.ReadAllBytes(esmPath!);
+        var esm = File.ReadAllBytes(esmPath);
         var index = NpcAppearanceIndexBuilder.Build(
             esm,
-            bigEndian: false,
+            false,
             cancellationToken: TestContext.Current.CancellationToken);
         var npcRecord = Assert.Contains(0x000222A8u, index.Npcs);
         var appearance = new NpcAppearanceFactory(index).Build(
@@ -324,7 +324,7 @@ public sealed class NpcEquipmentResolverTests
         Assert.Equal(
             @"meshes\clothes\middleclass\03\m\shirt.nif",
             lowerGarment.MeshPath,
-            ignoreCase: true);
+            true);
         Assert.Equal(0x0Cu, lowerGarment.BipedFlags);
         Assert.DoesNotContain(
             equippedItems,
@@ -339,8 +339,8 @@ public sealed class NpcEquipmentResolverTests
             appearance,
             new NpcCompositionOptions(),
             coveredSlots,
-            effectiveBodyTex: null,
-            effectiveHandTex: null);
+            null,
+            null);
 
         Assert.DoesNotContain(
             bodyParts,

@@ -23,17 +23,17 @@ internal sealed class Ba2Backend : IArchiveBackend
     /// <summary>The backing extractor, for callers that need record-typed extraction.</summary>
     public Ba2Extractor Extractor { get; }
 
-    public string FormatName => "BA2";
-
-    public string PlatformLabel => "PC";
-
-    public int TotalFiles => Extractor.Archive.TotalFiles;
-
     /// <summary>
     ///     Diagnostic seam for proving path-only/read-by-path consumers have not forced the much
     ///     larger format-neutral entry projection.
     /// </summary>
     internal bool HasMaterializedEntryProjection => _files.IsValueCreated;
+
+    public string FormatName => "BA2";
+
+    public string PlatformLabel => "PC";
+
+    public int TotalFiles => Extractor.Archive.TotalFiles;
 
     public IReadOnlyList<ArchiveEntry> ListFiles()
     {

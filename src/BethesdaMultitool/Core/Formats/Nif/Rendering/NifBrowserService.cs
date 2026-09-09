@@ -1,8 +1,8 @@
 using System.Diagnostics;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
-using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
@@ -64,20 +64,19 @@ internal sealed class NifBrowserService : IDisposable
         _modelFamilyLooseRoot = modelFamilyLooseRoot;
         if (_archiveSourceSet is not null)
         {
-            _siblingMeshArchives = new SynchronizedLazyDisposable<MeshArchiveSet>(
-                () =>
+            _siblingMeshArchives = new SynchronizedLazyDisposable<MeshArchiveSet>(() =>
+            {
+                var siblingPaths = _archiveSourceSet.Get().SiblingMeshArchivePaths;
+                if (siblingPaths.Length == 0)
                 {
-                    var siblingPaths = _archiveSourceSet.Get().SiblingMeshArchivePaths;
-                    if (siblingPaths.Length == 0)
-                    {
-                        throw new InvalidOperationException(
-                            "A sibling mesh archive set was requested when discovery found none.");
-                    }
+                    throw new InvalidOperationException(
+                        "A sibling mesh archive set was requested when discovery found none.");
+                }
 
-                    return MeshArchiveSet.Open(
-                        siblingPaths[0],
-                        siblingPaths.Length == 1 ? null : siblingPaths[1..]);
-                });
+                return MeshArchiveSet.Open(
+                    siblingPaths[0],
+                    siblingPaths.Length == 1 ? null : siblingPaths[1..]);
+            });
         }
     }
 
@@ -107,14 +106,6 @@ internal sealed class NifBrowserService : IDisposable
         }
     }
 
-    /// <summary>
-    ///     Starts archive sibling classification without waiting for it. The source-loading workflow
-    ///     uses this to overlap cold GNRL name-table I/O with selected-archive NIF enumeration; all
-    ///     consumers still join the same task before observing paths or resolving an asset.
-    /// </summary>
-    internal Task BeginRelatedArchiveDiscovery() =>
-        _archiveSourceSet?.Begin() ?? Task.CompletedTask;
-
     public void Dispose()
     {
         // A modern extraction can borrow the resolver while its external-mesh callback reads the
@@ -123,6 +114,16 @@ internal sealed class NifBrowserService : IDisposable
         _modelFamilyFiles.Dispose();
         _siblingMeshArchives?.Dispose();
         _archiveLease?.Dispose();
+    }
+
+    /// <summary>
+    ///     Starts archive sibling classification without waiting for it. The source-loading workflow
+    ///     uses this to overlap cold GNRL name-table I/O with selected-archive NIF enumeration; all
+    ///     consumers still join the same task before observing paths or resolving an asset.
+    /// </summary>
+    internal Task BeginRelatedArchiveDiscovery()
+    {
+        return _archiveSourceSet?.Begin() ?? Task.CompletedTask;
     }
 
     /// <summary>
@@ -393,8 +394,8 @@ internal sealed class NifBrowserService : IDisposable
                     }
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException and
-                                           not StackOverflowException and
-                                           not OperationCanceledException)
+                                               not StackOverflowException and
+                                               not OperationCanceledException)
                 {
                     // External animation discovery/application is optional presentation data. It
                     // must not turn a renderable raw model into a failed Mesh Viewer load.
@@ -430,11 +431,11 @@ internal sealed class NifBrowserService : IDisposable
                     animation = NifNodeKeyframeTrackCollector.Collect(
                         parsedData,
                         parsedNif,
-                        preserveFileRootTransformAndTrack: true);
+                        true);
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException and
-                                           not StackOverflowException and
-                                           not OperationCanceledException)
+                                               not StackOverflowException and
+                                               not OperationCanceledException)
                 {
                     // Animation is optional presentation data. A malformed controller must never
                     // turn otherwise renderable geometry into a failed Mesh Viewer load. A broken
@@ -452,11 +453,11 @@ internal sealed class NifBrowserService : IDisposable
                         animation = NifControllerSequenceTrackCollector.Collect(
                             parsedData,
                             parsedNif,
-                            preserveFileRootTransformAndTrack: true);
+                            true);
                     }
                     catch (Exception ex) when (ex is not OutOfMemoryException and
-                                               not StackOverflowException and
-                                               not OperationCanceledException)
+                                                   not StackOverflowException and
+                                                   not OperationCanceledException)
                     {
                         Log.Warn(
                             "NifBrowserService: embedded sequence animation for '{0}' was ignored: {1}",
@@ -490,8 +491,8 @@ internal sealed class NifBrowserService : IDisposable
                         }
                     }
                     catch (Exception ex) when (ex is not OutOfMemoryException and
-                                               not StackOverflowException and
-                                               not OperationCanceledException)
+                                                   not StackOverflowException and
+                                                   not OperationCanceledException)
                     {
                         Log.Warn(
                             "NifBrowserService: embedded animation binding for '{0}' was ignored: {1}",
@@ -516,13 +517,14 @@ internal sealed class NifBrowserService : IDisposable
                     }
                 }
                 catch (Exception ex) when (ex is not OutOfMemoryException and
-                                           not StackOverflowException and
-                                           not OperationCanceledException)
+                                               not StackOverflowException and
+                                               not OperationCanceledException)
                 {
                     Log.Warn("NifBrowserService: embedded geometry morph for '{0}' was ignored: {1}",
                         sourceLabel, ex.Message);
                 }
             }
+
             return new NifBrowserViewerSceneBuildResult(
                 viewerScene,
                 new NifExternalGeometryDiagnostics(
@@ -742,8 +744,8 @@ internal sealed class NifBrowserService : IDisposable
             return attached;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException and
-                                   not StackOverflowException and
-                                   not OperationCanceledException)
+                                       not StackOverflowException and
+                                       not OperationCanceledException)
         {
             result = riggedScene;
             diagnostic = $"Exact sibling '{siblingPath}' could not be assembled ({ex.GetType().Name}).";
@@ -1064,10 +1066,15 @@ internal sealed class NifBrowserService : IDisposable
                 LazyThreadSafetyMode.ExecutionAndPublication);
         }
 
-        internal Task<ArchiveSourceSet> Begin() => _discovery.Value;
+        internal Task<ArchiveSourceSet> Begin()
+        {
+            return _discovery.Value;
+        }
 
-        internal ArchiveSourceSet Get() =>
-            _discovery.Value.GetAwaiter().GetResult();
+        internal ArchiveSourceSet Get()
+        {
+            return _discovery.Value.GetAwaiter().GetResult();
+        }
 
         private static Task<ArchiveSourceSet> StartObserved(Func<ArchiveSourceSet> factory)
         {
@@ -1098,15 +1105,25 @@ internal sealed class NifBrowserService : IDisposable
 
         public string Label { get; }
 
-        public bool Exists(string path) => _files.Use(files => files.Exists(path));
+        public bool Exists(string path)
+        {
+            return _files.Use(files => files.Exists(path));
+        }
 
-        public GameFileEntry? TryStat(string path) => _files.Use(files => files.TryStat(path));
+        public GameFileEntry? TryStat(string path)
+        {
+            return _files.Use(files => files.TryStat(path));
+        }
 
-        public byte[]? TryReadAllBytes(string path) =>
-            _files.Use(files => files.TryReadAllBytes(path));
+        public byte[]? TryReadAllBytes(string path)
+        {
+            return _files.Use(files => files.TryReadAllBytes(path));
+        }
 
-        public GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes) =>
-            _files.Use(files => files.TryReadAllBytesBounded(path, maximumBytes));
+        public GameFileReadResult? TryReadAllBytesBounded(string path, long maximumBytes)
+        {
+            return _files.Use(files => files.TryReadAllBytesBounded(path, maximumBytes));
+        }
 
         public IEnumerable<GameFileEntry> EnumerateFiles(string? prefix = null)
         {
@@ -1117,10 +1134,15 @@ internal sealed class NifBrowserService : IDisposable
 
         public GameFileEnumerationPage EnumerateFilesBounded(
             string? prefix,
-            int maximumEntries) =>
-            _files.Use(files => files.EnumerateFilesBounded(prefix, maximumEntries));
+            int maximumEntries)
+        {
+            return _files.Use(files => files.EnumerateFilesBounded(prefix, maximumEntries));
+        }
 
-        public void Dispose() => _files.Dispose();
+        public void Dispose()
+        {
+            _files.Dispose();
+        }
     }
 
     /// <summary>
@@ -1172,8 +1194,8 @@ internal sealed class NifBrowserService : IDisposable
             FileMode.Open,
             FileAccess.Read,
             FileShare.Read,
-            bufferSize: 64 * 1024,
-            options: FileOptions.SequentialScan);
+            64 * 1024,
+            FileOptions.SequentialScan);
         var length = stream.Length;
         if (length < 0 || length > maximumBytes)
         {
@@ -1587,7 +1609,7 @@ internal sealed class NifBrowserService : IDisposable
         // The parsed archive header supplies the real total without first projecting a second entry
         // graph. Archive/index initialization before this remains opaque.
         progress?.Invoke(new NifBrowserScanProgress(0, totalEntries, 0));
-        var progressStride = Math.Max(1L, ((long)totalEntries + 63L) / 64L);
+        var progressStride = Math.Max(1L, (totalEntries + 63L) / 64L);
         var nextProgressEntry = progressStride;
         var currentEntry = 0;
 
@@ -1694,6 +1716,14 @@ internal sealed record NifExternalGeometryDiagnostics(
 
     internal int ResolvedCount => Resolutions.Count(static resolution => resolution.Resolved);
 
+    internal bool IsComplete => ResolvedCount == ReferencedCount && DecodeFailedPaths.Count == 0;
+
+    internal string? IncompleteWarningMessage => IsComplete
+        ? null
+        : $"External geometry is incomplete: located {ResolvedCount} of {ReferencedCount} referenced " +
+          $"blobs; {MissingPaths().Count} missing and {DecodeFailedPaths.Count} failed to decode. " +
+          "Preview and exports omit those parts.";
+
     /// <summary>
     ///     Referenced blobs that never resolved. A method rather than a property: it projects a new
     ///     array each call, and a stored array would drag reference identity into this record's
@@ -1706,12 +1736,4 @@ internal sealed record NifExternalGeometryDiagnostics(
             .Select(static resolution => resolution.VirtualPath)
             .ToArray();
     }
-
-    internal bool IsComplete => ResolvedCount == ReferencedCount && DecodeFailedPaths.Count == 0;
-
-    internal string? IncompleteWarningMessage => IsComplete
-        ? null
-        : $"External geometry is incomplete: located {ResolvedCount} of {ReferencedCount} referenced " +
-          $"blobs; {MissingPaths().Count} missing and {DecodeFailedPaths.Count} failed to decode. " +
-          "Preview and exports omit those parts.";
 }

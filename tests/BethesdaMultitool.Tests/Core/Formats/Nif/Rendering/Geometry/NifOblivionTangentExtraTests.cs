@@ -212,7 +212,7 @@ public sealed class NifOblivionTangentExtraTests
     [InlineData(true)]
     public void Extract_PreservesExistingInlineBasis(bool strips)
     {
-        var fixture = new NifOblivionTangentTestData(strips, inline: true);
+        var fixture = new NifOblivionTangentTestData(strips, true);
         var mesh = Extract(fixture, Matrix4x4.Identity);
         for (var i = 0; i < 3; i++)
         {
@@ -226,7 +226,7 @@ public sealed class NifOblivionTangentExtraTests
     [InlineData(true)]
     public void Extract_MalformedInlineBasisIsNotSilentlyReplaced(bool strips)
     {
-        var fixture = new NifOblivionTangentTestData(strips, inline: true);
+        var fixture = new NifOblivionTangentTestData(strips, true);
         var firstInlineTangent = fixture.Info.Blocks[2].DataOffset + 9 + 36 + 3 + 36;
         BinaryPrimitives.WriteSingleLittleEndian(fixture.Data.AsSpan(firstInlineTangent), float.NaN);
         var mesh = Extract(fixture, Matrix4x4.Identity);
@@ -294,6 +294,7 @@ public sealed class NifOblivionTangentExtraTests
                 expectedT = Vector3.Normalize(expectedT);
                 expectedB = Vector3.Normalize(expectedB);
             }
+
             AssertVectorClose(expectedT, VectorAt(mesh.Tangents, i));
             AssertVectorClose(expectedB, VectorAt(mesh.Bitangents, i));
             AssertVectorClose(Vector3.Transform(NifOblivionTangentTestData.Positions[i], effective),

@@ -7,33 +7,11 @@ namespace BethesdaMultitool.Core.Formats.Png;
 /// </summary>
 public sealed class PngFormat : FileFormatBase, IGapAssessor
 {
-    private static readonly byte[] PngMagic = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-    private static readonly byte[] IendMagic = "IEND"u8.ToArray();
-
     /// <summary>8-byte signature + the 25-byte IHDR chunk.</summary>
     private const int SignatureAndIhdrSize = 33;
 
-    /// <inheritdoc />
-    /// <remarks>
-    ///     PNG image data is one zlib stream spread across IDAT chunks, so a hole anywhere in it
-    ///     desynchronises inflate for the remainder of the image — there is no resynchronisation
-    ///     point. Only the trailing IEND is expendable.
-    /// </remarks>
-    public string? AssessGaps(
-        ReadOnlySpan<byte> data,
-        IReadOnlyList<CarveHole> holes,
-        IReadOnlyDictionary<string, object>? metadata)
-    {
-        if (GapAssessment.Overlaps(holes, 0, Math.Min(SignatureAndIhdrSize, data.Length)))
-        {
-            return "the PNG signature/IHDR (dimensions, bit depth and colour type are unreadable)";
-        }
-
-        var iendStart = Math.Max(0, data.Length - IendMagic.Length - 4);
-        return GapAssessment.Overlaps(holes, SignatureAndIhdrSize, iendStart - SignatureAndIhdrSize)
-            ? "the PNG image stream (one zlib stream; inflate cannot resynchronise past a hole)"
-            : null;
-    }
+    private static readonly byte[] PngMagic = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    private static readonly byte[] IendMagic = "IEND"u8.ToArray();
 
     public override string FormatId => "png";
     public override string DisplayName => "PNG";
@@ -58,6 +36,28 @@ public sealed class PngFormat : FileFormatBase, IGapAssessor
             Description = "PNG image"
         }
     ];
+
+    /// <inheritdoc />
+    /// <remarks>
+    ///     PNG image data is one zlib stream spread across IDAT chunks, so a hole anywhere in it
+    ///     desynchronises inflate for the remainder of the image — there is no resynchronisation
+    ///     point. Only the trailing IEND is expendable.
+    /// </remarks>
+    public string? AssessGaps(
+        ReadOnlySpan<byte> data,
+        IReadOnlyList<CarveHole> holes,
+        IReadOnlyDictionary<string, object>? metadata)
+    {
+        if (GapAssessment.Overlaps(holes, 0, Math.Min(SignatureAndIhdrSize, data.Length)))
+        {
+            return "the PNG signature/IHDR (dimensions, bit depth and colour type are unreadable)";
+        }
+
+        var iendStart = Math.Max(0, data.Length - IendMagic.Length - 4);
+        return GapAssessment.Overlaps(holes, SignatureAndIhdrSize, iendStart - SignatureAndIhdrSize)
+            ? "the PNG image stream (one zlib stream; inflate cannot resynchronise past a hole)"
+            : null;
+    }
 
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {

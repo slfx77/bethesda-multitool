@@ -12,7 +12,7 @@ namespace BethesdaMultitool.Tests.Core.FileFormat;
 ///     (manuals, DOSBox binaries) must stay Unknown, and the wildcard matcher must cover the exact
 ///     glob shapes the profiles declare.
 /// </summary>
-public class ClassicSourceProbeTests : IDisposable
+public sealed class ClassicSourceProbeTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("classic-probe-").FullName;
 

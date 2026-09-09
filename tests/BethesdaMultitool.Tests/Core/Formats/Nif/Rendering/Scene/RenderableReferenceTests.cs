@@ -69,7 +69,7 @@ public sealed class RenderableReferenceTests
 
         var built = RenderableReference.TryBuild(placement);
         Assert.NotNull(built);
-        Assert.False(built!.Value.IsInitiallyDisabled);
+        Assert.False(built.Value.IsInitiallyDisabled);
         // The flag itself still surfaces on the model for the property panel + censuses.
         Assert.Equal(((xsrf ?? 0) & 0x2) != 0, placement.IsImposter);
     }

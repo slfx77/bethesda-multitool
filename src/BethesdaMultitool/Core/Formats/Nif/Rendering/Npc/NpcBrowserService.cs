@@ -69,6 +69,15 @@ internal sealed class NpcBrowserService : IDisposable
     public int RaceCount => _resolver.RaceCount;
     public bool IsDmpMode => _dmpAppearances != null;
 
+    public void Dispose()
+    {
+        _operationGate.DisposeResources(() =>
+        {
+            _meshArchives.Dispose();
+            _textureResolver.Dispose();
+        });
+    }
+
     /// <summary>
     ///     Prefers the game established from record structure over a master-file name. Filename
     ///     inference remains a fallback for incomplete legacy scans and renamed plugins therefore
@@ -79,15 +88,6 @@ internal sealed class NpcBrowserService : IDisposable
         return indexedGame != BethesdaGame.Unknown
             ? indexedGame
             : GameProfiles.ResolveByNames([pluginName]) ?? BethesdaGame.Unknown;
-    }
-
-    public void Dispose()
-    {
-        _operationGate.DisposeResources(() =>
-        {
-            _meshArchives.Dispose();
-            _textureResolver.Dispose();
-        });
     }
 
     /// <summary>
@@ -105,8 +105,8 @@ internal sealed class NpcBrowserService : IDisposable
             bigEndian,
             esmPath,
             bsaPaths,
-            progress: null,
-            cancellationToken: default);
+            null,
+            default);
     }
 
     internal static NpcBrowserService? TryCreate(

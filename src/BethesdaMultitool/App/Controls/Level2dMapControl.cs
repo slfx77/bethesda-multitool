@@ -1,8 +1,6 @@
 using System.Runtime.InteropServices.WindowsRuntime;
-
 using BethesdaMultitool.Core.Imaging;
 using BethesdaMultitool.Core.Rendering.Level2D;
-
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -39,15 +37,19 @@ namespace BethesdaMultitool;
 /// </summary>
 internal sealed partial class Level2dMapControl : UserControl
 {
-    private readonly ComboBox _layerPicker;
     private readonly Image _image;
+    private readonly ComboBox _layerPicker;
     private readonly TextBlock _status;
 
     private ILevel2DSource? _source;
 
     public Level2dMapControl()
     {
-        _image = new Image { Stretch = Stretch.None, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center };
+        _image = new Image
+        {
+            Stretch = Stretch.None, HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
 
         var scroller = new ScrollViewer
         {
@@ -86,7 +88,13 @@ internal sealed partial class Level2dMapControl : UserControl
     /// <summary>Shows a level, selecting its first layer. Pass null to clear.</summary>
     public void SetSource(ILevel2DSource? source)
     {
+        var previous = _source;
         _source = source;
+        if (!ReferenceEquals(previous, source))
+        {
+            (previous as IDisposable)?.Dispose();
+        }
+
         _layerPicker.Items.Clear();
 
         if (source is null)

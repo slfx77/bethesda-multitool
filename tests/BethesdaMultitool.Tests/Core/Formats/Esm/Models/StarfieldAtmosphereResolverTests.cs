@@ -12,7 +12,7 @@ public sealed class StarfieldAtmosphereResolverTests
     [Fact]
     public void Resolve_OverlaysAbsentAndExplicitZeroWithoutMutatingSources()
     {
-        var root = Full(RootFormId, sun: 0x111, climate: 0x222);
+        var root = Full(RootFormId, 0x111, 0x222);
         var child = Diff(ChildFormId, RootFormId, new StarfieldAtmospherePatch
         {
             ParentFormId = RootFormId,
@@ -50,7 +50,7 @@ public sealed class StarfieldAtmosphereResolverTests
     {
         const uint commonParent = 0x0020CDD3;
         const uint earthAtmosphere = 0x0000C9D1;
-        var root = Full(commonParent, sun: 0, climate: 0);
+        var root = Full(commonParent, 0, 0);
         var earth = Diff(earthAtmosphere, commonParent, new StarfieldAtmospherePatch
         {
             ParentFormId = commonParent,
@@ -242,7 +242,7 @@ public sealed class StarfieldAtmosphereResolverTests
         var records = Index(root, parent, child, grandchild);
 
         var result = StarfieldAtmosphereResolver.Resolve(
-            GrandchildFormId, records, maxDepth: 3);
+            GrandchildFormId, records, 3);
 
         AssertFailure(
             result,
@@ -260,7 +260,7 @@ public sealed class StarfieldAtmosphereResolverTests
         var records = Index(root, child, grandchild);
 
         var result = StarfieldAtmosphereResolver.Resolve(
-            GrandchildFormId, records, maxDepth: 3);
+            GrandchildFormId, records, 3);
 
         Assert.True(result.IsResolved, result.FailureDetail);
         Assert.Equal(0xABCDu, result.EffectivePatch?.ClimateOverrideFormId);
@@ -273,7 +273,7 @@ public sealed class StarfieldAtmosphereResolverTests
         return StarfieldAtmosphereResolver.Resolve(targetFormId, Index(records));
     }
 
-    private static IReadOnlyDictionary<uint, StarfieldAtmosphereRecord> Index(
+    private static Dictionary<uint, StarfieldAtmosphereRecord> Index(
         params StarfieldAtmosphereRecord[] records)
     {
         return records.ToDictionary(record => record.FormId);

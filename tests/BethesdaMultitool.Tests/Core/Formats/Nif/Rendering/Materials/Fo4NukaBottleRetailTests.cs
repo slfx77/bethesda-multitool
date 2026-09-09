@@ -26,8 +26,8 @@ public sealed class Fo4NukaBottleRetailTests
         Assert.SkipWhen(
             dataDirectory is null,
             "Fallout 4 Data directory not found (set FALLOUT4_DATA_DIR to run this probe).");
-        var meshesPath = Path.Combine(dataDirectory!, "Fallout4 - Meshes.ba2");
-        var materialsPath = Path.Combine(dataDirectory!, "Fallout4 - Materials.ba2");
+        var meshesPath = Path.Combine(dataDirectory, "Fallout4 - Meshes.ba2");
+        var materialsPath = Path.Combine(dataDirectory, "Fallout4 - Materials.ba2");
         Assert.SkipUnless(
             File.Exists(meshesPath) && File.Exists(materialsPath),
             "Fallout 4 meshes/materials BA2s not installed (set FALLOUT4_DATA_DIR to run this probe).");

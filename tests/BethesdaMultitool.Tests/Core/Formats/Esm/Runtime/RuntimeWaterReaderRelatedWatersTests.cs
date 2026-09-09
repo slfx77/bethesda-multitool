@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized.World;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -67,7 +66,7 @@ public sealed class RuntimeWaterReaderRelatedWatersTests
         var record = reader.ReadRuntimeWater(entry);
 
         Assert.NotNull(record);
-        var related = Assert.IsType<Dictionary<string, object?>>(record!.RelatedWater);
+        var related = Assert.IsType<Dictionary<string, object?>>(record.RelatedWater);
         Assert.Equal(DaytimeFormId, related["Daytime"]);
         Assert.Equal(0u, related["Nighttime"]); // WEAP target rejected, recorded as unset
         Assert.Equal(UnderwaterFormId, related["Underwater"]);
@@ -83,6 +82,6 @@ public sealed class RuntimeWaterReaderRelatedWatersTests
         var record = reader.ReadRuntimeWater(entry);
 
         Assert.NotNull(record);
-        Assert.Null(record!.RelatedWater);
+        Assert.Null(record.RelatedWater);
     }
 }

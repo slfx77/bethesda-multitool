@@ -121,7 +121,7 @@ public sealed class ReferenceSubmeshDecoder12Tests
             new ReferenceSubmeshDecodeOptions12(
                 @"textures\override_d.dds",
                 @"textures\override_n.dds",
-                GradientMapVOverride: 0.9f,
+                0.9f,
                 Skin: skin,
                 IncludeParticleRuntime: true));
 

@@ -19,6 +19,16 @@ internal sealed class RuntimeWorldReader
     // and the shift adjustment happens once per opened view.
     private const int PdbBaselineShift = 16;
 
+    /// <summary>
+    ///     Read all LAND records from runtime data and extract cell coordinates.
+    ///     Returns a dictionary mapping LAND FormID to LoadedLandData.
+    /// </summary>
+    /// <summary>
+    ///     Marker the pAllForms LAND sweep stamps on entries it produces
+    ///     (<c>EditorIdLookupTables</c>), since a real LAND record has no EditorID to carry.
+    /// </summary>
+    private const string SyntheticLandEditorIdPrefix = "__LAND_";
+
     // High-byte histogram of "bad" ppVertices VAs — values that are non-null but don't
     // resolve to a captured memory region. Tells us whether they cluster in a specific
     // VA range (suggesting an uncaptured heap region) or are random noise (suggesting a
@@ -539,16 +549,6 @@ internal sealed class RuntimeWorldReader
     }
 
     /// <summary>
-    ///     Read all LAND records from runtime data and extract cell coordinates.
-    ///     Returns a dictionary mapping LAND FormID to LoadedLandData.
-    /// </summary>
-    /// <summary>
-    ///     Marker the pAllForms LAND sweep stamps on entries it produces
-    ///     (<c>EditorIdLookupTables</c>), since a real LAND record has no EditorID to carry.
-    /// </summary>
-    private const string SyntheticLandEditorIdPrefix = "__LAND_";
-
-    /// <summary>
     ///     True when this entry came from the LAND form-type sweep rather than the editor-ID table.
     ///     Build-independent on purpose: the LAND FormType byte differs across the development
     ///     builds in the corpus, so it cannot be checked against a constant or against the final
@@ -601,6 +601,11 @@ internal sealed class RuntimeWorldReader
         foreach (var entry in entries.Where(entry => IsSyntheticLandEditorId(entry.EditorId)))
         {
             total++;
+            if (entry.TesFormOffset == null)
+            {
+                noOffset++;
+            }
+
             var landData = ReadRuntimeLandData(entry);
             if (landData != null)
             {
@@ -613,15 +618,6 @@ internal sealed class RuntimeWorldReader
                 {
                     noMesh++;
                 }
-            }
-        }
-
-        // Count failure reasons from the entries that didn't produce results
-        foreach (var entry in entries.Where(entry => IsSyntheticLandEditorId(entry.EditorId)))
-        {
-            if (entry.TesFormOffset == null)
-            {
-                noOffset++;
             }
         }
 

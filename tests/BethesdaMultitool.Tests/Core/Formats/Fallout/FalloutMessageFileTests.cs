@@ -91,7 +91,7 @@ public sealed class FalloutMessageFileTests
 
         Assert.Equal("Good", msg.Find(100));
         Assert.Equal("Also good", msg.Find(102));
-        Assert.Null(msg.Find(103));   // no closing brace, so it is not an entry
+        Assert.Null(msg.Find(103)); // no closing brace, so it is not an entry
     }
 
     [Fact]

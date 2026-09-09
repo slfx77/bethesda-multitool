@@ -248,6 +248,7 @@ public sealed partial class WorldView3DControl
                     synthesized[i],
                     generateMips: false));
             }
+
             Log.Info(
                 "[Water] Oblivion WATERHMAP bUseWaterHiRes={0}; grid={1}x{1}, output=R8G8B8A8_UNorm, levels=1.",
                 useHighResolution ? 1 : 0,

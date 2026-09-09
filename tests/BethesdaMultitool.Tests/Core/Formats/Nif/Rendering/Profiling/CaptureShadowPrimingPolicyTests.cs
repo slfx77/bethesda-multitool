@@ -117,9 +117,9 @@ public sealed class CaptureShadowPrimingPolicyTests
         // Zero submitted draws is compatible with all four completion bits. Using the draw
         // availability mask (zero) instead would wrongly retry this authoritative empty result.
         Assert.Equal(CaptureShadowPrimingDecision.Ready,
-            CaptureShadowPrimingPolicy.Decide(true, completedCascadeMask: 0xF, primeAttempts: 1));
+            CaptureShadowPrimingPolicy.Decide(true, 0xF, 1));
         Assert.Equal(CaptureShadowPrimingDecision.Retry,
-            CaptureShadowPrimingPolicy.Decide(true, completedCascadeMask: 0, primeAttempts: 1));
+            CaptureShadowPrimingPolicy.Decide(true, 0, 1));
     }
 
     [Fact]
@@ -199,14 +199,23 @@ public sealed class CaptureShadowPrimingPolicyTests
         return uint.Parse(declaration.AsSpan(declaration.IndexOf('=') + 1), CultureInfo.InvariantCulture);
     }
 
-    private static string ReferenceShadowReplaySource() => SourceContract.Extract(
-        RendererSource("ReferenceRenderer12.cs"),
-        "public bool RenderShadowDepth(in SunShadowMath.LightFrustum frustum", "public bool RenderMirrorColor(");
+    private static string ReferenceShadowReplaySource()
+    {
+        return SourceContract.Extract(
+            RendererSource("ReferenceRenderer12.cs"),
+            "public bool RenderShadowDepth(in SunShadowMath.LightFrustum frustum", "public bool RenderMirrorColor(");
+    }
 
-    private static string TerrainShadowReplaySource() => SourceContract.Extract(
-        RendererSource("TerrainRenderer12.cs"),
-        "public int RenderShadowDepth(Matrix4x4 lightViewProj", "public int RenderMirror(");
+    private static string TerrainShadowReplaySource()
+    {
+        return SourceContract.Extract(
+            RendererSource("TerrainRenderer12.cs"),
+            "public int RenderShadowDepth(Matrix4x4 lightViewProj", "public int RenderMirror(");
+    }
 
-    private static string RendererSource(string name) => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", name);
+    private static string RendererSource(string name)
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", name);
+    }
 }

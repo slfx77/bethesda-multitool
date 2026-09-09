@@ -112,7 +112,11 @@ public sealed class FnvClassicBasicShaderSourceContractTests
             "// Generalized firefly bound:",
             "if (!fnvActiveAdtBase)",
             "// SLS2000 always writes",
-            "float3 outputRgb = ApplyFog(lit, input.vWorldPos, input.vEnvMap.w);");
+            "float3 outputRgb;",
+            "if (fnvActiveAdtBase && uFogColorFogEnabled.w >= 0.5)",
+            "outputRgb = lerp(lit, uFogColorFogEnabled.rgb, input.vFnvActiveAdtFogAmount);",
+            "else",
+            "outputRgb = ApplyFog(lit, input.vWorldPos, input.vEnvMap.w);");
     }
 
     [Fact]

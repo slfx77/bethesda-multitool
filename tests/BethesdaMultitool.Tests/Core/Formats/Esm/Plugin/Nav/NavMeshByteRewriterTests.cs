@@ -40,7 +40,7 @@ public sealed class NavMeshByteRewriterTests
         // pointing at the surviving FormIDs in input order.
         var (nvexPayload, dataEdgeLinkCount) = ExtractNvexAndDataEdgeCount(sanitized);
         Assert.NotNull(nvexPayload);
-        Assert.Equal(2 * NvexEntrySize, nvexPayload!.Length);
+        Assert.Equal(2 * NvexEntrySize, nvexPayload.Length);
 
         Assert.Equal(0x00000AAAu,
             BinaryPrimitives.ReadUInt32LittleEndian(nvexPayload.AsSpan(0 * NvexEntrySize + 4, 4)));

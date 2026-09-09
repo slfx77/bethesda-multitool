@@ -101,7 +101,8 @@ public class FrameDeltaFilterTests
 
     [Theory]
     [InlineData(0f, 0f, "a zero timestep is legitimate on a repeated presentation")]
-    [InlineData(FrameDeltaFilter.MaxDeltaSeconds, FrameDeltaFilter.MaxDeltaSeconds, "exactly at the ceiling is not clamped")]
+    [InlineData(FrameDeltaFilter.MaxDeltaSeconds, FrameDeltaFilter.MaxDeltaSeconds,
+        "exactly at the ceiling is not clamped")]
     [InlineData(0.5f, FrameDeltaFilter.MaxDeltaSeconds, "above the ceiling is clamped")]
     public void Push_SteadyInput_ClampsOnlyAboveTheCeiling(float raw, float expected, string because)
     {

@@ -106,16 +106,23 @@ public sealed class OblivionWaterDisplacementSourceContractTests
     public void CaptureDistinguishesDiagnosticBindingRouteAndContribution()
     {
         var capture = SourceContract.ReadAppSource("WorldView3DControl.SceneCapture.cs");
-        Assert.Contains("fields[\"waterOblivionDisplacementDiagnosticSource\"] = _water?.OblivionDisplacementDiagnosticSource;",
+        Assert.Contains(
+            "fields[\"waterOblivionDisplacementDiagnosticSource\"] = _water?.OblivionDisplacementDiagnosticSource;",
             capture, StringComparison.Ordinal);
-        Assert.Contains("fields[\"waterOblivionDisplacementSourceBound\"] = _water?.OblivionDisplacementSourceBound ?? false;",
+        Assert.Contains(
+            "fields[\"waterOblivionDisplacementSourceBound\"] = _water?.OblivionDisplacementSourceBound ?? false;",
             capture, StringComparison.Ordinal);
-        Assert.Contains("fields[\"waterOblivionDisplacementRouteEnabled\"] = _water?.OblivionDisplacementRouteEnabled ?? false;",
+        Assert.Contains(
+            "fields[\"waterOblivionDisplacementRouteEnabled\"] = _water?.OblivionDisplacementRouteEnabled ?? false;",
             capture, StringComparison.Ordinal);
-        Assert.Contains("fields[\"waterOblivionDisplacementHasContribution\"] = _water?.OblivionDisplacementHasContribution ?? false;",
+        Assert.Contains(
+            "fields[\"waterOblivionDisplacementHasContribution\"] = _water?.OblivionDisplacementHasContribution ?? false;",
             capture, StringComparison.Ordinal);
     }
 
-    private static string ReadRenderer() => SourceContract.ReadSource(
-        "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "WaterRenderer12.cs");
+    private static string ReadRenderer()
+    {
+        return SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12", "WaterRenderer12.cs");
+    }
 }

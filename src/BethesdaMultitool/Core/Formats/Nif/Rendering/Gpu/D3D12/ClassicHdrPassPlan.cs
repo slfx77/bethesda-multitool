@@ -81,10 +81,13 @@ internal readonly record struct ClassicHdrPassPlan
     public ClassicHdrBloomTopology BloomTopology { get; }
     public int BlurPairCount { get; }
     public static int AdaptDrawCount => 1;
+
     public int BrightPassDrawCount =>
         BloomEnabled && BloomTopology == ClassicHdrBloomTopology.Tes4SeparateBrightPassCumulative ? 1 : 0;
+
     public int BrightPassBlurDrawCount =>
         BloomEnabled && BloomTopology == ClassicHdrBloomTopology.FusedBrightPassBlur ? 1 : 0;
+
     public int BlurDrawCount
     {
         get
@@ -99,6 +102,7 @@ internal readonly record struct ClassicHdrPassPlan
                 : 1;
         }
     }
+
     public static int CompositeDrawCount => 1;
 
     public int TotalDrawCount =>
@@ -117,7 +121,7 @@ internal readonly record struct ClassicHdrPassPlan
             height,
             bloomEnabled,
             ClassicHdrBloomTopology.FusedBrightPassBlur,
-            blurPairCount: 1);
+            1);
     }
 
     /// <summary>
@@ -145,7 +149,7 @@ internal readonly record struct ClassicHdrPassPlan
             return 0;
         }
 
-        var truncated = Math.Truncate((double)activeBlurPasses);
+        var truncated = Math.Truncate(activeBlurPasses);
         var magnitude = Math.Abs(truncated);
         return (int)Math.Min(magnitude, MaxBloomPairCount);
     }
@@ -233,7 +237,7 @@ internal readonly record struct ClassicHdrPassPlan
             HdrReductionDimensionRule.CeilingQuarter,
             historyAvailable,
             ClassicHdrBloomTopology.FusedBrightPassBlur,
-            blurPairCount: 1);
+            1);
     }
 
     public ClassicHdrReductionLevel GetReductionLevel(int index)

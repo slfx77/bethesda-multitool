@@ -25,7 +25,7 @@ public sealed class Fallout76AuthoredAtmosphereRetailTests
         Assert.SkipUnless(dataDirectory is not null,
             RealAssetPaths.SkipMessage("Fallout 76 Data folder"));
 
-        var archivePath = Path.Combine(dataDirectory!, "SeventySix - Meshes.ba2");
+        var archivePath = Path.Combine(dataDirectory, "SeventySix - Meshes.ba2");
         Assert.SkipUnless(File.Exists(archivePath),
             RealAssetPaths.SkipMessage("SeventySix - Meshes.ba2"));
 
@@ -47,7 +47,7 @@ public sealed class Fallout76AuthoredAtmosphereRetailTests
             Assert.NotEmpty(layer.Positions);
             Assert.NotEmpty(layer.Triangles);
             var colors = Assert.IsType<byte[]>(layer.VertexColors);
-            Assert.Equal((layer.Positions.Length / 3) * 4, colors.Length);
+            Assert.Equal(layer.Positions.Length / 3 * 4, colors.Length);
         });
     }
 }

@@ -75,6 +75,11 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private ID3D12PipelineState? _directStarfieldDiffuseLitDoubleCutoutPso;
     private ID3D12PipelineState? _directClassicSkinBackPso;
     private ID3D12PipelineState? _directClassicSkinDoublePso;
+    private byte[]? _directClassicSkinVertexShader;
+    private ID3D12PipelineState? _directClassicSkinFactorOneBackPso;
+    private ID3D12PipelineState? _directClassicSkinFactorOneDoublePso;
+    private readonly Dictionary<(bool DoubleSided, bool FactorOne), ID3D12PipelineState> _independentSkinPipelines = [];
+    private ID3D12PipelineState? _oblivionEyePso;
 
     // A throwing COM/shader call in this constructor prevents the session from ever receiving the
     // factory instance, so its ordinary Dispose path cannot run. Every PSO created while this bag is
@@ -578,6 +583,71 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         return pso is not null;
     }
 
+    /// <summary>
+    ///     Lazily resolves the explicitly requested diagnostic. Ordinary sessions never call this
+    ///     method. Its PSOs are separate cache entries; creation failure propagates to the requesting
+    ///     session instead of silently substituting an ordinary image for the diagnostic.
+    /// </summary>
+    public ID3D12PipelineState GetDirectClassicSkinFactorOnePso(bool doubleSided)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!DirectClassicSkinRequested || !DirectClassicSkinAvailable ||
+            _directClassicSkinVertexShader is null)
+        {
+            throw new InvalidOperationException(
+                "The skin factor-one diagnostic requires the complete Oblivion classic-skin pair.");
+        }
+
+        if (_directClassicSkinFactorOneBackPso is null || _directClassicSkinFactorOneDoublePso is null)
+        {
+            CreateDirectClassicSkinFactorOnePipelines(_directClassicSkinVertexShader);
+        }
+
+        return (doubleSided ? _directClassicSkinFactorOneDoublePso : _directClassicSkinFactorOneBackPso)
+            ?? throw new InvalidOperationException("The skin factor-one diagnostic pipeline is unavailable.");
+    }
+
+    /// <summary>Exact ordinary skin vertex/PSO state with the requested independent-albedo pixel entry.</summary>
+    internal ID3D12PipelineState GetDirectClassicSkinIndependentPso(bool doubleSided, bool factorOne)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!DirectClassicSkinRequested || !DirectClassicSkinAvailable || _directClassicSkinVertexShader is null)
+            throw new InvalidOperationException("Independent skin sampling requires the complete Oblivion skin pipeline.");
+        var key = (doubleSided, factorOne);
+        if (_independentSkinPipelines.TryGetValue(key, out var existing)) return existing;
+        var pixelShader = CompileEmbeddedShader(
+            factorOne ? "reference_classic_skin_independent_factor_one.frag.hlsl" : "reference_classic_skin_independent.frag.hlsl",
+            factorOne ? "mainIndependentFactorOne" : "mainIndependent", "ps_5_1");
+        var pipeline = CreatePipelineState(_directClassicSkinVertexShader, pixelShader, doubleSided,
+            blendAttachment: null, depthWriteEnabled: true);
+        try { _independentSkinPipelines.Add(key, pipeline); }
+        catch { pipeline.Dispose(); throw; }
+        return pipeline;
+    }
+
+    /// <summary>Ordinary TES4 eye overlay: ONE/ONE, depth test on, no depth write or stencil.</summary>
+    internal ID3D12PipelineState GetOblivionEyePso()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_oblivionEyePso is not null) return _oblivionEyePso;
+        var vertexShader = CompileEmbeddedShader("reference_oblivion_eye.vert.hlsl", "main", "vs_5_1");
+        var pixelShader = CompileEmbeddedShader("reference_oblivion_eye.frag.hlsl", "main", "ps_5_1");
+        var blend = new D12.RenderTargetBlendDescription
+        {
+            BlendEnable = true,
+            SourceBlend = D12.Blend.One,
+            DestinationBlend = D12.Blend.One,
+            BlendOperation = D12.BlendOperation.Add,
+            SourceBlendAlpha = D12.Blend.One,
+            DestinationBlendAlpha = D12.Blend.One,
+            BlendOperationAlpha = D12.BlendOperation.Add,
+            RenderTargetWriteMask = D12.ColorWriteEnable.All
+        };
+        _oblivionEyePso = CreatePipelineState(vertexShader, pixelShader, doubleSided: false,
+            blendAttachment: blend, depthWriteEnabled: false);
+        return _oblivionEyePso;
+    }
+
     /// <summary>Depth-only shadow-pass PSO for opaque batches (instanced VS, no pixel shader).</summary>
     public ID3D12PipelineState ShadowOpaquePso { get; }
 
@@ -895,6 +965,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
             _directClassicSkinBackPso = back;
             _directClassicSkinDoublePso = doubleSided;
+            _directClassicSkinVertexShader = vertexShader;
             back = null;
             doubleSided = null;
         }
@@ -903,6 +974,34 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
                 "ReferencePipelineFactory12: direct classic-skin SKIN2000 specialization disabled: {0}",
                 ex.Message);
+        }
+        finally
+        {
+            DisposeAbandonedConstructionPipeline(ref doubleSided);
+            DisposeAbandonedConstructionPipeline(ref back);
+        }
+    }
+
+    private void CreateDirectClassicSkinFactorOnePipelines(byte[] vertexShader)
+    {
+        ID3D12PipelineState? back = null;
+        ID3D12PipelineState? doubleSided = null;
+        try
+        {
+            // Reuse the exact ordinary SKIN vertex bytecode and all ordinary PSO state. Only the
+            // separately inventoried pixel entry replaces the final RGB lighting factor with one.
+            var pixelShader = CompileEmbeddedShader(
+                "reference_classic_skin_factor_one.frag.hlsl", "mainFactorOne", "ps_5_1");
+            back = CreatePipelineState(
+                vertexShader, pixelShader, doubleSided: false, blendAttachment: null,
+                depthWriteEnabled: true);
+            doubleSided = CreatePipelineState(
+                vertexShader, pixelShader, doubleSided: true, blendAttachment: null,
+                depthWriteEnabled: true);
+            _directClassicSkinFactorOneBackPso = back;
+            _directClassicSkinFactorOneDoublePso = doubleSided;
+            back = null;
+            doubleSided = null;
         }
         finally
         {
@@ -1332,6 +1431,13 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             mirror.Dispose();
         }
         _ownedMirrorPsos.Clear();
+        _directClassicSkinFactorOneDoublePso?.Dispose();
+        foreach (var pipeline in _independentSkinPipelines.Values) pipeline.Dispose();
+        _independentSkinPipelines.Clear();
+        _oblivionEyePso?.Dispose();
+        _oblivionEyePso = null;
+        _directClassicSkinFactorOneBackPso?.Dispose();
+        _directClassicSkinVertexShader = null;
         _directClassicSkinDoublePso?.Dispose();
         _directClassicSkinBackPso?.Dispose();
         _directStarfieldDiffuseLitDoubleCutoutPso?.Dispose();

@@ -26,7 +26,7 @@ public sealed class CellTerrainTextureSetProjectionTests
         var set = CellTerrainTextureSet.Project(table);
 
         Assert.NotNull(set);
-        Assert.Equal(6, set!.ActiveSlotCount);
+        Assert.Equal(6, set.ActiveSlotCount);
 
         // Each FormID survived and its weight is preserved at the right slot.
         var w = ReadVertexWeights(set, TableIndex(VxA, VyA));
@@ -53,7 +53,7 @@ public sealed class CellTerrainTextureSetProjectionTests
         var set = CellTerrainTextureSet.Project(table);
 
         Assert.NotNull(set);
-        Assert.Equal(CellTerrainTextureSet.MaxSlots, set!.ActiveSlotCount); // capped at 16
+        Assert.Equal(CellTerrainTextureSet.MaxSlots, set.ActiveSlotCount); // capped at 16
 
         // The kept slots are renormalized so the per-vertex weight vector still sums to ~1.
         var w = ReadVertexWeights(set, TableIndex(VxA, VyA));

@@ -50,7 +50,7 @@ public sealed class SkyrimTreeFullDetailTests
                 0,
                 data.Length,
                 false,
-                bsVersion: SkyrimBsVersion));
+                SkyrimBsVersion));
 
         Assert.Equal(2u, parsed.NumPartitions);
         Assert.Collection(parsed.Partitions,

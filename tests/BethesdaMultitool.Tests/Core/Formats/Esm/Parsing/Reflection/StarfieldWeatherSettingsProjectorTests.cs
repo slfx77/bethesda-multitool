@@ -230,7 +230,7 @@ public sealed class StarfieldWeatherSettingsProjectorTests
             ("Moonlight", BlendableColor()));
     }
 
-    private static BethesdaReflectionValue BlendableColor()
+    private static BethesdaReflectionObjectValue BlendableColor()
     {
         return ObjectValue(Object("BSBlendable::ColorValue",
             ("Op", new BethesdaReflectionStringValue("Set")),
@@ -242,7 +242,7 @@ public sealed class StarfieldWeatherSettingsProjectorTests
             ("BlendAmount", new BethesdaReflectionFloatValue(0.5))));
     }
 
-    private static BethesdaReflectionValue BlendableFloat(double value, double blendAmount)
+    private static BethesdaReflectionObjectValue BlendableFloat(double value, double blendAmount)
     {
         return ObjectValue(Object("BSBlendable::FloatValue",
             ("Op", new BethesdaReflectionStringValue("Set")),
@@ -301,9 +301,15 @@ public sealed class StarfieldWeatherSettingsProjectorTests
         return Concat(Encoding.ASCII.GetBytes(signature), U32((uint)body.Length), body);
     }
 
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {

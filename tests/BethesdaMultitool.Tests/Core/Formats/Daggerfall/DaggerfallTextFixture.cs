@@ -1,6 +1,4 @@
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Daggerfall;
@@ -51,7 +49,8 @@ internal static class DaggerfallTextFixture
     }
 
     /// <summary>Builds a book image from raw page bytes (include the 0xF6 terminator yourself).</summary>
-    public static byte[] Book(string title, string author, string flag, uint price, ushort unknown1, params byte[][] pages)
+    public static byte[] Book(string title, string author, string flag, uint price, ushort unknown1,
+        params byte[][] pages)
     {
         var header = new byte[236];
         Encoding.Latin1.GetBytes(title).CopyTo(header, 0);

@@ -136,7 +136,7 @@ internal static class NpcHeadBuilder
             NpcBaseHeadGeometryPolicy.PrepareForMaterial(
                 model.Submeshes.Take(headMeshEndIndex),
                 headPlan.HeadPreSkinMorphDeltas != null,
-                deferTangentRebuildToMaterialResolver: classicSkin2000);
+                classicSkin2000);
         }
 
         if (classicSkin2000)
@@ -305,10 +305,9 @@ internal static class NpcHeadBuilder
     internal static bool IsMouthPart(string path)
     {
         var name = Path.GetFileNameWithoutExtension(path);
-        return name != null &&
-               (name.Contains("mouth", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("teeth", StringComparison.OrdinalIgnoreCase) ||
-                name.Contains("tongue", StringComparison.OrdinalIgnoreCase));
+        return name.Contains("mouth", StringComparison.OrdinalIgnoreCase) ||
+               name.Contains("teeth", StringComparison.OrdinalIgnoreCase) ||
+               name.Contains("tongue", StringComparison.OrdinalIgnoreCase);
     }
 
     internal static float EstimateFaceGenMorphMagnitude(float[] coefficients)

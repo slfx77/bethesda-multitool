@@ -15,11 +15,11 @@ internal static class NifVertexColorPolicy
         bool hasTreeAnimationAncestry = false)
     {
         return hasTreeAnimationAncestry ||
-               shaderMetadata is
+               (shaderMetadata is
                {
                    PropertyType: "BSLightingShaderProperty",
                    ShaderFlags2: { } flags2
-               } && (flags2 & TreeAnimationShaderFlag2) != 0;
+               } && (flags2 & TreeAnimationShaderFlag2) != 0);
     }
 
     /// <summary>

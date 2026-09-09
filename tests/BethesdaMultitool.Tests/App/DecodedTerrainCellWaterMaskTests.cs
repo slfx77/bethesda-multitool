@@ -59,7 +59,7 @@ public sealed class DecodedTerrainCellWaterMaskTests
         var mask = DecodedTerrainCell.Decode(cell).GetHiResWaterMask(80f - Softness + 0.5f, 132);
 
         Assert.NotNull(mask);
-        Assert.Contains(mask!, v => v > 0);
+        Assert.Contains(mask, v => v > 0);
     }
 
     /// <summary>
@@ -82,7 +82,7 @@ public sealed class DecodedTerrainCellWaterMaskTests
         var mask = DecodedTerrainCell.Decode(RampCell(heights)).GetHiResWaterMask(160f, 33);
 
         Assert.NotNull(mask);
-        Assert.Equal(0, mask![0]); // north row samples grid y=32 (h=320) → dry
+        Assert.Equal(0, mask[0]); // north row samples grid y=32 (h=320) → dry
         Assert.Equal(180, mask[32 * 33]); // south row samples grid y=0 (h=0) → full water
         Assert.Contains(mask, v => v is > 0 and < 180); // and a real shoreline gradient between them
     }
@@ -103,7 +103,7 @@ public sealed class DecodedTerrainCellWaterMaskTests
         var mask = DecodedTerrainCell.Decode(cell).GetLowResWaterMask(100f);
 
         Assert.NotNull(mask);
-        Assert.All(mask!, v => Assert.Equal((byte)180, v));
+        Assert.All(mask, v => Assert.Equal((byte)180, v));
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public sealed class DecodedTerrainCellWaterMaskTests
             dry, null, submerged, null, null, 100f);
 
         Assert.NotNull(mask);
-        Assert.Contains(mask!, v => v > 0);
+        Assert.Contains(mask, v => v > 0);
     }
 
     /// <summary>

@@ -37,8 +37,10 @@ internal sealed class GpuShaderBytecodePack12
 
     internal int Count => _entries.Count;
 
-    internal bool TryGetBytecode(string key, out byte[] bytecode) =>
-        _entries.TryGetValue(key, out bytecode!);
+    internal bool TryGetBytecode(string key, out byte[] bytecode)
+    {
+        return _entries.TryGetValue(key, out bytecode!);
+    }
 
     /// <summary>
     ///     Computes the identity of the bytecode that belongs beside this assembly. It covers every
@@ -47,22 +49,25 @@ internal sealed class GpuShaderBytecodePack12
     /// </summary>
     internal static byte[] ComputeCurrentFingerprint()
     {
-        var sources = GpuShaderCompiler12.ResourceIndex.Keys.Select(
-            name => KeyValuePair.Create(name, GpuShaderCompiler12.ReadSource(name)));
+        var sources = GpuShaderCompiler12.ResourceIndex.Keys.Select(name =>
+            KeyValuePair.Create(name, GpuShaderCompiler12.ReadSource(name)));
         var permutationKeys = CurrentPermutationKeys();
         return ComputeFingerprint(sources, permutationKeys, GpuShaderCompiler12.BytecodeCompilerContract);
     }
 
-    internal static string[] CurrentPermutationKeys() =>
-    [
-        .. ShaderPermutations.All
-            .Select(permutation => GpuShaderCompiler12.BuildCacheKey(
-                permutation.File,
-                permutation.EntryPoint,
-                permutation.Profile,
-                permutation.Macros))
-            .Order(StringComparer.Ordinal)
-    ];
+    internal static string[] CurrentPermutationKeys()
+    {
+        return
+        [
+            .. ShaderPermutations.All
+                .Select(permutation => GpuShaderCompiler12.BuildCacheKey(
+                    permutation.File,
+                    permutation.EntryPoint,
+                    permutation.Profile,
+                    permutation.Macros))
+                .Order(StringComparer.Ordinal)
+        ];
+    }
 
     /// <summary>Pure fingerprint overload used by compiler-free structural tests.</summary>
     internal static byte[] ComputeFingerprint(
@@ -115,7 +120,7 @@ internal sealed class GpuShaderBytecodePack12
                 $"Shader pack has {entries.Count} entries; limit is {MaxEntryCount}.");
         }
 
-        using var writer = new BinaryWriter(output, Utf8, leaveOpen: true);
+        using var writer = new BinaryWriter(output, Utf8, true);
         writer.Write(Magic);
         writer.Write(FormatVersion);
         writer.Write(fingerprint);
@@ -180,7 +185,7 @@ internal sealed class GpuShaderBytecodePack12
                     64 * 1024,
                     FileOptions.SequentialScan);
                 Write(stream, fingerprint, entries);
-                stream.Flush(flushToDisk: true);
+                stream.Flush(true);
                 return Task.CompletedTask;
             },
             cancellationToken: cancellationToken);
@@ -251,7 +256,7 @@ internal sealed class GpuShaderBytecodePack12
                 $"Shader pack exceeds the {MaxPackBytes} byte safety limit.");
         }
 
-        using var reader = new BinaryReader(input, Utf8, leaveOpen: true);
+        using var reader = new BinaryReader(input, Utf8, true);
         var magic = ReadExact(reader, Magic.Length);
         if (!magic.AsSpan().SequenceEqual(Magic))
         {

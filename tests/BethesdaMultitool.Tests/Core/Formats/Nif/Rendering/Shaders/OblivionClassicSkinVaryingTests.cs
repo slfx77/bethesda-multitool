@@ -90,6 +90,7 @@ public sealed class OblivionClassicSkinVaryingTests
             Assert.Contains("centroid float3 vClassicSkinLight : TEXCOORD18;", source, StringComparison.Ordinal);
             Assert.Contains("centroid float3 vClassicSkinEye : TEXCOORD19;", source, StringComparison.Ordinal);
         }
+
         SourceContract.AssertOrder(vertex,
             "o.vClassicSkinLight = ProjectClassicSkinDirection(",
             "float3 classicEye = NormalizeClassicSkinDirection(uCameraPosFogPower.xyz - worldPos.xyz);",
@@ -97,7 +98,8 @@ public sealed class OblivionClassicSkinVaryingTests
         var recovered = SourceContract.Extract(pixel,
             "        NdotL = max(dot(tangentNormal, input.vClassicSkinLight), 0.0);",
             "    float oneMinusNdotV = 1.0 - NdotV;");
-        Assert.Contains("float3 interpolatedEye = normalize(input.vClassicSkinEye);", recovered, StringComparison.Ordinal);
+        Assert.Contains("float3 interpolatedEye = normalize(input.vClassicSkinEye);", recovered,
+            StringComparison.Ordinal);
         Assert.Contains("NdotV = max(dot(tangentNormal, interpolatedEye), 0.0);", recovered, StringComparison.Ordinal);
         Assert.DoesNotContain("normalize(input.vClassicSkinLight)", pixel, StringComparison.Ordinal);
         Assert.DoesNotContain("input.vWorldPos", recovered, StringComparison.Ordinal);
@@ -112,16 +114,20 @@ public sealed class OblivionClassicSkinVaryingTests
             "D3D12", "ReferencePipelineFactory12.cs");
         var renderer = SourceContract.ReadSource("src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
             "D3D12", "Viewer", "BethesdaViewerStaticRenderer12.cs");
-        Assert.Contains("DirectClassicSkinRequested = game == BethesdaGame.Oblivion;", factory, StringComparison.Ordinal);
-        Assert.Contains("game == Core.Games.BethesdaGame.Oblivion && draw.NativeSemantics.IsFaceGen", renderer, StringComparison.Ordinal);
-        Assert.Equal(1, SourceContract.CountOccurrences(factory, "new ShaderMacro(\"REFERENCE_OBLIVION_CLASSIC_SKIN\", \"1\")"));
-        var pair = SourceContract.Extract(factory, "private void TryCreateDirectClassicSkinPipelines()", "private void TryCreateModernStandardOpaquePipelines()");
+        Assert.Contains("DirectClassicSkinRequested = game == BethesdaGame.Oblivion;", factory,
+            StringComparison.Ordinal);
+        Assert.Contains("game == Core.Games.BethesdaGame.Oblivion && draw.NativeSemantics.IsFaceGen", renderer,
+            StringComparison.Ordinal);
+        Assert.Equal(1,
+            SourceContract.CountOccurrences(factory, "new ShaderMacro(\"REFERENCE_OBLIVION_CLASSIC_SKIN\", \"1\")"));
+        var pair = SourceContract.Extract(factory, "private void TryCreateDirectClassicSkinPipelines()",
+            "private void TryCreateModernStandardOpaquePipelines()");
         SourceContract.AssertOrder(pair,
             "\"reference.vert.hlsl\", \"main\", \"vs_5_1\",",
             "new ShaderMacro(\"REFERENCE_OBLIVION_CLASSIC_SKIN\", \"1\")",
             "\"reference_classic_skin.frag.hlsl\", \"main\", \"ps_5_1\"");
-        Assert.Single(ShaderPermutations.All, permutation => permutation.Macros.Any(
-            macro => macro.Name == "REFERENCE_OBLIVION_CLASSIC_SKIN"));
+        Assert.Single(ShaderPermutations.All,
+            permutation => permutation.Macros.Any(macro => macro.Name == "REFERENCE_OBLIVION_CLASSIC_SKIN"));
         var key = GpuShaderCompiler12.BuildCacheKey("reference.vert.hlsl", "main", "vs_5_1",
             [new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1")]);
         Assert.Contains(key, GpuShaderBytecodePack12.CurrentPermutationKeys());
@@ -133,8 +139,8 @@ public sealed class OblivionClassicSkinVaryingTests
     {
         ShaderCompileTestGuard.SkipUnlessEnabled();
         Assert.NotEmpty(GpuShaderCompiler12.Compile("reference.vert.hlsl", "main", "vs_5_1",
-            [new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1")]));
-        Assert.NotEmpty(GpuShaderCompiler12.Compile("reference_classic_skin.frag.hlsl", "main", "ps_5_1", []));
-        Assert.NotEmpty(GpuShaderCompiler12.Compile("reference.vert.hlsl", "main", "vs_5_1", []));
+            new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1")));
+        Assert.NotEmpty(GpuShaderCompiler12.Compile("reference_classic_skin.frag.hlsl", "main", "ps_5_1"));
+        Assert.NotEmpty(GpuShaderCompiler12.Compile("reference.vert.hlsl", "main", "vs_5_1"));
     }
 }

@@ -30,8 +30,8 @@ public sealed class OblivionNpcFacePartMaterialResolverTests
         Assert.True(bumpReady);
         Assert.Equal(EffectiveEarDiffusePath, submesh.DiffuseTexturePath);
         Assert.Equal(normalMapPath, submesh.NormalMapTexturePath);
-        Assert.Equal<float>([1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f], submesh.Tangents!);
-        Assert.Equal<float>([0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f], submesh.Bitangents!);
+        Assert.Equal([1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f], submesh.Tangents!);
+        Assert.Equal([0f, 1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f], submesh.Bitangents!);
 
         var decoded = ReferenceSubmeshDecoder12.Decode(
             submesh,

@@ -1,10 +1,7 @@
 // Cases ported from JimmyPCTool / AweMultitool (MIT) —
 //   tests/AweMultitool.Tests/Core/Concurrency/LatestOnlyJobTests.cs.
 
-using System;
 using System.Collections.Concurrent;
-using System.Threading;
-using System.Threading.Tasks;
 using BethesdaMultitool.Core.Concurrency;
 using Xunit;
 
@@ -30,6 +27,7 @@ public sealed class LatestOnlyJobTests
         var firstStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var applied = new ConcurrentQueue<int>();
+        var discarded = new ConcurrentQueue<int>();
 
         var first = job.RunAsync(
             _ =>
@@ -38,36 +36,48 @@ public sealed class LatestOnlyJobTests
                 releaseFirst.Wait(CancellationToken.None);
                 return 1;
             },
-            applied.Enqueue);
-        await firstStarted.Task.WaitAsync(WorkerStartTimeout, testToken);
+            applied.Enqueue,
+            discarded.Enqueue);
+        var second = Task.CompletedTask;
+        try
+        {
+            await firstStarted.Task.WaitAsync(WorkerStartTimeout, testToken);
 
-        var second = job.RunAsync(
-            _ =>
-            {
-                secondStarted.SetResult();
-                releaseSecond.Wait(CancellationToken.None);
-                return 2;
-            },
-            applied.Enqueue);
-        await secondStarted.Task.WaitAsync(WorkerStartTimeout, testToken);
+            second = job.RunAsync(
+                _ =>
+                {
+                    secondStarted.SetResult();
+                    releaseSecond.Wait(CancellationToken.None);
+                    return 2;
+                },
+                applied.Enqueue,
+                discarded.Enqueue);
+            await secondStarted.Task.WaitAsync(WorkerStartTimeout, testToken);
 
-        var third = job.RunAsync(_ => 3, applied.Enqueue);
-        await third;
-        releaseFirst.Set();
-        releaseSecond.Set();
-        await Task.WhenAll(first, second);
+            await job.RunAsync(_ => 3, applied.Enqueue, discarded.Enqueue);
+        }
+        finally
+        {
+            releaseFirst.Set();
+            releaseSecond.Set();
+            await Task.WhenAll(first, second);
+        }
 
         Assert.Equal([3], applied);
+        Assert.Equal([1, 2], discarded.Order());
     }
 
-    [Fact]
-    public async Task CancelledWorkCannotApplyAfterIgnoringItsToken()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancelledWorkCannotApplyAfterIgnoringItsToken(bool disposeJob)
     {
         var testToken = TestContext.Current.CancellationToken;
         using var job = new LatestOnlyJob();
         using var release = new ManualResetEventSlim();
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var applied = false;
+        var discardCount = 0;
 
         var run = job.RunAsync(
             _ =>
@@ -76,14 +86,29 @@ public sealed class LatestOnlyJobTests
                 release.Wait(CancellationToken.None);
                 return true;
             },
-            value => applied = value);
-        await started.Task.WaitAsync(WorkerStartTimeout, testToken);
+            value => applied = value,
+            _ => Interlocked.Increment(ref discardCount));
+        try
+        {
+            await started.Task.WaitAsync(WorkerStartTimeout, testToken);
 
-        job.Cancel();
-        release.Set();
-        await run;
+            if (disposeJob)
+            {
+                job.Dispose();
+            }
+            else
+            {
+                job.Cancel();
+            }
+        }
+        finally
+        {
+            release.Set();
+            await run;
+        }
 
         Assert.False(applied);
+        Assert.Equal(1, discardCount);
     }
 
     [Fact]
@@ -105,13 +130,55 @@ public sealed class LatestOnlyJobTests
                 throw new InvalidOperationException("superseded work failed");
             },
             applied.Enqueue);
-        await started.Task.WaitAsync(WorkerStartTimeout, testToken);
-
-        await job.RunAsync(_ => 7, applied.Enqueue);
-        release.Set();
-        await first;
+        try
+        {
+            await started.Task.WaitAsync(WorkerStartTimeout, testToken);
+            await job.RunAsync(_ => 7, applied.Enqueue);
+        }
+        finally
+        {
+            release.Set();
+            await first;
+        }
 
         Assert.Equal([7], applied);
+    }
+
+    [Fact]
+    public async Task DisposalCancelsSynchronouslyButKeepsTheRunningWorkersTokenAlive()
+    {
+        var testToken = TestContext.Current.CancellationToken;
+        using var job = new LatestOnlyJob();
+        using var release = new ManualResetEventSlim();
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancellationObserved = false;
+        var waitHandleWasSignaled = false;
+
+        var run = job.RunAsync(
+            token =>
+            {
+                using var registration = token.Register(() => cancellationObserved = true);
+                started.SetResult();
+                release.Wait(CancellationToken.None);
+                // Accessing WaitHandle fails if the owner disposed the source while this work
+                // was still using it. Cancellation alone leaves it alive and signaled.
+                waitHandleWasSignaled = token.WaitHandle.WaitOne(0);
+                return true;
+            },
+            _ => Assert.Fail("Disposed work must not be applied."));
+        try
+        {
+            await started.Task.WaitAsync(WorkerStartTimeout, testToken);
+            job.Dispose();
+            Assert.True(cancellationObserved);
+        }
+        finally
+        {
+            release.Set();
+            await run;
+        }
+
+        Assert.True(waitHandleWasSignaled);
     }
 
     [Fact]

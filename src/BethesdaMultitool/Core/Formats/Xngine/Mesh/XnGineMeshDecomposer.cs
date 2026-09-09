@@ -14,7 +14,8 @@ internal readonly record struct XnGineVertex(Vector3 Position, Vector3 Normal, V
 /// <summary>Triangles sharing one texture.</summary>
 internal sealed class XnGineSubMesh
 {
-    public XnGineSubMesh(int textureArchive, int textureRecord, IReadOnlyList<XnGineVertex> vertices, IReadOnlyList<int> indices)
+    public XnGineSubMesh(int textureArchive, int textureRecord, IReadOnlyList<XnGineVertex> vertices,
+        IReadOnlyList<int> indices)
     {
         TextureArchive = textureArchive;
         TextureRecord = textureRecord;
@@ -221,7 +222,8 @@ internal static class XnGineMeshDecomposer
 
         // The reference rejects an exactly singular matrix; the range spells that without a float
         // equality test (float.Epsilon is the smallest denormal, so this admits nothing else).
-        var determinant = x0 * (float)y1 + y0 * (float)x2 + x1 * (float)y2 - y1 * (float)x2 - y0 * (float)x1 - x0 * (float)y2;
+        var determinant = x0 * (float)y1 + y0 * (float)x2 + x1 * (float)y2 - y1 * (float)x2 - y0 * (float)x1 -
+                          x0 * (float)y2;
         if (determinant is > -float.Epsilon and < float.Epsilon)
         {
             return null;
@@ -287,8 +289,8 @@ internal static class XnGineMeshDecomposer
 
     private sealed class SubMeshBuilder
     {
-        private readonly List<XnGineVertex> _vertices = [];
         private readonly List<int> _indices = [];
+        private readonly List<XnGineVertex> _vertices = [];
 
         public SubMeshBuilder(int archive, int record)
         {

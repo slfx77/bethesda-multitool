@@ -1,8 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Text;
-using BethesdaMultitool.Core.Formats.Archives;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Xngine.Bsa;
 using Xunit;
@@ -19,14 +15,6 @@ public sealed class XnGineBsaArchiveTests : IDisposable
 {
     private readonly List<string> _tempFiles = [];
 
-    private string WriteTemp(byte[] bytes)
-    {
-        var path = Path.Combine(Path.GetTempPath(), $"xngine-bsa-{Guid.NewGuid():N}.bsa");
-        File.WriteAllBytes(path, bytes);
-        _tempFiles.Add(path);
-        return path;
-    }
-
     public void Dispose()
     {
         foreach (var path in _tempFiles)
@@ -40,6 +28,14 @@ public sealed class XnGineBsaArchiveTests : IDisposable
                 // Temp cleanup only.
             }
         }
+    }
+
+    private string WriteTemp(byte[] bytes)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"xngine-bsa-{Guid.NewGuid():N}.bsa");
+        File.WriteAllBytes(path, bytes);
+        _tempFiles.Add(path);
+        return path;
     }
 
     private static byte[] BuildNamed(params (string Name, byte[] Data, bool Compressed)[] files)
@@ -101,8 +97,10 @@ public sealed class XnGineBsaArchiveTests : IDisposable
 
         Assert.False(archive.IsNumbered);
         Assert.Equal(2, archive.Entries.Count);
-        Assert.Equal(("FIRST.3D", 4L, 3), (archive.Entries[0].Name, archive.Entries[0].Offset, archive.Entries[0].Size));
-        Assert.Equal(("SECOND.3D", 7L, 2), (archive.Entries[1].Name, archive.Entries[1].Offset, archive.Entries[1].Size));
+        Assert.Equal(("FIRST.3D", 4L, 3),
+            (archive.Entries[0].Name, archive.Entries[0].Offset, archive.Entries[0].Size));
+        Assert.Equal(("SECOND.3D", 7L, 2),
+            (archive.Entries[1].Name, archive.Entries[1].Offset, archive.Entries[1].Size));
         Assert.All(archive.Entries, e => Assert.False(e.Compressed));
         Assert.All(archive.Entries, e => Assert.Null(e.Id));
     }

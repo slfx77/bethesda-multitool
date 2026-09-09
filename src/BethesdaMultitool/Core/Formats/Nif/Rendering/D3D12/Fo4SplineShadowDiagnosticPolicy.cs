@@ -10,11 +10,18 @@ internal static class Fo4SplineShadowDiagnosticPolicy
 {
     internal const string EnvironmentVariable = "FALLOUT_VIEWER_DIAGNOSTIC_OMIT_FO4_SPLINE_SHADOWS";
 
-    internal static bool IsEnabled(string? value) => string.Equals(value, "1", StringComparison.Ordinal);
+    internal static bool IsEnabled(string? value)
+    {
+        return string.Equals(value, "1", StringComparison.Ordinal);
+    }
 
     internal static bool IsCaster(BethesdaGame game, bool isBendableSplineWind)
-        => game == BethesdaGame.Fallout4 && isBendableSplineWind;
+    {
+        return game == BethesdaGame.Fallout4 && isBendableSplineWind;
+    }
 
     internal static bool ShouldOmit(bool enabled, bool isFo4BendableSpline)
-        => enabled && isFo4BendableSpline;
+    {
+        return enabled && isFo4BendableSpline;
+    }
 }

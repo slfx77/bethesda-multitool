@@ -239,6 +239,10 @@ float ClassicSpecularLodFade(float4x4 world)
 #define REFERENCE_INSTANCED_OUTPUT_MODERN_STATE 1
 #endif
 
+#if !defined(REFERENCE_SPECIALIZED_INSTANCED_VERTEX) && !defined(SHADOW_CARD_LIGHT_FACING)
+#include "fnv_active_adt_fog.hlsli"
+#endif
+
 struct VSOutput
 {
     float4 Position     : SV_Position;
@@ -276,6 +280,9 @@ struct VSOutput
 #endif
 #ifndef REFERENCE_SPECIALIZED_INSTANCED_VERTEX
     float3 vFnvActiveAdtBaseLight : TEXCOORD16;
+#if !defined(REFERENCE_SPECIALIZED_INSTANCED_VERTEX) && !defined(SHADOW_CARD_LIGHT_FACING)
+    float vFnvActiveAdtFogAmount : TEXCOORD20;
+#endif
     // FormID-heatmap debug overlay: rgb = ramp tint, w = 1 when active (0 = ordinary shading).
     nointerpolation float4 vHeatmap : TEXCOORD17;
 #endif
@@ -472,6 +479,13 @@ VSOutput main(VSInput input, uint instanceId : SV_InstanceID)
     }
 
     o.Position = mul(uViewProj, worldPos);
+#if !defined(REFERENCE_SPECIALIZED_INSTANCED_VERTEX) && !defined(SHADOW_CARD_LIGHT_FACING)
+    o.vFnvActiveAdtFogAmount = 0.0;
+    if (IsFnvActiveAdtBaseMaterial(uTextureState.z) && uFogColorFogEnabled.w >= 0.5)
+    {
+        o.vFnvActiveAdtFogAmount = EvaluateFnvActiveAdtVertexFog(o.Position);
+    }
+#endif
     o.vWorldPos = worldPos.xyz; // camera-relative world pos (matches the shader camera = 0 for fog/spec)
     o.vTexCoord = input.aTexCoord + uUvScroll;
     o.vVertexColor = input.aVertexColor;

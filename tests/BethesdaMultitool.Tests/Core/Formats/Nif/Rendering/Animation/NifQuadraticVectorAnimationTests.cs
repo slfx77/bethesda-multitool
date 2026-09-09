@@ -74,7 +74,8 @@ public sealed class NifQuadraticVectorAnimationTests
             new(0f, Vector3.Zero, new Vector3(123f), new Vector3(outgoing), true),
             new(1f, new Vector3(10f), new Vector3(incoming), new Vector3(456f), true)
         ];
-        Assert.Equal(new Vector3(expected), NifTrackSampler.SampleTranslation(keys, .25f, NifKeyInterpolation.Quadratic));
+        Assert.Equal(new Vector3(expected),
+            NifTrackSampler.SampleTranslation(keys, .25f, NifKeyInterpolation.Quadratic));
     }
 
     [Theory]
@@ -83,7 +84,8 @@ public sealed class NifQuadraticVectorAnimationTests
     public void ValueOnlyUnsupportedMetadataKeepsItsExistingLabeledApproximation(int rawInterpolation)
     {
         NifVec3Key[] keys = [new(0f, Vector3.Zero), new(1f, new Vector3(10f))];
-        Assert.Equal(new Vector3(2.5f), NifTrackSampler.SampleTranslation(keys, .25f, (NifKeyInterpolation)rawInterpolation));
+        Assert.Equal(new Vector3(2.5f),
+            NifTrackSampler.SampleTranslation(keys, .25f, (NifKeyInterpolation)rawInterpolation));
     }
 
     [Fact]
@@ -96,8 +98,10 @@ public sealed class NifQuadraticVectorAnimationTests
         var position = 0;
         Assert.True(NifKeyGroupReader.TryReadVector3Keys(data, ref position, data.Length, false, out _, out var keys));
         var source = new NifNameTargetedAnimationClip("Curve", 2f, 2f, 6f, NifCycleType.Clamp, null,
-            [new NifNodeTrack("Rock", 1f, 0f, NifKeyInterpolation.Linear, [],
-                NifKeyInterpolation.Quadratic, keys, NifKeyInterpolation.Linear, [])], [], 0);
+        [
+            new NifNodeTrack("Rock", 1f, 0f, NifKeyInterpolation.Linear, [],
+                NifKeyInterpolation.Quadratic, keys, NifKeyInterpolation.Linear, [])
+        ], [], 0);
 
         var clip = Assert.IsType<BethesdaViewerAnimationClip>(
             BethesdaViewerNameTargetedAnimationAdapter.TryCreateClip(scene, source, false, out var report));
@@ -118,37 +122,53 @@ public sealed class NifQuadraticVectorAnimationTests
     public void NativeValidatorRejectsAClaimedNonFiniteTangent()
     {
         var clip = Clip([
-            new(2f, Vector3.Zero, new Vector3(float.NaN), Vector3.Zero, true),
-            new(6f, Vector3.One, Vector3.Zero, Vector3.Zero, true)]);
+            new BethesdaViewerVector3Key(2f, Vector3.Zero, new Vector3(float.NaN), Vector3.Zero, true),
+            new BethesdaViewerVector3Key(6f, Vector3.One, Vector3.Zero, Vector3.Zero, true)
+        ]);
         Assert.False(BethesdaViewerAnimationValidator.TryValidate(clip, 1, 0, out var error));
         Assert.Contains("malformed", error, StringComparison.Ordinal);
     }
 
-    private static BethesdaViewerAnimationClip Clip(BethesdaViewerVector3Key[] keys) => new(
-        "Curve", 2f, 6f, false,
-        [new BethesdaViewerNodeAnimationTrack(0, 1f, 0f, BethesdaViewerKeyInterpolation.Linear, [],
-            BethesdaViewerKeyInterpolation.Quadratic, keys, BethesdaViewerKeyInterpolation.Linear, [])], [], []);
+    private static BethesdaViewerAnimationClip Clip(BethesdaViewerVector3Key[] keys)
+    {
+        return new BethesdaViewerAnimationClip(
+            "Curve", 2f, 6f, false,
+            [
+                new BethesdaViewerNodeAnimationTrack(0, 1f, 0f, BethesdaViewerKeyInterpolation.Linear, [],
+                    BethesdaViewerKeyInterpolation.Quadratic, keys, BethesdaViewerKeyInterpolation.Linear, [])
+            ], [], []);
+    }
 
     private static byte[] CreateKeyGroup(bool bigEndian)
     {
         var data = new byte[92];
         WriteUInt(data, 2, bigEndian);
         WriteUInt(data.AsSpan(4), 2, bigEndian);
-        ReadOnlySpan<float> values = [2f, 0f, 0f, 0f, 77f, 77f, 77f, 20f, 40f, 60f,
-            6f, 10f, 20f, 30f, 0f, 0f, 0f, 88f, 88f, 88f];
+        ReadOnlySpan<float> values =
+        [
+            2f, 0f, 0f, 0f, 77f, 77f, 77f, 20f, 40f, 60f,
+            6f, 10f, 20f, 30f, 0f, 0f, 0f, 88f, 88f, 88f
+        ];
         for (var index = 0; index < values.Length; index++)
         {
             WriteFloat(data.AsSpan(8 + index * 4), values[index], bigEndian);
         }
+
         WriteUInt(data.AsSpan(88), 0xDEADBEEF, bigEndian);
         return data;
     }
 
-    private static uint ReadUInt(ReadOnlySpan<byte> data, bool bigEndian) => bigEndian
-        ? BinaryPrimitives.ReadUInt32BigEndian(data) : BinaryPrimitives.ReadUInt32LittleEndian(data);
+    private static uint ReadUInt(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        return bigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data)
+            : BinaryPrimitives.ReadUInt32LittleEndian(data);
+    }
 
-    private static void WriteFloat(Span<byte> data, float value, bool bigEndian) =>
+    private static void WriteFloat(Span<byte> data, float value, bool bigEndian)
+    {
         WriteUInt(data, BitConverter.SingleToUInt32Bits(value), bigEndian);
+    }
 
     private static void WriteUInt(Span<byte> data, uint value, bool bigEndian)
     {

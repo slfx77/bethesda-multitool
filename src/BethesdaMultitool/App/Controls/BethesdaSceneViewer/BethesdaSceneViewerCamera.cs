@@ -29,13 +29,22 @@ internal sealed class BethesdaSceneViewerCamera
     private const float FramingMargin = 1.2f;
     private const float MinimumElevationDegrees = -89f;
     private const float MaximumElevationDegrees = 89f;
+    private bool _automaticProjectedFraming;
 
     private float _humanScale = 1f;
-    private float _sceneRadius = 100f;
-    private BethesdaViewerBounds? _projectedFramingBounds;
-    private bool _automaticProjectedFraming;
     private float _lastProjectedFramingAspect = float.NaN;
+    private BethesdaViewerBounds? _projectedFramingBounds;
     private BethesdaViewerScenePurpose _scenePurpose;
+    private float _sceneRadius = 100f;
+
+    internal BethesdaSceneViewerCamera()
+    {
+        var initialOrbit = BethesdaViewerPresentationPolicy.ResolveInitialOrbit(
+            BethesdaViewerScenePurpose.Unspecified,
+            dedicatedRawSky: false);
+        AzimuthDegrees = initialOrbit.AzimuthDegrees;
+        ElevationDegrees = initialOrbit.ElevationDegrees;
+    }
 
     internal Vector3 Target { get; private set; }
 
@@ -47,14 +56,9 @@ internal sealed class BethesdaSceneViewerCamera
 
     internal float FieldOfViewRadians { get; set; } = MathF.PI / 3f;
 
-    internal BethesdaSceneViewerCamera()
-    {
-        var initialOrbit = BethesdaViewerPresentationPolicy.ResolveInitialOrbit(
-            BethesdaViewerScenePurpose.Unspecified,
-            dedicatedRawSky: false);
-        AzimuthDegrees = initialOrbit.AzimuthDegrees;
-        ElevationDegrees = initialOrbit.ElevationDegrees;
-    }
+    private float MinimumDistance => MathF.Max(_sceneRadius * 0.05f, 0.01f * _humanScale);
+
+    private float MaximumDistance => MathF.Max(_sceneRadius * 100f, MinimumDistance * 2f);
 
     /// <summary>Frames finite scene bounds and resets the scene-appropriate presentation view.</summary>
     internal void Frame(
@@ -194,10 +198,6 @@ internal sealed class BethesdaSceneViewerCamera
             nearPlane,
             farPlane);
     }
-
-    private float MinimumDistance => MathF.Max(_sceneRadius * 0.05f, 0.01f * _humanScale);
-
-    private float MaximumDistance => MathF.Max(_sceneRadius * 100f, MinimumDistance * 2f);
 
     private (Vector3 EyeDirection, Vector3 Forward, Vector3 Right, Vector3 Up) ResolveBasis()
     {

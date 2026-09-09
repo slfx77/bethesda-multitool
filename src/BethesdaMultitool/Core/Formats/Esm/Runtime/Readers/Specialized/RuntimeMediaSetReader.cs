@@ -1,7 +1,6 @@
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
-using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Generic;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 
@@ -130,7 +129,7 @@ internal sealed class RuntimeMediaSetReader(RuntimeMemoryContext context)
 
         for (var i = 0; i < TimingSignatures.Length; i++)
         {
-            if (TryReadFloat(buffer, FirstTimingOffset + (i * 4)) is { } timing)
+            if (TryReadFloat(buffer, FirstTimingOffset + i * 4) is { } timing)
             {
                 fields[TimingSignatures[i]] = timing;
             }

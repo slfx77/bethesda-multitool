@@ -41,8 +41,8 @@ internal static class AnalysisExtractionHelper
         // Run full semantic parse with memory-mapped file access
         // This enables runtime C++ struct reading for types with poor ESM coverage
         RecordCollection semanticResult;
-        RuntimeStringOwnershipAnalysis? stringOwnership = null;
-        StringPoolSummary? stringPool = null;
+        RuntimeStringOwnershipAnalysis? stringOwnership;
+        StringPoolSummary? stringPool;
         using (var loaded = SemanticFileLoader.LoadFromAnalysisResult(
                    input,
                    result,

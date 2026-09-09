@@ -33,7 +33,7 @@ internal static class OblivionNpcBodyTextureComposer
         return part switch
         {
             NpcBodyTexturePart.UpperBody => ModelDirectory +
-                                          (isFemale ? "upperbodyhumanfemale.egt" : "upperbodyhumanmale.egt"),
+                                            (isFemale ? "upperbodyhumanfemale.egt" : "upperbodyhumanmale.egt"),
             NpcBodyTexturePart.LowerBody or NpcBodyTexturePart.Hands or
                 NpcBodyTexturePart.Feet or NpcBodyTexturePart.Tail => ModelDirectory + "body.egt",
             _ => throw new ArgumentOutOfRangeException(nameof(part), part, "Unsupported body atlas.")

@@ -126,7 +126,8 @@ internal static class NpcExportBodyAssembler
                             var submesh = NpcExportSceneBuilder.CloneSubmesh(part.Submesh);
                             var composedTransform = part.ShapeWorldTransform * attachmentTransform;
                             NpcRenderHelpers.TransformSubmesh(submesh, composedTransform);
-                            ApplyEquipmentTextureOverride(submesh, npc, textureResolver, effectiveBodyTex, effectiveHandTex);
+                            ApplyEquipmentTextureOverride(submesh, npc, textureResolver, effectiveBodyTex,
+                                effectiveHandTex);
                             NpcExportSceneBuilder.AddRigidSubmesh(scene, item.MeshPath, submesh);
                         }
 
@@ -140,7 +141,8 @@ internal static class NpcExportBodyAssembler
                 item.MeshPath,
                 meshArchives,
                 nodeIndicesByBoneName,
-                submesh => ApplyEquipmentTextureOverride(submesh, npc, textureResolver, effectiveBodyTex, effectiveHandTex),
+                submesh => ApplyEquipmentTextureOverride(submesh, npc, textureResolver, effectiveBodyTex,
+                    effectiveHandTex),
                 excludeShape: name => IsExcludedPipBoyShape(name, pipBoyVisible));
         }
     }

@@ -164,7 +164,7 @@ internal static class SubrecordSizeCensusCommand
         using var mmf = MemoryMappedFile.CreateFromFile(
             file, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
         using var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
-        var context = new RecordParserContext(scan, null, accessor, fileSize, null);
+        var context = new RecordParserContext(scan, null, accessor, fileSize);
 
         var buffer = ArrayPool<byte>.Shared.Rent(1 << 20);
         try

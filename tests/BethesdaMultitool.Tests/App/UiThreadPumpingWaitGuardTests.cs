@@ -37,6 +37,36 @@ public sealed class UiThreadPumpingWaitGuardTests
         ["src", "BethesdaMultitool", "Core", "WorldData"]
     ];
 
+    // Managed blocking waits. `WaitOne`, `Thread.Join` and `.Result` were previously missing even
+    // though the class docs claimed WaitOne was covered — `\.Wait\(` cannot match `.WaitOne(`.
+    private static readonly Regex PumpingWait = new(
+        @"(?<!NonPumpingWait)\.\s*(Wait|WaitAll|WaitAny|WaitOne)\s*\(" +
+        @"|GetAwaiter\s*\(\s*\)\s*\.\s*GetResult\s*\(" +
+        @"|\.\s*Join\s*\(\s*\)" +
+        @"|\.\s*Result\b",
+        RegexOptions.Compiled);
+
+    // Files that legitimately contain a matching token. Each entry is a deliberate, reviewed
+    // exemption — NOT a place to append new offenders.
+    private static readonly Dictionary<string, string> WaitExemptions = new(StringComparer.Ordinal)
+    {
+        // The non-pumping primitives themselves: NonPumpingWait polls IsCompleted with a native
+        // non-alertable sleep; NonPumpingParallel joins through it.
+        ["NonPumpingWait.cs"] = "the non-pumping primitive",
+        ["NonPumpingParallel.cs"] = "the non-pumping primitive",
+        // Raw WaitForSingleObject P/Invoke — non-pumping by construction, which is the point.
+        ["D3D12FenceWaiter.cs"] = "native WaitForSingleObject, never a managed wait"
+    };
+
+    // The SYNCHRONOUS Parallel loops block the caller through ManualResetEventSlim.Wait, so on the
+    // UI thread they pump exactly like a raw Task.Wait — but they do not LOOK like a wait, which is
+    // precisely why the regex above passed while `Parallel.For` in the per-frame reference cull
+    // fail-fasted the process repeatedly (2026-08-07 → 08-23). `ForEachAsync` is excluded: it is
+    // awaited, never blocking. `NonPumpingParallel` is the safe replacement.
+    private static readonly Regex BlockingParallelLoop = new(
+        @"(?<!NonPumping)Parallel\s*\.\s*(For|ForEach|Invoke)\s*(<[^>]*>\s*)?\(",
+        RegexOptions.Compiled);
+
     /// <summary>Every <c>.cs</c> under the UI-thread-reachable roots, as (displayName, source) pairs.</summary>
     private static IEnumerable<(string File, string Source)> EnumerateUiThreadReachableSources()
     {
@@ -112,36 +142,6 @@ public sealed class UiThreadPumpingWaitGuardTests
             yield return (i + 1, lines[i], code.Trim());
         }
     }
-
-    // Managed blocking waits. `WaitOne`, `Thread.Join` and `.Result` were previously missing even
-    // though the class docs claimed WaitOne was covered — `\.Wait\(` cannot match `.WaitOne(`.
-    private static readonly Regex PumpingWait = new(
-        @"(?<!NonPumpingWait)\.\s*(Wait|WaitAll|WaitAny|WaitOne)\s*\(" +
-        @"|GetAwaiter\s*\(\s*\)\s*\.\s*GetResult\s*\(" +
-        @"|\.\s*Join\s*\(\s*\)" +
-        @"|\.\s*Result\b",
-        RegexOptions.Compiled);
-
-    // Files that legitimately contain a matching token. Each entry is a deliberate, reviewed
-    // exemption — NOT a place to append new offenders.
-    private static readonly Dictionary<string, string> WaitExemptions = new(StringComparer.Ordinal)
-    {
-        // The non-pumping primitives themselves: NonPumpingWait polls IsCompleted with a native
-        // non-alertable sleep; NonPumpingParallel joins through it.
-        ["NonPumpingWait.cs"] = "the non-pumping primitive",
-        ["NonPumpingParallel.cs"] = "the non-pumping primitive",
-        // Raw WaitForSingleObject P/Invoke — non-pumping by construction, which is the point.
-        ["D3D12FenceWaiter.cs"] = "native WaitForSingleObject, never a managed wait"
-    };
-
-    // The SYNCHRONOUS Parallel loops block the caller through ManualResetEventSlim.Wait, so on the
-    // UI thread they pump exactly like a raw Task.Wait — but they do not LOOK like a wait, which is
-    // precisely why the regex above passed while `Parallel.For` in the per-frame reference cull
-    // fail-fasted the process repeatedly (2026-08-07 → 08-23). `ForEachAsync` is excluded: it is
-    // awaited, never blocking. `NonPumpingParallel` is the safe replacement.
-    private static readonly Regex BlockingParallelLoop = new(
-        @"(?<!NonPumping)Parallel\s*\.\s*(For|ForEach|Invoke)\s*(<[^>]*>\s*)?\(",
-        RegexOptions.Compiled);
 
     [Fact]
     public void UiThreadReachablePaths_UseNonPumpingWait()

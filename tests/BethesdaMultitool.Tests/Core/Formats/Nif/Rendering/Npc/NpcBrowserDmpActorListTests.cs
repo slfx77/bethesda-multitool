@@ -24,14 +24,14 @@ public sealed class NpcBrowserDmpActorListTests
         };
         var creatures = new Dictionary<uint, CreatureScanEntry>
         {
-            [0x0002B19A] = CreateCreature("CreatureDaedroth", "Daedroth", creatureType: 1)
+            [0x0002B19A] = CreateCreature("CreatureDaedroth", "Daedroth", 1)
         };
 
         var actors = NpcBrowserService.BuildDmpActorList(
             runtimeNpcs,
             creatures,
             BethesdaGame.Oblivion,
-            namedOnly: false);
+            false);
 
         Assert.Equal(2, actors.Count);
         var npc = Assert.Single(actors, static actor => !actor.IsCreature);
@@ -48,14 +48,14 @@ public sealed class NpcBrowserDmpActorListTests
     {
         var creatures = new Dictionary<uint, CreatureScanEntry>
         {
-            [0x0002B19A] = CreateCreature("CreatureDaedroth", "Daedroth", creatureType: 1)
+            [0x0002B19A] = CreateCreature("CreatureDaedroth", "Daedroth", 1)
         };
 
         var actors = NpcBrowserService.BuildDmpActorList(
             new Dictionary<uint, NpcAppearance>(),
             creatures,
             BethesdaGame.Oblivion,
-            namedOnly: false);
+            false);
 
         var creature = Assert.Single(actors);
         Assert.True(creature.IsCreature);
@@ -76,15 +76,15 @@ public sealed class NpcBrowserDmpActorListTests
         };
         var creatures = new Dictionary<uint, CreatureScanEntry>
         {
-            [2] = CreateCreature("UnnamedCreature", fullName: null, creatureType: 0),
-            [3] = CreateCreature("NamedCreature", "Named Creature", creatureType: 0)
+            [2] = CreateCreature("UnnamedCreature", null, 0),
+            [3] = CreateCreature("NamedCreature", "Named Creature", 0)
         };
 
         var actors = NpcBrowserService.BuildDmpActorList(
             runtimeNpcs,
             creatures,
             BethesdaGame.Oblivion,
-            namedOnly: true);
+            true);
 
         Assert.Equal("NamedCreature", Assert.Single(actors).EditorId);
     }
@@ -99,8 +99,8 @@ public sealed class NpcBrowserDmpActorListTests
             fullName,
             @"meshes\creatures\daedroth\skeleton.nif",
             ["daedroth.nif"],
-            AnimationPaths: null,
-            InventoryItems: null,
-            CreatureType: creatureType);
+            null,
+            null,
+            creatureType);
     }
 }

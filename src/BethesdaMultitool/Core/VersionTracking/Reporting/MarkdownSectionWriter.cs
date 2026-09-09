@@ -281,13 +281,14 @@ internal static class MarkdownSectionWriter
         // Write significant changes grouped
         var significantGroups = significantHistories
             .GroupBy(x => x.Group)
-            .OrderByDescending(g => g.Count());
+            .OrderByDescending(g => g.Count())
+            .ToArray();
 
         foreach (var group in significantGroups)
         {
             var groupHistories = group.OrderBy(x => x.History.FullName ?? x.History.EditorId ?? "").ToList();
 
-            if (significantGroups.Count() > 1 || minorHistories.Count > 0)
+            if (significantGroups.Length > 1 || minorHistories.Count > 0)
             {
                 sb.AppendLine($"### {group.Key} ({groupHistories.Count})");
                 sb.AppendLine();
@@ -309,11 +310,12 @@ internal static class MarkdownSectionWriter
 
             var minorGroups = minorHistories
                 .GroupBy(x => x.Group)
-                .OrderByDescending(g => g.Count());
+                .OrderByDescending(g => g.Count())
+                .ToArray();
 
             foreach (var group in minorGroups)
             {
-                if (minorGroups.Count() > 1)
+                if (minorGroups.Length > 1)
                 {
                     sb.AppendLine($"### {group.Key}");
                     sb.AppendLine();

@@ -153,13 +153,13 @@ internal static class NpcSkeletonLoader
         }
 
         var relativeEquippedPoseKfPath =
-            equippedPoseKfPath?.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase) == true
+            equippedPoseKfPath.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
                 ? equippedPoseKfPath["meshes\\".Length..]
                 : equippedPoseKfPath;
         var armPoseOverrides = LoadNamedAnimationOverrides(
             skeletonNifPath,
             meshArchives,
-            relativeEquippedPoseKfPath!);
+            relativeEquippedPoseKfPath);
         if (armPoseOverrides == null || armPoseOverrides.Count == 0)
         {
             return fallbackIdleBones;

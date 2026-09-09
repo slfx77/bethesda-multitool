@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Land.Btd;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Vfs;
 
@@ -288,7 +289,7 @@ public static class BtdTerrainInjector
         // Keying off ShouldWarm keeps the coupling honest: where the renderer WILL warm every cell,
         // a lazy route would serialize the whole worldspace through one decode lock for no saving,
         // so those worldspaces stay eager — the pre-existing behaviour, unchanged.
-        var lazyLayers = !Nif.Rendering.Terrain.TerrainTextureSetWarmPolicy.ShouldWarm(
+        var lazyLayers = !TerrainTextureSetWarmPolicy.ShouldWarm(
             HeightGridSize, targets.Count);
         var source = lazyHeights || lazyLayers ? new BtdHeightSource(btd, blendEdge) : null;
         var lazyLayerCells = lazyLayers ? new List<CellRecord>(targets.Count) : [];
@@ -476,7 +477,7 @@ public static class BtdTerrainInjector
     /// </summary>
     private static bool HasAnyBlendWeight(ushort[] alphaMap, int quadrant, int slot, int blendEdge)
     {
-        return SampleBlendWeights(alphaMap, quadrant, slot, blendEdge, sink: null);
+        return SampleBlendWeights(alphaMap, quadrant, slot, blendEdge, null);
     }
 
     internal static List<LandTextureLayer>? BuildTextureLayers(BtdFile btd, int cellX, int cellY, int blendEdge)

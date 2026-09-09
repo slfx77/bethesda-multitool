@@ -1,6 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.IO;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Fallout;
 using Xunit;
@@ -18,13 +16,14 @@ namespace BethesdaMultitool.Tests.Core.Formats.Fallout;
 /// </summary>
 public sealed class FalloutProFileTests
 {
-    private static byte[] Proto(FalloutProType type, int subtype = -1, uint textId = 100, uint? fid = null, int? size = null)
+    private static byte[] Proto(FalloutProType type, int subtype = -1, uint textId = 100, uint? fid = null,
+        int? size = null)
     {
         var length = size ?? FalloutProFile.ExpectedSize(type, subtype);
         var b = new byte[length];
-        Be(b, 0, ((uint)type << 24) | 7);            // prototype 7 of its family
+        Be(b, 0, ((uint)type << 24) | 7); // prototype 7 of its family
         Be(b, 4, textId);
-        Be(b, 8, fid ?? (((uint)type << 24) | 3));
+        Be(b, 8, fid ?? ((uint)type << 24) | 3);
         Be(b, 12, 2);
         Be(b, 16, 32_768);
         Be(b, 20, 0x2000);
@@ -34,7 +33,7 @@ public sealed class FalloutProFileTests
         }
         else if (type == FalloutProType.Tile)
         {
-            Be(b, FalloutProFile.ExtendedFlagsOffset, 5);   // a tile's material sits here instead
+            Be(b, FalloutProFile.ExtendedFlagsOffset, 5); // a tile's material sits here instead
         }
 
         if (type is not (FalloutProType.Tile or FalloutProType.Misc) && length >= 32)
@@ -90,22 +89,23 @@ public sealed class FalloutProFileTests
         Assert.Equal([416, 412], FalloutProFile.ExpectedSizes(FalloutProType.Critter, -1).ToArray());
 
         Assert.Equal(416, FalloutProFile.Parse(Proto(FalloutProType.Critter, size: 416), "A.PRO").Payload.Length + 32);
-        Assert.Equal(FalloutProType.Critter, FalloutProFile.Parse(Proto(FalloutProType.Critter, size: 412), "B.PRO").Type);
+        Assert.Equal(FalloutProType.Critter,
+            FalloutProFile.Parse(Proto(FalloutProType.Critter, size: 412), "B.PRO").Type);
 
         // A third length is still refused — the set is exactly two.
-        Assert.Throws<InvalidDataException>(
-            () => FalloutProFile.Parse(Proto(FalloutProType.Critter, size: 414), "C.PRO"));
+        Assert.Throws<InvalidDataException>(() =>
+            FalloutProFile.Parse(Proto(FalloutProType.Critter, size: 414), "C.PRO"));
     }
 
     [Fact]
     public void Parse_ReadsTheCommonHeaderBigEndian()
     {
-        var pro = FalloutProFile.Parse(Proto(FalloutProType.Scenery, 5, textId: 3_400), "00000007.PRO");
+        var pro = FalloutProFile.Parse(Proto(FalloutProType.Scenery, 5, 3_400), "00000007.PRO");
 
         Assert.Equal(FalloutProType.Scenery, pro.Type);
         Assert.Equal(7, pro.ListIndex);
         Assert.Equal(3_400u, pro.TextId);
-        Assert.Equal(3_401u, pro.DescriptionTextId);   // the description is always the name plus one
+        Assert.Equal(3_401u, pro.DescriptionTextId); // the description is always the name plus one
         Assert.Equal(2u, pro.LightDistance);
         Assert.Equal(32_768u, pro.LightIntensity);
         Assert.Equal(0x2000u, pro.Flags);
@@ -188,7 +188,7 @@ public sealed class FalloutProFileTests
         Assert.Equal("00000024.pro", list.Resolve(0x02000001));
         Assert.Equal("00000002.pro", list.Resolve(0x02000002));
         Assert.Null(list.Resolve(0x02000004));
-        Assert.Null(list.Resolve(0x02000000));      // the numbering is 1-based
+        Assert.Null(list.Resolve(0x02000000)); // the numbering is 1-based
     }
 
     [Fact]

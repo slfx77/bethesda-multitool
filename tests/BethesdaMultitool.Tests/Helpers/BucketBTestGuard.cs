@@ -4,7 +4,7 @@ namespace BethesdaMultitool.Tests.Helpers;
 
 /// <summary>
 ///     Gate for tests that genuinely depend on real Fallout game assets
-///     (Sample/Full_Builds/*, Sample/ESM/*, Sample/MemoryDump/* etc.) and
+///     (Sample/Builds/*, Sample/ESM/*, Sample/MemoryDumps/* etc.) and
 ///     can't be expressed with synthetic byte fixtures. These tests preserve
 ///     regression coverage for real-asset workflows (NPC rendering, DDX
 ///     carving, dialogue provenance, dump-resident state) but are skipped

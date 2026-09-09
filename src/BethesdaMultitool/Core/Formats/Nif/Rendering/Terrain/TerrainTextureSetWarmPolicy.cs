@@ -35,17 +35,24 @@ internal static class TerrainTextureSetWarmPolicy
     internal const long MaxWarmBytes = 1024L * 1024 * 1024;
 
     /// <summary>Resident bytes one cell's texture set occupies at <paramref name="gridSize" />.</summary>
-    internal static long EstimateCellBytes(int gridSize) =>
-        (long)TerrainMeshBuilder.VertexCountFor(gridSize) * CellTerrainTextureSet.SlotVectors * VertexWeightBytes;
+    internal static long EstimateCellBytes(int gridSize)
+    {
+        return (long)TerrainMeshBuilder.VertexCountFor(gridSize) * CellTerrainTextureSet.SlotVectors *
+               VertexWeightBytes;
+    }
 
     /// <summary>Total resident bytes a full warm of <paramref name="cellCount" /> cells would cost.</summary>
-    internal static long EstimateWarmBytes(int gridSize, int cellCount) =>
-        EstimateCellBytes(gridSize) * cellCount;
+    internal static long EstimateWarmBytes(int gridSize, int cellCount)
+    {
+        return EstimateCellBytes(gridSize) * cellCount;
+    }
 
     /// <summary>
     ///     True when the whole worldspace's texture sets fit <see cref="MaxWarmBytes" /> and may be
     ///     pre-built at load; false when they must be left to on-demand building.
     /// </summary>
-    internal static bool ShouldWarm(int gridSize, int cellCount) =>
-        cellCount > 0 && gridSize > 0 && EstimateWarmBytes(gridSize, cellCount) <= MaxWarmBytes;
+    internal static bool ShouldWarm(int gridSize, int cellCount)
+    {
+        return cellCount > 0 && gridSize > 0 && EstimateWarmBytes(gridSize, cellCount) <= MaxWarmBytes;
+    }
 }

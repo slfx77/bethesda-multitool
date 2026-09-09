@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Assembly;
@@ -43,7 +44,7 @@ internal static class NpcExportHeadAssembler
                 NpcBaseHeadGeometryPolicy.PrepareForMaterial(
                     extracted.MeshParts.Select(static part => part.Submesh),
                     headPlan.HeadPreSkinMorphDeltas != null,
-                    deferTangentRebuildToMaterialResolver: classicSkin2000);
+                    classicSkin2000);
 
                 foreach (var part in extracted.MeshParts)
                 {
@@ -57,6 +58,7 @@ internal static class NpcExportHeadAssembler
                             textureResolver,
                             familySourceDiffusePath,
                             headPlan.EffectiveHeadTexturePath);
+                        part.Submesh.AuthoredSkinAlbedo = headPlan.AuthoredSkinAlbedo;
                     }
                     else if (headPlan.EffectiveHeadTexturePath != null)
                     {
@@ -247,6 +249,7 @@ internal static class NpcExportHeadAssembler
             npc.EarTexturePath != null)
         {
             var earEgtPath = Path.ChangeExtension(npc.EarNifPath, ".egt");
+
             EgtParser? LoadEarEgt()
             {
                 if (!egtCache.TryGetValue(earEgtPath, out var egt))
@@ -347,7 +350,7 @@ internal static class NpcExportHeadAssembler
                 npc.FaceGenAsymmetricCoeffs,
                 meshArchives,
                 egmCache,
-                recalculateNormals: false);
+                false);
         }
 
         if (attachmentBoneTransforms != null &&
@@ -420,7 +423,7 @@ internal static class NpcExportHeadAssembler
                     npc.FaceGenAsymmetricCoeffs,
                     meshArchives,
                     egmCache,
-                    recalculateNormals: false);
+                    false);
             }
 
             // Push mouth/teeth inward when FaceGen morphs are active to reduce clipping.
@@ -579,6 +582,13 @@ internal static class NpcExportHeadAssembler
             if (eyeModel == null)
             {
                 continue;
+            }
+
+            var reviewedEye = BethesdaViewerOblivionEyePolicy.IsReviewedSource(npc.Game, eyeRaw.Value.Data);
+            foreach (var submesh in eyeModel.Submeshes)
+            {
+                submesh.HasReviewedOblivionEyeSource = reviewedEye;
+                submesh.OblivionEyeBounds = reviewedEye ? submesh.LocalBounds : null;
             }
 
             if (NpcRenderHelpers.TryGetRootRotationCompensation(eyeRaw.Value.Data, eyeRaw.Value.Info,

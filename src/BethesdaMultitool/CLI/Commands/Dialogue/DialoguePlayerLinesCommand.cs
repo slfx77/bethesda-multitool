@@ -52,20 +52,14 @@ internal static class DialoguePlayerLinesCommand
         var (result, formIdMap) = loaded.Value;
 
         var lookup = new Dictionary<uint, string>(formIdMap);
-        if (result.FormIdToEditorId != null)
+        foreach (var (k, v) in result.FormIdToEditorId)
         {
-            foreach (var (k, v) in result.FormIdToEditorId)
-            {
-                lookup.TryAdd(k, v);
-            }
+            lookup.TryAdd(k, v);
         }
 
-        if (result.FormIdToDisplayName != null)
+        foreach (var (k, v) in result.FormIdToDisplayName)
         {
-            foreach (var (k, v) in result.FormIdToDisplayName)
-            {
-                lookup.TryAdd(k, v);
-            }
+            lookup.TryAdd(k, v);
         }
 
         var bySpeaker = result.Dialogues

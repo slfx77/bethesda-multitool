@@ -98,21 +98,6 @@ internal static class TrimetricViewProjBuilder
     }
 
     /// <summary>
-    ///     The camera basis and matrix for one trimetric framing.
-    /// </summary>
-    /// <param name="ViewProj">View × projection × reversed-Z, ready to hand to the renderers.</param>
-    /// <param name="Right">World-space camera right — the billboard X axis for SpeedTree leaf cards.</param>
-    /// <param name="Up">World-space camera up — the billboard Y axis.</param>
-    /// <param name="Forward">World-space direction the camera looks along.</param>
-    /// <param name="EyePosition">World-space camera position, for view-dependent shading.</param>
-    internal readonly record struct TrimetricView(
-        Matrix4x4 ViewProj,
-        Vector3 Right,
-        Vector3 Up,
-        Vector3 Forward,
-        Vector3 EyePosition);
-
-    /// <summary>
     ///     Builds the trimetric view-projection framing the given world rectangle (north-Y).
     ///     <para>
     ///         Unlike the top-down builder — which can hand the world rectangle straight to an
@@ -220,7 +205,9 @@ internal static class TrimetricViewProjBuilder
     ///     shift — the image axes are these vectors.
     /// </summary>
     public static (Vector3 Forward, Vector3 Right, Vector3 Up) Basis(float yawDegrees = YawDegrees)
-        => BuildBasis(yawDegrees);
+    {
+        return BuildBasis(yawDegrees);
+    }
 
     /// <summary>The camera basis for the given yaw and the configured pitch: (forward, right, up).</summary>
     private static (Vector3 Forward, Vector3 Right, Vector3 Up) BuildBasis(float yawDegrees)
@@ -283,14 +270,6 @@ internal static class TrimetricViewProjBuilder
         return (minR, maxR, minU, maxU);
     }
 
-    /// <summary>An axis-aligned world box, with its centre.</summary>
-    private readonly record struct ContentBox(
-        float MinX, float MaxX, float MinY, float MaxY, float MinZ, float MaxZ)
-    {
-        public Vector3 Centre => new(
-            (MinX + MaxX) * 0.5f, (MinY + MaxY) * 0.5f, (MinZ + MaxZ) * 0.5f);
-    }
-
     /// <summary>
     ///     A visibility cylinder covering everything the tilted view can see. A straight-down view
     ///     only needs the rectangle's own footprint, but tilting the camera sweeps the frustum
@@ -311,5 +290,33 @@ internal static class TrimetricViewProjBuilder
         var reach = AssumedWorldZHalfSpan / MathF.Tan(PitchDegrees * (MathF.PI / 180f));
         return new VisibilityCylinder(
             new Vector3(cx, cy, EyeDistance), diagonal + reach + slack);
+    }
+
+    /// <summary>
+    ///     The camera basis and matrix for one trimetric framing.
+    /// </summary>
+    /// <param name="ViewProj">View × projection × reversed-Z, ready to hand to the renderers.</param>
+    /// <param name="Right">World-space camera right — the billboard X axis for SpeedTree leaf cards.</param>
+    /// <param name="Up">World-space camera up — the billboard Y axis.</param>
+    /// <param name="Forward">World-space direction the camera looks along.</param>
+    /// <param name="EyePosition">World-space camera position, for view-dependent shading.</param>
+    internal readonly record struct TrimetricView(
+        Matrix4x4 ViewProj,
+        Vector3 Right,
+        Vector3 Up,
+        Vector3 Forward,
+        Vector3 EyePosition);
+
+    /// <summary>An axis-aligned world box, with its centre.</summary>
+    private readonly record struct ContentBox(
+        float MinX,
+        float MaxX,
+        float MinY,
+        float MaxY,
+        float MinZ,
+        float MaxZ)
+    {
+        public Vector3 Centre => new(
+            (MinX + MaxX) * 0.5f, (MinY + MaxY) * 0.5f, (MinZ + MaxZ) * 0.5f);
     }
 }

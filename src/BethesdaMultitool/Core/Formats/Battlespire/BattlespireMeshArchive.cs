@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using BethesdaMultitool.Core.Compression;
 using BethesdaMultitool.Core.Formats.Xngine.Bsa;
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
@@ -38,6 +39,12 @@ internal sealed class BattlespireMeshArchive : IDisposable
     /// <summary>Records in the archive.</summary>
     public int Count => _entries.Count;
 
+    public void Dispose()
+    {
+        // The archive is read fully into memory at open, so there is nothing to release; the type
+        // stays disposable so callers can treat every archive handle the same way.
+    }
+
     /// <summary>Opens a Battlespire mesh archive.</summary>
     public static BattlespireMeshArchive Open(string path)
     {
@@ -46,7 +53,8 @@ internal sealed class BattlespireMeshArchive : IDisposable
         var archive = XnGineBsaParser.Parse(path);
         if (archive.IsNumbered)
         {
-            throw new InvalidDataException($"'{Path.GetFileName(path)}' is a number-record BSA; Battlespire's mesh archives are name-record.");
+            throw new InvalidDataException(
+                $"'{Path.GetFileName(path)}' is a number-record BSA; Battlespire's mesh archives are name-record.");
         }
 
         return new BattlespireMeshArchive(Path.GetFileName(path), File.ReadAllBytes(path), archive.Entries);
@@ -58,7 +66,8 @@ internal sealed class BattlespireMeshArchive : IDisposable
     ///     <c>.3DC</c> — those tile only with the 8-byte plane header despite carrying the same
     ///     <c>v2.7</c> tag Battlespire's 10-byte records use.
     /// </summary>
-    public static XnGineMesh ParseLoose(byte[] bytes, string name, XnGineMeshLayout layout = XnGineMeshLayout.Battlespire)
+    public static XnGineMesh ParseLoose(byte[] bytes, string name,
+        XnGineMeshLayout layout = XnGineMeshLayout.Battlespire)
     {
         ArgumentNullException.ThrowIfNull(bytes);
         ArgumentNullException.ThrowIfNull(name);
@@ -86,7 +95,8 @@ internal sealed class BattlespireMeshArchive : IDisposable
         var entry = _entries[index];
         if (entry.Offset < 0 || entry.Size < 0 || entry.Offset + entry.Size > _bytes.Length)
         {
-            throw new InvalidDataException($"{Name} record {index} ({entry.Offset}+{entry.Size}) lies outside the {_bytes.Length}-byte archive.");
+            throw new InvalidDataException(
+                $"{Name} record {index} ({entry.Offset}+{entry.Size}) lies outside the {_bytes.Length}-byte archive.");
         }
 
         var raw = new ReadOnlySpan<byte>(_bytes, (int)entry.Offset, entry.Size);
@@ -100,7 +110,7 @@ internal sealed class BattlespireMeshArchive : IDisposable
     }
 
     /// <summary>Parses one entry, reporting a malformed record instead of throwing.</summary>
-    public bool TryParse(int index, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out XnGineMesh? mesh, out string? error)
+    public bool TryParse(int index, [NotNullWhen(true)] out XnGineMesh? mesh, out string? error)
     {
         try
         {
@@ -114,11 +124,5 @@ internal sealed class BattlespireMeshArchive : IDisposable
             error = e.Message;
             return false;
         }
-    }
-
-    public void Dispose()
-    {
-        // The archive is read fully into memory at open, so there is nothing to release; the type
-        // stays disposable so callers can treat every archive handle the same way.
     }
 }

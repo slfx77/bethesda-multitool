@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
 using BethesdaMultitool.Tests.Helpers;
@@ -54,7 +51,7 @@ public sealed class OblivionPspArchiveRetailTests
         var root = RealAssetPaths.Travels.OblivionPspBuildsRoot();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP betas"));
 
-        var pack = Path.Combine(root!, build, @"PSP_GAME\USRDIR\GR.ARC");
+        var pack = Path.Combine(root, build, @"PSP_GAME\USRDIR\GR.ARC");
         Assert.SkipWhen(!File.Exists(pack), RealAssetPaths.SkipMessage($"Oblivion PSP build '{build}'"));
         return pack;
     }
@@ -73,7 +70,7 @@ public sealed class OblivionPspArchiveRetailTests
 
         // Every payload lies inside the data area, in record order, with only alignment padding
         // between neighbours — the property that makes overlap impossible rather than merely absent.
-        long previousEnd = archive.DataStart;
+        var previousEnd = archive.DataStart;
         foreach (var entry in archive.Entries)
         {
             Assert.True(entry.Offset >= archive.DataStart, $"{entry.Name} starts before the data area");
@@ -150,7 +147,7 @@ public sealed class OblivionPspArchiveRetailTests
 
         // And it signed itself.
         using var reader = ArchiveReader.Open(PackPath("Modified 5Feburary 1st 2007"));
-        var credits = System.Text.Encoding.ASCII.GetString(reader.ReadFile("Credits")!);
+        var credits = Encoding.ASCII.GetString(reader.ReadFile("Credits")!);
         Assert.Equal("Hack by NexTheReal", credits);
     }
 

@@ -229,7 +229,9 @@ internal static class CapturedScriptEmissionContract
     /// <summary>
     ///     One <c>short</c>/<c>float</c>/<c>ref</c> line per SLSD/SCVR local, in table order.
     ///     Returns an empty list when the table cannot produce a block that would satisfy
-    ///     <see cref="FindSourceLocalDeclarationIssue(IReadOnlyList{SourceLocalDeclaration}, IReadOnlyList{ScriptVariableInfo})" />.
+    ///     <see
+    ///         cref="FindSourceLocalDeclarationIssue(IReadOnlyList{SourceLocalDeclaration}, IReadOnlyList{ScriptVariableInfo})" />
+    ///     .
     /// </summary>
     private static List<string> BuildDeclarationBlock(
         IReadOnlyList<ScriptVariableInfo> variables,

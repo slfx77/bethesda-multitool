@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Procedural;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using Microsoft.UI.Xaml.Media;
@@ -115,14 +116,8 @@ public sealed partial class WorldView3DControl
 
     private static readonly float? ShadowRadiusEnvOverride = ParseShadowRadiusEnvOverride();
 
-    private readonly int[] _lastShadowReferenceDrawsByCascade =
-        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
-
-    private readonly int[] _lastShadowReferenceInstancesByCascade =
-        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
-
-    private readonly int[] _lastShadowTerrainCellDrawsByCascade =
-        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+    // Median-of-3 camera timestep filter (single-writer: the render loop).
+    private readonly FrameDeltaFilter _frameDeltaFilter = new();
 
     private readonly int[] _lastShadowOmittedSplineDrawsByCascade =
         new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
@@ -130,11 +125,23 @@ public sealed partial class WorldView3DControl
     private readonly int[] _lastShadowOmittedSplineInstancesByCascade =
         new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
 
+    private readonly int[] _lastShadowReferenceDrawsByCascade =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
+    private readonly int[] _lastShadowReferenceInstancesByCascade =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
     private readonly int[] _lastShadowSubmittedSplineDrawsByCascade =
         new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
 
     private readonly int[] _lastShadowSubmittedSplineInstancesByCascade =
         new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
+    private readonly int[] _lastShadowTerrainCellDrawsByCascade =
+        new int[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
+
+    private readonly long[] _shadowCascadeGenerations =
+        new long[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
 
     private readonly ShadowContentKey[] _shadowContentKeys =
         new ShadowContentKey[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
@@ -178,13 +185,10 @@ public sealed partial class WorldView3DControl
 
     private int _consecutiveRenderFailures;
 
-    // Median-of-3 camera timestep filter (single-writer: the render loop).
-    private readonly FrameDeltaFilter _frameDeltaFilter = new();
-
     // GPU address of the most recent b3 atmosphere CB bound by BindAtmosphereConstants.
     private ulong _lastAtmosphereCbGpuAddress;
-    private Vector4 _lastBoundShadowParams; // diagnostics: what the last b3 upload carried
     private Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.ShadowSampleConstants _lastBoundShadowConstants;
+    private Vector4 _lastBoundShadowParams; // diagnostics: what the last b3 upload carried
 
     // This frame's raw camera timestep (see FrameProfileSample.DeltaSeconds).
     private float _lastDeltaSeconds;
@@ -196,10 +200,6 @@ public sealed partial class WorldView3DControl
     private int _lastShadowCascadeMask;
     private int _lastShadowCompletedCascadeMask;
     private string _lastShadowDeferredReason = "none";
-    private float _lastShadowPostCullSceneZSpan;
-    private bool _lastShadowReferenceExtentChanged;
-    private readonly long[] _shadowCascadeGenerations =
-        new long[Core.Formats.Nif.Rendering.D3D12.ShadowMapRenderer12.CascadeCount];
 
     // Captured batches before cascade filtering. The arrays below are the submitted-work truth.
     private int _lastShadowDrawCount;
@@ -208,6 +208,8 @@ public sealed partial class WorldView3DControl
     // frames from a cheap animated refresh every frame, and those want opposite fixes — so the mode,
     // the cascade set and the submitted draw counts are recorded per pass and emitted to the trace.
     private ShadowPassMode _lastShadowMode;
+    private float _lastShadowPostCullSceneZSpan;
+    private bool _lastShadowReferenceExtentChanged;
     private int _lastShadowTerrainCellDraws;
     private bool _shadowAnimatedActive;
 
@@ -338,6 +340,7 @@ public sealed partial class WorldView3DControl
             ReseedFrameClocks();
             return;
         }
+
         if (_surface12 is null || _gpu12 is null || _commandRecorder12 is null)
         {
             ReseedFrameClocks();
@@ -535,6 +538,7 @@ public sealed partial class WorldView3DControl
                 tileTelemetry.EmptyTilePercent,
                 tileTelemetry.FallbackReason);
         }
+
         // Per-game ambient fill scale (uAmbientColor.w): FNV's 0.3 is too dark for the ambient-heavier
         // TES4-era engines, so Oblivion etc. raise it (see GameProfile.AmbientLightScale).
         var ambientScale = BethesdaMultitool.Core.Games.GameProfiles
@@ -576,8 +580,6 @@ public sealed partial class WorldView3DControl
             shadow.Params0.X > 0f || shadow.Params1.X > 0f ||
             shadow.Params2.X > 0f || shadow.Params3.X > 0f;
         var fogEnabled = enableFog && _showFog;
-        _references?.SetFnvActiveAdtBaseState(
-            lightingOn, projectedSunShadowActive, fogEnabled);
         _references?.SetExternalEmittanceState(gameHour, _currentClimateTiming);
         _lastBoundShadowParams = shadow.Params0;
         _lastBoundShadowConstants = shadow;
@@ -598,6 +600,16 @@ public sealed partial class WorldView3DControl
             // so a display-operator override must not suppress it.
             sunlightScale: sceneSunlightScale,
             grassScale: sceneGrassScale);
+        // Use the very same b3 values that this pass uploads. Source admission is separate from
+        // positive repaired defaults; unsupported/disabled states preserve the existing route.
+        var finiteAdtFogSupported = FnvActiveAdtFog.IsSupported(
+            resolved.HasUnmodifiedFnvAdtFogSource,
+            constants.Params.Y, constants.Params.Z, constants.CameraPosFogPower.W,
+            new Vector3(constants.FogColorFogEnabled.X, constants.FogColorFogEnabled.Y, constants.FogColorFogEnabled.Z),
+            new Vector3(constants.FogFarColorMax.X, constants.FogFarColorMax.Y, constants.FogFarColorMax.Z),
+            constants.FogFarColorMax.W);
+        _references?.SetFnvActiveAdtBaseState(
+            lightingOn, projectedSunShadowActive, fogEnabled, finiteAdtFogSupported);
         // Neutral (0,0,0,1) clips nothing; the water-reflection mirror pass passes its plane here.
         constants.ClipPlane = clipPlane ?? new Vector4(0f, 0f, 0f, 1f);
         var alloc = _ringBuffer12!.Allocate(frameIndex, AtmosphereConstants.ByteSize, GpuRingBuffer12.CbAlignment);
@@ -2117,6 +2129,7 @@ public sealed partial class WorldView3DControl
             wallFrameMs = renderBodyMs + recorder.LastFrameFenceWaitMilliseconds +
                           _lastControllerUpdateMilliseconds;
         }
+
         var gcGen0Collections = GC.CollectionCount(0);
         var gcGen1Collections = GC.CollectionCount(1);
         var gcGen2Collections = GC.CollectionCount(2);

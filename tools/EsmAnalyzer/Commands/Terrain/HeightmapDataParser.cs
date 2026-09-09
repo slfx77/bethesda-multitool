@@ -335,7 +335,7 @@ internal static class HeightmapDataParser
                 var avgDiff = diffCount > 0 ? totalDiff / diffCount : 0;
 
                 // Find the point with maximum difference for more precise teleport
-                var (x, y, diff) = significantPoints.OrderByDescending(p => p.diff).FirstOrDefault();
+                var (x, y, _) = significantPoints.OrderByDescending(p => p.diff).FirstOrDefault();
 
                 _ = cellNames.TryGetValue(cell, out var editorId);
                 differences.Add(new CellHeightDifference

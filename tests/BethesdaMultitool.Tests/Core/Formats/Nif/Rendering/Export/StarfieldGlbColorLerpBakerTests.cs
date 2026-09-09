@@ -27,7 +27,7 @@ public sealed class StarfieldGlbColorLerpBakerTests
     public void BakeDiffuseTexture_MixesRgbInLinearSpaceAndPreservesAlpha()
     {
         var sourceBytes = (byte[])SourcePixels.Clone();
-        var source = DecodedTexture.FromBaseLevel(sourceBytes, 2, 1, generateMipChain: true);
+        var source = DecodedTexture.FromBaseLevel(sourceBytes, 2, 1, true);
         var state = CreateConstantLerpState(new Vector4(0.25f, 0.5f, 0.75f, 0.4f));
 
         var baked = Assert.IsType<DecodedTexture>(
@@ -64,8 +64,8 @@ public sealed class StarfieldGlbColorLerpBakerTests
     {
         const string sharedMaterialPath = @"materials\test\shared.mat";
         var source = DecodedTexture.FromBaseLevel((byte[])SourcePixels.Clone(), 2, 1, false);
-        using var textureResolver = new NifTextureResolver(
-            path => string.Equals(path, sharedMaterialPath, StringComparison.OrdinalIgnoreCase)
+        using var textureResolver = new NifTextureResolver(path =>
+            string.Equals(path, sharedMaterialPath, StringComparison.OrdinalIgnoreCase)
                 ? source
                 : null);
         var scene = new GlbScene();
@@ -82,7 +82,7 @@ public sealed class StarfieldGlbColorLerpBakerTests
 
         var glb = GlbWriter.WriteToBytes(scene, textureResolver);
 
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         var model = ModelRoot.ReadGLB(stream);
         Assert.Equal(2, model.LogicalMaterials.Count);
         Assert.All(model.LogicalMaterials, material =>
@@ -116,7 +116,7 @@ public sealed class StarfieldGlbColorLerpBakerTests
 
         var glb = GlbWriter.WriteToBytes(scene, textureResolver);
 
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         var material = ModelRoot.ReadGLB(stream).LogicalMaterials.Single();
         var baseColor = Assert.IsType<MaterialChannel>(material.FindChannel("BaseColor"));
         Assert.Null(baseColor.Texture);

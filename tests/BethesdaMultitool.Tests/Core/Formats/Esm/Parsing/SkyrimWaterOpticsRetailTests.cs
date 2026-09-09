@@ -17,7 +17,7 @@ public sealed class SkyrimWaterOpticsRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var path = RealAssetPaths.Masters.Skyrim();
         Assert.SkipWhen(path is null, "Installed PC Skyrim.esm is unavailable");
-        var result = await RealAssetEsmCache.LoadAsync(path!, TestContext.Current.CancellationToken);
+        var result = await RealAssetEsmCache.LoadAsync(path, TestContext.Current.CancellationToken);
         var tamriel = Assert.Single(result.Records.Worldspaces, world => world.FormId == 0x3Cu);
         Assert.Equal(0x18u, tamriel.WaterFormId);
         var water = Assert.Single(result.Records.Water, item => item.FormId == 0x18u);

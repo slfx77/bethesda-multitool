@@ -17,19 +17,27 @@ public static class AnalysisSourcePath
     ///     True when the source can be memory-mapped — that is, when it is an existing FILE. An
     ///     install root is a directory and has no single byte range to map.
     /// </summary>
-    public static bool IsMappable(string? path) => !string.IsNullOrEmpty(path) && File.Exists(path);
+    public static bool IsMappable(string? path)
+    {
+        return !string.IsNullOrEmpty(path) && File.Exists(path);
+    }
 
     /// <summary>
     ///     True when the source is an install DIRECTORY rather than a file.
     /// </summary>
-    public static bool IsInstallDirectory(string? path) =>
-        !string.IsNullOrEmpty(path) && !File.Exists(path) && Directory.Exists(path);
+    public static bool IsInstallDirectory(string? path)
+    {
+        return !string.IsNullOrEmpty(path) && !File.Exists(path) && Directory.Exists(path);
+    }
 
     /// <summary>
     ///     The source's size in bytes: the file's length, or <c>0</c> for an install directory,
     ///     whose size is not a single number and is never reported as one.
     /// </summary>
-    public static long SizeOf(string? path) => IsMappable(path) ? new FileInfo(path!).Length : 0;
+    public static long SizeOf(string? path)
+    {
+        return IsMappable(path) ? new FileInfo(path!).Length : 0;
+    }
 
     /// <summary>
     ///     The leaf name to show for the source — the file name, or the directory's own name for

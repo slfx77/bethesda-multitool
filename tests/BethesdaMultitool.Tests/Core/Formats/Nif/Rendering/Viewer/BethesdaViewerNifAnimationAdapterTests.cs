@@ -18,7 +18,7 @@ public sealed class BethesdaViewerNifAnimationAdapterTests
             Matrix4x4.Identity,
             BethesdaViewerNodeRole.Skeleton,
             "Bone",
-            sourceBlockIndex: 4);
+            4);
         var expectedNode = scene.AddNode(
             "Bone_9",
             BethesdaViewerScene.RootNodeIndex,
@@ -26,8 +26,8 @@ public sealed class BethesdaViewerNifAnimationAdapterTests
             Matrix4x4.Identity,
             BethesdaViewerNodeRole.Skeleton,
             "Bone",
-            sourceBlockIndex: 9);
-        var animation = Animation(sourceBlockIndex: 9);
+            9);
+        var animation = Animation(9);
 
         var clip = BethesdaViewerNifAnimationAdapter.TryCreateClip(scene, animation, "Idle");
 
@@ -67,7 +67,7 @@ public sealed class BethesdaViewerNifAnimationAdapterTests
             Matrix4x4.Identity,
             BethesdaViewerNodeRole.Skeleton,
             "Bone",
-            sourceBlockIndex: 4);
+            4);
 
         Assert.Null(BethesdaViewerNifAnimationAdapter.TryCreateClip(scene, Animation(9)));
     }
@@ -83,7 +83,7 @@ public sealed class BethesdaViewerNifAnimationAdapterTests
             Matrix4x4.Identity,
             BethesdaViewerNodeRole.Skeleton,
             "Rock_5",
-            sourceBlockIndex: 9);
+            9);
         var animation = Animation(9) with
         {
             ClipStart = 47.4f,
@@ -130,7 +130,7 @@ public sealed class BethesdaViewerNifAnimationAdapterTests
             Matrix4x4.Identity,
             BethesdaViewerNodeRole.Skeleton,
             "Bone",
-            sourceBlockIndex: 9);
+            9);
         var animation = Animation(9) with
         {
             FullControllerCycle = new NifControllerCycle(
@@ -151,19 +151,21 @@ public sealed class BethesdaViewerNifAnimationAdapterTests
     {
         return new NifMeshAnimation(
             [new NifAnimBone("Bone", -1, Vector3.Zero, Quaternion.Identity, 1f, sourceBlockIndex)],
-            [new NifNodeTrack(
-                "Bone",
-                1f,
-                0f,
-                NifKeyInterpolation.Linear,
-                [
-                    new NifQuatKey(0f, Quaternion.Identity),
-                    new NifQuatKey(2f, Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 1f))
-                ],
-                NifKeyInterpolation.Linear,
-                [],
-                NifKeyInterpolation.Linear,
-                [])],
+            [
+                new NifNodeTrack(
+                    "Bone",
+                    1f,
+                    0f,
+                    NifKeyInterpolation.Linear,
+                    [
+                        new NifQuatKey(0f, Quaternion.Identity),
+                        new NifQuatKey(2f, Quaternion.CreateFromAxisAngle(Vector3.UnitZ, 1f))
+                    ],
+                    NifKeyInterpolation.Linear,
+                    [],
+                    NifKeyInterpolation.Linear,
+                    [])
+            ],
             [new NifAnimTextKey(1f, "loop")],
             0f,
             2f,

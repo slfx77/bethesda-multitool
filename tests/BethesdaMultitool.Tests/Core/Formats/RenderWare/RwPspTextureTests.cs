@@ -1,8 +1,4 @@
-using System;
 using System.Buffers.Binary;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using BethesdaMultitool.Core.Formats.RenderWare;
 using BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
@@ -47,10 +43,10 @@ public sealed class RwPspTextureTests
         var clut = new byte[16 * 4];
         for (var i = 0; i < 16; i++)
         {
-            clut[(i * 4) + 0] = (byte)(i * 16);
-            clut[(i * 4) + 1] = (byte)(i * 8);
-            clut[(i * 4) + 2] = (byte)(i * 4);
-            clut[(i * 4) + 3] = 255;
+            clut[i * 4 + 0] = (byte)(i * 16);
+            clut[i * 4 + 1] = (byte)(i * 8);
+            clut[i * 4 + 2] = (byte)(i * 4);
+            clut[i * 4 + 3] = 255;
         }
 
         return clut;
@@ -58,7 +54,7 @@ public sealed class RwPspTextureTests
 
     private static (byte R, byte G, byte B, byte A) Pixel(RwPspTexture texture, int x, int y)
     {
-        var at = ((y * texture.Width) + x) * 4;
+        var at = (y * texture.Width + x) * 4;
         return (texture.Rgba[at], texture.Rgba[at + 1], texture.Rgba[at + 2], texture.Rgba[at + 3]);
     }
 
@@ -76,7 +72,7 @@ public sealed class RwPspTextureTests
         var texture = RwPspTexture.TryParse(body);
 
         Assert.NotNull(texture);
-        Assert.Equal(128, texture!.Width);
+        Assert.Equal(128, texture.Width);
         Assert.Equal(64, texture.Height);
         Assert.Equal("wide", texture.Name);
     }
@@ -126,7 +122,7 @@ public sealed class RwPspTextureTests
             Raster(width, height, RwPspPixelFormat.Indexed4, "padded", Clut16(), pixels));
 
         Assert.NotNull(texture);
-        Assert.Equal((16, 8, 4, 255), Pixel(texture!, 0, 0));
+        Assert.Equal((16, 8, 4, 255), Pixel(texture, 0, 0));
         Assert.Equal((32, 16, 8, 255), Pixel(texture, 0, 1));
         Assert.Equal((32, 16, 8, 255), Pixel(texture, 15, 1));
     }
@@ -139,13 +135,13 @@ public sealed class RwPspTextureTests
     {
         var pitch = RwPspTexture.Pitch(32, RwPspPixelFormat.Indexed4);
         var pixels = new byte[pitch];
-        pixels[0] = 0x21;   // texel 0 = index 1, texel 1 = index 2
+        pixels[0] = 0x21; // texel 0 = index 1, texel 1 = index 2
 
         var texture = RwPspTexture.TryParse(
             Raster(32, 1, RwPspPixelFormat.Indexed4, "nibbles", Clut16(), pixels));
 
         Assert.NotNull(texture);
-        Assert.Equal((16, 8, 4, 255), Pixel(texture!, 0, 0));
+        Assert.Equal((16, 8, 4, 255), Pixel(texture, 0, 0));
         Assert.Equal((32, 16, 8, 255), Pixel(texture, 1, 0));
     }
 
@@ -153,8 +149,8 @@ public sealed class RwPspTextureTests
     public void EightBitIndexedReadsOneTexelPerByte()
     {
         var clut = new byte[256 * 4];
-        clut[(5 * 4) + 0] = 200;
-        clut[(5 * 4) + 3] = 255;
+        clut[5 * 4 + 0] = 200;
+        clut[5 * 4 + 3] = 255;
 
         var pixels = new byte[RwPspTexture.Pitch(16, RwPspPixelFormat.Indexed8)];
         pixels[3] = 5;
@@ -163,7 +159,7 @@ public sealed class RwPspTextureTests
             Raster(16, 1, RwPspPixelFormat.Indexed8, "bytes", clut, pixels));
 
         Assert.NotNull(texture);
-        Assert.Equal((200, 0, 0, 255), Pixel(texture!, 3, 0));
+        Assert.Equal((200, 0, 0, 255), Pixel(texture, 3, 0));
     }
 
     /// <summary>
@@ -180,21 +176,21 @@ public sealed class RwPspTextureTests
             Raster(8, 1, RwPspPixelFormat.Rgb565, "white", pixels: pixels));
 
         Assert.NotNull(texture);
-        Assert.Equal((255, 255, 255, 255), Pixel(texture!, 0, 0));
+        Assert.Equal((255, 255, 255, 255), Pixel(texture, 0, 0));
     }
 
     [Fact]
     public void FiveFiveFiveOneCarriesItsSingleAlphaBit()
     {
         var pixels = new byte[RwPspTexture.Pitch(8, RwPspPixelFormat.Rgba5551)];
-        BinaryPrimitives.WriteUInt16LittleEndian(pixels, 0x001F);            // opaque bit clear
-        BinaryPrimitives.WriteUInt16LittleEndian(pixels.AsSpan(2), 0x801F);  // set
+        BinaryPrimitives.WriteUInt16LittleEndian(pixels, 0x001F); // opaque bit clear
+        BinaryPrimitives.WriteUInt16LittleEndian(pixels.AsSpan(2), 0x801F); // set
 
         var texture = RwPspTexture.TryParse(
             Raster(8, 1, RwPspPixelFormat.Rgba5551, "alpha", pixels: pixels));
 
         Assert.NotNull(texture);
-        Assert.Equal(0, Pixel(texture!, 0, 0).A);
+        Assert.Equal(0, Pixel(texture, 0, 0).A);
         Assert.Equal(255, Pixel(texture, 1, 0).A);
     }
 
@@ -219,7 +215,7 @@ public sealed class RwPspTextureTests
             Raster(64, 64, RwPspPixelFormat.Indexed8, "mipped", new byte[256 * 4], mipCount: 7));
 
         Assert.NotNull(texture);
-        Assert.Equal(7, texture!.MipCount);
+        Assert.Equal(7, texture.MipCount);
         Assert.Equal(64, texture.Width);
     }
 
@@ -297,7 +293,7 @@ public sealed class RwPspTextureRetailTests
         BucketBTestGuard.SkipUnlessEnabled();
         var root = RealAssetPaths.Travels.OblivionPspBuildsRoot();
         Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP (cancelled betas)"));
-        var packs = Directory.EnumerateFiles(root!, "GR.ARC", SearchOption.AllDirectories)
+        var packs = Directory.EnumerateFiles(root, "GR.ARC", SearchOption.AllDirectories)
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
         Assert.SkipWhen(packs.Length == 0, "No GR.ARC packs are staged.");
         return packs;

@@ -378,17 +378,17 @@ public static class ScriptComparer
         result = Regex.Replace(
             result,
             @"(?<=[0-9.])[eE]\+(?=\d)",
-            static match => $"{match.Value[0]}\x01EXPPLUS\x01");
+            static match => $"{match.Value[0]}\u0001EXPPLUS\u0001");
         result = Regex.Replace(
             result,
             @"(?<=[0-9.])[eE]-(?=\d)",
-            static match => $"{match.Value[0]}\x01EXPMINUS\x01");
+            static match => $"{match.Value[0]}\u0001EXPMINUS\u0001");
 
         // Normalize operator spacing using regex to handle all operators cleanly.
         // Process two-char operators first (replace with placeholders), then single-char.
-        result = result.Replace("==", " \x01EQ\x01 ").Replace("!=", " \x01NE\x01 ")
-            .Replace(">=", " \x01GE\x01 ").Replace("<=", " \x01LE\x01 ")
-            .Replace("&&", " \x01AND\x01 ").Replace("||", " \x01OR\x01 ");
+        result = result.Replace("==", " \u0001EQ\u0001 ").Replace("!=", " \u0001NE\u0001 ")
+            .Replace(">=", " \u0001GE\u0001 ").Replace("<=", " \u0001LE\u0001 ")
+            .Replace("&&", " \u0001AND\u0001 ").Replace("||", " \u0001OR\u0001 ");
 
         // Single-char operators: +, -, *, /, <, >
         result = result.Replace("+", " + ").Replace("-", " - ")
@@ -396,10 +396,10 @@ public static class ScriptComparer
             .Replace("<", " < ").Replace(">", " > ");
 
         // Restore two-char operator placeholders
-        result = result.Replace("\x01EQ\x01", "==").Replace("\x01NE\x01", "!=")
-            .Replace("\x01GE\x01", ">=").Replace("\x01LE\x01", "<=")
-            .Replace("\x01AND\x01", "&&").Replace("\x01OR\x01", "||")
-            .Replace("\x01EXPPLUS\x01", "+").Replace("\x01EXPMINUS\x01", "-");
+        result = result.Replace("\u0001EQ\u0001", "==").Replace("\u0001NE\u0001", "!=")
+            .Replace("\u0001GE\u0001", ">=").Replace("\u0001LE\u0001", "<=")
+            .Replace("\u0001AND\u0001", "&&").Replace("\u0001OR\u0001", "||")
+            .Replace("\u0001EXPPLUS\u0001", "+").Replace("\u0001EXPMINUS\u0001", "-");
 
         while (result.Contains("  "))
         {

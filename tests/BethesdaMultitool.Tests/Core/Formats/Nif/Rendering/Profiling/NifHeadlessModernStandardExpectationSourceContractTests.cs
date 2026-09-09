@@ -25,7 +25,7 @@ public sealed class NifHeadlessModernStandardExpectationSourceContractTests
             source,
             StringComparison.Ordinal);
         Assert.Contains(
-            "enableDebugLayer: EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.D3D12Debug)",
+            "EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.D3D12Debug)",
             source,
             StringComparison.Ordinal);
         SourceContract.AssertOrder(

@@ -14,12 +14,14 @@ internal static class BethesdaViewerGeometryMorphPolicy
     {
         clip = null;
         error = null;
-        var controllers = nif.Blocks.Where(static block => block.TypeName == "NiGeomMorpherController").Take(2).ToArray();
+        var controllers = nif.Blocks.Where(static block => block.TypeName == "NiGeomMorpherController").Take(2)
+            .ToArray();
         if (controllers.Length == 0) return true;
         if (controllers.Length != 1 || scene.AnimationClips.Count != 0 || scene.BoundaryStitchGroups.Count != 0 ||
             !NifGeometryMorphReader.TryRead(data, nif, controllers[0], out var morph))
         {
-            error = "embedded geometry morph requires one supported BS34 ordinary relative controller without competing animation or boundary stitching";
+            error =
+                "embedded geometry morph requires one supported BS34 ordinary relative controller without competing animation or boundary stitching";
             return false;
         }
 
@@ -33,21 +35,25 @@ internal static class BethesdaViewerGeometryMorphPolicy
         }
 
         clip = new BethesdaViewerAnimationClip("Embedded Geometry Morph", morph.StartTime, morph.StopTime,
-            morph.Loops, [], [], [], GeometryMorphTracks: [new BethesdaViewerGeometryMorphTrack(matches[0].Index, morph)]);
+            morph.Loops, [], [], [],
+            GeometryMorphTracks: [new BethesdaViewerGeometryMorphTrack(matches[0].Index, morph)]);
         return true;
     }
 
     internal static bool IsValid(BethesdaViewerAnimationClip clip, int partCount)
     {
         if (clip.GeometryMorphTracks is not { Length: > 0 } tracks) return true;
-        if (tracks.Length != 1 || clip.NodeTracks.Length != 0 || clip.MorphWeightTracks.Length != 0 || clip.PingPongs) return false;
+        if (tracks.Length != 1 || clip.NodeTracks.Length != 0 || clip.MorphWeightTracks.Length != 0 ||
+            clip.PingPongs) return false;
         var track = tracks[0];
         var morph = track.Morph;
         if ((uint)track.MeshPartIndex >= (uint)partCount ||
             !NifGeometryMorphReader.Finite(morph.Frequency) || !NifGeometryMorphReader.Finite(morph.Phase) ||
-            !morph.StartTime.Equals(clip.StartTime) || !morph.StopTime.Equals(clip.EndTime) || morph.Loops != clip.Loops ||
+            !morph.StartTime.Equals(clip.StartTime) || !morph.StopTime.Equals(clip.EndTime) ||
+            morph.Loops != clip.Loops ||
             morph.Targets.Length is < 1 or > NifGeometryMorphReader.MaximumTargets ||
-            morph.VertexCount <= 0 || morph.VertexCount > NifGeometryMorphReader.MaximumVectors / morph.Targets.Length) return false;
+            morph.VertexCount <= 0 ||
+            morph.VertexCount > NifGeometryMorphReader.MaximumVectors / morph.Targets.Length) return false;
         long totalKeys = 0;
         foreach (var target in morph.Targets)
         {
@@ -56,13 +62,14 @@ internal static class BethesdaViewerGeometryMorphPolicy
             if (string.IsNullOrWhiteSpace(target.Name) || target.Positions.Length != morph.VertexCount ||
                 target.Positions.Any(static position => !NifGeometryMorphReader.Finite(position)) ||
                 curve.Interpolation is not (NifKeyInterpolation.Linear or NifKeyInterpolation.Quadratic) ||
-                !NifGeometryMorphReader.Finite(curve.FallbackWeight) || totalKeys > NifGeometryMorphReader.MaximumKeys) return false;
+                !NifGeometryMorphReader.Finite(curve.FallbackWeight) ||
+                totalKeys > NifGeometryMorphReader.MaximumKeys) return false;
             for (var index = 0; index < curve.Keys.Length; index++)
             {
                 var key = curve.Keys[index];
                 if (!NifGeometryMorphReader.Finite(key.Time) || !NifGeometryMorphReader.Finite(key.Value) ||
                     !NifGeometryMorphReader.Finite(key.InTangent) || !NifGeometryMorphReader.Finite(key.OutTangent) ||
-                    index > 0 && key.Time <= curve.Keys[index - 1].Time) return false;
+                    (index > 0 && key.Time <= curve.Keys[index - 1].Time)) return false;
             }
         }
 
@@ -93,9 +100,11 @@ internal static class BethesdaViewerGeometryMorphPolicy
         return true;
     }
 
-    internal static void Pose(NifGeometryMorphData morph, float clock, Span<GpuMeshUploader.GpuVertex> vertices, Span<float> weights)
+    internal static void Pose(NifGeometryMorphData morph, float clock, Span<GpuMeshUploader.GpuVertex> vertices,
+        Span<float> weights)
     {
-        if (vertices.Length != morph.VertexCount) throw new InvalidDataException("Morph vertex binding changed after admission.");
+        if (vertices.Length != morph.VertexCount)
+            throw new InvalidDataException("Morph vertex binding changed after admission.");
         var localTime = BethesdaViewerAnimationPoseEvaluator.MapTime(clock, morph.Frequency, morph.Phase,
             morph.StartTime, morph.StopTime, morph.Loops);
         NifGeometryMorphEvaluator.SampleWeights(morph, localTime, weights);

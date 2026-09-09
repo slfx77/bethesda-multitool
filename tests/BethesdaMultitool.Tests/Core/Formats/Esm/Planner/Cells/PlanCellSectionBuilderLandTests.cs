@@ -88,7 +88,7 @@ public sealed class PlanCellSectionBuilderLandTests
             new PluginBuildOptions { CompressRecords = false });
 
         Assert.NotNull(bytes);
-        var landOffset = FindSignature(bytes!, "LAND");
+        var landOffset = FindSignature(bytes, "LAND");
         Assert.True(landOffset >= 0);
         Assert.Equal(landEmitted, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(landOffset + 12, 4)));
     }
@@ -113,5 +113,4 @@ public sealed class PlanCellSectionBuilderLandTests
             Provenance = new PlanProvenance { PolicyId = "test", Reason = "test" }
         };
     }
-
 }

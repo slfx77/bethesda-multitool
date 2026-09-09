@@ -1,3 +1,4 @@
+using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -124,7 +125,7 @@ public sealed class ObjectIndexBuilderTests
         {
             Slack = 24.5f,
             Thickness = 1.5f,
-            HalfExtents = new System.Numerics.Vector3(128f, 16f, 32f)
+            HalfExtents = new Vector3(128f, 16f, 32f)
         };
         var extracted = new ExtractedRefrRecord
         {

@@ -27,7 +27,7 @@ public class OblivionScriptDecompilationIntegrationTests
             "Oblivion.esm not found (set BETHESDA_TEST_DATA_ROOT or install Oblivion).");
 
         var result = await RealAssetEsmCache.LoadAsync(
-            esm!, TestContext.Current.CancellationToken);
+            esm, TestContext.Current.CancellationToken);
 
         var scripts = result.Records.Scripts;
         Assert.True(scripts.Count > 500,

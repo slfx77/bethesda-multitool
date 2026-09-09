@@ -13,9 +13,11 @@ internal sealed class RuntimeBufferPointerAnalyzer
     private const int PointerScanChunkSize = 1024 * 1024;
     private readonly BufferAnalysisContext _ctx;
 
-    /// <summary>Coverage gaps sorted by file offset, with their start offsets split out for
-    /// <see cref="Array.BinarySearch{T}(T[], T)" />. Built on first use; see
-    /// <see cref="DescribeReferrerContext" />.</summary>
+    /// <summary>
+    ///     Coverage gaps sorted by file offset, with their start offsets split out for
+    ///     <see cref="Array.BinarySearch{T}(T[], T)" />. Built on first use; see
+    ///     <see cref="DescribeReferrerContext" />.
+    /// </summary>
     private CoverageGap[]? _gapsByStart;
 
     private long[]? _gapStarts;

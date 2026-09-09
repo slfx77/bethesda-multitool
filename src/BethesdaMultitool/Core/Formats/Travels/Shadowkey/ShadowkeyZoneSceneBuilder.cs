@@ -74,13 +74,6 @@ internal readonly record struct ShadowkeyZonePlacementSummary(int Placed, int Un
 internal static class ShadowkeyZoneSceneBuilder
 {
     /// <summary>
-    ///     Corner slot to tile-corner offset, settled by the adjacency measurement in the type
-    ///     remarks. Two bytes per <c>.zcp</c> corner slot — dx then dy — as offsets from the cell's
-    ///     own (x, y) in whole tiles. Read it through <see cref="CornerOffset" />.
-    /// </summary>
-    private static ReadOnlySpan<byte> CornerOffsets => [0, 1, 1, 1, 1, 0, 0, 0];
-
-    /// <summary>
     ///     Vertices per submesh. <see cref="RenderableSubmesh.Triangles" /> is
     ///     <see cref="ushort" />, so a part can address 65,536 vertices; this is the largest
     ///     multiple of four at or below that, keeping every quad inside one part. A 128x128 zone
@@ -120,6 +113,13 @@ internal static class ShadowkeyZoneSceneBuilder
             (0, -1, 2, 3, 1, 0, ShadowkeyTileFaceKind.WallNorth)
         ];
 
+    /// <summary>
+    ///     Corner slot to tile-corner offset, settled by the adjacency measurement in the type
+    ///     remarks. Two bytes per <c>.zcp</c> corner slot — dx then dy — as offsets from the cell's
+    ///     own (x, y) in whole tiles. Read it through <see cref="CornerOffset" />.
+    /// </summary>
+    private static ReadOnlySpan<byte> CornerOffsets => [0, 1, 1, 1, 1, 0, 0, 0];
+
     /// <summary>The tile-corner offset of one <c>.zcp</c> corner slot.</summary>
     public static (int Dx, int Dy) CornerOffset(int slot)
     {
@@ -129,7 +129,7 @@ internal static class ShadowkeyZoneSceneBuilder
                 nameof(slot), slot, $"A corner slot must be 0..{ShadowkeyCellPrototype.CornerCount - 1}.");
         }
 
-        return (CornerOffsets[slot * 2], CornerOffsets[(slot * 2) + 1]);
+        return (CornerOffsets[slot * 2], CornerOffsets[slot * 2 + 1]);
     }
 
     /// <summary>
@@ -358,8 +358,8 @@ internal static class ShadowkeyZoneSceneBuilder
                 try
                 {
                     built = ShadowkeySceneBuilder.BuildSubmesh(
-                        mesh, frame: 0, skin: 0, ShadowkeyAxisConvention.ZUp,
-                        magentaIsTransparent: true, out var skin);
+                        mesh, 0, 0, ShadowkeyAxisConvention.ZUp,
+                        true, out var skin);
                     scene.AddGeneratedTexture(built.DiffuseTexturePath!, skin);
                 }
                 catch (Exception ex) when (ex is NotSupportedException or ArgumentOutOfRangeException)
@@ -401,7 +401,10 @@ internal static class ShadowkeyZoneSceneBuilder
     }
 
     /// <summary>The same tile corner at a different height.</summary>
-    private static Vector3 At(Vector3 corner, float z) => new(corner.X, corner.Y, z);
+    private static Vector3 At(Vector3 corner, float z)
+    {
+        return new Vector3(corner.X, corner.Y, z);
+    }
 
     /// <summary>One tile corner in scene space.</summary>
     private static Vector3 CornerVertex(int x, int y, int slot, float[] heights)
@@ -550,14 +553,14 @@ internal static class ShadowkeyZoneSceneBuilder
     /// </summary>
     private sealed class FaceBatches
     {
-        private readonly Dictionary<string, int> _byKey = new(StringComparer.OrdinalIgnoreCase);
-        private readonly List<(string? Key, PartBuilder Part)> _open = [];
-        private readonly List<(string? Key, PartBuilder Part)> _finished = [];
         private const string UntexturedKey = "\0untextured";
+        private readonly Dictionary<string, int> _byKey = new(StringComparer.OrdinalIgnoreCase);
+        private readonly List<(string? Key, PartBuilder Part)> _finished = [];
+        private readonly List<(string? Key, PartBuilder Part)> _open = [];
+        private bool _any;
+        private Vector3 _max = new(float.MinValue);
 
         private Vector3 _min = new(float.MaxValue);
-        private Vector3 _max = new(float.MinValue);
-        private bool _any;
 
         /// <summary>Bounds over every vertex emitted so far, or null when nothing has been.</summary>
         public BethesdaViewerBounds? Bounds => _any ? new BethesdaViewerBounds(_min, _max) : null;

@@ -104,7 +104,7 @@ internal sealed class OwnershipContainmentResolver
         var high = _spans.Length - 1;
         while (low <= high)
         {
-            var mid = low + ((high - low) / 2);
+            var mid = low + (high - low) / 2;
             var span = _spans[mid];
             if (referrerVa < span.StartVa)
             {

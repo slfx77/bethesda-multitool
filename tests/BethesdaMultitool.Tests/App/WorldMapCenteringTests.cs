@@ -59,7 +59,7 @@ public sealed class WorldMapCenteringTests
     {
         var bounds = WorldMapViewportMath.TryGetOccupiedCellBounds(cells);
         Assert.True(bounds.HasValue, "Expected occupied-cell bounds.");
-        return bounds!.Value;
+        return bounds.Value;
     }
 
     // --- (a) centre-preserving resize -----------------------------------------------------------

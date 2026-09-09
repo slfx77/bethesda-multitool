@@ -42,7 +42,7 @@ public sealed class WeaponRecordScannerTests
             BethesdaGame.Oblivion);
 
         Assert.NotNull(scanEntry);
-        Assert.Equal(expectedType, scanEntry!.WeaponType);
+        Assert.Equal(expectedType, scanEntry.WeaponType);
         Assert.Equal(expectedPose, scanEntry.AttachmentPoseKfPath);
         Assert.Equal(100, scanEntry.Health);
         Assert.Equal(17, scanEntry.Damage);
@@ -69,7 +69,7 @@ public sealed class WeaponRecordScannerTests
         var scanEntry = WeaponRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(scanEntry);
-        Assert.Equal(expectedType, scanEntry!.WeaponType);
+        Assert.Equal(expectedType, scanEntry.WeaponType);
         Assert.Equal(@"weapons\test.nif", scanEntry.ModelPath);
     }
 
@@ -91,7 +91,7 @@ public sealed class WeaponRecordScannerTests
         var scanEntry = WeaponRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(scanEntry);
-        Assert.Equal("Bip01 Spine2", scanEntry!.EmbeddedWeaponNode);
+        Assert.Equal("Bip01 Spine2", scanEntry.EmbeddedWeaponNode);
         Assert.Equal(0x20, scanEntry.Flags);
     }
 
@@ -113,7 +113,7 @@ public sealed class WeaponRecordScannerTests
         var scanEntry = WeaponRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(scanEntry);
-        Assert.Equal(@"weapons\firstperson.nif", scanEntry!.ModelPath);
+        Assert.Equal(@"weapons\firstperson.nif", scanEntry.ModelPath);
         Assert.Equal(@"weapons\world.nif", scanEntry.Mod2ModelPath);
         Assert.Equal(0x7B, scanEntry.HandGripAnim);
     }

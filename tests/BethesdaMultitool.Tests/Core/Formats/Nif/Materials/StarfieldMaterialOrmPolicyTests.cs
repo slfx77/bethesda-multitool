@@ -59,8 +59,8 @@ public sealed class StarfieldMaterialOrmPolicyTests
     {
         var db = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(BuildDatabase(
-                useDiffChunks: true,
-                unsupported: unsupported)));
+                true,
+                unsupported)));
 
         var policy = db.ResolveOrmPolicy(MaterialPath);
 
@@ -72,7 +72,7 @@ public sealed class StarfieldMaterialOrmPolicyTests
     public void ResolveOrmPolicy_MissingPathFailsClosed()
     {
         var db = Assert.IsType<StarfieldMaterialDatabase>(
-            StarfieldMaterialDatabase.Parse(BuildDatabase(useDiffChunks: false)));
+            StarfieldMaterialDatabase.Parse(BuildDatabase(false)));
 
         Assert.False(db.ResolveOrmPolicy(@"materials\test\missing.mat").IsResolved);
     }
@@ -82,17 +82,17 @@ public sealed class StarfieldMaterialOrmPolicyTests
     {
         var water = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(BuildDatabase(
-                useDiffChunks: true,
+                true,
                 shaderRoute: "Water",
                 shaderModel: "Water1Layer")));
         var modelOnly = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(BuildDatabase(
-                useDiffChunks: true,
+                true,
                 shaderRoute: "Deferred",
                 shaderModel: "Water1Layer")));
         var malformedRoute = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(BuildDatabase(
-                useDiffChunks: true,
+                true,
                 shaderRoute: "Water1Layer",
                 shaderModel: "Water1Layer")));
 
@@ -113,7 +113,7 @@ public sealed class StarfieldMaterialOrmPolicyTests
     {
         var db = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(BuildDatabase(
-                useDiffChunks: false,
+                false,
                 objectInfoCase: objectInfoCase)));
 
         var policy = db.ResolveOrmPolicy(MaterialPath);
@@ -127,7 +127,7 @@ public sealed class StarfieldMaterialOrmPolicyTests
     {
         var db = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(BuildDatabase(
-                useDiffChunks: true,
+                true,
                 inheritanceCase: "partial-replacement")));
 
         var policy = db.ResolveOrmPolicy(MaterialPath);
@@ -141,7 +141,7 @@ public sealed class StarfieldMaterialOrmPolicyTests
     {
         var db = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(BuildDatabase(
-                useDiffChunks: true,
+                true,
                 inheritanceCase: "disabled-replacement")));
 
         var policy = db.ResolveOrmPolicy(MaterialPath);
@@ -155,7 +155,7 @@ public sealed class StarfieldMaterialOrmPolicyTests
     {
         var db = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(BuildDatabase(
-                useDiffChunks: true,
+                true,
                 inheritanceCase: "empty-texture")));
 
         var policy = db.ResolveOrmPolicy(MaterialPath);
@@ -175,7 +175,7 @@ public sealed class StarfieldMaterialOrmPolicyTests
     {
         var db = Assert.IsType<StarfieldMaterialDatabase>(
             StarfieldMaterialDatabase.Parse(BuildDatabase(
-                useDiffChunks: true,
+                true,
                 clearCase: clearCase)));
 
         var policy = db.ResolveOrmPolicy(MaterialPath);
@@ -295,21 +295,27 @@ public sealed class StarfieldMaterialOrmPolicyTests
             clearCase is "layer" or "blender" ? clearBaseObjectId : rootNumericBase,
             persistentMaterialBase,
             objectInfoCase != "has-data-false"));
-        objects.AddRange(ObjectRecordForFixture(wideObjectInfo,
-            0, 0, 0, layerId,
-            clearCase == "material"
-                ? clearBaseObjectId
-                : unsupported == "wrong-layer-target-type" ? materialsRootId : layersRootId));
-        objects.AddRange(ObjectRecordForFixture(wideObjectInfo,
-            0, 0, 0, materialId,
-            clearCase == "texture-set"
-                ? clearBaseObjectId
-                : unsupported == "wrong-material-target-type" ? layersRootId : materialsRootId));
-        objects.AddRange(ObjectRecordForFixture(wideObjectInfo,
-            0, 0, 0, textureSetId,
-            unsupported == "wrong-texture-set-target-type"
-                ? materialsRootId
-                : inheritanceCase is not null ? baseTextureSetId : textureSetsRootId));
+        var layerBase = unsupported == "wrong-layer-target-type" ? materialsRootId : layersRootId;
+        if (clearCase == "material")
+        {
+            layerBase = clearBaseObjectId;
+        }
+
+        var materialBase = unsupported == "wrong-material-target-type" ? layersRootId : materialsRootId;
+        if (clearCase == "texture-set")
+        {
+            materialBase = clearBaseObjectId;
+        }
+
+        var textureSetBase = inheritanceCase is not null ? baseTextureSetId : textureSetsRootId;
+        if (unsupported == "wrong-texture-set-target-type")
+        {
+            textureSetBase = materialsRootId;
+        }
+
+        objects.AddRange(ObjectRecordForFixture(wideObjectInfo, 0, 0, 0, layerId, layerBase));
+        objects.AddRange(ObjectRecordForFixture(wideObjectInfo, 0, 0, 0, materialId, materialBase));
+        objects.AddRange(ObjectRecordForFixture(wideObjectInfo, 0, 0, 0, textureSetId, textureSetBase));
         objects.AddRange(ObjectRecordForFixture(wideObjectInfo, 0, 0, 0, uvStreamId, uvStreamRootId));
         objects.AddRange(ObjectRecordForFixture(wideObjectInfo, 0, 0, 0, blenderId, blendersRootId));
         objects.AddRange(ObjectRecordForFixture(wideObjectInfo,
@@ -368,6 +374,7 @@ public sealed class StarfieldMaterialOrmPolicyTests
             };
             objects.AddRange(ObjectRecord(0, 0, 0, clearBaseObjectId, clearTypeRoot));
         }
+
         chunks.Add(Chunk("LIST", [.. objects]));
         chunks.Add(Chunk("OBJT", Concat(
             U32(offsets["BSMaterial::Internal::CompiledDB"]), Str("1.16.244.0"))));
@@ -425,6 +432,7 @@ public sealed class StarfieldMaterialOrmPolicyTests
             components.Add(Id(clearBaseObjectId, 0, "BSMaterial::BlenderID", blenderId));
             components.Add(Id(rootId, 0, "BSMaterial::BlenderID", 0));
         }
+
         if (inheritanceCase == "empty-texture")
         {
             components.Add(StringValue(
@@ -455,6 +463,7 @@ public sealed class StarfieldMaterialOrmPolicyTests
                 ? MalformedReplacement(textureSetId, 4)
                 : Replacement(textureSetId, 4, 0.25f, 0f, 0f, 1f));
         }
+
         if (unsupported == "extra-layer")
         {
             components.Add(Id(rootId, 1, "BSMaterial::LayerID", layerId));
@@ -518,51 +527,68 @@ public sealed class StarfieldMaterialOrmPolicyTests
         return [.. file];
     }
 
-    private static Component Id(uint owner, uint slot, string className, uint value) =>
-        new(owner, slot, className, U32(value), Concat(U16(0), U16(0), U32(value)));
+    private static Component Id(uint owner, uint slot, string className, uint value)
+    {
+        return new Component(owner, slot, className, U32(value), Concat(U16(0), U16(0), U32(value)));
+    }
 
-    private static Component Float2(uint owner, string className, float x, float y) =>
-        new(owner, 0, className, Concat(F32(x), F32(y)), Concat(
+    private static Component Float2(uint owner, string className, float x, float y)
+    {
+        return new Component(owner, 0, className, Concat(F32(x), F32(y)), Concat(
             U16(0), U16(0), F32(x), U16(1), F32(y), U16(0xFFFF), U16(0xFFFF)));
+    }
 
     private static Component StringValue(
-        uint owner, string className, string value, uint slot = 0) =>
-        new(owner, slot, className, Str(value), Concat(U16(0), Str(value), U16(0xFFFF)));
+        uint owner, string className, string value, uint slot = 0)
+    {
+        return new Component(owner, slot, className, Str(value), Concat(U16(0), Str(value), U16(0xFFFF)));
+    }
 
     private static Component Replacement(
-        uint owner, uint slot, float r, float g, float b, float a) =>
-        new(owner, slot, "BSMaterial::TextureReplacement",
+        uint owner, uint slot, float r, float g, float b, float a)
+    {
+        return new Component(owner, slot, "BSMaterial::TextureReplacement",
             Concat([1], F32(r), F32(g), F32(b), F32(a)),
             Concat(
                 U16(0), [1], U16(1), U16(0),
                 U16(0), F32(r), U16(1), F32(g), U16(2), F32(b), U16(3), F32(a),
                 U16(0xFFFF), U16(0xFFFF), U16(0xFFFF)));
+    }
 
-    private static Component PartialReplacement(uint owner, uint slot, float g, float b, float a) =>
-        new(owner, slot, "BSMaterial::TextureReplacement",
+    private static Component PartialReplacement(uint owner, uint slot, float g, float b, float a)
+    {
+        return new Component(owner, slot, "BSMaterial::TextureReplacement",
             Concat([1], F32(0f), F32(g), F32(b), F32(a)),
             Concat(
                 U16(1), U16(0),
                 U16(1), F32(g), U16(2), F32(b), U16(3), F32(a),
                 U16(0xFFFF), U16(0xFFFF), U16(0xFFFF)));
+    }
 
-    private static Component DisabledReplacement(uint owner, uint slot) =>
-        new(owner, slot, "BSMaterial::TextureReplacement",
+    private static Component DisabledReplacement(uint owner, uint slot)
+    {
+        return new Component(owner, slot, "BSMaterial::TextureReplacement",
             Concat([0], F32(0f), F32(0f), F32(0f), F32(1f)),
             Concat(U16(0), [0], U16(0xFFFF)));
+    }
 
-    private static Component MalformedTexture(uint owner, uint slot) =>
-        new(owner, slot, "BSMaterial::MRTextureFile",
+    private static Component MalformedTexture(uint owner, uint slot)
+    {
+        return new Component(owner, slot, "BSMaterial::MRTextureFile",
             Concat(U16(8), [1]),
             Concat(U16(0), U16(8), [1], U16(0xFFFF)));
+    }
 
-    private static Component MalformedReplacement(uint owner, uint slot) =>
-        new(owner, slot, "BSMaterial::TextureReplacement",
+    private static Component MalformedReplacement(uint owner, uint slot)
+    {
+        return new Component(owner, slot, "BSMaterial::TextureReplacement",
             [1],
             Concat(U16(1), U16(0), U16(0), F32(0.5f)));
+    }
 
-    private static Component EffectSettings(uint owner, StarfieldEffectSettingsFixture effect) =>
-        new(owner, 0, "BSMaterial::EffectSettingsComponent",
+    private static Component EffectSettings(uint owner, StarfieldEffectSettingsFixture effect)
+    {
+        return new Component(owner, 0, "BSMaterial::EffectSettingsComponent",
             Concat(
                 [0], [0],
                 F32(0f), F32(0f), F32(0f), F32(0f),
@@ -582,9 +608,11 @@ public sealed class StarfieldMaterialOrmPolicyTests
                 U16(20), F32(effect.MaterialOverallAlpha),
                 U16(23), Str(effect.BlendingMode),
                 U16(0xFFFF)));
+    }
 
-    private static Component EffectOpacity(uint owner, StarfieldEffectOpacityFixture opacity) =>
-        new(owner, 0, "BSMaterial::OpacityComponent",
+    private static Component EffectOpacity(uint owner, StarfieldEffectOpacityFixture opacity)
+    {
+        return new Component(owner, 0, "BSMaterial::OpacityComponent",
             Concat(
                 Str($"MATERIAL_LAYER_{opacity.SourceLayer}"),
                 [opacity.SecondLayerActive ? (byte)1 : (byte)0],
@@ -597,14 +625,17 @@ public sealed class StarfieldMaterialOrmPolicyTests
                 U16(1), [opacity.SecondLayerActive ? (byte)1 : (byte)0],
                 U16(5), [opacity.ThirdLayerActive ? (byte)1 : (byte)0],
                 U16(0xFFFF)));
+    }
 
     private static byte[] ObjectRecord(
         uint file,
         uint ext,
         uint dir,
         uint dbId,
-        uint baseId = 0) =>
-        Concat(U32(file), U32(ext), U32(dir), U32(dbId), U32(baseId), [1]);
+        uint baseId = 0)
+    {
+        return Concat(U32(file), U32(ext), U32(dir), U32(dbId), U32(baseId), [1]);
+    }
 
     private static byte[] ObjectRecordForFixture(
         bool wide,
@@ -614,23 +645,43 @@ public sealed class StarfieldMaterialOrmPolicyTests
         uint dbId,
         uint baseId = 0,
         (uint Dir, uint File, uint Ext) parent = default,
-        bool hasData = true) =>
-        wide
-            ? Concat(
-                U32(file), U32(ext), U32(dir), U32(dbId), U32(baseId),
-                U32(parent.File), U32(parent.Ext), U32(parent.Dir),
-                [hasData ? (byte)1 : (byte)0])
-            : ObjectRecord(file, ext, dir, dbId, baseId);
+        bool hasData = true)
+    {
+        if (!wide)
+        {
+            return ObjectRecord(file, ext, dir, dbId, baseId);
+        }
 
-    private static byte[] Chunk(string tag, byte[] body) =>
-        Concat(Encoding.ASCII.GetBytes(tag), U32((uint)body.Length), body);
+        return Concat(
+            U32(file), U32(ext), U32(dir), U32(dbId), U32(baseId),
+            U32(parent.File), U32(parent.Ext), U32(parent.Dir),
+            [hasData ? (byte)1 : (byte)0]);
+    }
 
-    private static byte[] Str(string value) =>
-        Concat(U16((ushort)value.Length), Encoding.ASCII.GetBytes(value));
+    private static byte[] Chunk(string tag, byte[] body)
+    {
+        return Concat(Encoding.ASCII.GetBytes(tag), U32((uint)body.Length), body);
+    }
 
-    private static byte[] F32(float value) => BitConverter.GetBytes(value);
-    private static byte[] U32(uint value) => BitConverter.GetBytes(value);
-    private static byte[] U16(ushort value) => BitConverter.GetBytes(value);
+    private static byte[] Str(string value)
+    {
+        return Concat(U16((ushort)value.Length), Encoding.ASCII.GetBytes(value));
+    }
+
+    private static byte[] F32(float value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] U32(uint value)
+    {
+        return BitConverter.GetBytes(value);
+    }
+
+    private static byte[] U16(ushort value)
+    {
+        return BitConverter.GetBytes(value);
+    }
 
     private static byte[] Concat(params byte[][] parts)
     {

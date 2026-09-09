@@ -7,7 +7,7 @@ internal enum OpaqueFrontToBackFallbackReason
     None = 0,
     InvalidView = 1,
     InvalidBounds = 2,
-    NoEligibleBatches = 3,
+    NoEligibleBatches = 3
 }
 
 /// <summary>
@@ -21,8 +21,10 @@ internal readonly record struct OpaqueFrontToBackBuildView(
     Vector3 Forward,
     OpaqueFrontToBackFallbackReason FallbackReason)
 {
-    internal OpaqueFrontToBackBuildView Fail(OpaqueFrontToBackFallbackReason reason) =>
-        this with { Valid = false, FallbackReason = reason };
+    internal OpaqueFrontToBackBuildView Fail(OpaqueFrontToBackFallbackReason reason)
+    {
+        return this with { Valid = false, FallbackReason = reason };
+    }
 }
 
 /// <summary>
@@ -38,11 +40,11 @@ internal static class OpaqueFrontToBackPolicy
         if (!requested)
         {
             return new OpaqueFrontToBackBuildView(
-                Requested: false,
-                Valid: false,
-                Eye: default,
-                Forward: default,
-                FallbackReason: OpaqueFrontToBackFallbackReason.None);
+                false,
+                false,
+                default,
+                default,
+                OpaqueFrontToBackFallbackReason.None);
         }
 
         if (!IsFinite(eye) || !IsFinite(forward))
@@ -53,9 +55,9 @@ internal static class OpaqueFrontToBackPolicy
         // Accumulate in double so a malformed very-large float vector cannot overflow to infinity
         // before validation. Real camera forwards are unit length; the floor rejects zero and
         // denormal inputs rather than manufacturing an unstable sort direction.
-        var lengthSquared = ((double)forward.X * forward.X)
-                            + ((double)forward.Y * forward.Y)
-                            + ((double)forward.Z * forward.Z);
+        var lengthSquared = (double)forward.X * forward.X
+                            + (double)forward.Y * forward.Y
+                            + (double)forward.Z * forward.Z;
         if (!double.IsFinite(lengthSquared) || lengthSquared < 1e-12)
         {
             return InvalidView(eye);
@@ -72,11 +74,11 @@ internal static class OpaqueFrontToBackPolicy
         }
 
         return new OpaqueFrontToBackBuildView(
-            Requested: true,
-            Valid: true,
-            Eye: eye,
-            Forward: normalized,
-            FallbackReason: OpaqueFrontToBackFallbackReason.None);
+            true,
+            true,
+            eye,
+            normalized,
+            OpaqueFrontToBackFallbackReason.None);
     }
 
     /// <summary>
@@ -99,20 +101,25 @@ internal static class OpaqueFrontToBackPolicy
             return false;
         }
 
-        depth = (((double)bounds.X - view.Eye.X) * view.Forward.X)
-                + (((double)bounds.Y - view.Eye.Y) * view.Forward.Y)
-                + (((double)bounds.Z - view.Eye.Z) * view.Forward.Z)
+        depth = ((double)bounds.X - view.Eye.X) * view.Forward.X
+                + ((double)bounds.Y - view.Eye.Y) * view.Forward.Y
+                + ((double)bounds.Z - view.Eye.Z) * view.Forward.Z
                 - bounds.W;
         return double.IsFinite(depth);
     }
 
-    private static OpaqueFrontToBackBuildView InvalidView(Vector3 eye) => new(
-        Requested: true,
-        Valid: false,
-        Eye: eye,
-        Forward: default,
-        FallbackReason: OpaqueFrontToBackFallbackReason.InvalidView);
+    private static OpaqueFrontToBackBuildView InvalidView(Vector3 eye)
+    {
+        return new OpaqueFrontToBackBuildView(
+            true,
+            false,
+            eye,
+            default,
+            OpaqueFrontToBackFallbackReason.InvalidView);
+    }
 
-    private static bool IsFinite(Vector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    private static bool IsFinite(Vector3 value)
+    {
+        return float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+    }
 }

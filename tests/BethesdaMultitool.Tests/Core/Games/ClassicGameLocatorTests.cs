@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Tests.Core.Games;
 ///     marker sets, the <c>|</c> any-of alternatives, the Fallout 1 / Fallout 2 disambiguation (both
 ///     roots carry the same DAT pair), and the bounded walk-up from a file to its install root.
 /// </summary>
-public class ClassicGameLocatorTests : IDisposable
+public sealed class ClassicGameLocatorTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("classic-locator-").FullName;
 
@@ -76,6 +76,35 @@ public class ClassicGameLocatorTests : IDisposable
 
         Assert.Equal(BethesdaGame.Fallout1, ClassicGameLocator.DetectFromDirectory(viaCdExe)?.Game);
         Assert.Equal(BethesdaGame.Fallout1, ClassicGameLocator.DetectFromDirectory(viaCfg)?.Game);
+    }
+
+    [Theory]
+    [InlineData("SYSTEM.CNF", @"DATA\ALL.DDF")]
+    [InlineData("default.xbe", @"resx\all.ddf")]
+    public void BrotherhoodOfSteel_BothConsoleLayoutsResolveFromDirectoriesAndArchiveNames(
+        string bootMarker, string masterMarker)
+    {
+        var install = MakeInstall("bos", bootMarker, masterMarker);
+        Assert.Equal(BethesdaGame.FalloutBrotherhoodOfSteel,
+            ClassicGameLocator.DetectFromDirectory(install)?.Game);
+
+        // Disc backends can report different casing and separators from the profile markers.
+        string[] names = [bootMarker.ToLowerInvariant(), masterMarker.Replace('\\', '/').ToLowerInvariant()];
+        Assert.Equal(BethesdaGame.FalloutBrotherhoodOfSteel,
+            ClassicGameLocator.DetectFromArchiveNames(names)?.Game);
+    }
+
+    [Theory]
+    [InlineData("SYSTEM.CNF")]
+    [InlineData("default.xbe")]
+    [InlineData(@"DATA\ALL.DDF")]
+    [InlineData(@"resx\all.ddf")]
+    [InlineData("default.xbe", @"resx\other.ddf")]
+    public void BrotherhoodOfSteel_IncompleteOrUnrelatedLayoutsMatchNeitherSource(params string[] markers)
+    {
+        var install = MakeInstall("incomplete-bos", markers);
+        Assert.Null(ClassicGameLocator.DetectFromDirectory(install));
+        Assert.Null(ClassicGameLocator.DetectFromArchiveNames(markers));
     }
 
     [Fact]
@@ -228,7 +257,8 @@ public class ClassicGameLocatorTests : IDisposable
 
         // The 11 January 2007 beta ships an unencrypted BOOT.BIN in place of EBOOT.BIN; requiring
         // EBOOT.BIN alone dropped that build on the floor.
-        var bootOnly = MakeInstall("psp-boot", @"PSP_GAME\PARAM.SFO", @"PSP_GAME\SYSDIR\BOOT.BIN", @"PSP_GAME\USRDIR\GR.ARC");
+        var bootOnly = MakeInstall("psp-boot", @"PSP_GAME\PARAM.SFO", @"PSP_GAME\SYSDIR\BOOT.BIN",
+            @"PSP_GAME\USRDIR\GR.ARC");
         Assert.Equal(BethesdaGame.OblivionPsp, ClassicGameLocator.DetectFromDirectory(bootOnly)?.Game);
         var profile = ClassicGameLocator.DetectFromDirectory(umd);
 

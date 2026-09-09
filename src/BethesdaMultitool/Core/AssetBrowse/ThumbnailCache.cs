@@ -38,22 +38,22 @@ internal sealed class ThumbnailCache : IDisposable
             ResourceCategory.CpuCache,
             maxEntries,
             maxBytes,
-            sizeOf: static (_, value) => value.Rgba?.LongLength ?? 1);
+            static (_, value) => value.Rgba?.LongLength ?? 1);
     }
 
     /// <summary>Entries currently held.</summary>
     public int Count => _cache.Count;
+
+    public void Dispose()
+    {
+        _cache.Dispose();
+    }
 
     /// <summary>Registers with the resource registry so the Diagnostics tab can see and trim this.</summary>
     public ThumbnailCache RegisterWith(ResourceRegistry registry)
     {
         _cache.RegisterWith(registry);
         return this;
-    }
-
-    public void Dispose()
-    {
-        _cache.Dispose();
     }
 
     /// <summary>
@@ -79,5 +79,8 @@ internal sealed class ThumbnailCache : IDisposable
     }
 
     /// <summary>True when this key has already been decoded, successfully or not.</summary>
-    public bool Contains(ThumbnailKey key) => _cache.ContainsKey(key);
+    public bool Contains(ThumbnailKey key)
+    {
+        return _cache.ContainsKey(key);
+    }
 }

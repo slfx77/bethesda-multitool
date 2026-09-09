@@ -4,7 +4,6 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Tests.Helpers;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
-using Vortice.Direct3D12;
 using Vortice.Direct3D12.Shader;
 using Vortice.DXGI;
 using Xunit;
@@ -38,16 +37,19 @@ public sealed class TerrainVertexLayoutTests
     ///     through a production helper, so the tiling checks below are against independently known
     ///     sizes.
     /// </summary>
-    private static int FormatBytes(Format format) => format switch
+    private static int FormatBytes(Format format)
     {
-        Format.R32G32B32A32_Float => 16,
-        Format.R16G16B16A16_UNorm => 8,
-        Format.R32G32B32_Float => 12,
-        Format.R16G16_SNorm => 4,
-        Format.R32_Float => 4,
-        Format.R8G8B8A8_UNorm => 4,
-        _ => throw new NotSupportedException($"Unexpected terrain input format {format}.")
-    };
+        return format switch
+        {
+            Format.R32G32B32A32_Float => 16,
+            Format.R16G16B16A16_UNorm => 8,
+            Format.R32G32B32_Float => 12,
+            Format.R16G16_SNorm => 4,
+            Format.R32_Float => 4,
+            Format.R8G8B8A8_UNorm => 4,
+            _ => throw new NotSupportedException($"Unexpected terrain input format {format}.")
+        };
+    }
 
     [Theory]
     [MemberData(nameof(BlendQuadCounts))]
@@ -132,8 +134,8 @@ public sealed class TerrainVertexLayoutTests
         // Clamping would hand back a layout that does not match the shader the caller is about to
         // pair it with, which is the silent-mis-decode failure this file exists to prevent.
         Assert.Throws<ArgumentOutOfRangeException>(() => TerrainVertexLayout.ElementsFor(-1));
-        Assert.Throws<ArgumentOutOfRangeException>(
-            () => TerrainVertexLayout.ElementsFor(TerrainVertexLayout.MaxBlendQuads + 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            TerrainVertexLayout.ElementsFor(TerrainVertexLayout.MaxBlendQuads + 1));
     }
 
     [Fact]
@@ -160,7 +162,7 @@ public sealed class TerrainVertexLayoutTests
 
         var bytecode = GpuShaderCompiler12.Compile(
             "terrain_textured.vert.hlsl", "main", "vs_5_1",
-            [new ShaderMacro("TERRAIN_BLEND_QUADS", blendQuadCount.ToString(CultureInfo.InvariantCulture))]);
+            new ShaderMacro("TERRAIN_BLEND_QUADS", blendQuadCount.ToString(CultureInfo.InvariantCulture)));
         using var reflection = Compiler.Reflect<ID3D12ShaderReflection>(bytecode);
 
         var supplied = TerrainVertexLayout.ElementsFor(blendQuadCount)
@@ -181,7 +183,8 @@ public sealed class TerrainVertexLayoutTests
 
         Assert.NotEmpty(declared);
         var missing = declared.Where(d => !supplied.Contains(d)).ToArray();
-        Assert.True(missing.Length == 0, $"shader declares inputs the layout does not supply: {string.Join(", ", missing)}");
+        Assert.True(missing.Length == 0,
+            $"shader declares inputs the layout does not supply: {string.Join(", ", missing)}");
 
         // And the other direction, which D3D12 tolerates but which means we are uploading bytes
         // nothing reads — exactly the waste this phase existed to remove.
@@ -199,14 +202,14 @@ public sealed class TerrainVertexLayoutTests
         // could easily be a width no worldspace on this machine happens to use.
         ShaderCompileTestGuard.SkipUnlessEnabled();
 
-        ShaderMacro[] macros = [new ShaderMacro("TERRAIN_BLEND_QUADS", blendQuadCount.ToString(CultureInfo.InvariantCulture))];
+        ShaderMacro[] macros = [new("TERRAIN_BLEND_QUADS", blendQuadCount.ToString(CultureInfo.InvariantCulture))];
         using var vertex = Compiler.Reflect<ID3D12ShaderReflection>(
             GpuShaderCompiler12.Compile("terrain_textured.vert.hlsl", "main", "vs_5_1", macros));
         using var pixel = Compiler.Reflect<ID3D12ShaderReflection>(
             GpuShaderCompiler12.Compile("terrain_textured.frag.hlsl", "main", "ps_5_1", macros));
 
-        var written = Signature(vertex, output: true);
-        var read = Signature(pixel, output: false);
+        var written = Signature(vertex, true);
+        var read = Signature(pixel, false);
 
         var unwritten = read.Except(written, StringComparer.OrdinalIgnoreCase).ToArray();
         Assert.True(unwritten.Length == 0,

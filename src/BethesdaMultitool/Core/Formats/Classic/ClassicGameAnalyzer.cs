@@ -35,7 +35,7 @@ internal static class ClassicGameAnalyzer
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        (Core.Games.GameProfile Profile, string Root)? located;
+        (GameProfile Profile, string Root)? located;
         if (Directory.Exists(filePath))
         {
             located = ClassicGameLocator.DetectFromDirectory(filePath) is { } profile
@@ -95,6 +95,11 @@ internal static class ClassicGameAnalyzer
             case BethesdaGame.OblivionPsp:
                 PopulateTravels(resolvedProfile, root, records, cancellationToken);
                 break;
+            case BethesdaGame.FalloutTactics:
+                // The missions live in the mis-*.bos archives with loose overrides under core\;
+                // the profile's globs give that precedence, so the source takes the INSTALL root.
+                TacticsRecordSource.Populate(root, records, cancellationToken);
+                break;
             case BethesdaGame.FalloutBrotherhoodOfSteel:
             {
                 // Like a J2ME JAR, this install is ONE FILE — a PS2 disc image — so it mounts as an
@@ -105,9 +110,6 @@ internal static class ClassicGameAnalyzer
                 BosRecordSource.Populate(disc, records, cancellationToken);
                 break;
             }
-            default:
-                // No synthesizer for this game yet — the empty collection is the honest answer.
-                break;
         }
 
         // Stormhold and Dawnstar carry NPC dialogue as grouped strings, and the Dialogue viewer
@@ -156,7 +158,7 @@ internal static class ClassicGameAnalyzer
     ///     filesystem to the game's record source.
     /// </summary>
     private static void PopulateTravels(
-        Core.Games.GameProfile profile, string root, RecordCollection records, CancellationToken cancellationToken)
+        GameProfile profile, string root, RecordCollection records, CancellationToken cancellationToken)
     {
         using var install = File.Exists(root)
             ? GameFileSystem.OpenArchive(root)

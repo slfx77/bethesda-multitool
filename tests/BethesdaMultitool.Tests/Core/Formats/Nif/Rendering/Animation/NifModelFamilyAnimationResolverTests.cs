@@ -235,6 +235,16 @@ public sealed class NifModelFamilyAnimationResolverTests
         private readonly Dictionary<byte, NifModelFamilyModelRig> _models = [];
         private readonly Dictionary<byte, NifModelFamilySkeletonRig> _skeletons = [];
 
+        public NifModelFamilyModelRig? InspectModel(byte[] data)
+        {
+            return data.Length > 0 && _models.TryGetValue(data[0], out var rig) ? rig : null;
+        }
+
+        public NifModelFamilySkeletonRig? InspectSkeleton(byte[] data)
+        {
+            return data.Length > 0 && _skeletons.TryGetValue(data[0], out var rig) ? rig : null;
+        }
+
         internal ResolverRigInspector AddModel(byte marker, params string[] boneNames)
         {
             _models[marker] = new NifModelFamilyModelRig(boneNames);
@@ -245,16 +255,6 @@ public sealed class NifModelFamilyAnimationResolverTests
         {
             _skeletons[marker] = new NifModelFamilySkeletonRig(nodeNames);
             return this;
-        }
-
-        public NifModelFamilyModelRig? InspectModel(byte[] data)
-        {
-            return data.Length > 0 && _models.TryGetValue(data[0], out var rig) ? rig : null;
-        }
-
-        public NifModelFamilySkeletonRig? InspectSkeleton(byte[] data)
-        {
-            return data.Length > 0 && _skeletons.TryGetValue(data[0], out var rig) ? rig : null;
         }
     }
 
@@ -277,16 +277,6 @@ public sealed class NifModelFamilyAnimationResolverTests
         internal string? LastEnumerationPrefix { get; private set; }
 
         public string Label => "resolver-test-vfs";
-
-        internal void AddFile(string path, byte[] data, long size, string source)
-        {
-            _files.Add((new GameFileEntry(Normalize(path), size, source), data));
-        }
-
-        internal void AddMetadata(string path, long size, string source)
-        {
-            _files.Add((new GameFileEntry(Normalize(path), size, source), null));
-        }
 
         public bool Exists(string path)
         {
@@ -352,6 +342,16 @@ public sealed class NifModelFamilyAnimationResolverTests
 
         public void Dispose()
         {
+        }
+
+        internal void AddFile(string path, byte[] data, long size, string source)
+        {
+            _files.Add((new GameFileEntry(Normalize(path), size, source), data));
+        }
+
+        internal void AddMetadata(string path, long size, string source)
+        {
+            _files.Add((new GameFileEntry(Normalize(path), size, source), null));
         }
 
         private static string Normalize(string path)

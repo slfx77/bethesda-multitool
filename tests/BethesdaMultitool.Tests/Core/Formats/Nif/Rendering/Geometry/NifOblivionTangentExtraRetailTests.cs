@@ -31,7 +31,7 @@ public sealed class NifOblivionTangentExtraRetailTests
         Assert.SkipWhen(archivePath is null, RealAssetPaths.SkipMessage("Oblivion - Meshes.bsa"));
         // This fixture needs only three bounded NIF reads, not an ESM or a whole-master copy.
         // Archive ownership stays local; the sequential collection avoids other retail I/O churn.
-        using var archive = ArchiveReader.Open(archivePath!);
+        using var archive = ArchiveReader.Open(archivePath);
         var meshPath = $@"meshes\armor\iron\f\{asset}.nif";
         var data = Assert.IsType<byte[]>(archive.ReadFile(meshPath));
         Assert.Equal(expectedSha256, Convert.ToHexString(SHA256.HashData(data)));
@@ -44,7 +44,7 @@ public sealed class NifOblivionTangentExtraRetailTests
 
         using var textures = new NifTextureResolver();
         var cpu = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(
-            data, nif, textures, bindPoseOnly: true));
+            data, nif, textures, true));
         var exported = NifExportExtractor.Extract(data, nif);
         var glb = Assert.IsType<GlbScene>(NifExportSceneBuilder.Build(data, nif, meshPath));
         var native = BethesdaViewerSceneGlbAdapter.FromGlbScene(
@@ -127,6 +127,7 @@ public sealed class NifOblivionTangentExtraRetailTests
                 if (MathF.Abs(orientation) <= 1e-6f)
                     nearCollinearVertices.Add(i);
             }
+
             Assert.Equal(expectedNearCollinearVertices, nearCollinearVertices);
         }
     }
@@ -145,18 +146,18 @@ public sealed class NifOblivionTangentExtraRetailTests
         {
             "greaves" =>
             [
-                new(1, 6, 2, 484, "LowerBody:0"),
-                new(18, 23, 19, 725, "LowerBody:1"),
-                new(27, 30, 28, 454, "LowerBody:2")
+                new Target(1, 6, 2, 484, "LowerBody:0"),
+                new Target(18, 23, 19, 725, "LowerBody:1"),
+                new Target(27, 30, 28, 454, "LowerBody:2")
             ],
-            "boots" => [new(1, 6, 2, 1840, "Foot")],
+            "boots" => [new Target(1, 6, 2, 1840, "Foot")],
             "cuirass" =>
             [
-                new(1, 6, 2, 444, "Arms"),
-                new(23, 25, 24, 214, "UpperBody"),
-                new(32, 37, 33, 282, "Arms"),
-                new(41, 43, 42, 1331, "UpperBody"),
-                new(49, 52, 50, 932, "UpperBody")
+                new Target(1, 6, 2, 444, "Arms"),
+                new Target(23, 25, 24, 214, "UpperBody"),
+                new Target(32, 37, 33, 282, "Arms"),
+                new Target(41, 43, 42, 1331, "UpperBody"),
+                new Target(49, 52, 50, 932, "UpperBody")
             ],
             _ => throw new ArgumentOutOfRangeException(nameof(asset))
         };

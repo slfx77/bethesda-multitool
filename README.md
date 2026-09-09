@@ -360,6 +360,14 @@ MIT License - See [LICENSE](LICENSE) for details.
 | [daggerfall-unity](https://github.com/Interkarma/daggerfall-unity) | [MIT](https://github.com/Interkarma/daggerfall-unity/blob/master/LICENSE) | Daggerfall format decoders via DaggerfallConnect (ported) |
 | [falltergeist/dat-unpacker](https://github.com/falltergeist/dat-unpacker) | MIT | Fallout DAT1 LZSS decompression (ported) |
 | [RGUnity/redguard-file-exporter](https://github.com/RGUnity/redguard-file-exporter) | [MIT](https://github.com/RGUnity/redguard-file-exporter/blob/master/LICENSE) | Redguard ROB archive structure (ported) |
+| [twogood/unshield](https://github.com/twogood/unshield) | [MIT](https://github.com/twogood/unshield/blob/master/LICENSE) | InstallShield 5 cabinet reading (ported) |
+| [libacm](https://github.com/markokr/libacm) | ISC | Interplay ACM audio decoder for Fallout 1/2 (ported) |
+| [zlib contrib/blast.c](https://github.com/madler/zlib/blob/develop/contrib/blast/blast.c) | [zlib](https://github.com/madler/zlib/blob/develop/LICENSE) | PKWARE DCL "implode" decoder for Daggerfall's CD `PACKED.DAT` (ported) |
+| [NeversoftMultitool](https://github.com/slfx77/NeversoftMultitool) | [MIT](https://github.com/slfx77/NeversoftMultitool/blob/main/LICENSE) | Sample corpus generator, CD-image and XDVDFS (Xbox / Xbox 360 disc) readers, 2D-level seam, RenderWare chunk walk (ported) |
+| [JimmyPCTool / AweMultitool](https://github.com/slfx77/JimmyPCTool) | [MIT](https://github.com/slfx77/JimmyPCTool/blob/main/LICENSE) | Asset Browser helpers and the Granny 2 (.gr2) reader (ported) |
+| [Rasetsuu/blendergranny](https://github.com/Rasetsuu/blendergranny), [Stitchuuuu/granny-ro-js](https://github.com/Stitchuuuu/granny-ro-js) | MIT | Granny 2 Oodle0 decompression (via AweMultitool) |
+| [carbonenginejs/format-gr2](https://github.com/carbonenginejs/format-gr2) | MIT | Granny 2 Oodle1 decompression (via AweMultitool) |
+| [Arbos/nwn2mdk](https://github.com/Arbos/nwn2mdk) | Boost 1.0 | The Oodle1 algorithm format-gr2 ports (`gr2_decompress.cpp`) |
 
 ## Acknowledgments
 
@@ -387,8 +395,9 @@ MIT License - See [LICENSE](LICENSE) for details.
 
 ### Classic-format references
 
-Support for the pre-Morrowind catalog (Arena, Daggerfall, Battlespire, Redguard,
-Fallout, Fallout 2, Fallout Tactics) builds on the following community work. Code is
+Support for the pre-Morrowind and spin-off catalog (Arena, Daggerfall, Battlespire,
+Redguard, Fallout, Fallout 2, Fallout Tactics, the cancelled Van Buren, and Fallout:
+Brotherhood of Steel) builds on the following community work. Code is
 ported only from permissively-licensed projects, with the upstream source named in a
 header comment on every ported file and the license text in
 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES). Everything else is used strictly as
@@ -397,9 +406,13 @@ written documentation — no code from those projects is present here.
 The Asset Browser also borrows two UI-framework-independent helpers from this project's
 sister app [JimmyPCTool / AweMultitool](https://github.com/slfx77/JimmyPCTool) (MIT):
 its latest-only job guard and its gallery thumbnail scaler. The map pane's 2D-level
-seam and the CD-image reader (`archive` on .iso / .cue+.bin, with Redbook tracks as WAV)
-come from the other sister app,
-[NeversoftMultitool](https://github.com/slfx77/NeversoftMultitool) (MIT).
+seam, the CD-image reader (`archive` on .iso / .cue+.bin, with Redbook tracks as WAV) and the
+XDVDFS reader (the original Xbox and Xbox 360 disc filesystem, which mounts Fallout: Brotherhood of
+Steel's Xbox release and a full Xbox 360 redump) come from the other sister app,
+[NeversoftMultitool](https://github.com/slfx77/NeversoftMultitool) (MIT). The Granny 2 reader that
+decodes Van Buren's character meshes is ported from AweMultitool too, with its own upstream chain
+(blendergranny + granny-ro-js for Oodle0, CarbonEngineJS format-gr2 and nwn2mdk for Oodle1 — MIT and
+Boost 1.0, every notice reproduced in the ported files).
 
 **Ported (permissive):**
 
@@ -409,6 +422,11 @@ come from the other sister app,
 - [RGUnity/redguard-file-exporter](https://github.com/RGUnity/redguard-file-exporter) - Redguard ROB archives and TEXBSI textures (MIT)
 - [twogood/unshield](https://github.com/twogood/unshield) - InstallShield 5 cabinet reading (MIT)
 - [kaitai_struct_formats](https://github.com/kaitai-io/kaitai_struct_formats) - `game/fallout_dat.ksy` structure cross-check (CC0-1.0)
+- [libacm](https://github.com/markokr/libacm) - Interplay ACM audio (Fallout 1/2 speech, effects and music) (ISC)
+- [zlib contrib/blast.c](https://github.com/madler/zlib/blob/develop/contrib/blast/blast.c) - PKWARE DCL "implode", the codec of Daggerfall's CD `PACKED.DAT` (zlib)
+- [JimmyPCTool / AweMultitool](https://github.com/slfx77/JimmyPCTool) - Granny 2 (.gr2) container, type tree and model reader (MIT), with
+  [Rasetsuu/blendergranny](https://github.com/Rasetsuu/blendergranny) + [Stitchuuuu/granny-ro-js](https://github.com/Stitchuuuu/granny-ro-js) (Oodle0, MIT)
+  and [carbonenginejs/format-gr2](https://github.com/carbonenginejs/format-gr2) (MIT) / [Arbos/nwn2mdk](https://github.com/Arbos/nwn2mdk) (Boost 1.0) (Oodle1)
 
 **Documentation only (not ported):**
 
@@ -421,3 +439,25 @@ come from the other sister app,
 Fallout Tactics support is clean-roomed from prose format specifications: every
 public Tactics tool is GPL-licensed and therefore incompatible with this project's
 MIT license, so no Tactics code is derived from them.
+
+**Original reverse engineering (no reference used):**
+
+Three of these titles have no permissively-licensed reference at all, so their formats
+were measured directly from the shipped data and every reader here is original work:
+
+- **Fallout Tactics** - the `.mis` mission container, the self-describing `.ent`/`.chr`
+  property bags, the `.zar` / `.til` / `.spr` art and the `.sav` save archive. The art and save
+  layouts are read off our own decompilation of the game's `BOS.exe`; `kran27/FalloutTacticsTools`
+  and the other public tools are GPL and were not consulted for code.
+- **Van Buren** (cancelled Fallout 3, Dec 2003 prototype) - the `.grp` archive, `EEN2` entity
+  records, `.stf` string tables and `B3D` mesh identification. `kran27/VanBurenTools` is GPL
+  and was used as a behaviour reference only, never transliterated.
+- **Fallout: Brotherhood of Steel** (2004, PS2 and Xbox) - the `.SDB` string database, the `.DDF`
+  record store, the `.CLP` clump container, the VAG sound banks and the PS2 GS texture layout,
+  decoded from the retail discs and our own decompilation of the game's executables
+  (`SLUS_205.39`, `default.xbe`) with no reference of any kind. The sibling Snowblind engine
+  tools do not describe this container family.
+- **Bink video** (`.bik`, RAD Game Tools; Fallout Tactics and the Xbox Brotherhood of Steel disc) - an original clean-room
+  decoder written from our own disassembly of the shipped `binkw32.dll` and verified byte-exact
+  against ffmpeg's output frames; no FFmpeg code was read or ported.
+

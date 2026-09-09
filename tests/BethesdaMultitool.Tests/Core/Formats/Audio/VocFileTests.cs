@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Audio;
 using Xunit;
 
@@ -78,8 +76,8 @@ public class VocFileTests
     public void Parse_RejectsABadHeaderChecksum()
     {
         // The header's own integrity rule: checksum == ~version + 0x1234.
-        var ex = Assert.Throws<InvalidDataException>(
-            () => VocFile.Parse(BuildVoc(SoundBlock(131, 1), checksum: 0x0000), "BAD.VOC"));
+        var ex = Assert.Throws<InvalidDataException>(() =>
+            VocFile.Parse(BuildVoc(SoundBlock(131, 1), checksum: 0x0000), "BAD.VOC"));
 
         Assert.Contains("checksum", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
@@ -183,8 +181,7 @@ public class VocFileTests
     [Fact]
     public void Parse_UnknownBlockType_Throws()
     {
-        Assert.Throws<InvalidDataException>(
-            () => VocFile.Parse(BuildVoc(Block(42, 1, 2)), "T.VOC"));
+        Assert.Throws<InvalidDataException>(() => VocFile.Parse(BuildVoc(Block(42, 1, 2)), "T.VOC"));
     }
 
     [Fact]

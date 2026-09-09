@@ -48,6 +48,7 @@ internal sealed class DaggerfallTextureFile
 
     /// <summary>Compression forms, from the reference's enum.</summary>
     private const ushort CompressionRecordRle = 0x1108;
+
     private const ushort CompressionImageRle = 0x0108;
 
     /// <summary>Files the reference refuses: malformed in the retail data.</summary>
@@ -117,7 +118,7 @@ internal sealed class DaggerfallTextureFile
         var records = new List<DaggerfallTextureRecord>(recordCount);
         for (var r = 0; r < recordCount; r++)
         {
-            var headerOffset = HeaderLength + (r * RecordHeaderLength);
+            var headerOffset = HeaderLength + r * RecordHeaderLength;
             if (headerOffset + RecordHeaderLength > bytes.Length)
             {
                 throw new InvalidDataException($"'{name}' ends inside record header {r}.");
@@ -160,15 +161,17 @@ internal sealed class DaggerfallTextureFile
                         $"'{name}' record {r} declares {frameCount} frame(s) with empty geometry ({width}x{height}).");
                 }
 
-                var dataStart = recordPosition + (long)dataOffset;
+                var dataStart = recordPosition + dataOffset;
                 if (dataStart >= bytes.Length)
                 {
                     throw new InvalidDataException($"'{name}' record {r}'s data offset is outside the file.");
                 }
 
                 frames = compression is CompressionRecordRle or CompressionImageRle
-                    ? DecodeRleRecord(bytes, name, r, recordPosition, (int)dataStart, width, height, frameCount, offsetX, offsetY)
-                    : DecodeUncompressedRecord(bytes, name, r, (int)dataStart, width, height, frameCount, offsetX, offsetY);
+                    ? DecodeRleRecord(bytes, name, r, recordPosition, (int)dataStart, width, height, frameCount,
+                        offsetX, offsetY)
+                    : DecodeUncompressedRecord(bytes, name, r, (int)dataStart, width, height, frameCount, offsetX,
+                        offsetY);
             }
 
             records.Add(new DaggerfallTextureRecord(r, offsetX, offsetY, compression, frames));
@@ -216,7 +219,7 @@ internal sealed class DaggerfallTextureFile
 
         for (var frame = 0; frame < frameCount; frame++)
         {
-            var tableEntry = dataStart + (frame * 4);
+            var tableEntry = dataStart + frame * 4;
             if (tableEntry + 4 > bytes.Length)
             {
                 throw new InvalidDataException($"'{name}' record {record} frame table is truncated.");
@@ -299,8 +302,8 @@ internal sealed class DaggerfallTextureFile
 
         for (var frame = 0; frame < frameCount; frame++)
         {
-            var headerStart = dataStart + (height * frame * 4);
-            if (headerStart + (height * 4) > bytes.Length)
+            var headerStart = dataStart + height * frame * 4;
+            if (headerStart + height * 4 > bytes.Length)
             {
                 throw new InvalidDataException($"'{name}' record {record} frame {frame} row headers are truncated.");
             }
@@ -310,8 +313,8 @@ internal sealed class DaggerfallTextureFile
 
             for (var y = 0; y < height; y++)
             {
-                var rowOffset = BinaryPrimitives.ReadInt16LittleEndian(bytes[(headerStart + (y * 4))..]);
-                var encoding = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(headerStart + (y * 4) + 2)..]);
+                var rowOffset = BinaryPrimitives.ReadInt16LittleEndian(bytes[(headerStart + y * 4)..]);
+                var encoding = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(headerStart + y * 4 + 2)..]);
                 var source = recordPosition + rowOffset;
                 if (source < 0 || source >= bytes.Length)
                 {

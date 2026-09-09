@@ -70,7 +70,7 @@ public sealed class BethesdaViewerScenePoseMaterializer12Tests
         var scene = new BethesdaViewerScene(
             "raw-sky-bounds",
             BethesdaViewerScenePurpose.RawNif,
-            bounds: null);
+            null);
         scene.MeshParts.Add(new BethesdaViewerMeshPart
         {
             Name = "Object",
@@ -106,7 +106,7 @@ public sealed class BethesdaViewerScenePoseMaterializer12Tests
         var scene = new BethesdaViewerScene(
             "npc-sky-tag",
             BethesdaViewerScenePurpose.NpcAppearance,
-            bounds: null);
+            null);
         var tagged = Triangle(
             10f, 20f, 30f,
             11f, 20f, 30f,
@@ -129,13 +129,18 @@ public sealed class BethesdaViewerScenePoseMaterializer12Tests
             warning.Contains("camera centering is disabled", StringComparison.Ordinal));
     }
 
-    private static RenderableSubmesh Triangle(params float[] positions) => new()
+    private static RenderableSubmesh Triangle(params float[] positions)
     {
-        Positions = positions,
-        Triangles = [0, 1, 2],
-        DiffuseTexturePath = @"textures\test\white.dds"
-    };
+        return new RenderableSubmesh
+        {
+            Positions = positions,
+            Triangles = [0, 1, 2],
+            DiffuseTexturePath = @"textures\test\white.dds"
+        };
+    }
 
-    private static void AssertClose(Vector3 expected, Vector3 actual) =>
+    private static void AssertClose(Vector3 expected, Vector3 actual)
+    {
         Assert.InRange(Vector3.Distance(expected, actual), 0f, 1e-4f);
+    }
 }

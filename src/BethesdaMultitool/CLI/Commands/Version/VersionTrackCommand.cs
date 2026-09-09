@@ -11,7 +11,7 @@ namespace BethesdaMultitool.CLI.Commands.Version;
 public static class VersionTrackCommand
 {
     private const string DefaultBuildsDir = "Sample/Full_360_Builds";
-    private const string DefaultDumpsDir = "Sample/MemoryDump";
+    private const string DefaultDumpsDir = "Sample/MemoryDumps";
     private const string DefaultCacheDir = ".vtrack_cache";
 
     public static Command Create()

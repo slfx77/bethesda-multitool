@@ -38,7 +38,7 @@ public class RleCodecTests
         [
             0x01, 0x11, 0x22, // literal packet: 0x01 + 1 = 2 bytes -> 11 22
             0x80, 0x33, //       run packet: 0x80 - 0x7F = 1 repeat  -> 33
-            0x82, 0x44, //       run packet: 0x82 - 0x7F = 3 repeats -> 44 44 44
+            0x82, 0x44 //       run packet: 0x82 - 0x7F = 3 repeats -> 44 44 44
         ];
 
         var result = RleCodec.Decompress(input, 6);

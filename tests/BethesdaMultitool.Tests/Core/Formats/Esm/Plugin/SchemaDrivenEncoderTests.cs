@@ -34,7 +34,7 @@ public class SchemaDrivenEncoderTests
             ["DirectionalColor"] = 0x12345678u
         };
 
-        var bytes = SchemaDictionarySerializer.Serialize(schema!, values);
+        var bytes = SchemaDictionarySerializer.Serialize(schema, values);
 
         Assert.Equal(40, bytes.Length);
         Assert.Equal(0xABCDEFu, BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(0, 4)));

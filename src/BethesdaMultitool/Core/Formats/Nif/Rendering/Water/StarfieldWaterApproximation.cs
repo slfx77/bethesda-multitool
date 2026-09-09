@@ -16,20 +16,20 @@ internal sealed record StarfieldWaterApproximation
     internal const string TelemetryName = "starfield-watr-source-backed-approx";
 
     internal static readonly IReadOnlyList<string> InferredGlobalTexturePaths = Array.AsReadOnly(
-    new[]
-    {
-        @"textures\water\defaultwater_normal.dds",
-        @"textures\water\defaultwatertile_normal.dds",
-        @"textures\water\defaultflow_normal.dds"
-    });
+        new[]
+        {
+            @"textures\water\defaultwater_normal.dds",
+            @"textures\water\defaultwatertile_normal.dds",
+            @"textures\water\defaultflow_normal.dds"
+        });
 
     internal static readonly IReadOnlyList<string> InferredGlobalTextureRoles = Array.AsReadOnly(
-    new[]
-    {
-        "starfield-global-normal-primary-inferred-slot",
-        "starfield-global-normal-tile-inferred-slot",
-        "starfield-global-flow-inferred-slot"
-    });
+        new[]
+        {
+            "starfield-global-normal-primary-inferred-slot",
+            "starfield-global-normal-tile-inferred-slot",
+            "starfield-global-flow-inferred-slot"
+        });
 
     private StarfieldWaterApproximation(StarfieldWaterVisualData visualData)
     {
@@ -118,11 +118,14 @@ internal sealed record StarfieldWaterApproximation
         };
     }
 
-    private static Vector4 PackLayer(StarfieldWaterNoiseLayer layer) => new(
-        layer.UvScale,
-        layer.WindDirection,
-        layer.WindSpeed,
-        layer.AmplitudeScale);
+    private static Vector4 PackLayer(StarfieldWaterNoiseLayer layer)
+    {
+        return new Vector4(
+            layer.UvScale,
+            layer.WindDirection,
+            layer.WindSpeed,
+            layer.AmplitudeScale);
+    }
 }
 
 /// <summary>

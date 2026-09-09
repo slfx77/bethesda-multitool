@@ -45,7 +45,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
 
         var direct = fixture.Discovery.DiscoverForNavMeshVa(Fixture.NavMeshVa, Fixture.FallbackCellFormId);
         Assert.NotNull(direct);
-        AssertProjectedNavMesh(direct!);
+        AssertProjectedNavMesh(direct);
     }
 
     [Theory]
@@ -79,7 +79,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
         var record = fixture.Discovery.DiscoverForNavMeshVa(Fixture.NavMeshVa, Fixture.FallbackCellFormId);
 
         Assert.NotNull(record);
-        Assert.Equal(Fixture.FallbackCellFormId, record!.CellFormId);
+        Assert.Equal(Fixture.FallbackCellFormId, record.CellFormId);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public sealed class RuntimeNavMeshDiscoverySparseTests
         var record = fixture.Discovery.DiscoverForNavMeshVa(Fixture.NavMeshVa, Fixture.FallbackCellFormId);
 
         Assert.NotNull(record);
-        var nvdp = Assert.Single(record!.RawSubrecords, subrecord => subrecord.Signature == "NVDP");
+        var nvdp = Assert.Single(record.RawSubrecords, subrecord => subrecord.Signature == "NVDP");
         Assert.Equal(0u, BinaryPrimitives.ReadUInt32LittleEndian(nvdp.Bytes));
         Assert.Equal((ushort)7, BinaryPrimitives.ReadUInt16LittleEndian(nvdp.Bytes.AsSpan(4, 2)));
     }

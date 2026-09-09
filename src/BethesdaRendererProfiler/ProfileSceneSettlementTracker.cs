@@ -9,20 +9,19 @@ namespace BethesdaRendererProfiler;
 /// </summary>
 internal sealed class ProfileSceneSettlementTracker
 {
-    private readonly int _requiredConsecutive;
     private CaptureSceneCensus? _previous;
 
     internal ProfileSceneSettlementTracker(int requiredConsecutive = 4)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(requiredConsecutive);
-        _requiredConsecutive = requiredConsecutive;
+        RequiredConsecutive = requiredConsecutive;
     }
 
     /// <summary>Number of consecutive clean observations equal to the preceding observation.</summary>
     internal int Consecutive { get; private set; }
 
     /// <summary>Number of clean, stable comparisons required before admission.</summary>
-    internal int RequiredConsecutive => _requiredConsecutive;
+    internal int RequiredConsecutive { get; }
 
     /// <summary>Most recent non-empty explanation for a reset, retained for timeout diagnostics.</summary>
     internal string LastDirt { get; private set; } = string.Empty;
@@ -33,7 +32,7 @@ internal sealed class ProfileSceneSettlementTracker
     /// </summary>
     internal bool Observe(in CaptureSceneCensus census)
     {
-        return ObserveCore(census, acceptFrameCeilingMaintenance: false, referenceBatchBuildTrigger: 0);
+        return ObserveCore(census, false, 0);
     }
 
     /// <summary>
@@ -46,8 +45,8 @@ internal sealed class ProfileSceneSettlementTracker
     {
         return ObserveCore(
             census,
-            acceptFrameCeilingMaintenance: true,
-            referenceBatchBuildTrigger: referenceBatchBuildTrigger);
+            true,
+            referenceBatchBuildTrigger);
     }
 
     private bool ObserveCore(
@@ -79,7 +78,7 @@ internal sealed class ProfileSceneSettlementTracker
         }
 
         _previous = comparable;
-        return Consecutive >= _requiredConsecutive;
+        return Consecutive >= RequiredConsecutive;
     }
 
     private void RetainDirt(string dirt)

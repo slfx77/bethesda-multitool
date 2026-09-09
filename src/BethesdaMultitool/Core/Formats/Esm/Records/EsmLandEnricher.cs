@@ -160,10 +160,11 @@ internal static class EsmLandEnricher
             return;
         }
 
-        var cellsByFormId = cells
+        var cellList = cells as IReadOnlyCollection<CellRecord> ?? cells.ToArray();
+        var cellsByFormId = cellList
             .GroupBy(c => c.FormId)
             .ToDictionary(g => g.Key, SelectBestCellForLandEnrichment);
-        var cellsByGrid = cells
+        var cellsByGrid = cellList
             .Where(c => !c.IsInterior &&
                         !c.IsVirtual &&
                         c.GridX.HasValue &&

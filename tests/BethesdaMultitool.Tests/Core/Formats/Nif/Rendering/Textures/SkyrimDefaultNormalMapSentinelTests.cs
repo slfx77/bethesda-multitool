@@ -96,7 +96,7 @@ public sealed class SkyrimDefaultNormalMapSentinelRetailTests
         Assert.SkipWhen(!File.Exists(archivePath),
             "Skyrim LE Meshes BSA not installed (set SKYRIM_MESHES_BSA to run this probe)");
 
-        using var archive = ArchiveReader.Open(archivePath!);
+        using var archive = ArchiveReader.Open(archivePath);
         var data = Assert.IsType<byte[]>(archive.ReadFile(@"meshes\plants\potato01.nif"));
         var nif = Assert.IsType<NifInfo>(NifParser.Parse(data));
         var model = Assert.IsType<NifRenderableModel>(NifGeometryExtractor.Extract(data, nif));

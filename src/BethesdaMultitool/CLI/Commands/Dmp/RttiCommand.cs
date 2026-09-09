@@ -75,7 +75,7 @@ public static class RttiCommand
         var dirOpt = new Option<string>("--dir")
         {
             Description = "Directory containing DMP files (for --census-all)",
-            DefaultValueFactory = _ => "Sample/MemoryDump"
+            DefaultValueFactory = _ => "Sample/MemoryDumps"
         };
         var outputOpt = new Option<string>("--output")
         {
@@ -434,10 +434,10 @@ public static class RttiCommand
                         using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
                         var reader = new RttiReader(info, stream);
 
-                        var entries = reader.RunCensus((scanned, total, _) =>
-                        {
-                            task.Value = total > 0 ? (double)scanned / total * 100 : 0;
-                        }, includeAllRegions);
+                        var entries =
+                            reader.RunCensus(
+                                (scanned, total, _) => { task.Value = total > 0 ? (double)scanned / total * 100 : 0; },
+                                includeAllRegions);
 
                         var totalInstances = entries.Sum(e => e.InstanceCount);
 

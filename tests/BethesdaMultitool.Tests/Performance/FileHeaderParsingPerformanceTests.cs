@@ -34,23 +34,11 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         Directory.CreateDirectory(_tempDir);
     }
 
-    public void Dispose()
-    {
-        try
-        {
-            if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true);
-        }
-        catch
-        {
-            // Ignore cleanup errors in tests
-        }
-    }
-
     public static TheoryData<byte[], string, string> NifHeaderCases => new()
     {
-        { CreateNifHeader(isXbox360: true), NifHeaderFormat.Xbox360, "endian byte 0 = big-endian" },
-        { CreateNifHeader(isXbox360: false), NifHeaderFormat.Pc, "endian byte 1 = little-endian" },
-        { CreateNifHeader(endianByte: 7), NifHeaderFormat.Unknown, "endian byte is neither 0 nor 1" },
+        { CreateNifHeader(true), NifHeaderFormat.Xbox360, "endian byte 0 = big-endian" },
+        { CreateNifHeader(false), NifHeaderFormat.Pc, "endian byte 1 = little-endian" },
+        { CreateNifHeader(7), NifHeaderFormat.Unknown, "endian byte is neither 0 nor 1" },
         { new byte[NifHeaderFormat.RequiredHeaderBytes - 1], NifHeaderFormat.Invalid, "one byte short of a header" },
         { [], NifHeaderFormat.Invalid, "empty input" },
         { new byte[NifHeaderFormat.RequiredHeaderBytes], NifHeaderFormat.Invalid, "all zeroes: no newline terminator" },
@@ -71,6 +59,18 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
         { "3XD"u8.ToArray(), DdxHeaderFormat.Invalid, "one byte short of the magic" },
         { [], DdxHeaderFormat.Invalid, "empty input" }
     };
+
+    public void Dispose()
+    {
+        try
+        {
+            if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, true);
+        }
+        catch
+        {
+            // Ignore cleanup errors in tests
+        }
+    }
 
     [Theory]
     [MemberData(nameof(NifHeaderCases))]
@@ -93,7 +93,7 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
     [Fact]
     public async Task ScanAndParseHeaders_NifFiles_ClassifiesEveryFileInEverySubdirectory()
     {
-        CreateTestFiles(ScanFileCount, ".nif", CreateNifHeader(isXbox360: true));
+        CreateTestFiles(ScanFileCount, ".nif", CreateNifHeader(true));
 
         var results = await ScanAsync("*.nif", ReadNifHeaderAsync);
 
@@ -117,8 +117,8 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
     public async Task ScanAndParseHeaders_MixedNifEndianness_SeparatesXboxFromPc()
     {
         const int perFormat = 10;
-        await WriteNifFilesAsync("xbox", perFormat, isXbox360: true);
-        await WriteNifFilesAsync("pc", perFormat, isXbox360: false);
+        await WriteNifFilesAsync("xbox", perFormat, true);
+        await WriteNifFilesAsync("pc", perFormat, false);
 
         var results = await ScanAsync("*.nif", ReadNifHeaderAsync);
 
@@ -253,7 +253,7 @@ public sealed class FileHeaderParsingPerformanceTests : IDisposable
 
     private static byte[] CreateNifHeader(bool isXbox360)
     {
-        return CreateNifHeader(endianByte: (byte)(isXbox360 ? 0 : 1));
+        return CreateNifHeader((byte)(isXbox360 ? 0 : 1));
     }
 
     /// <summary>

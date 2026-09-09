@@ -26,7 +26,7 @@ public class SptFileTests
         var spline = SptBezierSpline.Parse(text);
 
         Assert.NotNull(spline);
-        Assert.Equal(0f, spline!.Header.X);
+        Assert.Equal(0f, spline.Header.X);
         Assert.Equal(1f, spline.Header.Y);
         Assert.Equal(50f, spline.Header.Z);
         Assert.Equal(2, spline.ControlPoints.Count);
@@ -73,7 +73,7 @@ public class SptFileTests
         var path = ResolveShrub();
         Assert.SkipWhen(path is null, "Missing sample: wastelandshrub01.spt");
 
-        var model = SptFile.Parse(File.ReadAllBytes(path!));
+        var model = SptFile.Parse(File.ReadAllBytes(path));
 
         // Bark texture (a dev-machine absolute .tga path in shipped files).
         Assert.NotNull(model.General.BarkTexturePath);
@@ -87,7 +87,7 @@ public class SptFileTests
             Assert.All(branch.Splines, s =>
             {
                 Assert.NotNull(s);
-                Assert.NotEmpty(s!.ControlPoints);
+                Assert.NotEmpty(s.ControlPoints);
             });
         }
 
@@ -122,7 +122,7 @@ public class SptFileTests
         var path = SampleFileFixture.FindSamplePath(relativePath);
         Assert.SkipWhen(path is null, "Missing sample: " + relativePath);
 
-        var model = SptFile.Parse(File.ReadAllBytes(path!));
+        var model = SptFile.Parse(File.ReadAllBytes(path));
 
         Assert.Equal(branchCount, model.Branches.Count);
         Assert.Equal(leafCount, model.Leaves.Count);

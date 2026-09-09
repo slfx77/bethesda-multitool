@@ -28,7 +28,7 @@ public sealed class ArmorRecordScannerTests
             BethesdaGame.Oblivion);
 
         Assert.NotNull(scanEntry);
-        Assert.Equal(0x2000u, scanEntry!.BipedFlags);
+        Assert.Equal(0x2000u, scanEntry.BipedFlags);
         Assert.Equal((byte)0x80, scanEntry.GeneralFlags);
     }
 
@@ -50,7 +50,7 @@ public sealed class ArmorRecordScannerTests
         var scanEntry = ArmorRecordScanner.Process(recordBytes, false, record);
 
         Assert.NotNull(scanEntry);
-        Assert.Equal(0x04u, scanEntry!.BipedFlags);
+        Assert.Equal(0x04u, scanEntry.BipedFlags);
         Assert.Equal(0x00054321u, scanEntry.BipedModelListFormId);
     }
 
@@ -58,8 +58,11 @@ public sealed class ArmorRecordScannerTests
     public void Process_OblivionArmor_ReadsBaseRatingAndRecordKind()
     {
         byte[] bmdt = [0x04, 0x00, 0x00, 0x00];
-        byte[] data = [0x65, 0x04, 0xC8, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        byte[] data =
+        [
+            0x65, 0x04, 0xC8, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ];
         var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(
             0x0018AE4C,
             "ARMO",
@@ -76,7 +79,7 @@ public sealed class ArmorRecordScannerTests
             BethesdaGame.Oblivion);
 
         Assert.NotNull(scanEntry);
-        Assert.False(scanEntry!.IsClothing);
+        Assert.False(scanEntry.IsClothing);
         Assert.Equal((ushort)1125, scanEntry.BaseArmorRating);
         Assert.Equal(200u, scanEntry.BaseValue);
     }
@@ -102,7 +105,7 @@ public sealed class ArmorRecordScannerTests
             BethesdaGame.Oblivion);
 
         Assert.NotNull(scanEntry);
-        Assert.True(scanEntry!.IsClothing);
+        Assert.True(scanEntry.IsClothing);
         Assert.Equal((ushort)0, scanEntry.BaseArmorRating);
         Assert.Equal(2u, scanEntry.BaseValue);
     }
@@ -111,8 +114,11 @@ public sealed class ArmorRecordScannerTests
     public void Process_OblivionBigEndianArmor_ReadsBaseRating()
     {
         byte[] bmdt = [0x00, 0x04, 0x00, 0x00];
-        byte[] data = [0x04, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+        byte[] data =
+        [
+            0x04, 0x65, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+        ];
         var (recordBytes, record) = EsmTestRecordBuilder.BuildAnalyzerRecord(
             0x0018AE4C,
             "ARMO",
@@ -128,7 +134,7 @@ public sealed class ArmorRecordScannerTests
             BethesdaGame.Oblivion);
 
         Assert.NotNull(scanEntry);
-        Assert.Equal(0x04u, scanEntry!.BipedFlags);
+        Assert.Equal(0x04u, scanEntry.BipedFlags);
         Assert.Equal((ushort)1125, scanEntry.BaseArmorRating);
     }
 }

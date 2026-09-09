@@ -35,7 +35,15 @@ public sealed partial class WorldView3DControl
     private static readonly string[] StarCandidates =
         { @"textures\sky\skystars.dds", @"textures\sky\stars.dds" };
 
+    private string? _authoredAtmosphereNifPath;
+    private bool _authoredAtmospherePolicyEnabled;
+    private int _authoredAtmosphereRecoveredSkyLayerCount;
+
     private SkyTexturePaths? _resolvedSkyTexturePaths;
+    private StarfieldCelestialRoute? _starfieldCelestialRoute;
+    private StarfieldEnvironmentApproximationChannels _starfieldEnvironmentAppliedChannels;
+    private StarfieldEnvironmentApproximationChannels _starfieldEnvironmentRejectedChannels;
+    private StarfieldEnvironmentRoute? _starfieldEnvironmentRoute;
     private string? _tonemapBaseImageSpaceEditorId;
     private uint? _tonemapBaseImageSpaceFormId;
     private ResolvedImageSpaceSelection _tonemapBaseImageSpaceSelection;
@@ -44,13 +52,6 @@ public sealed partial class WorldView3DControl
     private WeatherImageSpaceEvaluation? _weatherImageSpaceEvaluation;
     private string _weatherImageSpaceTelemetry = "inactive";
     private string? _weatherImageSpaceTelemetryLogKey;
-    private StarfieldEnvironmentRoute? _starfieldEnvironmentRoute;
-    private StarfieldCelestialRoute? _starfieldCelestialRoute;
-    private StarfieldEnvironmentApproximationChannels _starfieldEnvironmentAppliedChannels;
-    private StarfieldEnvironmentApproximationChannels _starfieldEnvironmentRejectedChannels;
-    private bool _authoredAtmospherePolicyEnabled;
-    private string? _authoredAtmosphereNifPath;
-    private int _authoredAtmosphereRecoveredSkyLayerCount;
 
     /// <summary>Last classic WTHR→IMAD selection and sampled tonemap values, for captures/profiling.</summary>
     internal string WeatherImageSpaceTelemetry => _weatherImageSpaceTelemetry;
@@ -276,7 +277,7 @@ public sealed partial class WorldView3DControl
         }
 
         if (environment.Atmosphere?.EffectivePatch?.SunPresetOverrideFormId is
-            { } overrideFormId && overrideFormId != 0)
+                { } overrideFormId && overrideFormId != 0)
         {
             return null;
         }

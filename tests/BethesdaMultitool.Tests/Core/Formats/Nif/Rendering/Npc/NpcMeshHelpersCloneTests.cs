@@ -1,6 +1,5 @@
 using System.Numerics;
 using BethesdaMultitool.CLI.Rendering.Npc;
-using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Particles;

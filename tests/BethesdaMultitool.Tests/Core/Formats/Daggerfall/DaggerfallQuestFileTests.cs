@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-using System.Linq;
 using BethesdaMultitool.Core.Formats.Daggerfall;
 using Xunit;
 
@@ -35,7 +32,8 @@ public class DaggerfallQuestFileTests
     [Fact]
     public void Create_ToleratesAMissingHalf()
     {
-        var textOnly = DaggerfallQuestFile.Create("A", DaggerfallTextFixture.TextRsc((1000, DaggerfallTextFixture.Bytes("x"))), null);
+        var textOnly = DaggerfallQuestFile.Create("A",
+            DaggerfallTextFixture.TextRsc((1000, DaggerfallTextFixture.Bytes("x"))), null);
         Assert.Single(textOnly.MessageIds);
         Assert.Equal(0, textOnly.Compiled.Length);
         Assert.All(textOnly.CompiledHeader, word => Assert.Equal(0, word));
@@ -72,7 +70,7 @@ public class DaggerfallQuestFileTests
         }
         finally
         {
-            Directory.Delete(directory, recursive: true);
+            Directory.Delete(directory, true);
         }
 
         Assert.Empty(DaggerfallQuestFile.EnumerateNames(Path.Combine(directory, "gone")));

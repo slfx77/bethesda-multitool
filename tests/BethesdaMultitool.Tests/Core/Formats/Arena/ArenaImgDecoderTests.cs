@@ -14,7 +14,7 @@ public class ArenaImgDecoderTests
     [Fact]
     public void Decode_UncompressedWithHeader_PinsPixelsAndOffsets()
     {
-        var bytes = Header(xOffset: 3, yOffset: 7, width: 2, height: 2, flags: 0x0000, dataLength: 4);
+        var bytes = Header(3, 7, 2, 2, 0x0000, 4);
         bytes.AddRange(new byte[] { 10, 20, 30, 40 });
 
         var result = ArenaImgDecoder.Decode(bytes.ToArray(), "TEST.IMG");
@@ -35,7 +35,7 @@ public class ArenaImgDecoderTests
         // Run packet: control 0x83 -> 0x83 - 0x7F = 4 repeats of 0xAB. (OpenTESArena's
         // IMGFile treats type 02 as unrecognized - only its CIF frames use it - but the
         // decoder here accepts the identical layout; see the production file's remarks.)
-        var bytes = Header(0, 0, width: 2, height: 2, flags: 0x0002, dataLength: 2);
+        var bytes = Header(0, 0, 2, 2, 0x0002, 2);
         bytes.AddRange(new byte[] { 0x83, 0xAB });
 
         var result = ArenaImgDecoder.Decode(bytes.ToArray(), "RLE.IMG");
@@ -47,7 +47,7 @@ public class ArenaImgDecoderTests
     public void Decode_Type04Lzss_Decompresses()
     {
         // Flag byte 0x0F: four set bits (LSB-first) -> four literals, input then exhausted.
-        var bytes = Header(0, 0, width: 2, height: 2, flags: 0x0004, dataLength: 5);
+        var bytes = Header(0, 0, 2, 2, 0x0004, 5);
         bytes.AddRange(new byte[] { 0x0F, 0x10, 0x20, 0x30, 0x40 });
 
         var result = ArenaImgDecoder.Decode(bytes.ToArray(), "LZSS.IMG");
@@ -60,7 +60,7 @@ public class ArenaImgDecoderTests
     {
         // Compressed bytes are the "ABCABCABC" vector pinned by LzhufCodecTests. dataLength
         // counts the leading u16 decompressed-length field (9), which the decoder must skip.
-        var bytes = Header(xOffset: 1, yOffset: 2, width: 3, height: 3, flags: 0x0008, dataLength: 8);
+        var bytes = Header(1, 2, 3, 3, 0x0008, 8);
         bytes.AddRange(new byte[] { 9, 0 }); // u16 LE decompressed length
         bytes.AddRange(new byte[] { 0xE6, 0xF3, 0xB9, 0xF1, 0xE0, 0x20 });
 
@@ -74,7 +74,7 @@ public class ArenaImgDecoderTests
     [Fact]
     public void Decode_EmbeddedPaletteFlag_PromotesClampsAndMakesIndex0Transparent()
     {
-        var bytes = Header(0, 0, width: 1, height: 1, flags: 0x0100, dataLength: 1);
+        var bytes = Header(0, 0, 1, 1, 0x0100, 1);
         bytes.Add(0x05); // the single pixel
         var palette = new byte[768];
         palette[0] = 1; //  entry 0: (1, 2, 3) -> promoted (4, 8, 12), alpha 0
@@ -162,7 +162,7 @@ public class ArenaImgDecoderTests
         var source = new byte[32 * 34];
         for (var i = 0; i < source.Length; i++)
         {
-            source[i] = (byte)((i % 250) + 1); // never 0, so placement is distinguishable from fill
+            source[i] = (byte)(i % 250 + 1); // never 0, so placement is distinguishable from fill
         }
 
         var result = ArenaImgDecoder.Decode(source, "DZTTAV.IMG");
@@ -173,10 +173,10 @@ public class ArenaImgDecoderTests
         Assert.Equal(source[0], image.Indices[32]); //             row 0: src (0,0) -> dst (32,0)
         Assert.Equal(source[31], image.Indices[63]); //            row 0: src (31,0) -> dst (63,0)
         Assert.Equal(source[32], image.Indices[64 + 32]); //       row 1 starts at src index 32
-        Assert.Equal(source[(33 * 32) + 31], image.Indices[(33 * 64) + 63]); // last payload pixel
+        Assert.Equal(source[33 * 32 + 31], image.Indices[33 * 64 + 63]); // last payload pixel
         Assert.Equal(0, image.Indices[0]); //                      left half untouched
         Assert.Equal(0, image.Indices[34 * 64]); //                rows past the 34-row payload
-        Assert.Equal(0, image.Indices[(34 * 64) + 32]);
+        Assert.Equal(0, image.Indices[34 * 64 + 32]);
     }
 
     [Fact]
@@ -229,7 +229,7 @@ public class ArenaImgDecoderTests
     [Fact]
     public void Decode_UnrecognizedCompressionType_Throws()
     {
-        var bytes = Header(0, 0, width: 1, height: 1, flags: 0x0003, dataLength: 1);
+        var bytes = Header(0, 0, 1, 1, 0x0003, 1);
         bytes.Add(0x00);
 
         Assert.Throws<InvalidDataException>(() => ArenaImgDecoder.Decode(bytes.ToArray(), "BAD.IMG"));
@@ -238,7 +238,7 @@ public class ArenaImgDecoderTests
     [Fact]
     public void Decode_TruncatedUncompressedPixels_Throws()
     {
-        var bytes = Header(0, 0, width: 10, height: 10, flags: 0x0000, dataLength: 100);
+        var bytes = Header(0, 0, 10, 10, 0x0000, 100);
         bytes.AddRange(new byte[] { 1, 2, 3, 4 }); // 100 pixels owed
 
         Assert.Throws<InvalidDataException>(() => ArenaImgDecoder.Decode(bytes.ToArray(), "SHORT.IMG"));
@@ -247,7 +247,7 @@ public class ArenaImgDecoderTests
     [Fact]
     public void Decode_TruncatedType04Payload_Throws()
     {
-        var bytes = Header(0, 0, width: 2, height: 2, flags: 0x0004, dataLength: 50);
+        var bytes = Header(0, 0, 2, 2, 0x0004, 50);
         bytes.AddRange(new byte[] { 0x0F, 0x10, 0x20, 0x30, 0x40 }); // 50 bytes declared, 5 present
 
         Assert.Throws<InvalidDataException>(() => ArenaImgDecoder.Decode(bytes.ToArray(), "SHORT4.IMG"));
@@ -256,7 +256,7 @@ public class ArenaImgDecoderTests
     [Fact]
     public void Decode_TruncatedEmbeddedPalette_Throws()
     {
-        var bytes = Header(0, 0, width: 1, height: 1, flags: 0x0100, dataLength: 1);
+        var bytes = Header(0, 0, 1, 1, 0x0100, 1);
         bytes.Add(0x05);
         bytes.AddRange(new byte[10]); // 768 palette bytes owed
 

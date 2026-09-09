@@ -1,16 +1,18 @@
+using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Audio;
+using BethesdaMultitool.Core.Formats.Interplay;
 
 namespace BethesdaMultitool.Core.AssetBrowse;
 
 /// <summary>One playable sound: RIFF/WAV bytes plus how long it runs, when that is known.</summary>
 internal readonly record struct PlayableAudio(byte[] Riff, int SampleRate, int BitsPerSample, int Channels)
 {
+    /// <summary>Bytes of RIFF header ahead of the samples in <see cref="WavWriter.BuildPcm" /> output.</summary>
+    public const int WavHeaderBytes = 44;
+
     /// <summary>Frames of audio, or 0 when the format did not declare enough to say.</summary>
     public int FrameCount =>
         Channels * BitsPerSample == 0 ? 0 : (Riff.Length - WavHeaderBytes) * 8 / (Channels * BitsPerSample);
-
-    /// <summary>Bytes of RIFF header ahead of the samples in <see cref="WavWriter.BuildPcm" /> output.</summary>
-    public const int WavHeaderBytes = 44;
 }
 
 /// <summary>
@@ -45,6 +47,7 @@ internal static class AssetAudioSource
 
         var extension = Path.GetExtension(node.Name);
         return extension.Equals(".voc", StringComparison.OrdinalIgnoreCase)
+               || extension.Equals(".acm", StringComparison.OrdinalIgnoreCase)
                || PassThroughExtensions.Contains(extension, StringComparer.OrdinalIgnoreCase);
     }
 
@@ -73,6 +76,29 @@ internal static class AssetAudioSource
                 return null;
             }
 
+            if (Path.GetExtension(node.Name).Equals(".acm", StringComparison.OrdinalIgnoreCase))
+            {
+                // Fallout's Interplay ACM: decoded through the libacm port to interleaved s16 at the
+                // header's rate and the channel count the VALUES support — the header says 2 on every
+                // speech line and they are mono (InterplayAcmChannelProbe has the measurements);
+                // taken at its word, speech plays at double speed. An odd value total read as stereo
+                // cannot make a whole final frame, so a stray value would be dropped here.
+                var acm = InterplayAcmFile.Parse(bytes, node.Name);
+                var pcm = acm.Decode().AsInferred();
+                var wholeFrames = pcm.FrameCount * pcm.Channels;
+                if (wholeFrames == 0)
+                {
+                    return null;
+                }
+
+                return new PlayableAudio(
+                    WavWriter.BuildPcm(MemoryMarshal.AsBytes(pcm.Samples.AsSpan(0, wholeFrames)), pcm.SampleRate, 16,
+                        pcm.Channels),
+                    pcm.SampleRate,
+                    16,
+                    pcm.Channels);
+            }
+
             if (!Path.GetExtension(node.Name).Equals(".voc", StringComparison.OrdinalIgnoreCase))
             {
                 // Already a container the player understands; the rate fields are unknown here and
@@ -93,7 +119,7 @@ internal static class AssetAudioSource
                 voc.Channels);
         }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException
-                                     or IOException or ArgumentException)
+                                      or IOException or ArgumentException)
         {
             return null;
         }

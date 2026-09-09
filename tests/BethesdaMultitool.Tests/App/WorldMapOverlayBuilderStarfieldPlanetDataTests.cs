@@ -25,8 +25,8 @@ public sealed class WorldMapOverlayBuilderStarfieldPlanetDataTests
             [
                 Override(
                     planetFormId,
-                    new(removed, StarfieldPlanetWorldspaceOperation.Removed),
-                    new(added, StarfieldPlanetWorldspaceOperation.Added))
+                    new StarfieldPlanetWorldspaceDelta(removed, StarfieldPlanetWorldspaceOperation.Removed),
+                    new StarfieldPlanetWorldspaceDelta(added, StarfieldPlanetWorldspaceOperation.Added))
             ]
         };
 
@@ -73,31 +73,37 @@ public sealed class WorldMapOverlayBuilderStarfieldPlanetDataTests
 
     private static StarfieldPlanetDataRecord Master(
         uint planetFormId,
-        params StarfieldPlanetWorldspaceEntry[] worldspaces) =>
-        new()
+        params StarfieldPlanetWorldspaceEntry[] worldspaces)
+    {
+        return new StarfieldPlanetDataRecord
         {
             FormId = planetFormId,
             PayloadKind = StarfieldPlanetDataPayloadKind.Master,
             MasterWorldspaces = worldspaces,
             Body = Body()
         };
+    }
 
     private static StarfieldPlanetDataRecord Override(
         uint planetFormId,
-        params StarfieldPlanetWorldspaceDelta[] deltas) =>
-        new()
+        params StarfieldPlanetWorldspaceDelta[] deltas)
+    {
+        return new StarfieldPlanetDataRecord
         {
             FormId = planetFormId,
             PayloadKind = StarfieldPlanetDataPayloadKind.Override,
             WorldspaceOverrides = deltas,
             Body = Body()
         };
+    }
 
-    private static StarfieldPlanetBodyData Body() =>
-        new(
+    private static StarfieldPlanetBodyData Body()
+    {
+        return new StarfieldPlanetBodyData(
             2,
             0,
             0,
             3,
             new StarfieldPlanetAtmosphereData(0x600, 0.25f, 0.0025f, 0.001f));
+    }
 }

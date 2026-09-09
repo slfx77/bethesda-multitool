@@ -22,6 +22,7 @@ internal static class NifTes3SequenceStreamReader
         {
             return [];
         }
+
         var extraRef = BinaryUtils.ReadInt32(data, textBlock.DataOffset, false);
         var extraRefs = new HashSet<int>();
         var controllerRefs = new HashSet<int>();
@@ -54,9 +55,11 @@ internal static class NifTes3SequenceStreamReader
                 {
                     return [];
                 }
+
                 reverseClock ??= header;
                 tracks.Add(track);
             }
+
             extraRef = nextExtra;
             controllerRef = header.NextControllerRef;
         }
@@ -65,16 +68,20 @@ internal static class NifTes3SequenceStreamReader
         {
             return [];
         }
-        return [new NifNameTargetedAnimationClip(
-            "External TES3 Controller Cycle",
-            clock.Frequency,
-            clock.StartTime,
-            clock.StopTime,
-            NifCycleType.Reverse,
-            null,
-            tracks.ToArray(),
-            NifTextKeyReader.Read(data, nif, textBlock),
-            0)];
+
+        return
+        [
+            new NifNameTargetedAnimationClip(
+                "External TES3 Controller Cycle",
+                clock.Frequency,
+                clock.StartTime,
+                clock.StopTime,
+                NifCycleType.Reverse,
+                null,
+                tracks.ToArray(),
+                NifTextKeyReader.Read(data, nif, textBlock),
+                0)
+        ];
     }
 
     private static bool TryReadHeads(
@@ -86,12 +93,14 @@ internal static class NifTes3SequenceStreamReader
         {
             return false;
         }
+
         var position = helper.DataOffset;
         var end = position + helper.Size;
-        if (!TryReadName(data, ref position, end, allowEmpty: true, out _) || position + 8 != end)
+        if (!TryReadName(data, ref position, end, true, out _) || position + 8 != end)
         {
             return false;
         }
+
         var textRef = BinaryUtils.ReadInt32(data, position, false);
         controllerRef = BinaryUtils.ReadInt32(data, position + 4, false);
         return TryGetBlock(nif, textRef, "NiTextKeyExtraData", out textBlock) &&
@@ -108,12 +117,14 @@ internal static class NifTes3SequenceStreamReader
         {
             return false;
         }
+
         var candidate = NifKeyframeDataTrackReader.TryReadTrack(
             data, nif, dataRef, name, header.Frequency, header.Phase);
         if (!ValidReverseTranslation(candidate))
         {
             return false;
         }
+
         track = candidate!;
         return true;
     }
@@ -127,21 +138,24 @@ internal static class NifTes3SequenceStreamReader
         {
             return false;
         }
+
         var helpers = 0;
         foreach (var block in nif.Blocks)
         {
             if (block.DataOffset < 0 || block.Size < 0 || block.Size > data.Length ||
                 block.DataOffset > data.Length - block.Size || block.TypeName is not
                     ("NiSequenceStreamHelper" or "NiTextKeyExtraData" or "NiStringExtraData" or
-                     "NiKeyframeController" or "NiKeyframeData"))
+                    "NiKeyframeController" or "NiKeyframeData"))
             {
                 return false;
             }
+
             if (block.TypeName == "NiSequenceStreamHelper")
             {
                 helpers++;
             }
         }
+
         var last = nif.Blocks[^1];
         var footer = last.DataOffset + last.Size;
         if (helpers != 1 || footer != data.Length - 8 ||
@@ -149,6 +163,7 @@ internal static class NifTes3SequenceStreamReader
         {
             return false;
         }
+
         return TryGetBlock(nif, BinaryUtils.ReadInt32(data, footer + 4, false),
             "NiSequenceStreamHelper", out helper);
     }
@@ -160,6 +175,7 @@ internal static class NifTes3SequenceStreamReader
         {
             return false;
         }
+
         block = nif.Blocks[reference];
         return true;
     }
@@ -173,10 +189,11 @@ internal static class NifTes3SequenceStreamReader
         {
             return false;
         }
+
         nextExtra = BinaryUtils.ReadInt32(data, block.DataOffset, false);
         var position = block.DataOffset + 8;
         var end = block.DataOffset + block.Size;
-        return TryReadName(data, ref position, end, allowEmpty: false, out name) && position == end;
+        return TryReadName(data, ref position, end, false, out name) && position == end;
     }
 
     private static bool ValidTextKeys(byte[] data, BlockInfo block)
@@ -185,11 +202,13 @@ internal static class NifTes3SequenceStreamReader
         {
             return false;
         }
+
         var count = BinaryUtils.ReadUInt32(data, block.DataOffset + 8, false);
         if (count > MaximumControllers)
         {
             return false;
         }
+
         var position = block.DataOffset + 12;
         var end = block.DataOffset + block.Size;
         for (var index = 0; index < count; index++)
@@ -198,12 +217,14 @@ internal static class NifTes3SequenceStreamReader
             {
                 return false;
             }
+
             position += 4;
-            if (!TryReadName(data, ref position, end, allowEmpty: false, out _))
+            if (!TryReadName(data, ref position, end, false, out _))
             {
                 return false;
             }
         }
+
         return position == end;
     }
 
@@ -215,12 +236,14 @@ internal static class NifTes3SequenceStreamReader
         {
             return false;
         }
+
         var length = BinaryUtils.ReadUInt32(data, position, false);
         position += 4;
         if (length > MaximumNameBytes || length > end - position)
         {
             return false;
         }
+
         for (var index = 0; index < length; index++)
         {
             if (data[position + index] is 0 or > 127)
@@ -228,16 +251,19 @@ internal static class NifTes3SequenceStreamReader
                 return false;
             }
         }
+
         name = Encoding.ASCII.GetString(data, position, (int)length);
         position += (int)length;
         return allowEmpty || !string.IsNullOrWhiteSpace(name);
     }
 
-    private static bool ValidClock(NifTimeControllerHeader header) =>
-        header.IsActive && header.TargetRef == -1 && Enum.IsDefined(header.CycleType) &&
-        header.Frequency.Equals(1f) && header.Phase.Equals(0f) &&
-        float.IsFinite(header.StartTime) && float.IsFinite(header.StopTime) &&
-        header.StopTime > header.StartTime && float.IsFinite(header.StopTime - header.StartTime);
+    private static bool ValidClock(NifTimeControllerHeader header)
+    {
+        return header.IsActive && header.TargetRef == -1 && Enum.IsDefined(header.CycleType) &&
+               header.Frequency.Equals(1f) && header.Phase.Equals(0f) &&
+               float.IsFinite(header.StartTime) && float.IsFinite(header.StopTime) &&
+               header.StopTime > header.StartTime && float.IsFinite(header.StopTime - header.StartTime);
+    }
 
     private static bool HasExactTranslationData(byte[] data, BlockInfo block)
     {
@@ -247,6 +273,7 @@ internal static class NifTes3SequenceStreamReader
         {
             return false;
         }
+
         var count = BinaryUtils.ReadUInt32(data, block.DataOffset + 4, false);
         var basis = (NifKeyInterpolation)BinaryUtils.ReadUInt32(data, block.DataOffset + 8, false);
         var stride = basis switch
@@ -255,13 +282,15 @@ internal static class NifTes3SequenceStreamReader
             NifKeyInterpolation.Quadratic => 40,
             _ => 0
         };
-        return count >= 2 && stride > 0 && 16L + (long)count * stride == block.Size &&
+        return count >= 2 && stride > 0 && 16L + count * stride == block.Size &&
                BinaryUtils.ReadUInt32(data, block.DataOffset + block.Size - 4, false) == 0;
     }
 
-    private static bool SameClock(NifTimeControllerHeader left, NifTimeControllerHeader right) =>
-        left.Frequency.Equals(right.Frequency) && left.Phase.Equals(right.Phase) &&
-        left.StartTime.Equals(right.StartTime) && left.StopTime.Equals(right.StopTime);
+    private static bool SameClock(NifTimeControllerHeader left, NifTimeControllerHeader right)
+    {
+        return left.Frequency.Equals(right.Frequency) && left.Phase.Equals(right.Phase) &&
+               left.StartTime.Equals(right.StartTime) && left.StopTime.Equals(right.StopTime);
+    }
 
     private static bool ValidReverseTranslation(NifNodeTrack? track)
     {
@@ -272,6 +301,7 @@ internal static class NifTes3SequenceStreamReader
         {
             return false;
         }
+
         var previous = float.NegativeInfinity;
         foreach (var key in track.TranslationKeys)
         {
@@ -284,8 +314,10 @@ internal static class NifTes3SequenceStreamReader
             {
                 return false;
             }
+
             previous = key.Time;
         }
+
         return true;
     }
 }

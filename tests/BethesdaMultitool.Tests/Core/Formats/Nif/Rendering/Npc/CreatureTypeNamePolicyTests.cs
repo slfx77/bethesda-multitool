@@ -1,5 +1,5 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Games;
 using Xunit;
 

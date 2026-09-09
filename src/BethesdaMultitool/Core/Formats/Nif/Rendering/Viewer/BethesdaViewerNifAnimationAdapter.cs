@@ -22,7 +22,7 @@ internal static class BethesdaViewerNifAnimationAdapter
             animation.ClipStart,
             animation.ClipStop,
             animation.ClipLoops,
-            pingPongs: false);
+            false);
     }
 
     /// <summary>
@@ -70,9 +70,9 @@ internal static class BethesdaViewerNifAnimationAdapter
             "Embedded Controller Cycle",
             controller.StartTime,
             controller.StopTime,
-            loops: true,
-            pingPongs: true,
-            includedTrackIndices: selectedTracks);
+            true,
+            true,
+            selectedTracks);
     }
 
     private static BethesdaViewerAnimationClip? TryCreateClip(
@@ -109,6 +109,7 @@ internal static class BethesdaViewerNifAnimationAdapter
             {
                 continue;
             }
+
             if (!TryConvert(track.RotationInterpolation, out var rotationInterpolation) ||
                 !TryConvert(track.TranslationInterpolation, out var translationInterpolation) ||
                 !TryConvert(track.ScaleInterpolation, out var scaleInterpolation))

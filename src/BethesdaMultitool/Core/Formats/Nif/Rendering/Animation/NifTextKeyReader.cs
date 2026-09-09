@@ -1,3 +1,4 @@
+using System.Text;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Utils;
 
@@ -135,7 +136,7 @@ internal static class NifTextKeyReader
         if (NifVersions.IsLegacyNetImmerse(nif.BinaryVersion))
         {
             // Legacy NiExtraData head: Next Extra Data ref + Record Size.
-            if ((long)pos + 8L > end)
+            if (pos + 8L > end)
             {
                 return false;
             }
@@ -147,7 +148,7 @@ internal static class NifTextKeyReader
             return false;
         }
 
-        if ((long)pos + 4L > end)
+        if (pos + 4L > end)
         {
             return false;
         }
@@ -162,7 +163,7 @@ internal static class NifTextKeyReader
         var keys = new List<NifAnimTextKey>((int)numKeys);
         for (var index = 0u; index < numKeys; index++)
         {
-            if ((long)pos + 4L > end)
+            if (pos + 4L > end)
             {
                 return false;
             }
@@ -180,7 +181,7 @@ internal static class NifTextKeyReader
             }
             else
             {
-                if ((long)pos + 4L > end)
+                if (pos + 4L > end)
                 {
                     return false;
                 }
@@ -229,7 +230,7 @@ internal static class NifTextKeyReader
         bool be,
         bool hasInlineStrings)
     {
-        if ((long)pos + 4L > end)
+        if (pos + 4L > end)
         {
             return false;
         }
@@ -242,7 +243,7 @@ internal static class NifTextKeyReader
 
         var length = BinaryUtils.ReadUInt32(data, pos, be);
         pos += 4;
-        if (length > int.MaxValue || (long)pos + length > end)
+        if (length > int.MaxValue || pos + length > end)
         {
             return false;
         }
@@ -259,19 +260,19 @@ internal static class NifTextKeyReader
         out string value)
     {
         value = string.Empty;
-        if ((long)pos + 4L > end)
+        if (pos + 4L > end)
         {
             return false;
         }
 
         var length = BinaryUtils.ReadUInt32(data, pos, be);
         pos += 4;
-        if (length is 0 or > MaxTextKeyLabelBytes || (long)pos + length > end)
+        if (length is 0 or > MaxTextKeyLabelBytes || pos + length > end)
         {
             return false;
         }
 
-        value = System.Text.Encoding.ASCII.GetString(data, pos, (int)length);
+        value = Encoding.ASCII.GetString(data, pos, (int)length);
         pos += (int)length;
         return !string.IsNullOrWhiteSpace(value);
     }

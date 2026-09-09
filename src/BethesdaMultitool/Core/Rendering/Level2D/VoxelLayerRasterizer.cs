@@ -69,10 +69,10 @@ internal static class VoxelLayerRasterizer
 
                 for (var dy = 0; dy < scale; dy++)
                 {
-                    var row = ((y * scale) + dy) * outWidth;
+                    var row = (y * scale + dy) * outWidth;
                     for (var dx = 0; dx < scale; dx++)
                     {
-                        var offset = (row + (x * scale) + dx) * BytesPerPixel;
+                        var offset = (row + x * scale + dx) * BytesPerPixel;
                         pixels[offset + 0] = r;
                         pixels[offset + 1] = g;
                         pixels[offset + 2] = b;
@@ -98,17 +98,17 @@ internal static class VoxelLayerRasterizer
         }
 
         const double goldenRatioConjugate = 0.618033988749895;
-        var hue = (voxel * goldenRatioConjugate) % 1.0;
+        var hue = voxel * goldenRatioConjugate % 1.0;
         return HsvToRgb(hue, 0.65, 0.95);
     }
 
     private static (byte R, byte G, byte B) HsvToRgb(double h, double s, double v)
     {
         var sector = (int)(h * 6) % 6;
-        var f = (h * 6) - Math.Floor(h * 6);
+        var f = h * 6 - Math.Floor(h * 6);
         var p = v * (1 - s);
-        var q = v * (1 - (f * s));
-        var t = v * (1 - ((1 - f) * s));
+        var q = v * (1 - f * s);
+        var t = v * (1 - (1 - f) * s);
 
         var (r, g, b) = sector switch
         {

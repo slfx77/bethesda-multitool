@@ -26,11 +26,11 @@ namespace BethesdaMultitool.Core.Formats.Png;
 /// </summary>
 internal static class PngImageDecoder
 {
-    /// <summary>The 8-byte PNG signature.</summary>
-    private static ReadOnlySpan<byte> Signature => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-
     /// <summary>Signature (8) + IHDR length, type, body and CRC (4 + 4 + 13 + 4).</summary>
     private const int SignatureAndIhdrLength = 33;
+
+    /// <summary>The 8-byte PNG signature.</summary>
+    private static ReadOnlySpan<byte> Signature => [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
     /// <summary>True when <paramref name="data" /> opens with the PNG signature.</summary>
     public static bool HasPngSignature(ReadOnlySpan<byte> data)
@@ -69,8 +69,8 @@ internal static class PngImageDecoder
             height,
             data[24],
             data[25],
-            Interlaced: data[28] != 0,
-            HasTransparencyChunk: HasChunk(data, "tRNS"u8));
+            data[28] != 0,
+            HasChunk(data, "tRNS"u8));
     }
 
     /// <summary>
@@ -111,7 +111,7 @@ internal static class PngImageDecoder
                 $"expected {expected}.");
         }
 
-        return DecodedTexture.FromBaseLevel(rgba, width, height, generateMipChain: false);
+        return DecodedTexture.FromBaseLevel(rgba, width, height, false);
     }
 
     /// <summary>Walks the chunk list looking for <paramref name="type" />, stopping at IEND.</summary>

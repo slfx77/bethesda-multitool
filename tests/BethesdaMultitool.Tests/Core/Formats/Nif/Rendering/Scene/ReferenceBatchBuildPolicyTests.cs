@@ -55,13 +55,13 @@ public sealed class ReferenceBatchBuildPolicyTests
     private static bool CanAmortize()
     {
         return ReferenceBatchBuildPolicy.CanAmortize(
-            streamingThrottled: true,
-            refreshOnlyBlocker: true,
-            cullCacheHit: true,
-            publishedBuildValid: true,
-            cullEpochMatches: true,
-            renderOriginMatches: true,
-            evictionGenerationMatches: true,
-            streamRoutingMatches: true);
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true,
+            true);
     }
 }

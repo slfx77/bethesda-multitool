@@ -21,7 +21,7 @@ public sealed class NifHeadlessSettlementSourceContractTests
             "private static void WaitForFence");
 
         Assert.Contains(
-            "StreamingQuiescence.IsQuiesced(r, terrain: null, strict: true);",
+            "StreamingQuiescence.IsQuiesced(r, null, true);",
             settlementHelper,
             StringComparison.Ordinal);
         Assert.DoesNotContain("strict: false", settlementHelper, StringComparison.Ordinal);

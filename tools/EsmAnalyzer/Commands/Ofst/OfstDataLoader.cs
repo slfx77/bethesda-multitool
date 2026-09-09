@@ -345,7 +345,7 @@ internal static class OfstDataLoader
 
         tilesX = (context.Columns + tileSize - 1) / tileSize;
         tilesY = (context.Rows + tileSize - 1) / tileSize;
-        if (tileX < 0 || tileX >= tilesX || tileY < 0 || tileY >= tilesY)
+        if (tileX >= tilesX || tileY >= tilesY)
         {
             AnsiConsole.MarkupLine($"[red]ERROR:[/] Tile out of range. Tiles are {tilesX}x{tilesY}.");
             return false;

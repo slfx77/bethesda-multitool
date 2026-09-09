@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Minidump;
+using BethesdaMultitool.Core.Orchestration;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Runtime;
 
@@ -84,7 +85,7 @@ internal sealed class RuntimeObjectScanner(RuntimeMemoryContext context)
         Parallel.ForEach(regionGroups,
             new ParallelOptions
             {
-                MaxDegreeOfParallelism = Orchestration.ConcurrencyPolicy.CoresMinusOne.Resolve()
+                MaxDegreeOfParallelism = ConcurrencyPolicy.CoresMinusOne.Resolve()
             },
             group =>
             {

@@ -118,9 +118,9 @@ public class PaletteTests
         file[8] = 139;
         file[9] = 127;
         file[10] = 127;
-        file[8 + (255 * 3)] = 255;
-        file[8 + (255 * 3) + 1] = 128;
-        file[8 + (255 * 3) + 2] = 64;
+        file[8 + 255 * 3] = 255;
+        file[8 + 255 * 3 + 1] = 128;
+        file[8 + 255 * 3 + 2] = 64;
 
         var palette = Palette.LoadArenaCol(file);
 
@@ -159,7 +159,7 @@ public class PaletteTests
     [Fact]
     public void LoadArenaCol_RejectsWrongDeclaredLength()
     {
-        var file = BuildArenaCol(declaredLength: 770);
+        var file = BuildArenaCol(770);
 
         Assert.Throws<InvalidDataException>(() => Palette.LoadArenaCol(file));
     }
@@ -199,7 +199,7 @@ public class PaletteTests
     [Fact]
     public void LoadDaggerfallCol_RejectsWrongMagic()
     {
-        var file = BuildDaggerfallCol(magic: 0xB124);
+        var file = BuildDaggerfallCol(0xB124);
 
         Assert.Throws<InvalidDataException>(() => Palette.LoadDaggerfallCol(file));
     }

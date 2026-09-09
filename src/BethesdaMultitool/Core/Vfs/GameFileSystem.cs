@@ -121,6 +121,17 @@ public static class GameFileSystem
                 ? Path.Combine(installRoot, profile.ClassicLooseRoot)
                 : installRoot;
             layers.Add(new LooseFileSystem(looseRoot));
+
+            // Asset directories that sit OUTSIDE the loose root (the Battlespire CD's videos\
+            // beside GAME.EXE) mount under their own name; an install without them is unaffected.
+            foreach (var extra in profile.ClassicExtraLooseDirectories)
+            {
+                var directory = Path.Combine(installRoot, extra);
+                if (Directory.Exists(directory))
+                {
+                    layers.Add(new PrefixedFileSystem(new LooseFileSystem(directory), extra));
+                }
+            }
         }
 
         foreach (var glob in profile.ClassicArchiveGlobs)

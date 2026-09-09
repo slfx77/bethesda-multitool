@@ -27,8 +27,12 @@ internal readonly record struct RwChunkHeader(uint Type, int Size, uint LibraryI
 ///     The RenderWare 3.x chunk walk: a stream of 12-byte <c>{type, size, libraryId}</c> headers,
 ///     each followed by its payload, nested by type.
 ///     <para>
-///         ⚠ <b>Chunk <see cref="SizeOvershootType" /> (0x1300) declares a size eight bytes larger
-///         than its body.</b> Trusting it walks the reader past the following header and the rest of
+///         ⚠
+///         <b>
+///             Chunk <see cref="SizeOvershootType" /> (0x1300) declares a size eight bytes larger
+///             than its body.
+///         </b>
+///         Trusting it walks the reader past the following header and the rest of
 ///         the stream is silently lost — the walk simply ends early with no error, which is the
 ///         worst shape a parsing fault can take. The correction is applied inside
 ///         <see cref="TryRead" /> so no caller can forget it. 96 such chunks appear across the
@@ -116,7 +120,10 @@ internal static class RwChunk
     ];
 
     /// <summary>True when <paramref name="type" />'s payload is a nested chunk stream.</summary>
-    public static bool IsContainer(uint type) => Array.IndexOf(ContainerTypes, type) >= 0;
+    public static bool IsContainer(uint type)
+    {
+        return Array.IndexOf(ContainerTypes, type) >= 0;
+    }
 
     /// <summary>
     ///     Reads the header at <paramref name="offset" />, applying the 0x1300 correction and

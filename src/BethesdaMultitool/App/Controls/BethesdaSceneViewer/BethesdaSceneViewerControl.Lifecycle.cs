@@ -340,9 +340,10 @@ public sealed partial class BethesdaSceneViewerControl
                             ["outcome"] = _surface is null ? "failed" : "ready",
                             ["width"] = width,
                             ["height"] = height,
-                            ["elapsedMilliseconds"] = elapsedMilliseconds,
+                            ["elapsedMilliseconds"] = elapsedMilliseconds
                         });
                 }
+
                 if (_surface is null)
                 {
                     SetFaulted("The native Bethesda renderer could not bind its WinUI swap chain.");

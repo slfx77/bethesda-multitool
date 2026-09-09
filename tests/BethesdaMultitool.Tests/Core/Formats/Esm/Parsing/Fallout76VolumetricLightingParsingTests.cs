@@ -18,7 +18,7 @@ public sealed class Fallout76VolumetricLightingParsingTests
     [Fact]
     public void ClassicRetailSchema_DecodesEveryFloatWithoutClamping()
     {
-        var parsed = ParseVoli(BuildValidVoli(includeLnam: false));
+        var parsed = ParseVoli(BuildValidVoli(false));
 
         Assert.Equal(FormId, parsed.FormId);
         Assert.Equal("VOLI_Test", parsed.EditorId);
@@ -42,7 +42,7 @@ public sealed class Fallout76VolumetricLightingParsingTests
     [Fact]
     public void OptionalLnam_InItsProvenSchemaPosition_IsPreserved()
     {
-        var parsed = ParseVoli(BuildValidVoli(includeLnam: true));
+        var parsed = ParseVoli(BuildValidVoli(true));
 
         Assert.Null(parsed.DecodeFailure);
         Assert.Equal(0.42f, parsed.Settings!.PhaseFunctionContribution);
@@ -51,8 +51,8 @@ public sealed class Fallout76VolumetricLightingParsingTests
     [Fact]
     public void RecordParser_PublishesFo76VoliOnlyToItsGameScopedCollection()
     {
-        var bytes = BuildValidVoli(includeLnam: false);
-        var descriptor = Descriptor(bytes, isBigEndian: false);
+        var bytes = BuildValidVoli(false);
+        var descriptor = Descriptor(bytes, false);
         var fixture = new ParserFixture(bytes, descriptor, BethesdaGame.Fallout76);
 
         var parsed = fixture.Parser.ParseAll();
@@ -83,7 +83,8 @@ public sealed class Fallout76VolumetricLightingParsingTests
                 ("EDID", NullTermString("VOLI_Test")),
                 ("CNAM", Float(1f)),
                 ("CNAM", Float(2f)),
-                .. NumericTailAfterCnam()]),
+                .. NumericTailAfterCnam()
+            ]),
             "expected DNAM"
         ];
 
@@ -111,23 +112,24 @@ public sealed class Fallout76VolumetricLightingParsingTests
             BuildVoli([
                 ("EDID", NullTermString("VOLI_Test")),
                 ("CNAM", new byte[8]),
-                .. NumericTailAfterCnam()]),
+                .. NumericTailAfterCnam()
+            ]),
             "exactly four bytes"
         ];
 
-        var nonFinite = ValidFields(includeLnam: false).ToArray();
+        var nonFinite = ValidFields(false).ToArray();
         nonFinite[^1] = ("NNAM", Float(float.PositiveInfinity));
         yield return [BuildVoli(nonFinite), "non-finite"];
 
-        var reordered = ValidFields(includeLnam: false).ToArray();
+        var reordered = ValidFields(false).ToArray();
         (reordered[3], reordered[4]) = (reordered[4], reordered[3]);
         yield return [BuildVoli(reordered), "expected ENAM"];
 
-        var unknown = ValidFields(includeLnam: false).ToArray();
+        var unknown = ValidFields(false).ToArray();
         unknown[3] = ("XTRA", Float(0.1f));
         yield return [BuildVoli(unknown), "found XTRA"];
 
-        var truncated = BuildValidVoli(includeLnam: false);
+        var truncated = BuildValidVoli(false);
         Array.Resize(ref truncated, truncated.Length - 1);
         yield return [truncated, "extends past"];
     }
@@ -135,9 +137,9 @@ public sealed class Fallout76VolumetricLightingParsingTests
     [Fact]
     public void BigEndianClassicRecord_FailsClosed()
     {
-        var fields = ValidFields(includeLnam: false).ToArray();
+        var fields = ValidFields(false).ToArray();
         var bytes = BuildRecordBytes(FormId, "VOLI", true, fields);
-        var parsed = ParseVoli(bytes, isBigEndian: true);
+        var parsed = ParseVoli(bytes, true);
 
         Assert.Equal("VOLI_Test", parsed.EditorId);
         Assert.Null(parsed.Settings);
@@ -150,8 +152,8 @@ public sealed class Fallout76VolumetricLightingParsingTests
     [InlineData(true)]
     public void RecoveredOrNonContiguousClassicRecord_FailsClosed(bool partiallyRecovered)
     {
-        var bytes = BuildValidVoli(includeLnam: false);
-        var descriptor = Descriptor(bytes, isBigEndian: false);
+        var bytes = BuildValidVoli(false);
+        var descriptor = Descriptor(bytes, false);
         var context = Context(bytes, descriptor, BethesdaGame.Fallout76);
         if (partiallyRecovered)
         {
@@ -172,8 +174,8 @@ public sealed class Fallout76VolumetricLightingParsingTests
     [Fact]
     public void SameSignatureInStarfield_IsNotClaimedByClassicParser()
     {
-        var bytes = BuildValidVoli(includeLnam: false);
-        var descriptor = Descriptor(bytes, isBigEndian: false);
+        var bytes = BuildValidVoli(false);
+        var descriptor = Descriptor(bytes, false);
         var context = Context(bytes, descriptor, BethesdaGame.Starfield);
 
         Assert.Empty(new MiscEnvironmentHandler(context).ParseFallout76VolumetricLightingSettings());
@@ -269,21 +271,30 @@ public sealed class Fallout76VolumetricLightingParsingTests
     private static RecordParserContext Context(
         byte[] bytes,
         DetectedMainRecord descriptor,
-        BethesdaGame game) =>
-        new(
+        BethesdaGame game)
+    {
+        return new RecordParserContext(
             new EsmRecordScanResult { Game = game, MainRecords = [descriptor] },
             null,
             new ByteArrayMemoryAccessor(bytes),
             bytes.Length,
             null);
+    }
 
-    private static DetectedMainRecord Descriptor(byte[] bytes, bool isBigEndian) =>
-        new("VOLI", (uint)(bytes.Length - 24), 0, FormId, 0, isBigEndian);
+    private static DetectedMainRecord Descriptor(byte[] bytes, bool isBigEndian)
+    {
+        return new DetectedMainRecord("VOLI", (uint)(bytes.Length - 24), 0, FormId, 0, isBigEndian);
+    }
 
-    private static byte[] BuildValidVoli(bool includeLnam) => BuildVoli(ValidFields(includeLnam).ToArray());
+    private static byte[] BuildValidVoli(bool includeLnam)
+    {
+        return BuildVoli(ValidFields(includeLnam).ToArray());
+    }
 
-    private static byte[] BuildVoli(params (string sig, byte[] data)[] fields) =>
-        BuildRecordBytes(FormId, "VOLI", false, fields);
+    private static byte[] BuildVoli(params (string sig, byte[] data)[] fields)
+    {
+        return BuildRecordBytes(FormId, "VOLI", false, fields);
+    }
 
     private static IEnumerable<(string sig, byte[] data)> ValidFields(bool includeLnam)
     {
@@ -306,19 +317,22 @@ public sealed class Fallout76VolumetricLightingParsingTests
         yield return ("NNAM", Float(50f));
     }
 
-    private static (string sig, byte[] data)[] NumericTailAfterCnam() =>
-    [
-        ("DNAM", Float(2f)),
-        ("ENAM", Float(3f)),
-        ("FNAM", Float(4f)),
-        ("GNAM", Float(5f)),
-        ("HNAM", Float(6f)),
-        ("INAM", Float(7f)),
-        ("JNAM", Float(8f)),
-        ("KNAM", Float(9f)),
-        ("MNAM", Float(10f)),
-        ("NNAM", Float(11f))
-    ];
+    private static (string sig, byte[] data)[] NumericTailAfterCnam()
+    {
+        return
+        [
+            ("DNAM", Float(2f)),
+            ("ENAM", Float(3f)),
+            ("FNAM", Float(4f)),
+            ("GNAM", Float(5f)),
+            ("HNAM", Float(6f)),
+            ("INAM", Float(7f)),
+            ("JNAM", Float(8f)),
+            ("KNAM", Float(9f)),
+            ("MNAM", Float(10f)),
+            ("NNAM", Float(11f))
+        ];
+    }
 
     private static byte[] Float(float value)
     {

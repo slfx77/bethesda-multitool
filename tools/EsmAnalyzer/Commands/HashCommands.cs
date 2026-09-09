@@ -81,7 +81,7 @@ public static class HashCommands
 
         if (!string.IsNullOrWhiteSpace(outputPath))
         {
-            File.WriteAllText(outputPath!, $"{algoName} {hashHex}  {Path.GetFileName(filePath)}\n");
+            File.WriteAllText(outputPath, $"{algoName} {hashHex}  {Path.GetFileName(filePath)}\n");
             AnsiConsole.MarkupLine($"[grey]Wrote hash to {outputPath}[/]");
         }
 

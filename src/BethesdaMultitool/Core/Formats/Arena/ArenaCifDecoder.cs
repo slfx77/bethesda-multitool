@@ -33,7 +33,7 @@ internal static class ArenaCifDecoder
             ["MARBLE.CIF"] = (9, 3, 3),
             ["MARBLE2.CIF"] = (9, 3, 3),
             ["PARCH.CIF"] = (9, 20, 20),
-            ["SCROLL.CIF"] = (9, 20, 20),
+            ["SCROLL.CIF"] = (9, 20, 20)
         };
 
     /// <summary>

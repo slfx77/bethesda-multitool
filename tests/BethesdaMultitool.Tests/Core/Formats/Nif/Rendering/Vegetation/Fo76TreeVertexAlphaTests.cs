@@ -24,13 +24,13 @@ public sealed class Fo76TreeVertexAlphaTests
     public void TreeAnimationGraph_ClassifiesNestedClassicAndModernShapesOnly()
     {
         var nif = Nif(
-            "NiNode",             // 0 ordinary root
-            "BSLeafAnimNode",     // 1 animated tree root
-            "NiNode",             // 2 nested transform
-            "BSTriShape",         // 3 modern animated-tree shape
-            "BSTreeNode",         // 4 second animated tree root
-            "NiTriShape",         // 5 classic animated-tree shape
-            "BSTriShape");        // 6 ordinary sibling
+            "NiNode", // 0 ordinary root
+            "BSLeafAnimNode", // 1 animated tree root
+            "NiNode", // 2 nested transform
+            "BSTriShape", // 3 modern animated-tree shape
+            "BSTreeNode", // 4 second animated tree root
+            "NiTriShape", // 5 classic animated-tree shape
+            "BSTriShape"); // 6 ordinary sibling
         var graph = new Dictionary<int, List<int>>
         {
             [0] = [1, 4, 6],
@@ -55,7 +55,7 @@ public sealed class Fo76TreeVertexAlphaTests
         };
         Assert.False(NifVertexColorPolicy.UsesAlphaForOpacity(
             fo76Metadata,
-            isTreeAnimationShape: true));
+            true));
 
         var readableLegacyMetadata = new NifShaderTextureMetadata
         {
@@ -64,10 +64,10 @@ public sealed class Fo76TreeVertexAlphaTests
         };
         Assert.False(NifVertexColorPolicy.UsesAlphaForOpacity(
             readableLegacyMetadata,
-            isTreeAnimationShape: true));
+            true));
         Assert.True(NifVertexColorPolicy.UsesAlphaForOpacity(
             readableLegacyMetadata,
-            isTreeAnimationShape: false));
+            false));
 
         var explicitTreeAnimationMetadata = new NifShaderTextureMetadata
         {
@@ -153,10 +153,8 @@ public sealed class Fo76TreeVertexAlphaTests
         var fragment = SourceContract.ReadShaderSource("reference.frag.hlsl");
         var shadow = SourceContract.ReadShaderSource("shadow.frag.hlsl");
 
-        Assert.Contains(
-            "preserveAuthoredVertexAlpha: isTallGrass || submesh.IsTreeAnimation",
-            decoder,
-            StringComparison.Ordinal);
+        SourceContract.AssertContainsIgnoringWhitespace(
+            "GpuMeshUploader.BuildVertices(submesh, isTallGrass || submesh.IsTreeAnimation)", decoder);
         Assert.Contains("IsTreeAnimation: submesh.IsTreeAnimation", decoder, StringComparison.Ordinal);
         Assert.Contains("TreeAnimationTextureFlag = 1u << 17", cached, StringComparison.Ordinal);
         Assert.Contains(
@@ -169,7 +167,8 @@ public sealed class Fo76TreeVertexAlphaTests
             fragment,
             "float4 main(ModernStandardPSInput input) : SV_Target",
             "#if REFERENCE_MODERN_STANDARD_ALPHA_GREATER",
-            "float sampleAlpha = saturate(sample.a * (IsTreeAnimationMaterial(input.vTextureState.z)",
+            "float sampleAlpha = saturate(sample.a * ((IsTreeAnimationMaterial(input.vTextureState.z) ||",
+            "IsBendableSplineWindMaterial(input.vTextureState.z))",
             "? input.vAlphaState.z",
             ": input.vVertexColor.a));",
             "if (!(sampleAlpha > input.vAlphaState.x)) discard;",
@@ -339,7 +338,7 @@ public sealed class Fo76TreeVertexAlphaTests
 
     private static ModelRoot Read(byte[] glb)
     {
-        using var stream = new MemoryStream(glb, writable: false);
+        using var stream = new MemoryStream(glb, false);
         return ModelRoot.ReadGLB(stream);
     }
 }

@@ -1,6 +1,6 @@
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Models;
-using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Games;
 
@@ -35,14 +35,15 @@ internal sealed class NpcWeaponResolver
         ("rt", "lt")
     ];
 
+    private static readonly Logger Log = Logger.Instance;
+
     private readonly IReadOnlyDictionary<uint, CstyEntry> _combatStyles;
     private readonly BethesdaGame _game;
 
     private readonly Dictionary<string, List<ArmaAddonScanEntry>> _handToHandAddonsByPath;
     private readonly Dictionary<string, IdleScanEntry> _idlesByEditorId;
-    private readonly IReadOnlyDictionary<uint, List<uint>> _leveledItems;
     private readonly IReadOnlyDictionary<uint, LeveledListScanEntry> _leveledItemRecords;
-    private static readonly Logger Log = Logger.Instance;
+    private readonly IReadOnlyDictionary<uint, List<uint>> _leveledItems;
 
     private readonly IReadOnlyDictionary<uint, PackageScanEntry> _packages;
     private readonly IReadOnlyDictionary<uint, WeapScanEntry> _weapons;

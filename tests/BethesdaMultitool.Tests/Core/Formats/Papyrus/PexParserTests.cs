@@ -348,7 +348,7 @@ public sealed class PexParserTests
         var path = RealAssetPaths.SteamGameFile(gameFolder, relativePath);
         Assert.SkipWhen(path is null, RealAssetPaths.SkipMessage($"{gameFolder} {relativePath}"));
 
-        var file = PexParser.Parse(path!);
+        var file = PexParser.Parse(path);
 
         Assert.Equal(expectedGame, file.Header.GameId);
         Assert.EndsWith(".psc", file.Header.SourceFileName, StringComparison.OrdinalIgnoreCase);

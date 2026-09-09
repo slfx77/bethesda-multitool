@@ -101,7 +101,7 @@ internal static class BethesdaViewerNameTargetedAnimationAdapter
         foreach (var sourceCandidate in sourceCandidates)
         {
             if (string.IsNullOrWhiteSpace(sourceCandidate.NodeName) ||
-                (sourceCandidate.KeyTrack is null) == (sourceCandidate.BsplineTrack is null))
+                sourceCandidate.KeyTrack is null == sourceCandidate.BsplineTrack is null)
             {
                 return Fail("The KF clip contains an unnamed or null transform track.", out report);
             }

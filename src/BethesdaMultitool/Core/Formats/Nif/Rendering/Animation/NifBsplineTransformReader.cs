@@ -336,7 +336,7 @@ internal static class NifBsplineTransformReader
 
     private static bool ValidCompression(float bias, float multiplier, bool active)
     {
-        return !active || IsFiniteAuthored(bias) && IsFiniteAuthored(multiplier) && multiplier >= 0f;
+        return !active || (IsFiniteAuthored(bias) && IsFiniteAuthored(multiplier) && multiplier >= 0f);
     }
 
     private static bool TryReadCompressedChannels(
@@ -553,8 +553,8 @@ internal static class NifBsplineTransformReader
 
     private static bool RangeFits(uint handle, int count, int dimension, int availableScalars)
     {
-        var end = (ulong)handle + (ulong)(uint)count * (uint)dimension;
-        return handle != AbsentChannelHandle && end <= (ulong)(uint)availableScalars;
+        var end = handle + (ulong)(uint)count * (uint)dimension;
+        return handle != AbsentChannelHandle && end <= (uint)availableScalars;
     }
 
     private static bool RefsAreOptionalAndWellTyped(NifInfo nif, int dataRef, int basisRef)
@@ -566,8 +566,8 @@ internal static class NifBsplineTransformReader
     private static bool OptionalRefIsTyped(NifInfo nif, int blockRef, string typeName)
     {
         return blockRef == -1 ||
-               blockRef >= 0 && blockRef < nif.Blocks.Count &&
-               nif.Blocks[blockRef].TypeName == typeName;
+               (blockRef >= 0 && blockRef < nif.Blocks.Count &&
+                nif.Blocks[blockRef].TypeName == typeName);
     }
 
     private static bool HasExactReadableSpan(byte[] data, BlockInfo block, int exactSize)

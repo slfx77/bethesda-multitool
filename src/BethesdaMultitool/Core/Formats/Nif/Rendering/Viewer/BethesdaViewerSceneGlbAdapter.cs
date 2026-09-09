@@ -1,5 +1,4 @@
 using System.Numerics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Games;
 

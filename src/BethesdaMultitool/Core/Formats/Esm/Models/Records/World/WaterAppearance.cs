@@ -294,7 +294,7 @@ public sealed record WaterAppearance(
         return isLava
             ? new WaterAppearance(DefaultLavaShallow, DefaultLavaDeep, DefaultLavaShallow,
                 firstTexture, WaterSurfaceParams.Default, causesDamage, true,
-                IsReflective: isReflective, NormalTextures: textures,
+                isReflective, NormalTextures: textures,
                 SurfaceTexture: water.SurfaceTexture)
             : null;
     }
@@ -382,10 +382,10 @@ public sealed record WaterAppearance(
             ? (f76.ChannelOpacity.R + f76.ChannelOpacity.G + f76.ChannelOpacity.B) / 3f
             : (float?)null;
         var projectedShallowAlpha = fallout76Opacity is { } shallowOpacity
-            ? 0.5f + (0.5f * shallowOpacity)
+            ? 0.5f + 0.5f * shallowOpacity
             : def.ShallowAlpha;
         var projectedDeepAlpha = fallout76Opacity is { } deepOpacity
-            ? 0.9375f + (0.0625f * deepOpacity)
+            ? 0.9375f + 0.0625f * deepOpacity
             : def.DeepAlpha;
         return new WaterSurfaceParams(
             ExtractFloat(props, "NormalsUVScale", def.NormalsUvScale),
@@ -509,8 +509,10 @@ public sealed record WaterAppearance(
     private static (byte R, byte G, byte B) QuantizeNormalizedColor(
         (float R, float G, float B) color)
     {
-        static byte ToByte(float value) =>
-            (byte)Math.Clamp((int)MathF.Round(value * byte.MaxValue), byte.MinValue, byte.MaxValue);
+        static byte ToByte(float value)
+        {
+            return (byte)Math.Clamp((int)MathF.Round(value * byte.MaxValue), byte.MinValue, byte.MaxValue);
+        }
 
         return (ToByte(color.R), ToByte(color.G), ToByte(color.B));
     }

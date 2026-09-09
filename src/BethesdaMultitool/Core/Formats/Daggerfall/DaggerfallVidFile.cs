@@ -23,7 +23,12 @@ internal enum DaggerfallVidBlockType : byte
 }
 
 /// <summary>One decoded movie frame: the full canvas after this block was applied.</summary>
-internal sealed record DaggerfallVidFrame(int Index, DaggerfallVidBlockType BlockType, int Delay, IndexedBitmap Bitmap, Palette Palette);
+internal sealed record DaggerfallVidFrame(
+    int Index,
+    DaggerfallVidBlockType BlockType,
+    int Delay,
+    IndexedBitmap Bitmap,
+    Palette Palette);
 
 /// <summary>
 ///     A Daggerfall movie, <c>*.VID</c> in ARENA2: a 15-byte header, a 768-byte palette block, then
@@ -100,6 +105,9 @@ internal sealed class DaggerfallVidFile
     /// <summary>Playing time implied by the audio track.</summary>
     public double AudioSeconds => Audio.Length / (double)SampleRate;
 
+    /// <summary>The header tag as text, for diagnostics.</summary>
+    public string HeaderTag => Encoding.ASCII.GetString(_bytes, 0, 3);
+
     /// <summary>True for a <c>.VID</c> name.</summary>
     public static bool IsVidFileName(string name)
     {
@@ -127,7 +135,8 @@ internal sealed class DaggerfallVidFile
 
         if (bytes.Length < HeaderLength + 1 + PaletteLength)
         {
-            throw new InvalidDataException($"{name}: {bytes.Length} bytes is shorter than a header plus its palette block.");
+            throw new InvalidDataException(
+                $"{name}: {bytes.Length} bytes is shorter than a header plus its palette block.");
         }
 
         var unknown1 = BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(3));
@@ -185,8 +194,6 @@ internal sealed class DaggerfallVidFile
                     break;
                 case DaggerfallVidBlockType.EndOfFile:
                     endOfFile = true;
-                    break;
-                default:
                     break;
             }
         }
@@ -272,7 +279,8 @@ internal sealed class DaggerfallVidFile
                     var rate = _bytes[position + 2];
                     if (rate != 166)
                     {
-                        throw new InvalidDataException($"{Name}: audio playback rate {rate} is not the 11,025 Hz value 166.");
+                        throw new InvalidDataException(
+                            $"{Name}: audio playback rate {rate} is not the 11,025 Hz value 166.");
                     }
 
                     var length = BinaryPrimitives.ReadUInt16LittleEndian(_bytes.AsSpan(position + 3));
@@ -375,12 +383,10 @@ internal sealed class DaggerfallVidFile
     {
         if (position < 0 || length < 0 || position + length > _bytes.Length)
         {
-            throw new InvalidDataException($"{Name}: {what} needs {length} bytes at {position}, the file has {_bytes.Length}.");
+            throw new InvalidDataException(
+                $"{Name}: {what} needs {length} bytes at {position}, the file has {_bytes.Length}.");
         }
     }
 
     private readonly record struct BlockInfo(DaggerfallVidBlockType Type, int AudioOffset, int AudioLength, int Delay);
-
-    /// <summary>The header tag as text, for diagnostics.</summary>
-    public string HeaderTag => Encoding.ASCII.GetString(_bytes, 0, 3);
 }

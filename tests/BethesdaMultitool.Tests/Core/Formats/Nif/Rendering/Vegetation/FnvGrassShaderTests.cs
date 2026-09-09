@@ -169,7 +169,7 @@ public sealed class FnvGrassShaderTests
         var normal = FnvGrassLighting.SampleLandNormal(vnml, 256f, 256f, 128f);
 
         Assert.NotNull(normal);
-        Assert.Equal(Vector3.UnitZ, normal!.Value, EqualityComparer<Vector3>.Default);
+        Assert.Equal(Vector3.UnitZ, normal.Value, EqualityComparer<Vector3>.Default);
     }
 
     [Fact]

@@ -12,9 +12,9 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 /// </summary>
 internal sealed class ArenaBsaBackend : IArchiveBackend
 {
+    private readonly MemoryMappedViewAccessor _accessor;
     private readonly ArenaBsaArchive _archive;
     private readonly MemoryMappedFile _mmf;
-    private readonly MemoryMappedViewAccessor _accessor;
 
     public ArenaBsaBackend(ArenaBsaArchive archive)
     {

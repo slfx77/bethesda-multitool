@@ -7,7 +7,7 @@ using BethesdaMultitool.Core.Minidump;
 var repoRoot = Directory.GetCurrentDirectory();
 var dumpPath = args.Length > 0
     ? Path.GetFullPath(args[0])
-    : Path.Combine(repoRoot, "Sample", "MemoryDump", "Fallout_Release_MemDebug.xex.dmp");
+    : Path.Combine(repoRoot, "Sample", "MemoryDumps", "Fallout_Release_MemDebug.xex.dmp");
 var globalsPath = args.Length > 1
     ? Path.GetFullPath(args[1])
     : Path.Combine(repoRoot, "Sample", "PDB", "Proto", "Fallout_Release_MemDebug", "globals.txt");
@@ -16,7 +16,7 @@ var outputPath = args.Length > 2
     : Path.Combine(repoRoot, "tools", "GhidraProject", "shader_probe_report.txt");
 var shaderPackagePath = args.Length > 3
     ? Path.GetFullPath(args[3])
-    : Path.Combine(repoRoot, "Sample", "Full_Builds", "Fallout New Vegas (360 Final)", "Data", "Shaders", "shaderpackage.sdp");
+    : Path.Combine(repoRoot, "Sample", "Builds", "Fallout - New Vegas (2010-10-19, X360 - Final)", "Data", "Shaders", "shaderpackage.sdp");
 
 if (!File.Exists(dumpPath))
 {

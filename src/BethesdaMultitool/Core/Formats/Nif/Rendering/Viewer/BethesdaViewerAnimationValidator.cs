@@ -43,7 +43,7 @@ internal static class BethesdaViewerAnimationValidator
                 !Enum.IsDefined(track.RotationInterpolation) ||
                 !Enum.IsDefined(track.TranslationInterpolation) ||
                 !Enum.IsDefined(track.ScaleInterpolation) ||
-                (track.RotationInterpolation == BethesdaViewerKeyInterpolation.XyzEuler) !=
+                track.RotationInterpolation == BethesdaViewerKeyInterpolation.XyzEuler !=
                 track.HasEulerRotation ||
                 track.TranslationInterpolation == BethesdaViewerKeyInterpolation.XyzEuler ||
                 track.ScaleInterpolation == BethesdaViewerKeyInterpolation.XyzEuler ||
@@ -121,10 +121,10 @@ internal static class BethesdaViewerAnimationValidator
     {
         return TimesAscending(keys.Select(static key => key.Time)) &&
                keys.All(static key => float.IsFinite(key.Time) && IsFinite(key.Value) &&
-                   (!key.HasQuadraticTangents ||
-                    NifQuadraticVectorCurve.IsFiniteAuthored(key.Value) &&
-                    NifQuadraticVectorCurve.IsFiniteAuthored(key.Forward) &&
-                    NifQuadraticVectorCurve.IsFiniteAuthored(key.Backward)));
+                                      (!key.HasQuadraticTangents ||
+                                       (NifQuadraticVectorCurve.IsFiniteAuthored(key.Value) &&
+                                        NifQuadraticVectorCurve.IsFiniteAuthored(key.Forward) &&
+                                        NifQuadraticVectorCurve.IsFiniteAuthored(key.Backward))));
     }
 
     private static bool Valid(BethesdaViewerFloatKey[]? keys)
@@ -142,9 +142,9 @@ internal static class BethesdaViewerAnimationValidator
             !float.IsFinite(duration) ||
             duration <= 0f ||
             !transform.HasAnyValue ||
-            transform.DefaultTranslation is { } translation && !IsFiniteAuthored(translation) ||
-            transform.DefaultRotation is { } rotation && !ValidRotation(rotation) ||
-            transform.DefaultScale is { } scale && !IsFiniteAuthored(scale))
+            (transform.DefaultTranslation is { } translation && !IsFiniteAuthored(translation)) ||
+            (transform.DefaultRotation is { } rotation && !ValidRotation(rotation)) ||
+            (transform.DefaultScale is { } scale && !IsFiniteAuthored(scale)))
         {
             return false;
         }
@@ -163,22 +163,22 @@ internal static class BethesdaViewerAnimationValidator
     private static bool ValidControlPoints(Vector3[]? values, ref int expectedCount)
     {
         return values is null ||
-               ValidControlPointCount(values.Length, ref expectedCount) &&
-               values.All(IsFiniteAuthored);
+               (ValidControlPointCount(values.Length, ref expectedCount) &&
+                values.All(IsFiniteAuthored));
     }
 
     private static bool ValidControlPoints(Quaternion[]? values, ref int expectedCount)
     {
         return values is null ||
-               ValidControlPointCount(values.Length, ref expectedCount) &&
-               values.All(ValidRotation);
+               (ValidControlPointCount(values.Length, ref expectedCount) &&
+                values.All(ValidRotation));
     }
 
     private static bool ValidControlPoints(float[]? values, ref int expectedCount)
     {
         return values is null ||
-               ValidControlPointCount(values.Length, ref expectedCount) &&
-               values.All(IsFiniteAuthored);
+               (ValidControlPointCount(values.Length, ref expectedCount) &&
+                values.All(IsFiniteAuthored));
     }
 
     private static bool ValidControlPointCount(int count, ref int expectedCount)

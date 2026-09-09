@@ -28,9 +28,9 @@ internal sealed class SecondPassOwnershipResolver
     private readonly Dictionary<(byte FormType, int FieldOffset), (string RecordCode, string FieldLabel)>
         _bsStringTFieldIndex;
 
-    private readonly BufferAnalysisContext _ctx;
-
     private readonly OwnershipContainmentResolver _containmentResolver;
+
+    private readonly BufferAnalysisContext _ctx;
 
     private readonly OwnershipTextMatcher _textMatcher;
     private readonly OwnershipVtableResolver _vtableResolver;

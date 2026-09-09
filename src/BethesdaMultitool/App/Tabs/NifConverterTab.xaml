@@ -459,116 +459,116 @@
               <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="12" Padding="0,0,0,8">
 
-              <!-- NIF Info -->
-              <TextBlock Text="NIF Info"
-                         AutomationProperties.HeadingLevel="Level2"
-                         Style="{StaticResource SubtitleTextBlockStyle}" />
-              <TextBlock
-                x:Name="NifViewerInfoText"
-                FontSize="12"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                TextWrapping="Wrap"
-                Text="No file selected" />
+                  <!-- NIF Info -->
+                  <TextBlock Text="NIF Info"
+                             AutomationProperties.HeadingLevel="Level2"
+                             Style="{StaticResource SubtitleTextBlockStyle}" />
+                  <TextBlock
+                    x:Name="NifViewerInfoText"
+                    FontSize="12"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextWrapping="Wrap"
+                    Text="No file selected" />
 
-              <InfoBar
-                x:Name="NifViewerGeometryWarning"
-                Title="Incomplete model"
-                Severity="Warning"
-                IsClosable="False"
-                IsOpen="False" />
+                  <InfoBar
+                    x:Name="NifViewerGeometryWarning"
+                    Title="Incomplete model"
+                    Severity="Warning"
+                    IsClosable="False"
+                    IsOpen="False" />
 
-              <!-- Block Types -->
-              <TextBlock Text="Block Types"
-                         AutomationProperties.HeadingLevel="Level3"
-                         FontWeight="SemiBold" FontSize="13"
-                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-              <TextBlock
-                x:Name="NifViewerBlockTypesText"
-                FontSize="11"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                TextWrapping="Wrap" />
+                  <!-- Block Types -->
+                  <TextBlock Text="Block Types"
+                             AutomationProperties.HeadingLevel="Level3"
+                             FontWeight="SemiBold" FontSize="13"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <TextBlock
+                    x:Name="NifViewerBlockTypesText"
+                    FontSize="11"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    TextWrapping="Wrap" />
 
-              <!-- Export -->
-              <TextBlock Text="Export"
-                         AutomationProperties.HeadingLevel="Level3"
-                         FontWeight="SemiBold" FontSize="13"
-                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                         Margin="0,8,0,0" />
-              <Button
-                x:Name="NifViewerExportGlbButton"
-                Content="Export as GLB..."
-                HorizontalAlignment="Stretch"
-                Click="NifViewerExportGlb_Click"
-                IsEnabled="False">
-                <Button.KeyboardAccelerators>
-                  <KeyboardAccelerator Key="E" Modifiers="Control" />
-                </Button.KeyboardAccelerators>
-              </Button>
+                  <!-- Export -->
+                  <TextBlock Text="Export"
+                             AutomationProperties.HeadingLevel="Level3"
+                             FontWeight="SemiBold" FontSize="13"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                             Margin="0,8,0,0" />
+                  <Button
+                    x:Name="NifViewerExportGlbButton"
+                    Content="Export as GLB..."
+                    HorizontalAlignment="Stretch"
+                    Click="NifViewerExportGlb_Click"
+                    IsEnabled="False">
+                    <Button.KeyboardAccelerators>
+                      <KeyboardAccelerator Key="E" Modifiers="Control" />
+                    </Button.KeyboardAccelerators>
+                  </Button>
 
-              <!-- Render PNG -->
-              <TextBlock x:Name="NifViewerRenderSectionHeader"
-                         Text="Render PNG"
-                         AutomationProperties.HeadingLevel="Level3"
-                         FontWeight="SemiBold" FontSize="13"
-                         Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                         Margin="0,8,0,0" />
-              <Button
-                x:Name="NifViewerCaptureNativePngButton"
-                Content="Capture current native viewport..."
-                HorizontalAlignment="Stretch"
-                Click="NifViewerCaptureNativePng_Click"
-                IsEnabled="False" />
-              <TextBlock Text="Software sprite views"
-                         FontSize="11" FontStyle="Italic"
-                         Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-              <ComboBox
-                x:Name="NifViewerPerspectiveComboBox"
-                HorizontalAlignment="Stretch"
-                AutomationProperties.Name="Render perspective"
-                SelectedIndex="0">
-                <ComboBoxItem Content="Front (single view)" Tag="front" />
-                <ComboBoxItem Content="Isometric (4 views)" Tag="iso" />
-                <ComboBoxItem Content="Side (4 views)" Tag="side" />
-                <ComboBoxItem Content="Trimetric (4 views)" Tag="trimetric" />
-              </ComboBox>
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock x:Name="NifViewerElevationSliderLabel"
-                           Text="Elevation:" VerticalAlignment="Center" FontSize="12" />
-                <Slider
-                  x:Name="NifViewerElevationSlider"
-                  Minimum="-90" Maximum="90" Value="0"
-                  Width="140"
-                  AutomationProperties.LabeledBy="{Binding ElementName=NifViewerElevationSliderLabel}"
-                  ValueChanged="NifViewerElevationSlider_ValueChanged" />
-                <TextBlock
-                  x:Name="NifViewerElevationLabel"
-                  Text="0"
-                  AutomationProperties.Name="Current elevation angle"
-                  AutomationProperties.LiveSetting="Polite"
-                  VerticalAlignment="Center" FontSize="12" Width="30" />
-              </StackPanel>
-              <StackPanel Orientation="Horizontal" Spacing="8">
-                <TextBlock x:Name="NifViewerSizeNumberBoxLabel"
-                           Text="Resolution (px):" VerticalAlignment="Center" FontSize="12" />
-                <NumberBox
-                  x:Name="NifViewerSizeNumberBox"
-                  Minimum="64" Maximum="4096"
-                  Value="512"
-                  SpinButtonPlacementMode="Compact"
-                  SmallChange="64" LargeChange="256"
-                  Width="120"
-                  AutomationProperties.LabeledBy="{Binding ElementName=NifViewerSizeNumberBoxLabel}" />
-              </StackPanel>
-              <Button
-                x:Name="NifViewerRenderPngButton"
-                Content="Export as PNG..."
-                HorizontalAlignment="Stretch"
-                Click="NifViewerRenderPng_Click"
-                IsEnabled="False">
-                <Button.KeyboardAccelerators>
-                  <KeyboardAccelerator Key="R" Modifiers="Control" />
-                </Button.KeyboardAccelerators>
-              </Button>
+                  <!-- Render PNG -->
+                  <TextBlock x:Name="NifViewerRenderSectionHeader"
+                             Text="Render PNG"
+                             AutomationProperties.HeadingLevel="Level3"
+                             FontWeight="SemiBold" FontSize="13"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                             Margin="0,8,0,0" />
+                  <Button
+                    x:Name="NifViewerCaptureNativePngButton"
+                    Content="Capture current native viewport..."
+                    HorizontalAlignment="Stretch"
+                    Click="NifViewerCaptureNativePng_Click"
+                    IsEnabled="False" />
+                  <TextBlock Text="Software sprite views"
+                             FontSize="11" FontStyle="Italic"
+                             Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                  <ComboBox
+                    x:Name="NifViewerPerspectiveComboBox"
+                    HorizontalAlignment="Stretch"
+                    AutomationProperties.Name="Render perspective"
+                    SelectedIndex="0">
+                    <ComboBoxItem Content="Front (single view)" Tag="front" />
+                    <ComboBoxItem Content="Isometric (4 views)" Tag="iso" />
+                    <ComboBoxItem Content="Side (4 views)" Tag="side" />
+                    <ComboBoxItem Content="Trimetric (4 views)" Tag="trimetric" />
+                  </ComboBox>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="NifViewerElevationSliderLabel"
+                               Text="Elevation:" VerticalAlignment="Center" FontSize="12" />
+                    <Slider
+                      x:Name="NifViewerElevationSlider"
+                      Minimum="-90" Maximum="90" Value="0"
+                      Width="140"
+                      AutomationProperties.LabeledBy="{Binding ElementName=NifViewerElevationSliderLabel}"
+                      ValueChanged="NifViewerElevationSlider_ValueChanged" />
+                    <TextBlock
+                      x:Name="NifViewerElevationLabel"
+                      Text="0"
+                      AutomationProperties.Name="Current elevation angle"
+                      AutomationProperties.LiveSetting="Polite"
+                      VerticalAlignment="Center" FontSize="12" Width="30" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock x:Name="NifViewerSizeNumberBoxLabel"
+                               Text="Resolution (px):" VerticalAlignment="Center" FontSize="12" />
+                    <NumberBox
+                      x:Name="NifViewerSizeNumberBox"
+                      Minimum="64" Maximum="4096"
+                      Value="512"
+                      SpinButtonPlacementMode="Compact"
+                      SmallChange="64" LargeChange="256"
+                      Width="120"
+                      AutomationProperties.LabeledBy="{Binding ElementName=NifViewerSizeNumberBoxLabel}" />
+                  </StackPanel>
+                  <Button
+                    x:Name="NifViewerRenderPngButton"
+                    Content="Export as PNG..."
+                    HorizontalAlignment="Stretch"
+                    Click="NifViewerRenderPng_Click"
+                    IsEnabled="False">
+                    <Button.KeyboardAccelerators>
+                      <KeyboardAccelerator Key="R" Modifiers="Control" />
+                    </Button.KeyboardAccelerators>
+                  </Button>
                 </StackPanel>
               </ScrollViewer>
             </TabViewItem>

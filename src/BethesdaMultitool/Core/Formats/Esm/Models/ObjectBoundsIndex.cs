@@ -92,6 +92,7 @@ internal static class ObjectBoundsIndex
                 bounds.TryAdd(spline.FormId, splineBounds);
             }
         }
+
         // Same story for TREE — the "TREE" => Tree arm below still serves schema-primary games
         // (TES3/TES4/Skyrim/FO4), which continue to route trees through GenericRecords.
         Process(records.Trees, t => (t.FormId, t.Bounds), PlacedObjectCategory.Tree, bounds, categories);

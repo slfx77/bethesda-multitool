@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-
 using Windows.Storage.Pickers;
 using BethesdaMultitool.Core.AssetBrowse;
 using BethesdaMultitool.Core.Analysis;
@@ -8,7 +7,6 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Imaging;
-using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
@@ -26,26 +24,29 @@ namespace BethesdaMultitool;
 ///         every entry, so it runs off the UI thread.
 ///     </para>
 /// </summary>
-public sealed partial class AssetBrowserTab : UserControl
+public sealed partial class AssetBrowserTab : UserControl, IDisposable
 {
     /// <summary>Longest edge of a decoded thumbnail, in DEVICE pixels.</summary>
     private const int ThumbnailCellPixels = 96;
 
-    private readonly ObservableCollection<AssetGalleryItem> _gallery = [];
-    private readonly ThumbnailCache _thumbnails = new ThumbnailCache().RegisterWith(ResourceRegistry.Instance);
     private readonly LatestOnlyJob _audioLoad = new();
+
+    private readonly ObservableCollection<AssetGalleryItem> _gallery = [];
     private readonly LatestOnlyJob _levelLoad = new();
-    private readonly LatestOnlyJob _skyLoad = new();
-    private readonly LatestOnlyJob _videoLoad = new();
     private readonly LatestOnlyJob _meshLoad = new();
+    private readonly LatestOnlyJob _skyLoad = new();
+    private readonly ThumbnailCache _thumbnails = new ThumbnailCache().RegisterWith(ResourceRegistry.Instance);
+    private readonly LatestOnlyJob _videoLoad = new();
     private AssetAudioPlayer? _audio;
+    private bool _disposed;
     private AssetThumbnailLoader? _loader;
     private BethesdaSceneViewerControl? _meshViewer;
     private (byte[] Riff, string Key)? _pendingAudio;
-    private bool _suppressSeek;
-    private AssetVideoPreview? _video;
     private UnifiedAnalysisResult? _records;
     private AssetBrowseSession? _session;
+    private int _sourceGeneration;
+    private bool _suppressSeek;
+    private AssetVideoPreview? _video;
 
     public AssetBrowserTab()
     {
@@ -70,7 +71,13 @@ public sealed partial class AssetBrowserTab : UserControl
     private async void OpenArchive_Click(object sender, RoutedEventArgs e)
     {
         var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
-        foreach (var extension in new[] { ".bsa", ".ba2", ".bs6", ".bos", ".dat", ".pck" })
+        // ⚠ A WinUI FileOpenPicker cannot select an extension that is not listed here, so this
+        // array is a hard gate on what the browser can open, not a convenience filter. .jar is how
+        // all three TES Travels J2ME titles ship (the jar IS the install), .lmp is Dawnstar lump
+        // storage, .arc the Oblivion PSP pack. Every one already parsed through ArchiveProbe; only
+        // this list stood between them and the GUI.
+        foreach (var extension in
+                 new[] { ".bsa", ".ba2", ".bs6", ".bos", ".dat", ".pck", ".jar", ".lmp", ".arc" })
         {
             picker.FileTypeFilter.Add(extension);
         }
@@ -80,7 +87,12 @@ public sealed partial class AssetBrowserTab : UserControl
         var file = await picker.PickSingleFileAsync();
         if (file is not null)
         {
-            await OpenSourceAsync(file.Path, () => AssetBrowseSession.OpenArchive(file.Path));
+            // Claim it as a game first so the session carries an identity; an unrecognised
+            // archive still opens exactly as before.
+            await OpenSourceAsync(
+                file.Path,
+                () => AssetBrowseSession.TryOpenGameArchive(file.Path)
+                      ?? AssetBrowseSession.OpenArchive(file.Path));
         }
     }
 
@@ -94,7 +106,8 @@ public sealed partial class AssetBrowserTab : UserControl
         // A game install mounts loose files and every archive its profile declares. When the
         // directory is not an install root the browser still opens it as a plain folder rather
         // than failing — the user asked to see what is there either way.
-        await OpenSourceAsync(path, () => AssetBrowseSession.TryOpenGameRoot(path) ?? AssetBrowseSession.OpenFolder(path));
+        await OpenSourceAsync(path,
+            () => AssetBrowseSession.TryOpenGameRoot(path) ?? AssetBrowseSession.OpenFolder(path));
     }
 
     private static async Task<string?> PickFolderAsync()
@@ -107,36 +120,86 @@ public sealed partial class AssetBrowserTab : UserControl
         return folder?.Path;
     }
 
+    /// <summary>
+    ///     Opens <paramref name="path" /> exactly as the Open flyout would — a recognised game root
+    ///     or plain folder for a directory, a recognised game archive or plain archive for a file —
+    ///     but without a picker. Backs the <c>--asset-source</c> launch argument.
+    ///     <para>
+    ///         ⛔ Scripted verification must reach this surface through this method, never through
+    ///         the native picker. Driving that picker means synthetic keystrokes into whatever
+    ///         window has focus, and an earlier attempt typed a path into the user's browser.
+    ///     </para>
+    /// </summary>
+    public Task OpenFromLaunchArgumentAsync(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+
+        if (Directory.Exists(path))
+        {
+            return OpenSourceAsync(path,
+                () => AssetBrowseSession.TryOpenGameRoot(path) ?? AssetBrowseSession.OpenFolder(path));
+        }
+
+        if (File.Exists(path))
+        {
+            return OpenSourceAsync(path,
+                () => AssetBrowseSession.TryOpenGameArchive(path) ?? AssetBrowseSession.OpenArchive(path));
+        }
+
+        AssetTreeStatusText.Text = $"Could not open: not found: {path}";
+        Logger.Instance.Warn("[AssetBrowser] --asset-source not found: {0}", path);
+        return Task.CompletedTask;
+    }
+
     private async Task OpenSourceAsync(string path, Func<AssetBrowseSession> open)
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        var generation = ++_sourceGeneration;
         SourcePathTextBox.Text = path;
         OpenSourceButton.IsEnabled = false;
         AssetTreeStatusText.Text = "Opening...";
         try
         {
             var session = await Task.Run(open);
-            _session?.Dispose();
+            if (_disposed || generation != _sourceGeneration)
+            {
+                session.Dispose();
+                return;
+            }
+
+            CloseSource();
+            generation = _sourceGeneration;
             _session = session;
+            SourcePathTextBox.Text = path;
 
             // The loader's session cancels every in-flight decode, so it must be replaced with the
             // browse session it reads through — never after it.
-            _loader?.Dispose();
             _loader = new AssetThumbnailLoader(
                 DispatcherQueue, _thumbnails, ThumbnailCellPixels, XamlRoot?.RasterizationScale ?? 1.0);
             _loader.BeginSession(session);
 
             ShowTree(session);
             ShowGallery(session.Root);
-            _ = LoadRecordsAsync(path);
+            _ = LoadRecordsAsync(path, session);
         }
         catch (Exception ex)
         {
-            AssetTreeView.RootNodes.Clear();
-            AssetTreeStatusText.Text = $"Could not open: {ex.Message}";
+            if (!_disposed && generation == _sourceGeneration)
+            {
+                AssetTreeView.RootNodes.Clear();
+                AssetTreeStatusText.Text = $"Could not open: {ex.Message}";
+            }
         }
         finally
         {
-            OpenSourceButton.IsEnabled = true;
+            if (!_disposed && generation == _sourceGeneration)
+            {
+                OpenSourceButton.IsEnabled = true;
+            }
         }
     }
 
@@ -254,9 +317,9 @@ public sealed partial class AssetBrowserTab : UserControl
         if (session is null || !AssetLevel2DSource.CanOpen(node))
         {
             _levelLoad.Cancel();
-        _skyLoad.Cancel();
-        SkyBackdropImage.Source = null;
-        SkyBackdropImage.Visibility = Visibility.Collapsed;
+            _skyLoad.Cancel();
+            SkyBackdropImage.Source = null;
+            SkyBackdropImage.Visibility = Visibility.Collapsed;
             Level2dMap.SetSource(null);
             Level2dMap.Visibility = Visibility.Collapsed;
             MapViewerPlaceholder.Visibility = Visibility.Visible;
@@ -279,21 +342,22 @@ public sealed partial class AssetBrowserTab : UserControl
                 MapViewerPlaceholder.Visibility = Visibility.Collapsed;
                 Level2dMap.Visibility = Visibility.Visible;
                 Level2dMap.SetSource(source);
-            });
+            },
+            source => (source as IDisposable)?.Dispose());
     }
 
     /// <summary>
-    ///     Decodes and shows a classic movie, or hides the video surface for anything else.
+    ///     Opens a supported movie, or hides the video surface for anything else.
     ///     <para>
-    ///         Decoding materialises every frame (a Daggerfall VID paints onto one persistent
-    ///         canvas, so frame N does not exist without replaying the ones before it), which is
-    ///         why this runs off the UI thread and reports progress rather than blocking.
+    ///         Indexed classic formats materialise their frames before playback; Bink, Smacker
+    ///         and Interplay MVE decode on demand. Opening runs off the UI thread because the
+    ///         eager formats can require substantial decoding work.
     ///     </para>
     /// </summary>
     private void ShowVideo(AssetNode node)
     {
         var session = _session;
-        if (session is null || !ClassicVideoClip.CanOpen(node))
+        if (session is null || !ClassicVideoClip.CanOpenAnyVideo(node))
         {
             _videoLoad.Cancel();
             DisposeVideo();
@@ -304,7 +368,7 @@ public sealed partial class AssetBrowserTab : UserControl
         AudioStatusText.Text = "Decoding movie...";
         AudioTransportPanel.Visibility = Visibility.Visible;
         _ = _videoLoad.RunAsync(
-            token => ClassicVideoClip.TryOpen(session, node, token),
+            token => ClassicVideoClip.TryOpenAnyVideo(session, node, token),
             clip =>
             {
                 DisposeVideo();
@@ -316,7 +380,16 @@ public sealed partial class AssetBrowserTab : UserControl
                 }
 
                 _video = new AssetVideoPreview(clip);
+                if (_video.ErrorMessage is { } error)
+                {
+                    DisposeVideo();
+                    AudioStatusText.Text = $"{node.Name} — {error}";
+                    VideoPreviewImage.Visibility = Visibility.Collapsed;
+                    return;
+                }
+
                 _video.Progressed += (_, _) => UpdateTransport();
+                _video.Failed += (_, message) => AudioStatusText.Text = $"{node.Name} — {message}";
 
                 VideoPreviewImage.Source = _video.Surface;
                 VideoPreviewImage.Visibility = Visibility.Visible;
@@ -465,7 +538,7 @@ public sealed partial class AssetBrowserTab : UserControl
     {
         var session = _session;
         var isLevel = session is not null && ClassicLevelPreviewSource.CanPreview(session, node);
-        if (session is null || (!isLevel && !ClassicMeshPreviewSource.CanPreview(node)))
+        if (session is null || (!isLevel && !ClassicMeshPreviewSource.CanPreview(session, node)))
         {
             _meshLoad.Cancel();
             _meshViewer?.ClearScene();
@@ -539,7 +612,7 @@ public sealed partial class AssetBrowserTab : UserControl
     ///         archive. A failure here must not disturb the asset panes, which work regardless.
     ///     </para>
     /// </summary>
-    private async Task LoadRecordsAsync(string path)
+    private async Task LoadRecordsAsync(string path, AssetBrowseSession session)
     {
         RecordTreeView.RootNodes.Clear();
         RecordFieldsList.ItemsSource = null;
@@ -554,9 +627,15 @@ public sealed partial class AssetBrowserTab : UserControl
             result = await ClassicGameAnalyzer.LoadAsync(path);
         }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException
-                                     or IOException or ArgumentException or UnauthorizedAccessException)
+                                      or IOException or ArgumentException or UnauthorizedAccessException)
         {
             // Not a classic install, or one this build cannot synthesize records for.
+        }
+
+        if (_disposed || !ReferenceEquals(_session, session))
+        {
+            result?.Dispose();
+            return;
         }
 
         _records?.Dispose();
@@ -574,7 +653,7 @@ public sealed partial class AssetBrowserTab : UserControl
             var typeNode = new TreeViewNode { Content = group };
             foreach (var record in group.Records)
             {
-                typeNode.Children.Add(new TreeViewNode { Content = record });
+                typeNode.Children.Add(new TreeViewNode { Content = new RecordBrowserItem(record) });
             }
 
             RecordTreeView.RootNodes.Add(typeNode);
@@ -588,7 +667,7 @@ public sealed partial class AssetBrowserTab : UserControl
 
     private void RecordTreeView_SelectionChanged(TreeView sender, TreeViewSelectionChangedEventArgs args)
     {
-        if (sender.SelectedNode?.Content is not GenericEsmRecord record)
+        if (sender.SelectedNode?.Content is not RecordBrowserItem { Record: var record })
         {
             RecordFieldsList.ItemsSource = null;
             return;
@@ -633,9 +712,10 @@ public sealed partial class AssetBrowserTab : UserControl
         return node.Children.Count == 0 ? 1 : node.Children.Sum(CountFiles);
     }
 
-    /// <summary>Releases the open source. The window calls this on shutdown.</summary>
+    /// <summary>Releases the open source while keeping the tab available for another source.</summary>
     public void CloseSource()
     {
+        _sourceGeneration++;
         // Loader first: it reads through the session, so tearing the session down under a running
         // decode is what would fault.
         _loader?.Dispose();
@@ -643,6 +723,9 @@ public sealed partial class AssetBrowserTab : UserControl
         _audioLoad.Cancel();
         _videoLoad.Cancel();
         _levelLoad.Cancel();
+        _skyLoad.Cancel();
+        SkyBackdropImage.Source = null;
+        SkyBackdropImage.Visibility = Visibility.Collapsed;
         Level2dMap.SetSource(null);
         Level2dMap.Visibility = Visibility.Collapsed;
         MapViewerPlaceholder.Visibility = Visibility.Visible;
@@ -669,5 +752,27 @@ public sealed partial class AssetBrowserTab : UserControl
         AssetTreeStatusText.Text = "No source opened.";
         AssetGalleryStatusText.Text = string.Empty;
         SourcePathTextBox.Text = string.Empty;
+    }
+
+    /// <summary>Releases the tab's workers, playback and rendering resources at window shutdown.</summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        _audioLoad.Dispose();
+        _videoLoad.Dispose();
+        _levelLoad.Dispose();
+        _skyLoad.Dispose();
+        _meshLoad.Dispose();
+        CloseSource();
+        _audio?.Dispose();
+        _audio = null;
+        _meshViewer?.Dispose();
+        _meshViewer = null;
+        _thumbnails.Dispose();
     }
 }

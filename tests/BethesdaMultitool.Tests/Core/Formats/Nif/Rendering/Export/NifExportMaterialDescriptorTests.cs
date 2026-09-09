@@ -24,7 +24,7 @@ public sealed class NifExportMaterialDescriptorTests
     [InlineData(true, 0x14000005u)]
     public void ClassicMaterial_PreservesLiteralColorsAlphaGlossAndGeometry(bool strips, uint version)
     {
-        var fixture = new NifExportMaterialDescriptorTestData(strips: strips, binaryVersion: version);
+        var fixture = new NifExportMaterialDescriptorTestData(strips, binaryVersion: version);
 
         foreach (var submesh in ExtractBoth(fixture))
         {
@@ -41,7 +41,7 @@ public sealed class NifExportMaterialDescriptorTests
     [InlineData(true, true)]
     public void ModernMaterial_PreservesSpecularButNotAbsentDiffuse_InBothByteOrders(bool strips, bool bigEndian)
     {
-        var fixture = new NifExportMaterialDescriptorTestData(strips: strips, bigEndian: bigEndian, bsVersion: 34);
+        var fixture = new NifExportMaterialDescriptorTestData(strips, bigEndian, 34);
 
         foreach (var submesh in ExtractBoth(fixture))
         {
@@ -88,7 +88,8 @@ public sealed class NifExportMaterialDescriptorTests
         Assert.NotNull(cpu);
         var exported = NifExportExtractor.Extract(fixture.Data, fixture.Info);
 
-        foreach (var submeshes in new[] { cpu.Submeshes.ToArray(), exported.MeshParts.Select(static part => part.Submesh).ToArray() })
+        foreach (var submeshes in new[]
+                     { cpu.Submeshes.ToArray(), exported.MeshParts.Select(static part => part.Submesh).ToArray() })
         {
             Assert.Equal(3, submeshes.Length);
             var primary = Assert.Single(submeshes, static part => part.SourceBlockIndex == 1);
@@ -110,7 +111,7 @@ public sealed class NifExportMaterialDescriptorTests
     [InlineData(true)]
     public void NativeCompositionAndPose_PreserveDescriptors_UsingCurrentGenericSpecularFallback(bool strips)
     {
-        var fixture = new NifExportMaterialDescriptorTestData(strips: strips);
+        var fixture = new NifExportMaterialDescriptorTestData(strips);
         var exported = NifExportSceneBuilder.Build(fixture.Data, fixture.Info, "synthetic material");
         Assert.NotNull(exported);
         var exportPart = Assert.Single(exported.MeshParts);
@@ -129,7 +130,7 @@ public sealed class NifExportMaterialDescriptorTests
         foreach (var part in new[] { Assert.Single(decoded.MeshParts).Submesh, Assert.Single(posed.Mesh.Submeshes) })
         {
             Assert.Equal(new Vector3(0.25f, 0.5f, 0.75f), part.SpecularColor);
-            Assert.Equal((Vector3?)new Vector3(0.125f, 0.375f, 0.625f), part.MaterialDiffuse);
+            Assert.Equal(new Vector3(0.125f, 0.375f, 0.625f), part.MaterialDiffuse);
             Assert.Equal(24f, part.Glossiness);
             Assert.Equal(0.625f, part.MaterialAlpha);
             // Pin the CURRENT metadata-less fallback only, not recovered retail TES4 selection.
