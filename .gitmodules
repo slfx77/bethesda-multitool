@@ -1,3 +1,6 @@
 [submodule "DDXConv"]
 	path = src/DDXConv
 	url = https://github.com/slfx77/DDXConv.git
+[submodule "Multitool.Shared"]
+	path = shared/Multitool.Shared
+	url = https://github.com/slfx77/Multitool.Shared.git

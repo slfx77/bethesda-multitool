@@ -1,4 +1,6 @@
 <Project>
+  <Import Project="shared/Multitool.Shared/build/Multitool.Dependencies.props" Condition="!$(MSBuildProjectFullPath.Contains('DDXConv'))" />
+  <Import Project="shared/Multitool.Shared/build/Multitool.Analyzers.Versions.props" Condition="!$(MSBuildProjectFullPath.Contains('DDXConv'))" />
   <PropertyGroup>
     <!-- Centralize package versions for the main repo. Skip the DDXConv submodule
          (src/DDXConv/**) so its standalone csproj versions remain authoritative
@@ -7,10 +9,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Code analyzers (applied to BethesdaMultitool* projects only via Directory.Build.props) -->
-    <PackageVersion Include="SonarAnalyzer.CSharp" Version="10.27.0.140913" />
-    <PackageVersion Include="Roslynator.Analyzers" Version="4.15.0" />
-
     <!-- CLI / console -->
     <PackageVersion Include="Spectre.Console" Version="0.55.2" />
     <PackageVersion Include="System.CommandLine" Version="2.0.8" />
@@ -21,19 +19,14 @@
     <!-- Pure-managed BCn decoder (BC1-7 + BC6H) for DX10-header DDS (FO4/FO76). ImageSharp-free base
          package; 2.2.0 matches the transitive version the DDXConv submodule's BCnEncoder.Net.ImageSharp
          pulls in (its 1.1.2 wrapper depends on base 2.2.0). -->
-    <PackageVersion Include="BCnEncoder.Net" Version="2.2.0" />
-    <PackageVersion Include="SharpGLTF.Toolkit" Version="1.0.6" />
+    <!-- BCnEncoder.Net uses the common version imported from Shared. -->
     <PackageVersion Include="Vortice.Direct3D12" Version="3.8.2" />
     <PackageVersion Include="Vortice.DXGI" Version="3.8.3" />
     <PackageVersion Include="Vortice.D3DCompiler" Version="3.8.3" />
     <PackageVersion Include="Vortice.WinUI" Version="3.8.3" />
 
     <!-- WinUI 3 / Windows App SDK -->
-    <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.4654" />
-    <PackageVersion Include="CommunityToolkit.WinUI.Controls.Primitives" Version="8.2.251219" />
-    <PackageVersion Include="CommunityToolkit.WinUI.Controls.Sizers" Version="8.2.251219" />
-    <PackageVersion Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
     <PackageVersion Include="Microsoft.Web.WebView2" Version="1.0.3967.48" />
 
     <!-- Audio / speech -->

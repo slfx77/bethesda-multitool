@@ -3,14 +3,24 @@
     <Platform Name="x64" />
   </Configurations>
   <Folder Name="/DDXConv/">
-    <Project Path="src/DDXConv/DDXConv/DDXConv.csproj" />
+    <Project Path="src/DDXConv/DDXConv/DDXConv.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
   <Folder Name="/Tools/">
-    <Project Path="tools/EsmAnalyzer/EsmAnalyzer.csproj" />
-    <Project Path="tools/Shared/Shared.csproj" />
+    <Project Path="tools/EsmAnalyzer/EsmAnalyzer.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="tools/Shared/Shared.csproj">
+      <Platform Project="x64" />
+    </Project>
   </Folder>
-  <Project Path="src/BethesdaMultitool/BethesdaMultitool.csproj" />
-  <Project Path="tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj" />
+  <Project Path="src/BethesdaMultitool/BethesdaMultitool.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj">
+    <Platform Project="x64" />
+  </Project>
   <Project Path="src/BethesdaAudioTranscriber/BethesdaAudioTranscriber.csproj">
     <Platform Project="x64" />
   </Project>
@@ -20,4 +30,30 @@
   <Project Path="src/BethesdaMap2DProfiler/BethesdaMap2DProfiler.csproj">
     <Platform Project="x64" />
   </Project>
+  <Folder Name="/Shared/">
+    <Project Path="shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12.Shaders/Slfx77.Multitool.WinUI.Direct3D12.Shaders.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="shared/Multitool.Shared/third_party/SharpGLTF/SharpGLTF.Core.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="shared/Multitool.Shared/src/Slfx77.Multitool.Core/Slfx77.Multitool.Core.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="shared/Multitool.Shared/src/Slfx77.Multitool.Media/Slfx77.Multitool.Media.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="shared/Multitool.Shared/src/Slfx77.Multitool.Media.Processing/Slfx77.Multitool.Media.Processing.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="shared/Multitool.Shared/src/Slfx77.Multitool.Media.Blender/Slfx77.Multitool.Media.Blender.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="shared/Multitool.Shared/src/Slfx77.Multitool.WinUI/Slfx77.Multitool.WinUI.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12/Slfx77.Multitool.WinUI.Direct3D12.csproj">
+      <Platform Project="x64" />
+    </Project>
+  </Folder>
 </Solution>

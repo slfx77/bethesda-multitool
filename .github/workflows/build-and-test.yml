@@ -3,18 +3,28 @@ name: Build and Test
 on:
   push:
     branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:
+
+# Foundation is private until the NuGet package is available. Only trusted branch
+# pushes/manual runs receive its checkout key; pull requests never execute it.
+permissions:
+  contents: read
 
 jobs:
   build-and-test:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     runs-on: windows-latest
     
     steps:
     - name: Checkout repository
       uses: actions/checkout@v5
       with:
-        submodules: recursive
+        persist-credentials: false
+
+    - name: Checkout pinned dependencies
+      uses: ./.github/actions/checkout-dependencies
+      with:
+        shared-ssh-key: ${{ secrets.MULTITOOL_SHARED_SSH_KEY }}
     
     # Deliberately no `dotnet-quality: preview`. It was correct while .NET 10 was pre-GA, but it
     # now resolves 10.0.x to a release candidate (10.0.100-rc.2) rather than the GA SDK developers
@@ -24,13 +34,15 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: '10.0.x'
+        global-json-file: global.json
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore -p:AnalyzerProfile=Full -p:Platform=x64 -m:1 -nodeReuse:false
     
+    # Keep the complete analyzer gate within hosted-runner memory: one project at
+    # a time, isolated compilers, and no MSBuild workers retained between steps.
     - name: Build (Release)
-      run: dotnet build --configuration Release --no-restore
+      run: dotnet build --configuration Release --no-restore -p:AnalyzerProfile=Full -p:Platform=x64 -m:1 -nodeReuse:false -p:UseSharedCompilation=false
     
     # The test project runs on the Microsoft.Testing.Platform runner (xunit.v3);
     # report/filter options are MTP-style and must come after the `--` separator.
@@ -47,6 +59,8 @@ jobs:
       run: |
         dotnet test --project tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj `
           --configuration Release `
+          -p:AnalyzerProfile=Full `
+          -p:Platform=x64 `
           --no-build `
           --results-directory ./TestResults `
           -- `
@@ -85,11 +99,13 @@ jobs:
         }
 
         Invoke-Checked "EsmSchemaGen.Tests build" {
-          dotnet build tools/EsmSchemaGen.Tests/EsmSchemaGen.Tests.csproj --configuration Release
+          dotnet build tools/EsmSchemaGen.Tests/EsmSchemaGen.Tests.csproj --configuration Release -p:AnalyzerProfile=Full -p:Platform=x64 -m:1 -nodeReuse:false -p:UseSharedCompilation=false
         }
         Invoke-Checked "EsmSchemaGen.Tests" {
           dotnet test --project tools/EsmSchemaGen.Tests/EsmSchemaGen.Tests.csproj `
             --configuration Release `
+            -p:AnalyzerProfile=Full `
+            -p:Platform=x64 `
             --no-build `
             --results-directory ./TestResults `
             -- `
@@ -98,11 +114,13 @@ jobs:
             --minimum-expected-tests 15
         }
         Invoke-Checked "DDXConv.Tests build" {
-          dotnet build src/DDXConv/DDXConv.Tests/DDXConv.Tests.csproj --configuration Release
+          dotnet build src/DDXConv/DDXConv.Tests/DDXConv.Tests.csproj --configuration Release -p:AnalyzerProfile=Full -p:Platform=x64 -m:1 -nodeReuse:false -p:UseSharedCompilation=false
         }
         Invoke-Checked "DDXConv.Tests" {
           dotnet test --project src/DDXConv/DDXConv.Tests/DDXConv.Tests.csproj `
             --configuration Release `
+            -p:AnalyzerProfile=Full `
+            -p:Platform=x64 `
             --no-build `
             --results-directory ./TestResults `
             -- `
@@ -110,6 +128,12 @@ jobs:
             --report-xunit-trx-filename ddxconv-test-results.trx `
             --minimum-expected-tests 150
         }
+
+    # These Win32/x64 console fixtures exercise the native bridge's pure/synthetic boundaries.
+    # The hosted image supplies VS2022 (v143); the vcxproj defaults support local VS2026 (v145).
+    # No game or emulator process is launched, and no downloaded SDK or private corpus is used.
+    - name: Run Native Runtime Bridge Tests
+      run: ./tools/scripts/test-runtime-bridges.ps1 -PlatformToolset v143
 
     - name: Upload Test Results
       uses: actions/upload-artifact@v7
@@ -119,9 +143,7 @@ jobs:
         path: ./TestResults
         retention-days: 30
 
-  # No coverage job here by design. Coverage is opt-in and local, via tools/scripts/coverage.ps1,
-  # which .gitignore deliberately keeps out of the repo along with the rest of the dev tooling —
-  # so a CI job invoking it could never work. See CLAUDE.md, "Code Coverage".
+  # Coverage is opt-in and local, via tools/scripts/coverage.ps1. See CLAUDE.md, "Code Coverage".
   build-cli-cross-platform:
     runs-on: ubuntu-latest
     needs: build-and-test
@@ -130,12 +152,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v5
       with:
-        submodules: recursive
+        persist-credentials: false
+
+    - name: Checkout pinned dependencies
+      uses: ./.github/actions/checkout-dependencies
+      with:
+        shared-ssh-key: ${{ secrets.MULTITOOL_SHARED_SSH_KEY }}
     
     - name: Setup .NET
       uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: '10.0.x'
+        global-json-file: global.json
     
     # -p:BuildTestsOnly=true, not just --framework. The project cross-targets
     # net10.0;net10.0-windows10.0.19041.0, and --framework does not stop MSBuild evaluating the
@@ -146,7 +173,9 @@ jobs:
       run: |
         dotnet build src/BethesdaMultitool/BethesdaMultitool.csproj \
           --configuration Release \
+          -p:AnalyzerProfile=Full \
           -p:BuildTestsOnly=true \
+          -m:1 -nodeReuse:false -p:UseSharedCompilation=false \
           --framework net10.0
     
     - name: Verify CLI builds on Linux

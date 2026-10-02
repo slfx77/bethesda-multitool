@@ -1,166 +1,126 @@
-name: Build and Release
+name: Validate Publish Layouts
 
 on:
   push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
-    branches: [main]
+    branches: [main, develop]
+  workflow_dispatch:
 
-# Action majors are pinned to the Node 24 runtimes. The deprecation notice names the runtime, not
-# the action version, so "bump to the next major" is not automatically enough: checkout v5 and
-# setup-dotnet v5 are already Node 24, while upload-artifact v5 and download-artifact v5 were still
-# Node 20 and action-gh-release v1 was Node 16. Before bumping any of these, check
-# `runs.using` in the target tag's action.yml rather than assuming a higher number is newer runtime.
+# Validate packaging without distributing the private Foundation dependency.
+# Restore release/tag triggers and artifact publication only after Foundation's
+# intended NuGet distribution is available and a release is explicitly prepared.
+permissions:
+  contents: read
+
+# Checkout and SDK setup use Node 24 action runtimes.
+# Publish keeps Full analysis, with one MSBuild project at a time and isolated compilers.
 env:
-  DOTNET_VERSION: '10.0.x'
   PROJECT_PATH: src/BethesdaMultitool/BethesdaMultitool.csproj
 
 jobs:
   build-windows-gui:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     name: Windows GUI (x64)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
-          submodules: recursive
+          persist-credentials: false
+
+      - name: Checkout pinned dependencies
+        uses: ./.github/actions/checkout-dependencies
+        with:
+          shared-ssh-key: ${{ secrets.MULTITOOL_SHARED_SSH_KEY }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          global-json-file: global.json
 
       - name: Build and Publish Windows GUI
-        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained -o publish/win-gui
+        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:AnalyzerProfile=Full -p:Platform=x64 -m:1 -nodeReuse:false -p:UseSharedCompilation=false -o publish/win-gui
 
       - name: Include license files
         run: |
           Copy-Item LICENSE publish/win-gui/
           Copy-Item THIRD_PARTY_LICENSES publish/win-gui/
 
-      - name: Upload Windows GUI artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: BethesdaMultitool-Windows-GUI-x64
-          path: publish/win-gui/
-          retention-days: 30
-
   build-windows-cli:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     name: Windows CLI (x64)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
-          submodules: recursive
+          persist-credentials: false
+
+      - name: Checkout pinned dependencies
+        uses: ./.github/actions/checkout-dependencies
+        with:
+          shared-ssh-key: ${{ secrets.MULTITOOL_SHARED_SSH_KEY }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          global-json-file: global.json
 
       - name: Build and Publish Windows CLI
-        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0 -r win-x64 --self-contained -o publish/win-cli
+        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0 -r win-x64 --self-contained -p:BuildTestsOnly=true -p:AnalyzerProfile=Full -p:Platform=x64 -m:1 -nodeReuse:false -p:UseSharedCompilation=false -o publish/win-cli
 
       - name: Include license files
         run: |
           Copy-Item LICENSE publish/win-cli/
           Copy-Item THIRD_PARTY_LICENSES publish/win-cli/
 
-      - name: Upload Windows CLI artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: BethesdaMultitool-Windows-CLI-x64
-          path: publish/win-cli/
-          retention-days: 30
-
   build-linux-cli:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     name: Linux CLI (x64)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
-          submodules: recursive
+          persist-credentials: false
+
+      - name: Checkout pinned dependencies
+        uses: ./.github/actions/checkout-dependencies
+        with:
+          shared-ssh-key: ${{ secrets.MULTITOOL_SHARED_SSH_KEY }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          global-json-file: global.json
 
       - name: Build and Publish Linux CLI
-        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0 -r linux-x64 --self-contained -p:TargetFrameworks=net10.0 -o publish/linux-cli
+        run: dotnet publish ${{ env.PROJECT_PATH }} -c Release -f net10.0 -r linux-x64 --self-contained -p:BuildTestsOnly=true -p:AnalyzerProfile=Full -m:1 -nodeReuse:false -p:UseSharedCompilation=false -o publish/linux-cli
 
       - name: Include license files
         run: |
           cp LICENSE publish/linux-cli/
           cp THIRD_PARTY_LICENSES publish/linux-cli/
 
-      - name: Upload Linux CLI artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: BethesdaMultitool-Linux-CLI-x64
-          path: publish/linux-cli/
-          retention-days: 30
-
   build-audio-transcriber:
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
     name: Audio Transcriber (Windows x64)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
         with:
-          submodules: recursive
+          persist-credentials: false
+
+      - name: Checkout pinned dependencies
+        uses: ./.github/actions/checkout-dependencies
+        with:
+          shared-ssh-key: ${{ secrets.MULTITOOL_SHARED_SSH_KEY }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          global-json-file: global.json
 
       - name: Build and Publish Audio Transcriber
-        run: dotnet publish src/BethesdaAudioTranscriber/BethesdaAudioTranscriber.csproj -c Release -r win-x64 --self-contained -o publish/audio-transcriber
+        run: dotnet publish src/BethesdaAudioTranscriber/BethesdaAudioTranscriber.csproj -c Release -r win-x64 --self-contained -p:AnalyzerProfile=Full -p:Platform=x64 -m:1 -nodeReuse:false -p:UseSharedCompilation=false -o publish/audio-transcriber
 
       - name: Include license files
         run: |
           Copy-Item LICENSE publish/audio-transcriber/
           Copy-Item THIRD_PARTY_LICENSES publish/audio-transcriber/
-
-      - name: Upload Audio Transcriber artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: BethesdaAudioTranscriber-Windows-x64
-          path: publish/audio-transcriber/
-          retention-days: 30
-
-  release:
-    name: Create Release
-    needs: [build-windows-gui, build-windows-cli, build-linux-cli, build-audio-transcriber]
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-    steps:
-      # download-artifact v8 pairs with upload-artifact v7 (both Node 24). v8 stopped unzipping
-      # unconditionally — it checks Content-Type first and skips non-zipped payloads. The uploads
-      # here are ordinary directory uploads, so they still arrive zipped and are expanded as
-      # before; nothing needs skip-decompress.
-      - name: Download all artifacts
-        uses: actions/download-artifact@v8
-        with:
-          path: artifacts
-
-      - name: Create release archives
-        run: |
-          cd artifacts
-          zip -r ../BethesdaMultitool-Windows-GUI-x64.zip BethesdaMultitool-Windows-GUI-x64/
-          zip -r ../BethesdaMultitool-Windows-CLI-x64.zip BethesdaMultitool-Windows-CLI-x64/
-          tar -czvf ../BethesdaMultitool-Linux-CLI-x64.tar.gz BethesdaMultitool-Linux-CLI-x64/
-          zip -r ../BethesdaAudioTranscriber-Windows-x64.zip BethesdaAudioTranscriber-Windows-x64/
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
-        with:
-          files: |
-            BethesdaMultitool-Windows-GUI-x64.zip
-            BethesdaMultitool-Windows-CLI-x64.zip
-            BethesdaMultitool-Linux-CLI-x64.tar.gz
-            BethesdaAudioTranscriber-Windows-x64.zip
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') || contains(github.ref, 'pre') }}

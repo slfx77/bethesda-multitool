@@ -91,9 +91,6 @@ tools/TextureAnalyzer/obj/
 tools/EsmAnalyzer/bin/
 tools/EsmAnalyzer/obj/
 !tools/corpus/
-!tools/corpus/SampleGenerator/
-tools/corpus/SampleGenerator/bin/
-tools/corpus/SampleGenerator/obj/
 !tools/MinidumpAnalyzer/
 tools/MinidumpAnalyzer/bin/
 tools/MinidumpAnalyzer/obj/
@@ -125,12 +122,131 @@ tools/EsmSchemaGen/obj/
 tools/EsmSchemaGen.Tests/bin/
 tools/EsmSchemaGen.Tests/obj/
 
+# Authored PC runtime bridge and isolation probe; dependency downloads stay local.
+!tools/NvseRuntimeBridge/
+tools/NvseRuntimeBridge/*
+!tools/NvseRuntimeBridge/NvseRuntimeBridge.cpp
+!tools/NvseRuntimeBridge/NvseRuntimeApi.h
+!tools/NvseRuntimeBridge/NvseRuntimeCommandHooks.inl
+!tools/NvseRuntimeBridge/NvseRuntimeCommandLocation.inl
+!tools/NvseRuntimeBridge/NvseRuntimeCombatLease.inl
+!tools/NvseRuntimeBridge/NvseRuntimeCombatObservation.inl
+!tools/NvseRuntimeBridge/RuntimeCombatObservationTests.inl
+!tools/NvseRuntimeBridge/NvseRuntimeGameSettings.inl
+!tools/NvseRuntimeBridge/NvseRuntimeConditions.inl
+!tools/NvseRuntimeBridge/NvseRuntimeConditionPatch.inl
+!tools/NvseRuntimeBridge/RuntimeGameSettingTests.inl
+!tools/NvseRuntimeBridge/RuntimeConditionPilot.h
+!tools/NvseRuntimeBridge/RuntimeConditionPilotProfile.h
+!tools/NvseRuntimeBridge/RuntimeConditionPilotTests.cpp
+!tools/NvseRuntimeBridge/RuntimeConditionPilotTests.vcxproj
+!tools/NvseRuntimeBridge/RuntimeConditionPatch.h
+!tools/NvseRuntimeBridge/RuntimeConditionPatchTests.inl
+!tools/NvseRuntimeBridge/NvseRuntimeBridge.vcxproj
+!tools/NvseRuntimeBridge/RuntimeIsolationPreflight.cpp
+!tools/NvseRuntimeBridge/RuntimeIsolationPreflight.vcxproj
+!tools/NvseRuntimeBridge/RuntimeCommandHookTests.cpp
+!tools/NvseRuntimeBridge/RuntimeCommandHookTests.vcxproj
+!tools/NvseRuntimeBridge/dllmain.c
+!tools/NvseRuntimeBridge/exports.def
+!tools/NvseRuntimeBridge/README.md
+!tools/NvseRuntimeBridge/reference/
+tools/NvseRuntimeBridge/reference/*
+!tools/NvseRuntimeBridge/reference/sources.json
+!tools/NvseRuntimeBridge/isolation-reference/
+tools/NvseRuntimeBridge/isolation-reference/*
+!tools/NvseRuntimeBridge/isolation-reference/v0.5.7.2/
+tools/NvseRuntimeBridge/isolation-reference/v0.5.7.2/*
+!tools/NvseRuntimeBridge/isolation-reference/v0.5.7.2/sources.json
+
+# Authored Xenia observation adapter; upstream checkout and SDK stay in artifacts.
+!tools/XeniaRuntimeBridge/
+tools/XeniaRuntimeBridge/*
+!tools/XeniaRuntimeBridge/README.md
+!tools/XeniaRuntimeBridge/prepare.py
+!tools/XeniaRuntimeBridge/protocol-smoke.py
+!tools/XeniaRuntimeBridge/condition-smoke.py
+!tools/XeniaRuntimeBridge/guest-identity-tests.cc
+!tools/XeniaRuntimeBridge/guest-namespace-tests.cc
+!tools/XeniaRuntimeBridge/guest-actor-tests.cc
+!tools/XeniaRuntimeBridge/pending-write-tests.cc
+!tools/XeniaRuntimeBridge/RuntimeGamepadModel.h
+!tools/XeniaRuntimeBridge/RuntimeGamepadModelTests.cpp
+!tools/XeniaRuntimeBridge/RuntimeGamepadModelTests.vcxproj
+!tools/XeniaRuntimeBridge/RuntimeGamepadControlTests.cpp
+!tools/XeniaRuntimeBridge/RuntimeGamepadControlTests.vcxproj
+!tools/XeniaRuntimeBridge/RuntimeGuestRunTests.cpp
+!tools/XeniaRuntimeBridge/RuntimeGuestRunTests.vcxproj
+!tools/XeniaRuntimeBridge/launch-isolated.ps1
+!tools/XeniaRuntimeBridge/overlay/
+tools/XeniaRuntimeBridge/overlay/*
+!tools/XeniaRuntimeBridge/overlay/runtime_bridge.cc
+!tools/XeniaRuntimeBridge/overlay/runtime_bridge.h
+!tools/XeniaRuntimeBridge/overlay/runtime_profiles.h
+!tools/XeniaRuntimeBridge/overlay/runtime_guest_identity.h
+!tools/XeniaRuntimeBridge/overlay/runtime_guest_namespace.h
+!tools/XeniaRuntimeBridge/overlay/runtime_pending_write.h
+!tools/XeniaRuntimeBridge/overlay/runtime_actor_profiles.h
+!tools/XeniaRuntimeBridge/overlay/runtime_guest_actor.h
+!tools/XeniaRuntimeBridge/overlay/runtime_gamepad_control.h
+!tools/XeniaRuntimeBridge/overlay/runtime_gamepad_driver.h
+!tools/XeniaRuntimeBridge/overlay/runtime_gamepad_driver.cc
+!tools/XeniaRuntimeBridge/overlay/runtime_guest_run.h
+!tools/XeniaRuntimeBridge/overlay/runtime_guest_run_io.h
+!tools/NvseRuntimeBridge/NvseRuntimePluginIdentity.inl
+!tools/NvseRuntimeBridge/NvseRuntimeQuest.inl
+!tools/NvseRuntimeBridge/NvseRuntimeScriptTrace.inl
+!tools/NvseRuntimeBridge/NvseRuntimeMessageProbe.inl
+!tools/NvseRuntimeBridge/NvseRuntimeActor.inl
+!tools/NvseRuntimeBridge/NvseRuntimeCalibration.inl
+!tools/NvseRuntimeBridge/NvseRuntimeBaseOverride.inl
+!tools/NvseRuntimeBridge/NvseRuntimeOperations.inl
+!tools/NvseRuntimeBridge/NvseRuntimeMembership.inl
+!tools/NvseRuntimeBridge/NvseRuntimeReferenceHooks.inl
+!tools/NvseRuntimeBridge/NvseRuntimeMenu.inl
+
 # tools/scripts: allow-listed per script. Only scripts useful to the wider modding
 # community belong here — corpus-specific audits and repo dev tooling stay untracked.
 !tools/scripts/
 tools/scripts/*
 !tools/scripts/esm_asset_path_audit.py
 !tools/scripts/esm_bsa_crosscheck.py
+!tools/scripts/build.ps1
+!tools/scripts/coverage.ps1
+!tools/scripts/test-runtime-bridges.ps1
+# NIF feature probe + per-version cover tool (design docs/design/model-document-design-20260923.md §7.1):
+# a hand-written NIF reader and a set-cover planner any NIF tooling author can reuse.
+!tools/scripts/nif_feature_probe.py
+!tools/scripts/nif_curve_eval.py
+!tools/scripts/nif_cover.py
+!tools/scripts/nif_cover.README.md
+!tools/scripts/nif_cover_expectations.py
+!tools/scripts/gate1a/
+!tools/scripts/gate1c/
+!tools/scripts/gate1a/**
+!tools/scripts/gate1c/**
+# Redguard format receipts: independent byte-layout readers over a retail install that the Redguard
+# reader docs and the Bucket-B pins cite (placeholder census, segment headers, the catacomb control,
+# the RG.EXE placement-matrix port and the pitch-and-roll control).
+!tools/scripts/gate2/
+tools/scripts/gate2/*
+!tools/scripts/gate2/starfield_mesh_probe.py
+!tools/scripts/gate2/starfield_mesh_cover.py
+!tools/scripts/gate2/shadowkey_probe.py
+!tools/scripts/gate2/shadowkey_cover.py
+!tools/scripts/redguard/
+tools/scripts/redguard/*
+!tools/scripts/redguard/rob_placeholder_census.py
+!tools/scripts/redguard/segment_header_vs_mesh.py
+!tools/scripts/redguard/rgdata.py
+!tools/scripts/redguard/control.py
+!tools/scripts/redguard/placement_rotation.py
+!tools/scripts/redguard/multiaxis_control.py
+
+# Reproducible GLB export-render comparison; captures remain under TestOutput.
+!tools/validation/
+tools/validation/*
+!tools/validation/compare_glb_renders.py
 
 # Python remnants (if any)
 .venv/
@@ -139,6 +255,10 @@ __pycache__/
 
 # Input directories
 Sample/
+!tools/NvseRuntimeBridge/NvseRuntimeGeneralCommands.inl
+!tools/NvseRuntimeBridge/RuntimeConditionModel.h
+!tools/NvseRuntimeBridge/RuntimeConditionModelTests.cpp
+!tools/NvseRuntimeBridge/RuntimeConditionModelTests.vcxproj
 
 # SonarQube
 .sonarqube/
@@ -173,3 +293,51 @@ docs/backlog/
 
 # Session scratch dumps (retail probes, capture builds, diagnose scripts) — never source.
 scratchpad/
+
+# Private corpus profiles live in the sibling CorpusTool/profiles directory.
+/tools/corpus/corpus.json
+!tools/NvseRuntimeBridge/RuntimeConditionFrame.h
+!tools/NvseRuntimeBridge/NvseRuntimeConditionFrames.inl
+!tools/NvseRuntimeBridge/RuntimeConditionFrameTests.inl
+!tools/NvseRuntimeBridge/RuntimeQuestCondition.h
+!tools/NvseRuntimeBridge/RuntimeQuestConditionTests.inl
+!tools/NvseRuntimeBridge/NvseRuntimeScriptLocals.inl
+!tools/NvseRuntimeBridge/RuntimeScriptLocalTests.inl
+!tools/NvseRuntimeBridge/NvseRuntimeDispatchFingerprint.inl
+!tools/NvseRuntimeBridge/RuntimeDispatchFingerprintTests.inl
+
+!/tools/NvseRuntimeBridge/NvseRuntimeScriptLocalSdk.inl
+!/tools/NvseRuntimeBridge/RuntimeScriptLocalSdkTests.inl
+
+!/tools/NvseRuntimeBridge/NvseRuntimeNotifications.inl
+!/tools/NvseRuntimeBridge/RuntimeNotificationTests.inl
+
+!/tools/NvseRuntimeBridge/NvseRuntimeWeaponCritical.inl
+!/tools/NvseRuntimeBridge/RuntimeWeaponCriticalTests.inl
+
+!/tools/NvseRuntimeBridge/NvseRuntimeCreatureScaling.inl
+!/tools/NvseRuntimeBridge/RuntimeCreatureScalingTests.inl
+
+!/tools/NvseRuntimeBridge/RuntimeDamageInvocation.h
+!/tools/NvseRuntimeBridge/NvseRuntimeDamageInvocation.inl
+!/tools/NvseRuntimeBridge/RuntimeDamageInvocationProfile.inl
+!/tools/NvseRuntimeBridge/RuntimeDamageInvocationTests.inl
+!/tools/NvseRuntimeBridge/RuntimeCriticalInvocation.h
+!/tools/NvseRuntimeBridge/NvseRuntimeCriticalInvocation.inl
+!/tools/NvseRuntimeBridge/RuntimeCriticalInvocationProfile.h
+!/tools/NvseRuntimeBridge/RuntimeCriticalInvocationTests.inl
+
+!/tools/NvseRuntimeBridge/NvseRuntimeLive.inl
+!/tools/NvseRuntimeBridge/RuntimeLiveJson.h
+!/tools/NvseRuntimeBridge/RuntimeLiveInput.h
+!/tools/NvseRuntimeBridge/RuntimeLiveInput.cpp
+!/tools/NvseRuntimeBridge/RuntimeLiveInputModel.h
+!/tools/NvseRuntimeBridge/RuntimeLiveInputTests.cpp
+!/tools/NvseRuntimeBridge/RuntimeLiveInputTests.vcxproj
+!/tools/NvseRuntimeBridge/RuntimeLiveTests.inl
+!/tools/NvseRuntimeBridge/examples/
+!/tools/NvseRuntimeBridge/examples/**
+
+# Keep generated Python caches ignored after the runtime example allowlist.
+__pycache__/
+*.pyc

@@ -1,0 +1,46 @@
+name: Checkout pinned dependencies
+description: Fetch public DDXConv and the private Foundation at the recorded gitlink commits.
+inputs:
+  shared-ssh-key:
+    description: Private SSH key for a read-only deploy key on slfx77/Multitool.Shared.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Check private Foundation access
+      shell: pwsh
+      env:
+        SHARED_SSH_KEY: ${{ inputs.shared-ssh-key }}
+      run: |
+        if ([string]::IsNullOrWhiteSpace($env:SHARED_SSH_KEY)) {
+          throw 'Foundation is private. Configure MULTITOOL_SHARED_SSH_KEY with a read-only deploy key on slfx77/Multitool.Shared, and publish the recorded dependency commits before running CI. See README.md, Build from Source.'
+        }
+
+    - name: Resolve the recorded Foundation commit
+      id: shared-pin
+      shell: pwsh
+      run: |
+        $entry = git ls-tree HEAD -- shared/Multitool.Shared
+        if ($LASTEXITCODE -ne 0 -or $entry -notmatch '^160000 commit ([0-9a-f]{40})\s+shared/Multitool\.Shared$') {
+          throw 'shared/Multitool.Shared must be committed as a pinned git submodule.'
+        }
+        "revision=$($Matches[1])" >> $env:GITHUB_OUTPUT
+
+    - name: Checkout public DDXConv
+      shell: pwsh
+      run: |
+        git submodule update --init --recursive -- src/DDXConv
+        if ($LASTEXITCODE -ne 0) {
+          throw 'Could not fetch the recorded DDXConv commit. Publish that commit to slfx77/DDXConv before running CI.'
+        }
+
+    # Use a separate checkout so the private key is never passed to public submodules.
+    # The repository and destination are fixed; only the gitlink commit selects source.
+    - name: Checkout private Foundation
+      uses: actions/checkout@v5
+      with:
+        repository: slfx77/Multitool.Shared
+        ref: ${{ steps.shared-pin.outputs.revision }}
+        ssh-key: ${{ inputs.shared-ssh-key }}
+        path: shared/Multitool.Shared
+        persist-credentials: false

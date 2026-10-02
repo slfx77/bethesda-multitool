@@ -1,5 +1,10 @@
 <Project>
   <PropertyGroup>
+    <MultitoolEnableAnalyzerPackages Condition="$(MSBuildProjectName.StartsWith('BethesdaMultitool'))">true</MultitoolEnableAnalyzerPackages>
+  </PropertyGroup>
+  <Import Project="shared/Multitool.Shared/build/Multitool.Analyzers.props" />
+  <PropertyGroup>
+    <RestorePackagesWithLockFile Condition="!$(MSBuildProjectFullPath.Contains('DDXConv'))">true</RestorePackagesWithLockFile>
     <!-- Enable .NET analyzers -->
     <EnableNETAnalyzers>true</EnableNETAnalyzers>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
@@ -13,9 +18,6 @@
     <!-- Use latest C# language version -->
     <LangVersion>latest</LangVersion>
 
-    <!-- Enforce code style in build -->
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
-
     <!-- Generate documentation comments (Release only to speed up Debug builds) -->
     <GenerateDocumentationFile Condition="'$(Configuration)' == 'Release'">true</GenerateDocumentationFile>
 
@@ -25,26 +27,9 @@
     <!-- Enable deterministic builds -->
     <Deterministic>true</Deterministic>
 
-    <!-- Enable continuous analysis (use -p:SkipAnalyzers=true to disable for fast builds) -->
-    <RunAnalyzersDuringBuild Condition="'$(SkipAnalyzers)' != 'true'">true</RunAnalyzersDuringBuild>
-    <RunAnalyzersDuringBuild Condition="'$(SkipAnalyzers)' == 'true'">false</RunAnalyzersDuringBuild>
-    <RunAnalyzersDuringLiveAnalysis>true</RunAnalyzersDuringLiveAnalysis>
-    <EnforceCodeStyleInBuild Condition="'$(SkipAnalyzers)' == 'true'">false</EnforceCodeStyleInBuild>
-
     <!-- Disable NuGet audit to avoid offline restore failures -->
     <NuGetAuditMode>None</NuGetAuditMode>
     <NuGetAudit>false</NuGetAudit>
   </PropertyGroup>
 
-  <!-- Code analysis packages applied to BethesdaMultitool projects only (excludes submodules) -->
-  <ItemGroup Condition="$(MSBuildProjectName.StartsWith('BethesdaMultitool'))">
-    <PackageReference Include="SonarAnalyzer.CSharp">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-    <PackageReference Include="Roslynator.Analyzers">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
-  </ItemGroup>
 </Project>

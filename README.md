@@ -6,7 +6,7 @@ Its deepest support is for Fallout: New Vegas on Xbox 360: converting retail and
 
 ![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
+![License](https://img.shields.io/badge/License-0BSD-green)
 
 ## Features
 
@@ -92,19 +92,29 @@ Download from [Releases](https://github.com/slfx77/bethesda-multitool/releases):
 
 ### Build from Source
 
-Requires [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) selected by
+`global.json` (10.0.401 or a later patch in the 10.0.4xx feature band), and PowerShell 7
+for the coordinated build wrapper.
+
+The current development branch references **Multitool.Shared (Foundation) as a pinned private
+Git submodule** under `shared/Multitool.Shared`. It is not yet distributed as a NuGet package.
+Building this branch requires access to `slfx77/Multitool.Shared`; a public clone alone is not
+sufficient. DDXConv remains a separate public submodule. Keep both at the commits recorded by
+this repository. The intended public dependency is the future Foundation NuGet package.
 
 ```bash
-# Clone with submodules
+# Authenticate with an account that can read Multitool.Shared, then clone both pinned dependencies.
 git clone --recursive https://github.com/slfx77/bethesda-multitool.git
 cd bethesda-multitool
+# Existing clones: git submodule update --init --recursive
 ```
 
 On **Windows**, build everything in `BethesdaMultitool.slnx` — GUI, CLI, companion apps, and tests:
 
 ```powershell
-dotnet build -c Release
-dotnet test
+# Full selects all GUI targets; AnalyzerProfile Full runs the CI analysis gate.
+pwsh -NoProfile -File tools/scripts/build.ps1 -Full -AnalyzerProfile Full
+dotnet test --project tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj -c Release -p:AnalyzerProfile=Full -p:Platform=x64 --no-build
 
 # Run the GUI
 dotnet run --project src/BethesdaMultitool -f net10.0-windows10.0.19041.0
@@ -119,12 +129,36 @@ does not stop it trying — so scope to the project and pass `-p:BuildTestsOnly=
 the target frameworks to `net10.0`:
 
 ```bash
-dotnet build src/BethesdaMultitool/BethesdaMultitool.csproj -c Release -p:BuildTestsOnly=true -f net10.0
+dotnet build src/BethesdaMultitool/BethesdaMultitool.csproj -c Release -p:BuildTestsOnly=true -p:AnalyzerProfile=Full -f net10.0
 dotnet run --project src/BethesdaMultitool -c Release -p:BuildTestsOnly=true -f net10.0 -- --help
 ```
 
-`-p:BuildTestsOnly=true` is also the fast path on Windows when you do not need the GUI, and
-`-p:SkipAnalyzers=true` skips the SonarAnalyzer/Roslynator pass for quicker iteration.
+For normal local iteration, `pwsh -NoProfile -File tools/scripts/build.ps1` uses the
+`Development` analyzer profile and omits the GUI. `-AnalyzerProfile Fast` explicitly skips
+build analysis. Keep the same profile, configuration, and platform for restore, build, and
+`--no-build` test commands; each analyzer profile has its own output tree. CI and publishing
+require `Full`. See [analyzer profiles](shared/Multitool.Shared/docs/analyzer-profiles.md).
+
+The native runtime bridge fixtures run separately with
+`pwsh -NoProfile -File tools/scripts/test-runtime-bridges.ps1`. They require Visual Studio C++
+build tools and use synthetic inputs only. Pass `-PlatformToolset v143` for Visual Studio 2022;
+the projects otherwise use v145. CI runs these five fixtures alongside the managed tests.
+
+CI currently runs only for trusted `main`/`develop` pushes or manual runs on those branches.
+Before a hosted run, publish the exact recorded DDXConv and Foundation commits to their
+respective repositories, then configure this repository's Actions secret
+`MULTITOOL_SHARED_SSH_KEY` with the private half of a **read-only SSH deploy key registered
+on `slfx77/Multitool.Shared`**. The ordinary Actions `GITHUB_TOKEN` cannot read a different
+private repository. The checkout action uses the deploy key only for Foundation and does
+not persist it in Git configuration. Missing
+credentials or unpublished pins fail the build; they do not turn the quality gate into a skip.
+
+Pull requests do not receive private Foundation source or run these workflows. After a
+maintainer reviews and integrates a change into a trusted branch, CI builds the Windows GUI,
+CLI, companion apps and tests, and checks the Linux CLI. The publish-layout workflow also
+validates packaging, but does not upload application binaries or create releases. Tagged
+releases and binary distribution remain disabled until the Foundation package is available
+and a release is deliberately prepared.
 
 ## Usage
 
@@ -137,7 +171,7 @@ BethesdaMultitool.exe
 BethesdaMultitool.exe path/to/dump.dmp
 ```
 
-The sidebar groups its destinations as **Explore** (Data Explorer) | **Assets** (Archive Browser, Model Tools, Texture Tools) | **Conversion** (Game Repacker, DMP to ESM Converter) | **Memory Dumps** (Batch Dump Analysis), with Diagnostics and Settings in the footer.
+**Explore** shares one source across Data, Maps, and Assets. The sidebar also retains Archive Browser and Model Tools, independent Recovery tools (File Carver, Game Repacker, DDX conversion, and DMP to ESM), and Batch Dump Analysis. Diagnostics and Settings are in the footer. See [shared Explore adoption and acceptance](docs/shared-explore-adoption.md) for source-selection behavior, verification commands, and current limits.
 
 ### CLI Mode
 
@@ -195,7 +229,7 @@ The **Bethesda Audio Transcriber** is a standalone WinUI 3 application for brows
 
 - On first use, the Whisper model (`ggml-base.en`, ~148 MB) is automatically downloaded to `%LocalAppData%\BethesdaAudioTranscriber\models\`
 - Audio is resampled to 16kHz mono before transcription
-- Transcriptions are saved into the Data directory as `.fnvtranscript.json` and persist across sessions
+- Transcriptions persist across sessions as `.fnvtranscript.json`, saved outside the game: nothing is ever written into the Data directory. By default they go under `%LOCALAPPDATA%\BethesdaAudioTranscriber\Transcripts\`, mirroring the Data directory's full path (drive letter first); set `BETHESDA_TRANSCRIPT_STORE` to use another root. A file that an earlier version left in a Data directory is still read, and is never changed or deleted — move it to the new location to keep using it
 - Voice files with existing ESM subtitles (NAM1) are shown alongside Whisper transcriptions for comparison
 
 ### Requirements
@@ -345,7 +379,7 @@ The Actors and Model Tools 3D model viewers host [@google/model-viewer](https://
 
 ## License
 
-MIT License - See [LICENSE](LICENSE) for details.
+Zero-Clause BSD (0BSD) - See [LICENSE](LICENSE) for details.
 
 ### Third-Party Components (included in repository)
 
@@ -363,8 +397,6 @@ MIT License - See [LICENSE](LICENSE) for details.
 | [twogood/unshield](https://github.com/twogood/unshield) | [MIT](https://github.com/twogood/unshield/blob/master/LICENSE) | InstallShield 5 cabinet reading (ported) |
 | [libacm](https://github.com/markokr/libacm) | ISC | Interplay ACM audio decoder for Fallout 1/2 (ported) |
 | [zlib contrib/blast.c](https://github.com/madler/zlib/blob/develop/contrib/blast/blast.c) | [zlib](https://github.com/madler/zlib/blob/develop/LICENSE) | PKWARE DCL "implode" decoder for Daggerfall's CD `PACKED.DAT` (ported) |
-| [NeversoftMultitool](https://github.com/slfx77/NeversoftMultitool) | [MIT](https://github.com/slfx77/NeversoftMultitool/blob/main/LICENSE) | Sample corpus generator, CD-image and XDVDFS (Xbox / Xbox 360 disc) readers, 2D-level seam, RenderWare chunk walk (ported) |
-| [JimmyPCTool / AweMultitool](https://github.com/slfx77/JimmyPCTool) | [MIT](https://github.com/slfx77/JimmyPCTool/blob/main/LICENSE) | Asset Browser helpers and the Granny 2 (.gr2) reader (ported) |
 | [Rasetsuu/blendergranny](https://github.com/Rasetsuu/blendergranny), [Stitchuuuu/granny-ro-js](https://github.com/Stitchuuuu/granny-ro-js) | MIT | Granny 2 Oodle0 decompression (via AweMultitool) |
 | [carbonenginejs/format-gr2](https://github.com/carbonenginejs/format-gr2) | MIT | Granny 2 Oodle1 decompression (via AweMultitool) |
 | [Arbos/nwn2mdk](https://github.com/Arbos/nwn2mdk) | Boost 1.0 | The Oodle1 algorithm format-gr2 ports (`gr2_decompress.cpp`) |
@@ -404,12 +436,12 @@ header comment on every ported file and the license text in
 written documentation — no code from those projects is present here.
 
 The Asset Browser also borrows two UI-framework-independent helpers from this project's
-sister app [JimmyPCTool / AweMultitool](https://github.com/slfx77/JimmyPCTool) (MIT):
+sister app [JimmyPCTool / AweMultitool](https://github.com/slfx77/JimmyPCTool):
 its latest-only job guard and its gallery thumbnail scaler. The map pane's 2D-level
 seam, the CD-image reader (`archive` on .iso / .cue+.bin, with Redbook tracks as WAV) and the
 XDVDFS reader (the original Xbox and Xbox 360 disc filesystem, which mounts Fallout: Brotherhood of
 Steel's Xbox release and a full Xbox 360 redump) come from the other sister app,
-[NeversoftMultitool](https://github.com/slfx77/NeversoftMultitool) (MIT). The Granny 2 reader that
+[NeversoftMultitool](https://github.com/slfx77/NeversoftMultitool). The Granny 2 reader that
 decodes Van Buren's character meshes is ported from AweMultitool too, with its own upstream chain
 (blendergranny + granny-ro-js for Oodle0, CarbonEngineJS format-gr2 and nwn2mdk for Oodle1 — MIT and
 Boost 1.0, every notice reproduced in the ported files).

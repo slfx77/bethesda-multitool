@@ -1,10 +1,14 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- Multi-target: cross-platform CLI + Windows GUI -->
     <!-- Use -p:BuildTestsOnly=true to skip the Windows GUI TFM for fast test builds -->
     <TargetFrameworks Condition="'$(BuildTestsOnly)' != 'true'">net10.0;net10.0-windows10.0.19041.0</TargetFrameworks>
     <TargetFrameworks Condition="'$(BuildTestsOnly)' == 'true'">net10.0</TargetFrameworks>
+    <!-- NuGet locked restore requires an exact target-framework graph. Keep the full
+         CLI/GUI lock for ordinary builds and a separate lock for portable builds,
+         so tests-only restore cannot replace the Windows graph. -->
+    <NuGetLockFilePath Condition="'$(NuGetLockFilePath)' == '' and '$(TargetFrameworks)' == 'net10.0'">packages.net10.0.lock.json</NuGetLockFilePath>
     <OutputType>Exe</OutputType>
     <RootNamespace>BethesdaMultitool</RootNamespace>
     <AssemblyName>BethesdaMultitool</AssemblyName>
@@ -12,6 +16,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>preview</LangVersion>
+    <!-- DDXConv is an executable referenced for its managed library API. Its
+         standalone deployment settings are independent of this application's. -->
+    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
     <!-- Large-dump analysis routinely builds multi-GB heaps: a ~900 MB Xbox 360 memory
          dump fully extracts to ~12 GB / 100M+ live objects. Workstation GC (the default)
          collects gen2 single-threaded, so a collection over that graph is a multi-hundred-
@@ -31,6 +38,10 @@
          still validated against the just-built assembly before it can be returned or published. -->
     <ShaderBytecodePackCachePath
         Condition="'$(ShaderBytecodePackCachePath)' == ''">$(BaseIntermediateOutputPath)shader-bytecode-cache\$(ShaderBytecodePackFileName)</ShaderBytecodePackCachePath>
+    <!-- Defer packaging analysis during iteration while retaining shipping runtime feature settings.
+         Full builds and publishing validate single-file compatibility for both application targets. -->
+    <EnableSingleFileAnalyzer Condition="'$(AnalyzerProfile)' != 'Full'">false</EnableSingleFileAnalyzer>
+    <EnableSingleFileAnalyzer Condition="'$(AnalyzerProfile)' == 'Full'">true</EnableSingleFileAnalyzer>
   </PropertyGroup>
 
   <!-- Ensure multi-target restore materializes RID-specific assets for both CLI and GUI builds. -->
@@ -49,8 +60,11 @@
     <!-- Enable trimming for smaller builds -->
     <PublishTrimmed>true</PublishTrimmed>
     <TrimMode>partial</TrimMode>
-    <!-- Suppress trim warnings from third-party packages (Spectre.Console) -->
-    <SuppressTrimAnalysisWarnings>true</SuppressTrimAnalysisWarnings>
+    <!-- Full exposes application and dependency trimming diagnostics. The previous global
+         suppression also disabled the trim analyzer, hiding more than third-party warnings. -->
+    <EnableTrimAnalyzer Condition="'$(AnalyzerProfile)' != 'Full'">false</EnableTrimAnalyzer>
+    <EnableTrimAnalyzer Condition="'$(AnalyzerProfile)' == 'Full'">true</EnableTrimAnalyzer>
+    <SuppressTrimAnalysisWarnings>false</SuppressTrimAnalysisWarnings>
   </PropertyGroup>
 
   <!-- Expose internals to test project and EsmAnalyzer tool -->
@@ -75,8 +89,6 @@
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <SelfContained>true</SelfContained>
-    <!-- DDXConv is an Exe project used as a library; suppress NETSDK1150 -->
-    <ValidateExecutableReferencesMatchSelfContained>false</ValidateExecutableReferencesMatchSelfContained>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <EnableMsixTooling>true</EnableMsixTooling>
     <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN;WINDOWS_GUI</DefineConstants>
@@ -89,11 +101,24 @@
     <PublishSingleFile>true</PublishSingleFile>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <!-- Note: WinUI 3 does not support IL trimming -->
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
   </PropertyGroup>
 
-  <!-- Shared packages -->
+  <!-- Shared projects from the pinned submodule -->
   <ItemGroup>
-    <PackageReference Include="Magick.NET-Q16-AnyCPU" />
+    <ProjectReference Include="../../shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12.Shaders/Slfx77.Multitool.WinUI.Direct3D12.Shaders.csproj"
+                      AdditionalProperties="TargetFramework=net10.0;TargetFrameworks=;RuntimeIdentifier=;RuntimeIdentifiers=;SelfContained=false;PublishSingleFile=false"
+                      GlobalPropertiesToRemove="TargetFramework;TargetFrameworks;RuntimeIdentifier;RuntimeIdentifiers;SelfContained;PublishSingleFile" />
+    <ProjectReference Include="../../shared/Multitool.Shared/src/Slfx77.Multitool.Core/Slfx77.Multitool.Core.csproj"
+                      AdditionalProperties="TargetFramework=net10.0;TargetFrameworks=;RuntimeIdentifier=;RuntimeIdentifiers=;SelfContained=false;PublishSingleFile=false"
+                      GlobalPropertiesToRemove="TargetFramework;TargetFrameworks;RuntimeIdentifier;RuntimeIdentifiers;SelfContained;PublishSingleFile" />
+    <ProjectReference Include="../../shared/Multitool.Shared/src/Slfx77.Multitool.Media/Slfx77.Multitool.Media.csproj"
+                      AdditionalProperties="TargetFramework=net10.0;TargetFrameworks=;RuntimeIdentifier=;RuntimeIdentifiers=;SelfContained=false;PublishSingleFile=false"
+                      GlobalPropertiesToRemove="TargetFramework;TargetFrameworks;RuntimeIdentifier;RuntimeIdentifiers;SelfContained;PublishSingleFile" />
+    <ProjectReference Include="../../shared/Multitool.Shared/src/Slfx77.Multitool.Media.Blender/Slfx77.Multitool.Media.Blender.csproj"
+                      AdditionalProperties="TargetFramework=net10.0;TargetFrameworks=;RuntimeIdentifier=;RuntimeIdentifiers=;SelfContained=false;PublishSingleFile=false"
+                      GlobalPropertiesToRemove="TargetFramework;TargetFrameworks;RuntimeIdentifier;RuntimeIdentifiers;SelfContained;PublishSingleFile" />
+    <PackageReference Include="Magick.NET-Q16-AnyCPU" GeneratePathProperty="true" />
     <PackageReference Include="BCnEncoder.Net" />
     <PackageReference Include="SharpGLTF.Toolkit" />
     <PackageReference Include="System.CommandLine" />
@@ -105,6 +130,12 @@
 
   <!-- Windows GUI packages -->
   <ItemGroup Condition="$(TargetFramework.Contains('windows'))">
+    <ProjectReference Include="../../shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12/Slfx77.Multitool.WinUI.Direct3D12.csproj"
+                      AdditionalProperties="TargetFramework=net10.0-windows10.0.19041.0;TargetFrameworks=;RuntimeIdentifier=;RuntimeIdentifiers=;SelfContained=false;PublishSingleFile=false"
+                      GlobalPropertiesToRemove="TargetFramework;TargetFrameworks;RuntimeIdentifier;RuntimeIdentifiers;SelfContained;PublishSingleFile" />
+    <ProjectReference Include="../../shared/Multitool.Shared/src/Slfx77.Multitool.WinUI/Slfx77.Multitool.WinUI.csproj"
+                      AdditionalProperties="TargetFramework=net10.0-windows10.0.19041.0;TargetFrameworks=;RuntimeIdentifier=;RuntimeIdentifiers=;SelfContained=false;PublishSingleFile=false"
+                      GlobalPropertiesToRemove="TargetFramework;TargetFrameworks;RuntimeIdentifier;RuntimeIdentifiers;SelfContained;PublishSingleFile" />
     <PackageReference Include="Microsoft.WindowsAppSDK" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.Primitives" />
@@ -117,11 +148,13 @@
 
   <!-- DDXConv library (compiled-in, no subprocess needed) -->
   <ItemGroup>
-    <ProjectReference Include="..\DDXConv\DDXConv\DDXConv.csproj" />
+    <ProjectReference Include="..\DDXConv\DDXConv\DDXConv.csproj"
+                      GlobalPropertiesToRemove="RuntimeIdentifier;SelfContained;PublishSingleFile" />
   </ItemGroup>
 
   <!-- Embedded resources -->
   <ItemGroup>
+    <EmbeddedResource Include="Strings\en-US\Resources.resw" LogicalName="BethesdaMultitool.Localization.en-US.resw" WithCulture="false" />
     <EmbeddedResource Include="Core\Formats\Nif\nif.xml" LogicalName="BethesdaMultitool.nif.xml" />
     <EmbeddedResource Include="Core\Formats\Esm\Runtime\pdb_layouts.json"
                       LogicalName="BethesdaMultitool.pdb_layouts.json" />
@@ -146,6 +179,27 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Assets\MapMarkers\*.png" />
   </ItemGroup>
+
+  <!-- Keep distribution notices readable beside both CLI and GUI single-file publishes. -->
+  <ItemGroup>
+    <None Include="../../LICENSE" Link="LICENSE" TargetPath="LICENSE"
+          CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+    <None Include="../../THIRD_PARTY_LICENSES" Link="THIRD_PARTY_LICENSES" TargetPath="THIRD_PARTY_LICENSES"
+          CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+
+  <!-- Preserve the exact notice shipped with the restored, centrally pinned native image package. -->
+  <ItemGroup Condition="'$(PkgMagick_NET-Q16-AnyCPU)' != '' and Exists('$(PkgMagick_NET-Q16-AnyCPU)/Notice.txt')">
+    <None Include="$(PkgMagick_NET-Q16-AnyCPU)/Notice.txt"
+          Link="licenses/Magick.NET-Q16-AnyCPU/Notice.txt"
+          TargetPath="licenses/Magick.NET-Q16-AnyCPU/Notice.txt"
+          CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
+  <Target Name="RequireMagickDistributionNotice" BeforeTargets="ComputeFilesToPublish"
+          Condition="'$(IsCrossTargetingBuild)' != 'true'">
+    <Error Condition="'$(PkgMagick_NET-Q16-AnyCPU)' == '' or !Exists('$(PkgMagick_NET-Q16-AnyCPU)/Notice.txt')"
+           Text="The restored Magick.NET-Q16-AnyCPU Notice.txt is required for publishing. Run the coordinated locked restore to generate its package path." />
+  </Target>
 
   <!-- Runtime data files used by both CLI and GUI builds. -->
   <ItemGroup>
@@ -226,6 +280,16 @@
         <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
         <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
       </_ShaderBytecodePackOutput>
+    </ItemGroup>
+  </Target>
+
+  <!-- Framework notice inputs keep their own relative paths and remain readable beside single-file publishes. -->
+  <Target Name="KeepDistributionNoticesOutsideSingleFile" BeforeTargets="_ComputeFilesToBundle"
+          Condition="'$(PublishSingleFile)' == 'true'">
+    <ItemGroup>
+      <ResolvedFileToPublish Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Replace('\', '/').StartsWith('notices/'))">
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
     </ItemGroup>
   </Target>
 

@@ -1,0 +1,244 @@
+{
+  "version": 2,
+  "dependencies": {
+    "net10.0": {
+      "BCnEncoder.Net": {
+        "type": "Direct",
+        "requested": "[2.2.0, )",
+        "resolved": "2.2.0",
+        "contentHash": "bJg23yquVTodLWYBCDu28Dk82Coi138ZnjFlWI4sqaOtjRIvftAZHaQHbm2SdCWUShcG9sEZ4BdOnePY9qB7tA==",
+        "dependencies": {
+          "CommunityToolkit.HighPerformance": "8.4.0"
+        }
+      },
+      "Magick.NET-Q16-AnyCPU": {
+        "type": "Direct",
+        "requested": "[14.14.0, )",
+        "resolved": "14.14.0",
+        "contentHash": "fj6KqdjMRp58cw0oWtRS5eu+sKqn6ztpLt3UXcioL4AF0r4T9VPBTh9b24EUbhlp5pgETbagLh7/bsDbWjFnwA==",
+        "dependencies": {
+          "Magick.NET.Core": "14.14.0"
+        }
+      },
+      "Microsoft.NET.ILLink.Tasks": {
+        "type": "Direct",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "xi+BDjFpW+Sb+MHFHaH6Y/gV9I8BluFwRXc1QyCdoZbIK26eNiBeFuMTe/FMwc33G1wdHCyDg7CVTmb8OdQrMQ=="
+      },
+      "Roslynator.Analyzers": {
+        "type": "Direct",
+        "requested": "[5.0.0, )",
+        "resolved": "5.0.0",
+        "contentHash": "+J5kR/naCd62IwY2BG9P0QoHnJM8liBUFFAk6jga1t9s61JC3M+ofb3AY3wc73/pdROyKFCURqctQh8WRCIT/w=="
+      },
+      "SharpGLTF.Toolkit": {
+        "type": "Direct",
+        "requested": "[1.0.6, )",
+        "resolved": "1.0.6",
+        "contentHash": "wb9Ebb4uwXevL4WiLlry29RWIYlxa+NiAa0BB8iSR7VbmgSa5Ij/QaPNlKi1jjA4oL8aEygg5V76zY1SJfIS+Q==",
+        "dependencies": {
+          "SharpGLTF.Runtime": "1.0.6"
+        }
+      },
+      "SonarAnalyzer.CSharp": {
+        "type": "Direct",
+        "requested": "[10.35.0.4138, )",
+        "resolved": "10.35.0.4138",
+        "contentHash": "T5o/tuyPw9pHRkyWxW07TkSri4I4pLpqwH922JuhphDjHAM7BUHaGE67h/w+65evHsIar8mYB2Ey6OmOLj9QDw=="
+      },
+      "Spectre.Console": {
+        "type": "Direct",
+        "requested": "[0.55.2, )",
+        "resolved": "0.55.2",
+        "contentHash": "yc0g12YJpmZHofGJLTQX02/uqfzJ6XHRx6pe9rANNjleQptXMHPxD9KI2/DWkXiJWddc+4oizEdGox15c89hhw==",
+        "dependencies": {
+          "Spectre.Console.Ansi": "0.55.2"
+        }
+      },
+      "System.CommandLine": {
+        "type": "Direct",
+        "requested": "[2.0.8, )",
+        "resolved": "2.0.8",
+        "contentHash": "FbpgF8p/ClXnoXEWLjQB34kNh5rsLewEgIgLyVzLDucAOQ4cNs7ec9Cam7gdKPruSb6zp4Mx8htZGTL4/5PJPg=="
+      },
+      "Vortice.D3DCompiler": {
+        "type": "Direct",
+        "requested": "[3.8.3, )",
+        "resolved": "3.8.3",
+        "contentHash": "OmGPMhf/xnD8/HZ0ms1x7xSFyz+6e6mveCqhu0EioMFQYKJM35/ZVLLo+FIB5KpsrlqhM/jvYHYPAxu45YONGg==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.4.2-beta",
+          "Vortice.DirectX": "3.8.3"
+        }
+      },
+      "Vortice.Direct3D12": {
+        "type": "Direct",
+        "requested": "[3.8.2, )",
+        "resolved": "3.8.2",
+        "contentHash": "O/xp6LGcTZMrrXz+Io0VixYnREwxnLidk1xt2mYT2oHoOGpzg/RwcdBss4tOHgY+J7/C5pgp23+2MYrg/J+7eQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.4.2-beta",
+          "Vortice.DXGI": "3.8.2"
+        }
+      },
+      "Vortice.DXGI": {
+        "type": "Direct",
+        "requested": "[3.8.3, )",
+        "resolved": "3.8.3",
+        "contentHash": "MbAUnTeQ6WD99ctAdrj5CQO2I7oaax0Kt2eVdWSUj0bYP9Ed0726+s7dIHe4+tqhpmINW/dcPt0mNtc72o+E0w==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.4.2-beta",
+          "Vortice.DirectX": "3.8.3"
+        }
+      },
+      "BCnEncoder.Net.ImageSharp": {
+        "type": "Transitive",
+        "resolved": "1.1.2",
+        "contentHash": "qUi8L+bNfHJii95BMBcV6MhBchkKU2VV6sd6D1yyzgm77YhMt+aFT0keh5uf70bvTsRrq/ZKQnE4UQScNU6XAA==",
+        "dependencies": {
+          "BCnEncoder.Net": "2.2.0",
+          "CommunityToolkit.HighPerformance": "8.4.0",
+          "SixLabors.ImageSharp": "3.1.7"
+        }
+      },
+      "Magick.NET.Core": {
+        "type": "Transitive",
+        "resolved": "14.14.0",
+        "contentHash": "pACR3w4QmjBkebtYvZwNk0oow8YwEAF4CLfzSrGmPcWsObL8wvt/lOXsrzK9M0cVwYES7jp+bdnHQBTeQgfoIg=="
+      },
+      "SharpGen.Runtime": {
+        "type": "Transitive",
+        "resolved": "2.4.2-beta",
+        "contentHash": "niTtWAUov1F7wZGAlVeEvW+Tnqvg5yTmhI7rxmYu2Utoyu2TbC9tWWpUpMs0PQg5lu5svoYpCAztNjxCqMFP/w=="
+      },
+      "SharpGen.Runtime.COM": {
+        "type": "Transitive",
+        "resolved": "2.4.2-beta",
+        "contentHash": "9lxDFMiepqo3lJQzMSjECCIONeCc2f3Drokgj6HtrTLZcJSftNgcLbD6/iXYj2iphkwgrZb1oLsDOZxoFZkawQ==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.4.2-beta"
+        }
+      },
+      "SharpGLTF.Runtime": {
+        "type": "Transitive",
+        "resolved": "1.0.6",
+        "contentHash": "MVb0p0gzwnjHB03b0kMhf9bVUd6gSvs/jBpTkL6rMa0RtzSGARbCvZkpGbHXjxgSTncprEuzV4nAaaAucifc3Q==",
+        "dependencies": {
+          "SharpGLTF.Core": "1.0.6"
+        }
+      },
+      "Spectre.Console.Ansi": {
+        "type": "Transitive",
+        "resolved": "0.55.2",
+        "contentHash": "tN3KEJQQZwLW9HJnG5YTSAxfBwxsmg1wVuGvhGG2rM+pbl+NGaHU8pDcNofPlOXlgpkbpBMxI5t9o9qPfy3sHQ=="
+      },
+      "Vortice.DirectX": {
+        "type": "Transitive",
+        "resolved": "3.8.3",
+        "contentHash": "nKwSavv0w5rDF7prSefqAVPDcTyqrfZxKFMVfttiXPfm62VdA/1d+b3PhCZpW4xO7jXczXDwjQdWgD1zGsvM8w==",
+        "dependencies": {
+          "SharpGen.Runtime": "2.4.2-beta",
+          "SharpGen.Runtime.COM": "2.4.2-beta",
+          "Vortice.Mathematics": "2.1.0"
+        }
+      },
+      "Vortice.Mathematics": {
+        "type": "Transitive",
+        "resolved": "2.1.0",
+        "contentHash": "KK+SjNSuKdP+zbavekubi+vaeb1Jo4k87ZF6CMkVWjr6RjJwc8peVtmgzXXDIMy4ZC3ZISyk3llY3q65ISOkBQ=="
+      },
+      "ddxconv": {
+        "type": "Project",
+        "dependencies": {
+          "BCnEncoder.Net.ImageSharp": "[1.1.2, )",
+          "SixLabors.ImageSharp": "[3.1.12, )"
+        }
+      },
+      "sharpgltf.core": {
+        "type": "Project"
+      },
+      "slfx77.multitool.core": {
+        "type": "Project"
+      },
+      "slfx77.multitool.media": {
+        "type": "Project",
+        "dependencies": {
+          "BCnEncoder.Net": "[2.2.0, )",
+          "CommunityToolkit.HighPerformance": "[8.4.0, )",
+          "SharpGLTF.Core": "[1.0.6, )",
+          "SixLabors.ImageSharp": "[3.1.12, )",
+          "Slfx77.Multitool.Core": "[0.1.0-preview.20260910.1, )",
+          "Slfx77.Multitool.Media.Processing": "[0.1.0-preview.20260910.1, )"
+        }
+      },
+      "slfx77.multitool.media.blender": {
+        "type": "Project",
+        "dependencies": {
+          "Slfx77.Multitool.Core": "[0.1.0-preview.20260910.1, )",
+          "Slfx77.Multitool.Media.Processing": "[0.1.0-preview.20260910.1, )"
+        }
+      },
+      "slfx77.multitool.media.processing": {
+        "type": "Project",
+        "dependencies": {
+          "Slfx77.Multitool.Core": "[0.1.0-preview.20260910.1, )"
+        }
+      },
+      "slfx77.multitool.winui.direct3d12.shaders": {
+        "type": "Project",
+        "dependencies": {
+          "Slfx77.Multitool.Core": "[0.1.0-preview.20260910.1, )",
+          "Vortice.D3DCompiler": "[3.8.3, )",
+          "Vortice.DXGI": "[3.8.3, )",
+          "Vortice.Direct3D12": "[3.8.2, )"
+        }
+      },
+      "CommunityToolkit.HighPerformance": {
+        "type": "CentralTransitive",
+        "requested": "[8.4.0, )",
+        "resolved": "8.4.0",
+        "contentHash": "flxspiBs0G/0GMp7IK2J2ijV9bTG6hEwFc/z6ekHqB6nwRJ4Ry2yLdx+TkbCUYFCl4XhABkAwomeKbT6zM2Zlg=="
+      },
+      "SixLabors.ImageSharp": {
+        "type": "CentralTransitive",
+        "requested": "[3.1.12, )",
+        "resolved": "3.1.12",
+        "contentHash": "iAg6zifihXEFS/t7fiHhZBGAdCp3FavsF4i2ZIDp0JfeYeDVzvmlbY1CNhhIKimaIzrzSi5M/NBFcWvZT2rB/A=="
+      }
+    },
+    "net10.0/linux-x64": {
+      "Magick.NET-Q16-AnyCPU": {
+        "type": "Direct",
+        "requested": "[14.14.0, )",
+        "resolved": "14.14.0",
+        "contentHash": "fj6KqdjMRp58cw0oWtRS5eu+sKqn6ztpLt3UXcioL4AF0r4T9VPBTh9b24EUbhlp5pgETbagLh7/bsDbWjFnwA==",
+        "dependencies": {
+          "Magick.NET.Core": "14.14.0"
+        }
+      }
+    },
+    "net10.0/osx-x64": {
+      "Magick.NET-Q16-AnyCPU": {
+        "type": "Direct",
+        "requested": "[14.14.0, )",
+        "resolved": "14.14.0",
+        "contentHash": "fj6KqdjMRp58cw0oWtRS5eu+sKqn6ztpLt3UXcioL4AF0r4T9VPBTh9b24EUbhlp5pgETbagLh7/bsDbWjFnwA==",
+        "dependencies": {
+          "Magick.NET.Core": "14.14.0"
+        }
+      }
+    },
+    "net10.0/win-x64": {
+      "Magick.NET-Q16-AnyCPU": {
+        "type": "Direct",
+        "requested": "[14.14.0, )",
+        "resolved": "14.14.0",
+        "contentHash": "fj6KqdjMRp58cw0oWtRS5eu+sKqn6ztpLt3UXcioL4AF0r4T9VPBTh9b24EUbhlp5pgETbagLh7/bsDbWjFnwA==",
+        "dependencies": {
+          "Magick.NET.Core": "14.14.0"
+        }
+      }
+    }
+  }
+}
