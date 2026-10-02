@@ -24,6 +24,12 @@ internal sealed record SemanticFileLoadOptions
     public IProgress<(int percent, string phase)>? ParseProgress { get; init; }
 
     /// <summary>
+    ///     Retain the exact parsing context for forensic readers while the loaded result owns its
+    ///     source mapping. Ordinary browsing releases the parser's caches after parsing.
+    /// </summary>
+    public bool RetainParserContext { get; init; }
+
+    /// <summary>
     ///     Whether minidump analysis should include metadata extraction.
     /// </summary>
     public bool IncludeMetadata { get; init; } = true;

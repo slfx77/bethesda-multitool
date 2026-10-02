@@ -2,6 +2,7 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
+using BethesdaMultitool.Core.Utils;
 using Spectre.Console;
 
 namespace EsmAnalyzer.Commands.DialogueVoice;
@@ -12,7 +13,7 @@ namespace EsmAnalyzer.Commands.DialogueVoice;
 /// </summary>
 public static class TranscriptDiagCommands
 {
-    private const string TranscriptFileName = ".fnvtranscript.json";
+    private const string TranscriptFileName = TranscriptSidecarStore.TranscriptFileName;
 
     public static Command CreateTranscriptDiagCommand()
     {
@@ -21,7 +22,7 @@ public static class TranscriptDiagCommands
 
         var dirArg = new Argument<string>("data-dir")
         {
-            Description = "Path to the Data directory containing BSAs and .fnvtranscript.json"
+            Description = "Path to the Data directory containing the BSAs; its .fnvtranscript.json is read from the transcriber's sidecar store"
         };
 
         var limitOption = new Option<int>("-l", "--limit")
@@ -176,10 +177,13 @@ public static class TranscriptDiagCommands
         }
 
         // ── Step 3: Load and analyze .fnvtranscript.json ──────────
-        var jsonPath = Path.Combine(dataDir, TranscriptFileName);
-        if (!File.Exists(jsonPath))
+        // The transcriber keeps it outside the Data directory; one left inside by an earlier
+        // version is still found.
+        var jsonPath = TranscriptSidecarStore.FindExisting(dataDir, TranscriptFileName);
+        if (jsonPath is null)
         {
-            AnsiConsole.MarkupLine($"[yellow]No {TranscriptFileName} found — skipping JSON analysis.[/]");
+            AnsiConsole.MarkupLine(
+                $"[yellow]No {TranscriptFileName} found in {Markup.Escape(TranscriptSidecarStore.ResolveDirectory(dataDir))} — skipping JSON analysis.[/]");
             return 0;
         }
 

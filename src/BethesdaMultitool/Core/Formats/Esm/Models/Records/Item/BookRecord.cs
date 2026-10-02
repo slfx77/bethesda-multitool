@@ -15,6 +15,9 @@ public record BookRecord
     /// <summary>Display name.</summary>
     public string? FullName { get; init; }
 
+    /// <summary>Explicit attached script FormID from the stored SCRI subrecord.</summary>
+    public uint? ScriptFormId { get; init; }
+
     /// <summary>Book text content (DESC subrecord).</summary>
     public string? Text { get; init; }
 

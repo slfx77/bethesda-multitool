@@ -22,7 +22,7 @@ internal static class DmpScriptCompareCommand
         var (_, scripts) = result.Value;
 
         var scriptsWithBoth = scripts
-            .Where(s => s.HasSource && !string.IsNullOrEmpty(s.DecompiledText))
+            .Where(s => ScriptSourceProvenance.AuthoredText(s) is not null && !string.IsNullOrEmpty(s.DecompiledText))
             .ToList();
 
         // Apply script filter if specified
@@ -35,7 +35,7 @@ internal static class DmpScriptCompareCommand
             if (filtered.Count == 0)
             {
                 AnsiConsole.MarkupLine(
-                    $"[red]No matching scripts with both SCTX and decompiled text: {scriptFilter}[/]");
+                    $"[red]No matching scripts with both SCTX and decompiled text: {Markup.Escape(scriptFilter)}[/]");
                 return;
             }
 
@@ -55,7 +55,7 @@ internal static class DmpScriptCompareCommand
         foreach (var script in scriptsWithBoth)
         {
             var compResult = ScriptComparer.CompareScripts(
-                script.SourceText!, script.DecompiledText!, nameMap);
+                ScriptSourceProvenance.AuthoredText(script)!, script.DecompiledText!, nameMap);
 
             totalMatches += compResult.MatchCount;
             scriptResults.Add((script, compResult));
@@ -98,7 +98,7 @@ internal static class DmpScriptCompareCommand
         foreach (var (category, count) in aggregateMismatches.OrderByDescending(kv => kv.Value))
         {
             var pct = totalLines > 0 ? 100.0 * count / totalLines : 0;
-            catTable.AddRow(category, $"{count:N0}", $"{pct:F1}%");
+            catTable.AddRow(Markup.Escape(category), $"{count:N0}", $"{pct:F1}%");
         }
 
         AnsiConsole.Write(catTable);
@@ -122,7 +122,7 @@ internal static class DmpScriptCompareCommand
             foreach (var (script, compResult) in worstScripts)
             {
                 var name = script.EditorId ?? $"0x{script.FormId:X8}";
-                worstTable.AddRow(name, $"{compResult.MatchRate:F1}%", $"{compResult.TotalMismatches}");
+                worstTable.AddRow(Markup.Escape(name), $"{compResult.MatchRate:F1}%", $"{compResult.TotalMismatches}");
             }
 
             AnsiConsole.Write(worstTable);
@@ -195,7 +195,7 @@ internal static class DmpScriptCompareCommand
             }
         }
 
-        AnsiConsole.MarkupLine($"[green]Report written to:[/] {Path.GetFullPath(reportPath)}");
+        AnsiConsole.MarkupLine($"[green]Report written to:[/] {Markup.Escape(Path.GetFullPath(reportPath))}");
     }
 
     private static string DisplayLine(string line)

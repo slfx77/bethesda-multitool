@@ -81,6 +81,55 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         Assert.Equal(loadedFromAnalysis.Resolver.GetEditorId(0x00001000), loaded.Resolver.GetEditorId(0x00001000));
         Assert.Equal(loadedFromAnalysis.Resolver.GetDisplayName(0x00001000),
             loaded.Resolver.GetDisplayName(0x00001000));
+        Assert.Null(loaded.ParserContext);
+        Assert.Null(loadedFromAnalysis.ParserContext);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Forensic_context_retains_the_loaded_source_only_until_mapping_ownership_ends(bool detach)
+    {
+        var filePath = WriteSyntheticEsm("forensic.esm",
+            EsmTestFileBuilder.BuildRecord("STAT", 0x00001000, 0, ("EDID", NullTerm("ForensicStat"))));
+        using var loaded = await SemanticFileLoader.LoadAsync(filePath,
+            new SemanticFileLoadOptions { FileType = AnalysisFileType.EsmFile, RetainParserContext = true },
+            TestContext.Current.CancellationToken);
+        var context = loaded.ParserContext;
+        Assert.NotNull(context);
+        Assert.Same(loaded.RawResult.EsmRecords, context.ScanResult);
+        var accessor = context.Accessor;
+        Assert.NotNull(accessor);
+        var signature = new byte[4];
+        Assert.Equal(4, accessor.ReadArray(0, signature, 0, signature.Length));
+        Assert.Equal("TES4", Encoding.ASCII.GetString(signature));
+        Assert.Equal("ForensicStat", loaded.Resolver.GetEditorId(0x00001000));
+
+        if (detach)
+        {
+            var ownership = loaded.DetachDisposables();
+            try
+            {
+                Assert.Null(loaded.ParserContext);
+                Assert.Null(loaded.Accessor);
+                Assert.Equal(4, accessor.ReadArray(0, signature, 0, signature.Length));
+            }
+            finally
+            {
+                ownership.Accessor?.Dispose();
+                ownership.MappedFile?.Dispose();
+                ownership.TerrainInjection?.Dispose();
+            }
+        }
+        else
+        {
+            loaded.Dispose();
+            Assert.Null(loaded.ParserContext);
+            Assert.Throws<ObjectDisposedException>(() =>
+            {
+                accessor.ReadArray(0, signature, 0, signature.Length);
+            });
+        }
     }
 
     [Fact]
@@ -494,6 +543,43 @@ public sealed class SemanticConsolidationTests(SampleFileFixture samples) : IDis
         var list = Assert.IsType<ReportValue.ListVal>(
             section.Fields.Single(field => field.Key == "Variables").Value);
         Assert.Equal("1 variables", list.Display);
+    }
+
+    [Fact]
+    public void GeckScriptWriter_ReportsContainerAndBytecodeOrderSeparately()
+    {
+        // July 2010 X360 prototype SCPT 0x00132163: a big-endian container whose serialized SCDA
+        // is little-endian, decided by its opening ScriptName statement (1D 00 00 00).
+        var report = GeckScriptWriter.GenerateScriptsReport(
+        [
+            new ScriptRecord
+            {
+                FormId = 0x00132163,
+                EditorId = "NVCCBunkerLogBookSCRIPT",
+                CompiledData = Convert.FromHexString("1D00000010000800030004000000000011000000"),
+                CompiledSize = 20,
+                IsCompiled = true,
+                IsBigEndian = true,
+                IsBigEndianBytecode = false,
+                BytecodeByteOrderEvidence = ScriptBytecodeByteOrderEvidence.ScriptNameAnchor
+            },
+            new ScriptRecord
+            {
+                FormId = 0x00132164,
+                EditorId = "ZzSourceOnlyScript",
+                SourceText = "scn ZzSourceOnlyScript",
+                IsBigEndian = true
+            }
+        ]);
+
+        var lines = report.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        // The existing lines are kept verbatim for downstream greps.
+        Assert.Contains("Endianness:     Big-Endian (Xbox 360)", lines);
+        Assert.Contains("Is Compiled:    True", lines);
+        Assert.Contains("Bytecode Order: Little-Endian (ScriptName anchor)", lines);
+        Assert.Contains("Bytecode Order: (no SCDA)", lines);
+        var endianness = Array.IndexOf(lines, "Endianness:     Big-Endian (Xbox 360)");
+        Assert.Equal("Bytecode Order: Little-Endian (ScriptName anchor)", lines[endianness + 1]);
     }
 
     [Theory]

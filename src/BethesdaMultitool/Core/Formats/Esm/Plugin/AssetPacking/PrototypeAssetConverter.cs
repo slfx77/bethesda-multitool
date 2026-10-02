@@ -50,6 +50,7 @@ internal sealed class PrototypeAssetConverter
     /// </summary>
     public async Task<ConvertedAsset> ConvertAsync(byte[] data, string sourcePath, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var extension = Path.GetExtension(sourcePath).ToLowerInvariant();
 
         switch (extension)
@@ -63,7 +64,7 @@ internal sealed class PrototypeAssetConverter
                 return ConvertNif(data, sourcePath);
 
             case ".xma":
-                return await ConvertXmaAsync(data, sourcePath).ConfigureAwait(false);
+                return await ConvertXmaAsync(data, sourcePath, cancellationToken).ConfigureAwait(false);
 
             default:
                 // Unknown format — pass through. Most loose assets (e.g. .dds already in PC
@@ -159,11 +160,11 @@ internal sealed class PrototypeAssetConverter
         }
     }
 
-    private static async Task<ConvertedAsset> ConvertXmaAsync(byte[] data, string sourcePath)
+    private static async Task<ConvertedAsset> ConvertXmaAsync(byte[] data, string sourcePath, CancellationToken cancellationToken)
     {
         if (IsDialogueVoicePath(sourcePath))
         {
-            return await ConvertVoiceXmaAsync(data, sourcePath).ConfigureAwait(false);
+            return await ConvertVoiceXmaAsync(data, sourcePath, cancellationToken).ConfigureAwait(false);
         }
 
         if (!XmaWavConverter.IsAvailable)
@@ -173,7 +174,7 @@ internal sealed class PrototypeAssetConverter
 
         try
         {
-            var result = await XmaWavConverter.ConvertAsync(data).ConfigureAwait(false);
+            var result = await XmaWavConverter.ConvertAsync(data, cancellationToken).ConfigureAwait(false);
             if (!result.Success || result.OutputData is null)
             {
                 return ConvertedAsset.Failure(data, sourcePath,
@@ -184,13 +185,13 @@ internal sealed class PrototypeAssetConverter
                 sourcePath, ExtensionAfterConversion(sourcePath, true));
             return ConvertedAsset.Converted(result.OutputData, newPath);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return ConvertedAsset.Failure(data, sourcePath, $"XMA → WAV exception: {ex.Message}");
         }
     }
 
-    private static async Task<ConvertedAsset> ConvertVoiceXmaAsync(byte[] data, string sourcePath)
+    private static async Task<ConvertedAsset> ConvertVoiceXmaAsync(byte[] data, string sourcePath, CancellationToken cancellationToken)
     {
         if (!XmaOggConverter.IsAvailable)
         {
@@ -199,7 +200,7 @@ internal sealed class PrototypeAssetConverter
 
         try
         {
-            var result = await XmaOggConverter.ConvertAsync(data).ConfigureAwait(false);
+            var result = await XmaOggConverter.ConvertAsync(data, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (!result.Success || result.OutputData is null)
             {
                 return ConvertedAsset.Failure(data, sourcePath,
@@ -210,7 +211,7 @@ internal sealed class PrototypeAssetConverter
                 sourcePath, ExtensionAfterConversion(sourcePath, true));
             return ConvertedAsset.Converted(result.OutputData, newPath);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return ConvertedAsset.Failure(data, sourcePath, $"XMA → OGG exception: {ex.Message}");
         }

@@ -194,6 +194,9 @@ internal sealed class RuntimeScriptReader(RuntimeMemoryContext context)
         var result = new DialogueResultScript
         {
             SourceText = sourceDecision.SourceText,
+            WithheldSourceReason = !string.IsNullOrEmpty(payload.SourceText) && sourceDecision.SourceText is null
+                ? sourceDecision.SourceIssue ?? sourceDecision.BundleIssue ?? "source validation failed"
+                : null,
             SourceTextOrigin = sourceDecision.ResolveSourceTextOrigin(sourceOrigin),
             IsDmpDerived = true,
             DecompiledText = decompiledText,

@@ -45,6 +45,7 @@ internal static class EsmDescriptorScanner
     {
         var scanResult = new EsmRecordScanResult();
         var grupHeaders = new List<GrupHeaderInfo>();
+        scanResult.PlacementGroups = grupHeaders;
         var formIdMap = new Dictionary<uint, string>();
         var refrStates = new Dictionary<long, RefrState>();
 

@@ -32,7 +32,7 @@ internal static class GeckActorDetailWriter
         {
             var statsFields = new List<ReportField>();
             if (npc.Stats != null)
-                statsFields.Add(new ReportField("Level", ReportValue.Int(npc.Stats.Level)));
+                statsFields.Add(new ReportField("Level (encoded)", ReportValue.Int(npc.Stats.Level)));
             if (npc.SpecialStats is { Length: 7 })
             {
                 var s = npc.SpecialStats;
@@ -68,14 +68,13 @@ internal static class GeckActorDetailWriter
             var derivedFields = new List<ReportField>();
             if (npc.SpecialStats is { Length: 7 } sp)
             {
-                var baseHealth = sp[2] * 5 + 50;
-                var calcHealth = baseHealth + npc.Stats.Level * 10;
+                var baseHealth = Core.Actors.ActorStatisticsService.Format(Core.Actors.ActorStatisticsService.StoredHealth(npc));
                 var calcFatigue = npc.Stats.FatigueBase + (sp[0] + sp[2]) * 10;
-                derivedFields.Add(new ReportField("Base Health", ReportValue.Int(baseHealth)));
-                derivedFields.Add(new ReportField("Calculated Health", ReportValue.Int(calcHealth)));
+                derivedFields.Add(new ReportField("Base Health", ReportValue.String(baseHealth)));
+                derivedFields.Add(new ReportField("Calculated Health", ReportValue.String("Unavailable")));
                 derivedFields.Add(new ReportField("Fatigue", ReportValue.Int(npc.Stats.FatigueBase)));
                 derivedFields.Add(new ReportField("Calc Fatigue", ReportValue.Int(calcFatigue)));
-                derivedFields.Add(new ReportField("Critical Chance", ReportValue.FloatDisplay(sp[6], $"{sp[6]}")));
+                derivedFields.Add(new ReportField("Critical Chance", ReportValue.String(Core.Actors.ActorStatisticsService.Format(Core.Actors.ActorStatisticsService.CriticalChance()))));
                 derivedFields.Add(new ReportField("Speed Mult",
                     ReportValue.Int(npc.Stats.SpeedMultiplier, $"{npc.Stats.SpeedMultiplier}%")));
             }

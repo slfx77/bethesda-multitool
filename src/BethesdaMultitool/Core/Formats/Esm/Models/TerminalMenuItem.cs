@@ -43,8 +43,13 @@ public record TerminalMenuItem
     /// <summary>Embedded result-script source text (SCTX). Null when not embedded.</summary>
     public string? SourceText { get; init; }
 
+    /// <summary>Captured SCTX withheld by source/executable validation, rather than absent from the capture.</summary>
+    public string? WithheldSourceReason { get; init; }
+
     /// <summary>Decompiled embedded bytecode used only to prove captured SCTX correspondence.</summary>
     public string? DecompiledText { get; init; }
+
+    public List<ScriptExternalVariableBinding> ExternalVariableBindings { get; init; } = [];
 
     /// <summary>Where the recovered SCTX came from within the current dump.</summary>
     public ScriptSourceTextOrigin SourceTextOrigin { get; init; }

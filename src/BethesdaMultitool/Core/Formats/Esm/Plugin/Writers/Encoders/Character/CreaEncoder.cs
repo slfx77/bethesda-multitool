@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
@@ -15,27 +16,42 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 ///     PNAM?, TNAM?, BNAM?, WNAM?, NAM4?, NAM5?, CSCR?, CSDT*/CSDI*/CSDC*, CNAM?, LNAM?,
 ///     EITM?, DEST?/DSTD?/DMDL?/DMDT?/DSTF?.
 ///     DATA layout (17B): uint8 CreatureType + uint8 CombatSkill + uint8 MagicSkill +
-///     uint8 StealthSkill + int32 Health + int16 AttackDamage + 7 bytes unused.
+///     uint8 StealthSkill + int16 Health + 2 reserved bytes + int16 AttackDamage + 7 SPECIAL bytes.
 ///     FormID-bearing subrecords (SPLO, INAM, SCRI, VTCK, TPLT, ZNAM, CSCR, LNAM, EITM,
 ///     CNAM, PNAM, CNTO item) are resolved through the source→allocated alias table so they
 ///     reference IDs the engine will actually load.
 /// </summary>
 public sealed class CreaEncoder : IRecordEncoder
 {
-    private static readonly Dictionary<string, Func<CreatureRecord, object?>> DataExtractors =
-        new(StringComparer.Ordinal)
-        {
-            ["CreatureType"] = m => m.CreatureType,
-            ["CombatSkill"] = m => m.CombatSkill,
-            ["MagicSkill"] = m => m.MagicSkill,
-            ["StealthSkill"] = m => m.StealthSkill,
-            // Health field intentionally omitted — engine computes from Endurance + level.
-            ["AttackDamage"] = m => m.AttackDamage
-            // Remaining(7) bytes left unset → zero-fill.
-        };
+    // Target PC plugin layout, independently defined by xEdit FO3/FNV CREA DATA.
+    // Source July captures use an Int32 health field; do not reuse that source schema
+    // for PC output or silently truncate a captured value that the target cannot store.
+    private static byte[] BuildPcData(CreatureRecord creature, List<string> warnings)
+    {
+        if (creature.Health is < short.MinValue or > short.MaxValue)
+            throw new InvalidDataException($"CREA 0x{creature.FormId:X8} Health {creature.Health} is outside the PC Int16 range.");
+        if (creature.Attributes is { Length: not 7 })
+            throw new InvalidDataException($"CREA 0x{creature.FormId:X8} DATA Attributes must contain exactly seven bytes.");
+
+        var data = new byte[17];
+        data[0] = creature.CreatureType;
+        data[1] = creature.CombatSkill;
+        data[2] = creature.MagicSkill;
+        data[3] = creature.StealthSkill;
+        if (creature.Health is { } health)
+            BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(4), (short)health);
+        else
+            warnings.Add($"CREA 0x{creature.FormId:X8} DATA Health unavailable; emitted 0.");
+        BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(8), creature.AttackDamage);
+        if (creature.Attributes is { } attributes)
+            attributes.CopyTo(data, 10);
+        else
+            warnings.Add($"CREA 0x{creature.FormId:X8} DATA Attributes unavailable; emitted zeroes.");
+        return data;
+    }
 
     // ACBS bytes-builder + flag-policy lives in ActorBaseAcbsBuilder, shared with NpcEncoder.
-    // Both record types use the identical extractor dict + flag-policy fixups.
+    // The byte layout is shared; CREA flag bits are preserved without NPC-only fixups.
 
     private static readonly Dictionary<string, Func<FactionMembership, object?>> SnamExtractors =
         new(StringComparer.Ordinal)
@@ -106,16 +122,12 @@ public sealed class CreaEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("NIFT", nift));
         }
 
-        // ACBS — actor base stats. Routed through ActorBaseAcbsBuilder so creatures get the
-        // same three flag-policy fixups NPCs do: force AutoCalcStats (0x10), set UseTemplate
-        // (0x40) when TemplateFlags is nonzero, and clamp SpeedMultiplier to 100 when zero.
-        // Without those fixups, templated creatures (Speedy / Sleepy / etc. captured from a
-        // prototype build) would emit ACBS with cleared AutoCalc and missing UseTemplate —
-        // the engine then appends a per-spawn numeric suffix to the display name.
+        // CREA ACBS flags preserve captured movement/template bits. NPC AutoCalc
+        // and UseTemplate policies do not apply to this record type.
         if (crea.Stats is { } stats)
         {
             subs.Add(new EncodedSubrecord("ACBS",
-                ActorBaseAcbsBuilder.Build("CREA", stats, true)));
+                ActorBaseAcbsBuilder.Build("CREA", stats)));
         }
         else
         {
@@ -230,7 +242,7 @@ public sealed class CreaEncoder : IRecordEncoder
             subs.Add(new EncodedSubrecord("KFNM", kfnm));
         }
 
-        subs.Add(SchemaModelSerializer.SerializeSubrecord("DATA", "CREA", 17, crea, DataExtractors));
+        subs.Add(new EncodedSubrecord("DATA", BuildPcData(crea, warnings)));
 
         if (crea.SoundType.HasValue)
         {

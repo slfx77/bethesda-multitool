@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Bsa.Index;
+using ArchiveEntry = BethesdaMultitool.Core.Formats.Archives.ArchiveEntry;
 
 namespace BethesdaMultitool.Core.Formats.Papyrus;
 
@@ -125,7 +126,7 @@ public sealed record PexArchiveEntry
         string virtualPath,
         long uncompressedSize,
         bool compressed,
-        ArchiveReader.ArchiveEntry source)
+        ArchiveEntry source)
     {
         VirtualPath = virtualPath;
         UncompressedSize = uncompressedSize;
@@ -136,5 +137,5 @@ public sealed record PexArchiveEntry
     public string VirtualPath { get; }
     public long UncompressedSize { get; }
     public bool Compressed { get; }
-    internal ArchiveReader.ArchiveEntry Source { get; }
+    internal ArchiveEntry Source { get; }
 }

@@ -32,8 +32,8 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_EXE = REPO_ROOT / "Sample" / "Fallout 4" / "Fallout4.exe"
-DEFAULT_PDB = REPO_ROOT / "Sample" / "Fallout 4" / "Fallout4.pdb"
+DEFAULT_EXE = REPO_ROOT / "Sample" / "DebugSymbols" / "Fallout 4 (PC)" / "Fallout4.exe"
+DEFAULT_PDB = REPO_ROOT / "Sample" / "DebugSymbols" / "Fallout 4 (PC)" / "Fallout4.pdb"
 DEFAULT_XEDIT = (
     REPO_ROOT
     / "Sample"

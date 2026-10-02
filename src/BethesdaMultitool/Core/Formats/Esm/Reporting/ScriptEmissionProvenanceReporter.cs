@@ -233,7 +233,7 @@ internal static class ScriptEmissionProvenanceReporter
 
         var safety = ScriptBytecodeAnalyzer.AnalyzeEmissionSafety(
             source.CompiledData,
-            source.IsBigEndian,
+            source.IsBigEndianBytecode,
             source.Variables,
             source.ReferencedObjects);
         if (!safety.IsSafeForEmission)

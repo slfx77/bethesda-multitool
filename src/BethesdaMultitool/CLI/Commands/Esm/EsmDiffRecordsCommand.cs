@@ -1,7 +1,9 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Games;
 using Spectre.Console;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers.DiffHelpers;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers.DiffPatternAnalyzer;
@@ -13,9 +15,14 @@ namespace BethesdaMultitool.CLI.Commands.Esm;
 /// </summary>
 internal static class EsmDiffRecordsCommand
 {
+    /// <param name="fileNameA">
+    ///     File A's name, for game detection (it names the record-header flag bits). Optional, but a base
+    ///     master has no master list, so without its name the game falls back to a HEDR-version guess.
+    /// </param>
+    /// <param name="fileNameB">File B's name; see <paramref name="fileNameA" />.</param>
     public static int DiffSpecificRecord(byte[] dataA, byte[] dataB, bool bigEndianA, bool bigEndianB,
         uint formId, int maxBytes, bool showBytes, bool showByteMarkers, bool detectPatterns,
-        string labelA = "Xbox 360", string labelB = "PC")
+        string labelA = "Xbox 360", string labelB = "PC", string? fileNameA = null, string? fileNameB = null)
     {
         // Find record in file A
         var recordA = FindRecordByFormId(dataA, bigEndianA, formId);
@@ -33,14 +40,21 @@ internal static class EsmDiffRecordsCommand
             return 1;
         }
 
-        DiffSingleRecord(dataA, dataB, bigEndianA, bigEndianB, recordA, recordB, maxBytes, showBytes,
+        var gameA = GameDetector.DetectFromBytes(dataA, fileNameA).Game;
+        var gameB = GameDetector.DetectFromBytes(dataB, fileNameB).Game;
+        DiffSingleRecord(dataA, dataB, bigEndianA, bigEndianB, recordA, recordB, gameA, gameB, maxBytes, showBytes,
             showByteMarkers, detectPatterns, labelA, labelB);
         return 0;
     }
 
+    /// <param name="fileNameA">
+    ///     File A's name, for game detection (it names the record-header flag bits). Optional, but a base
+    ///     master has no master list, so without its name the game falls back to a HEDR-version guess.
+    /// </param>
+    /// <param name="fileNameB">File B's name; see <paramref name="fileNameA" />.</param>
     public static int DiffRecordType(byte[] dataA, byte[] dataB, bool bigEndianA, bool bigEndianB,
         string recordType, int limit, int maxBytes, bool showBytes, bool showByteMarkers, bool detectPatterns,
-        string labelA = "Xbox 360", string labelB = "PC")
+        string labelA = "Xbox 360", string labelB = "PC", string? fileNameA = null, string? fileNameB = null)
     {
         // Prefer GRUP-based scanning to avoid false positives from signature search
         var recordsA = EsmRecordParser.ScanAllRecords(dataA, bigEndianA)
@@ -61,12 +75,22 @@ internal static class EsmDiffRecordsCommand
             recordsB = EsmRecordParser.ScanForRecordType(dataB, bigEndianB, recordType);
         }
 
-        AnsiConsole.MarkupLine($"Found [cyan]{recordsA.Count}[/] {recordType} records in {labelA} file");
-        AnsiConsole.MarkupLine($"Found [cyan]{recordsB.Count}[/] {recordType} records in {labelB} file");
+        var escapedRecordType = Markup.Escape(recordType);
+        AnsiConsole.MarkupLine(
+            $"Found [cyan]{recordsA.Count}[/] {escapedRecordType} records in {Markup.Escape(labelA)} file");
+        AnsiConsole.MarkupLine(
+            $"Found [cyan]{recordsB.Count}[/] {escapedRecordType} records in {Markup.Escape(labelB)} file");
+
+        // A FormID can occur more than once in one file (Xbox 360 split INFO records, which file A holds
+        // whenever the Xbox master is one of the two). Every occurrence in file A is still diffed, each
+        // titled with its place among them; file B is keyed on each FormID's first occurrence by file
+        // offset rather than letting ToDictionary throw on the duplicate.
+        var occurrencesA = NumberRepeatedFormIds(recordsA, labelA);
+        var byFormIdB = IndexFirstOccurrenceByFormId(recordsB, labelB);
         AnsiConsole.WriteLine();
 
-        // Build FormID lookup for records in file B
-        var byFormIdB = recordsB.ToDictionary(r => r.FormId, r => r);
+        var gameA = GameDetector.DetectFromBytes(dataA, fileNameA).Game;
+        var gameB = GameDetector.DetectFromBytes(dataB, fileNameB).Game;
 
         var compared = 0;
         foreach (var recA in recordsA)
@@ -78,8 +102,11 @@ internal static class EsmDiffRecordsCommand
 
             if (byFormIdB.TryGetValue(recA.FormId, out var recB))
             {
-                DiffSingleRecord(dataA, dataB, bigEndianA, bigEndianB, recA, recB, maxBytes, showBytes,
-                    showByteMarkers, detectPatterns, labelA, labelB);
+                var occurrence = occurrencesA.TryGetValue(recA.Offset, out var numbered)
+                    ? numbered.Describe(labelA)
+                    : null;
+                DiffSingleRecord(dataA, dataB, bigEndianA, bigEndianB, recA, recB, gameA, gameB, maxBytes,
+                    showBytes, showByteMarkers, detectPatterns, labelA, labelB, occurrence);
                 compared++;
             }
         }
@@ -92,11 +119,152 @@ internal static class EsmDiffRecordsCommand
         return 0;
     }
 
-    private static void DiffSingleRecord(byte[] dataA, byte[] dataB, bool bigEndianA, bool bigEndianB,
-        AnalyzerRecordInfo recA, AnalyzerRecordInfo recB, int maxBytes, bool showBytes, bool showByteMarkers,
-        bool detectPatterns, string labelA = "Xbox 360", string labelB = "PC")
+    /// <summary>
+    ///     Keys <paramref name="records" /> by FormID, keeping each FormID's first occurrence by file
+    ///     offset. A FormID can legitimately occur more than once in one file (the Xbox 360 masters
+    ///     carry split INFO records: 14,397 same-FormID INFO duplicates in the July 2010 prototype), so
+    ///     a plain <c>ToDictionary</c> throws there. Later occurrences are not compared; one warning line
+    ///     names how many FormIDs were affected, with an example.
+    /// </summary>
+    internal static Dictionary<uint, AnalyzerRecordInfo> IndexFirstOccurrenceByFormId(
+        IReadOnlyList<AnalyzerRecordInfo> records, string label)
     {
-        AnsiConsole.MarkupLine($"[bold yellow]═══ {recA.Signature} FormID: 0x{recA.FormId:X8} ═══[/]");
+        var index = new Dictionary<uint, AnalyzerRecordInfo>(records.Count);
+        foreach (var record in records.OrderBy(r => r.Offset))
+        {
+            index.TryAdd(record.FormId, record);
+        }
+
+        WarnRepeatedFormIds(records, label, "Only the first occurrence of each, by file offset, is compared.");
+        return index;
+    }
+
+    /// <summary>
+    ///     Numbers the records of <paramref name="records" /> whose FormID occurs more than once, by file
+    ///     offset: the result maps each such record's offset to its occurrence number and the FormID's
+    ///     total count. Records with a unique FormID are absent. This is for the file whose every record
+    ///     is diffed (file A, or the Xbox 360 file in the three-way diff), where the Xbox 360 split INFO
+    ///     records would otherwise print several identically titled tables. One warning line names how
+    ///     many FormIDs repeat, with an example.
+    /// </summary>
+    internal static Dictionary<uint, FormIdOccurrence> NumberRepeatedFormIds(
+        IReadOnlyList<AnalyzerRecordInfo> records, string label)
+    {
+        var numbered = new Dictionary<uint, FormIdOccurrence>();
+        foreach (var group in records.GroupBy(r => r.FormId))
+        {
+            var ordered = group.OrderBy(r => r.Offset).ToList();
+            if (ordered.Count < 2)
+            {
+                continue;
+            }
+
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                numbered[ordered[i].Offset] = new FormIdOccurrence(i + 1, ordered.Count);
+            }
+        }
+
+        WarnRepeatedFormIds(records, label,
+            "Each occurrence is diffed on its own, and its title says which occurrence it is.");
+        return numbered;
+    }
+
+    /// <summary>
+    ///     The record type whose subrecord schemas describe both records, or <c>null</c> when their
+    ///     signatures differ. A FormID reused by a different record type (a prototype QUST whose FormID
+    ///     retail reassigned to a REFR) names two unrelated objects, and A's schema would mislabel B's
+    ///     fields, so a mismatch gets no schema hints at all.
+    /// </summary>
+    internal static string? SharedSchemaRecordType(string signatureA, string signatureB)
+    {
+        return string.Equals(signatureA, signatureB, StringComparison.Ordinal) ? signatureA : null;
+    }
+
+    /// <summary>
+    ///     The Flags cell of a record-header table: the raw value, then the set bits named for the
+    ///     record's game and signature (<see cref="RecordHeaderFlagRegistry.DescribeSetBits" />), e.g.
+    ///     <c>0x00000C00 (Persistent, Initially Disabled)</c>. A zero value prints as before, with no
+    ///     name list. Escaped for Spectre markup.
+    /// </summary>
+    internal static string FormatHeaderFlagsCell(BethesdaGame game, string signature, uint flags)
+    {
+        var names = RecordHeaderFlagRegistry.DescribeSetBits(game, signature, flags);
+        var text = names.Count == 0
+            ? $"0x{flags:X8}"
+            : $"0x{flags:X8} ({string.Join(", ", names)})";
+        return Markup.Escape(text);
+    }
+
+    /// <summary>
+    ///     Prints one warning line when any FormID in <paramref name="records" /> occurs more than once:
+    ///     how many FormIDs repeat, the first by file offset as an example, and
+    ///     <paramref name="consequence" /> (what the caller does with the repeats).
+    /// </summary>
+    private static void WarnRepeatedFormIds(IReadOnlyList<AnalyzerRecordInfo> records, string label,
+        string consequence)
+    {
+        var occurrences = new Dictionary<uint, int>();
+        var firstSeen = new List<uint>();
+        foreach (var record in records.OrderBy(r => r.Offset))
+        {
+            var count = occurrences.GetValueOrDefault(record.FormId);
+            if (count == 0)
+            {
+                firstSeen.Add(record.FormId);
+            }
+
+            occurrences[record.FormId] = count + 1;
+        }
+
+        var repeated = firstSeen.Where(formId => occurrences[formId] > 1).ToList();
+        if (repeated.Count == 0)
+        {
+            return;
+        }
+
+        var example = repeated[0];
+        AnsiConsole.MarkupLine(
+            $"[yellow]WARNING:[/] {repeated.Count:N0} FormID(s) occur more than once in " +
+            $"{Markup.Escape(label)} file (e.g. 0x{example:X8} x{occurrences[example]}; Xbox 360 split INFO " +
+            $"records do this). {Markup.Escape(consequence)}");
+    }
+
+    /// <param name="occurrence">
+    ///     Which occurrence of its FormID <paramref name="recA" /> is in file A (for example
+    ///     <c>Xbox 360 occurrence 2 of 2</c>), when that FormID repeats there; <c>null</c> otherwise.
+    /// </param>
+    private static void DiffSingleRecord(byte[] dataA, byte[] dataB, bool bigEndianA, bool bigEndianB,
+        AnalyzerRecordInfo recA, AnalyzerRecordInfo recB, BethesdaGame gameA, BethesdaGame gameB, int maxBytes,
+        bool showBytes, bool showByteMarkers, bool detectPatterns, string labelA = "Xbox 360", string labelB = "PC",
+        string? occurrence = null)
+    {
+        // A FormID reused by a different record type (for example a prototype QUST whose FormID retail
+        // reassigned to a REFR) identifies two unrelated objects. Say so before any table, and keep the
+        // subrecord comparison to raw bytes: A's schema would mislabel B's fields.
+        var schemaRecordType = SharedSchemaRecordType(recA.Signature, recB.Signature);
+        var signaturesDiffer = schemaRecordType is null;
+        var signatureA = Markup.Escape(recA.Signature);
+        var signatureB = Markup.Escape(recB.Signature);
+        var occurrenceSuffix = occurrence is null ? string.Empty : $" ({Markup.Escape(occurrence)})";
+        if (signaturesDiffer)
+        {
+            var escapedLabelA = Markup.Escape(labelA);
+            var escapedLabelB = Markup.Escape(labelB);
+            AnsiConsole.MarkupLine(
+                $"[bold yellow]═══ FormID: 0x{recA.FormId:X8}{occurrenceSuffix}  {escapedLabelA}: {signatureA}  ≠  " +
+                $"{escapedLabelB}: {signatureB} ═══[/]");
+            AnsiConsole.MarkupLine(
+                $"[yellow]WARNING:[/] FormID 0x{recA.FormId:X8} is {signatureA} in {escapedLabelA} but {signatureB} " +
+                $"in {escapedLabelB}: the FormID was reused by a different record type, so these are different " +
+                "objects. Subrecords below are compared as raw bytes only (no schema hints).");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine(
+                $"[bold yellow]═══ {signatureA} FormID: 0x{recA.FormId:X8}{occurrenceSuffix} ═══[/]");
+        }
+
         AnsiConsole.WriteLine();
 
         // Record header comparison
@@ -107,10 +275,17 @@ internal static class EsmDiffRecordsCommand
             .AddColumn($"[bold]{labelB}[/]")
             .AddColumn("[bold]Status[/]");
 
+        if (signaturesDiffer)
+        {
+            _ = headerTable.AddRow("Signature", signatureA, signatureB, "[red]DIFFER[/]");
+        }
+
         _ = headerTable.AddRow("Offset", $"0x{recA.Offset:X8}", $"0x{recB.Offset:X8}", "[grey]N/A[/]");
         _ = headerTable.AddRow("DataSize", $"{recA.DataSize:N0}", $"{recB.DataSize:N0}",
             recA.DataSize == recB.DataSize ? "[green]MATCH[/]" : "[yellow]DIFFER[/]");
-        _ = headerTable.AddRow("Flags", $"0x{recA.Flags:X8}", $"0x{recB.Flags:X8}",
+        _ = headerTable.AddRow("Flags",
+            FormatHeaderFlagsCell(gameA, recA.Signature, recA.Flags),
+            FormatHeaderFlagsCell(gameB, recB.Signature, recB.Flags),
             recA.Flags == recB.Flags ? "[green]MATCH[/]" : "[yellow]DIFFER[/]");
 
         var compressedA = (recA.Flags & 0x00040000) != 0;
@@ -149,8 +324,8 @@ internal static class EsmDiffRecordsCommand
                     var subA = i < listA.Count ? listA[i] : null;
                     var subB = i < listB.Count ? listB[i] : null;
 
-                    rows.Add(BuildSubrecordRow(recA.Signature, recA.Offset, recB.Offset, sig, subA, subB,
-                        maxBytes, showBytes, showByteMarkers, detectPatterns));
+                    rows.Add(BuildSubrecordRow(schemaRecordType, recA.Offset,
+                        recB.Offset, sig, subA, subB, maxBytes, showBytes, showByteMarkers, detectPatterns));
                 }
             }
 
@@ -200,8 +375,12 @@ internal static class EsmDiffRecordsCommand
         AnsiConsole.WriteLine();
     }
 
+    /// <param name="recordType">
+    ///     The shared record signature used for schema hints, or <c>null</c> when the two records have
+    ///     different signatures and no single schema describes both.
+    /// </param>
     private static SubrecordRow BuildSubrecordRow(
-        string recordType,
+        string? recordType,
         uint xboxRecordOffset,
         uint pcRecordOffset,
         string sig,
@@ -305,7 +484,7 @@ internal static class EsmDiffRecordsCommand
             ? FindFirstDifferenceOffset(xbox.Data, pc.Data)
             : -1;
 
-        var schemaHint = firstDiff >= 0
+        var schemaHint = firstDiff >= 0 && recordType != null
             ? DescribeSchemaAtOffset(sig, recordType, xbox.Data.Length, firstDiff)
             : null;
 
@@ -405,6 +584,19 @@ internal static class EsmDiffRecordsCommand
             ShowDetails = showDetails,
             DetailsMarkup = details
         };
+    }
+
+    /// <summary>
+    ///     A record's place among the records of one file that share its FormID, by file offset:
+    ///     occurrence <see cref="Number" /> (1-based) of <see cref="Count" />.
+    /// </summary>
+    internal readonly record struct FormIdOccurrence(int Number, int Count)
+    {
+        /// <summary>The title label, e.g. <c>Xbox 360 occurrence 2 of 2</c>.</summary>
+        public string Describe(string fileLabel)
+        {
+            return $"{fileLabel} occurrence {Number} of {Count}";
+        }
     }
 
     private sealed class SubrecordRow

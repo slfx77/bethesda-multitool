@@ -7,8 +7,8 @@ reverified against the pinned final Xbox build on 2026-08-13.
 
 | File                      | Path                                                                                     | Notes                                                    |
 | ------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Prototype debug type dump | `Sample/DebugSymbols/Fallout - New Vegas (X360)/Proto/Fallout_Debug/types_full.txt`                                            | Historical supporting struct/enum source                |
-| Prototype debug globals   | `Sample/DebugSymbols/Fallout - New Vegas (X360)/Proto/Fallout_Debug/globals.txt`                                               | Historical supporting symbols                           |
+| Prototype debug type dump | `Sample/DebugSymbols/Fallout - New Vegas (X360)/2010-8-22 Fallout_Debug/types_full.txt`                                            | Historical supporting struct/enum source                |
+| Prototype debug globals   | `Sample/DebugSymbols/Fallout - New Vegas (X360)/2010-8-22 Fallout_Debug/globals.txt`                                               | Historical supporting symbols                           |
 | Final build PDB           | `Sample/Builds/Fallout - New Vegas (2010-8-22, X360 - Prototype)/Diskuild_1.0.0.252/Fallout.pdb`      | Generator authority for layouts and table globals       |
 | Final build executable    | `Sample/Builds/Fallout - New Vegas (2010-8-22, X360 - Prototype)/Diskuild_1.0.0.252/Fallout.exe`      | Xbox 360 PowerPC PE (machine 0x1F2), base 0x82000000    |
 | Prototype executable      | `Sample/Builds/Fallout - New Vegas (2010-7-21, X360 - Prototype)/FalloutNV/Fallout.exe`               | Earlier prototype (2 parameter differences vs final)    |

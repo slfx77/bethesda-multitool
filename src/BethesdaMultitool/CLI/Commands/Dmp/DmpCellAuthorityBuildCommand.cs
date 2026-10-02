@@ -188,7 +188,8 @@ internal static class DmpCellAuthorityBuildCommand
             }
 
             var label = $"esm:{Path.GetFileName(esmPath)}";
-            using var loaded = SemanticFileLoader.LoadFromAnalysisResult(esmPath, analysis, AnalysisFileType.EsmFile);
+            using var loaded = SemanticFileLoader.LoadFromAnalysisResult(esmPath, analysis, AnalysisFileType.EsmFile,
+                cancellationToken: ct);
             foreach (var ws in loaded.Records.Worldspaces)
             {
                 authority.AddWorldspaceName(ws.FormId, ws.EditorId);

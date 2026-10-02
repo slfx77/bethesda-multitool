@@ -12,7 +12,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class GenericShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var flat = RecordFlattener.Flatten(records);
         var match = flat.FirstOrDefault(r =>
@@ -27,7 +27,7 @@ internal sealed class GenericShowRenderer : IRecordDisplayRenderer
         var genericRecord = records.GenericRecords
             .FirstOrDefault(r => r.FormId == match.FormId);
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]    0x{match.FormId:X8}",
@@ -39,10 +39,11 @@ internal sealed class GenericShowRenderer : IRecordDisplayRenderer
         // Schema-decoded games (Oblivion/Skyrim/FO4/FO76/Morrowind) carry the full decoded structure on
         // DecodedTree; render it so every subrecord is visible (e.g. an Oblivion TREE's ICON/SNAM/CNAM/BNAM).
         // The tree already includes the model, so skip the standalone Model line to avoid duplicating it.
+        var blocks = new List<VerbatimBlock>();
         if (genericRecord?.DecodedTree is { Count: > 0 } tree)
         {
             lines.Add("");
-            AppendDecodedTree(lines, tree, 0);
+            AppendDecodedTree(lines, tree, 0, context.FullText, blocks);
         }
         else
         {
@@ -54,7 +55,7 @@ internal sealed class GenericShowRenderer : IRecordDisplayRenderer
             if (genericRecord?.Fields is { Count: > 0 })
             {
                 lines.Add("");
-                ShowHelpers.AppendPdbFields(lines, genericRecord.Fields, resolver);
+                ShowHelpers.AppendPdbFields(lines, genericRecord.Fields, resolver, context.FullText, blocks);
             }
         }
 
@@ -65,27 +66,38 @@ internal sealed class GenericShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]{Markup.Escape(match.Type)}[/] {Markup.Escape(match.EditorId ?? $"0x{match.FormId:X8}")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
+        ShowHelpers.WriteVerbatimBlocks(context.Console, blocks);
         return true;
     }
 
-    internal static void AppendDecodedTree(List<string> lines, IReadOnlyList<DecodedNode> nodes, int depth)
+    internal static void AppendDecodedTree(List<string> lines, IReadOnlyList<DecodedNode> nodes, int depth,
+        bool fullText = false, List<VerbatimBlock>? blocks = null, string path = "")
     {
         var indent = new string(' ', depth * 2);
         foreach (var node in nodes)
         {
-            var sig = node.Signature is { Length: > 0 } s ? $" [grey]({s})[/]" : "";
+            var sig = node.Signature is { Length: > 0 } s ? $" [grey]({Markup.Escape(s)})[/]" : "";
             var raw = node.IsRaw ? " [grey]raw[/]" : "";
 
+            var labelPath = path.Length == 0 ? node.Label : $"{path} / {node.Label}";
             if (node.Children is { Count: > 0 })
             {
                 lines.Add($"{indent}[cyan]{Markup.Escape(node.Label)}[/]{sig}{raw}");
-                AppendDecodedTree(lines, node.Children, depth + 1);
+                AppendDecodedTree(lines, node.Children, depth + 1, fullText, blocks, labelPath);
             }
             else
             {
                 var value = node.Value ?? (node.FormId is { } f ? $"0x{f:X8}" : "(empty)");
-                lines.Add($"{indent}[cyan]{Markup.Escape(node.Label)}:[/]{sig} {Markup.Escape(value)}{raw}");
+                if (fullText && blocks is not null && ShowHelpers.NeedsVerbatimBlock(value))
+                {
+                    lines.Add($"{indent}[cyan]{Markup.Escape(node.Label)}:[/]{sig} {ShowHelpers.VerbatimPlaceholder(value)}{raw}");
+                    blocks.Add(new VerbatimBlock(labelPath, value));
+                }
+                else
+                {
+                    lines.Add($"{indent}[cyan]{Markup.Escape(node.Label)}:[/]{sig} {Markup.Escape(value)}{raw}");
+                }
             }
         }
     }

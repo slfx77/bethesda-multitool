@@ -176,8 +176,10 @@ internal static class MorrowindWeatherIni
         var dayDepth = ReadFloat(s, "Land Fog Day Depth") ?? 0.69f;
         var nightDepth = ReadFloat(s, "Land Fog Night Depth") ?? dayDepth;
 
+        // An archive-relative ENGINE path (textures\<name>), spelled with the engine's backslash on
+        // every host: Path.Combine would write textures/... on a Unix host.
         var cloudTexture = s.TryGetValue("Cloud Texture", out var cloud) && !string.IsNullOrWhiteSpace(cloud)
-            ? Path.Combine("textures", cloud.Trim())
+            ? "textures\\" + cloud.Trim()
             : null;
 
         return new WeatherRecord

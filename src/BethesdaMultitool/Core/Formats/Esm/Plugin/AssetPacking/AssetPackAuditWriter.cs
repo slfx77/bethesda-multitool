@@ -10,15 +10,16 @@ namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 internal static class AssetPackAuditWriter
 {
     public static void ReportVoiceLipPairDiagnostics(
-        List<(string Path, byte[] Data)> packedFiles,
+        IReadOnlyList<PackedAsset> packedFiles,
         List<AssetResolution> resolutions,
         IReadOnlyDictionary<string, string>? packPathRenames,
         IConversionProgressSink sink)
     {
         var oggStems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var lipStems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (path, _) in packedFiles)
+        foreach (var file in packedFiles)
         {
+            var path = file.Path;
             if (!IsVoicePath(path))
             {
                 continue;
@@ -94,7 +95,7 @@ internal static class AssetPackAuditWriter
 
     /// <summary>
     ///     Writes a human-reviewable per-asset audit next to the output BSA. Sections:
-    ///     missing paths (the most useful — these are what the runtime won't find), fuzzy-
+    ///     unresolved requests (with their evidence and requirement limits), fuzzy-
     ///     matched paths (sanity check the renames), and conversion-failed paths. Each
     ///     section is sorted alphabetically with one path per line so the user can diff
     ///     between runs.
@@ -119,10 +120,11 @@ internal static class AssetPackAuditWriter
             writer.WriteLine($"# 360 → PC converted:                 {stats.Converted360}");
             writer.WriteLine($"# Conversion failed:                  {stats.ConversionFailed}");
             writer.WriteLine($"# Missing (unresolved):               {stats.Missing}");
+            writer.WriteLine($"# Full request evidence: {Path.GetFileName(outputBsaPath)}.requests.json");
             writer.WriteLine();
 
             WriteAuditSection(writer,
-                "## MISSING — runtime will fail to load these (not in baseline, no fuzzy hit)",
+                "## MISSING — unresolved source requests; runtime requirement depends on request evidence",
                 resolutions.Where(r => r.Kind == AssetResolutionKind.Missing));
 
             WriteAuditSection(writer,
@@ -174,6 +176,13 @@ internal static class AssetPackAuditWriter
             {
                 writer.WriteLine(entry.RequestedPath);
             }
+
+            writer.WriteLine($"# Assessment: {entry.RequestAssessment}; reason: {entry.UnresolvedReason ?? "n/a"}");
+            var bases = string.Join(", ", entry.RequestEvidence.Select(reason => reason.Basis)
+                .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal));
+            writer.WriteLine($"# Evidence: {entry.RequestEvidence.Count} reason(s); bases: {(bases.Length == 0 ? "none" : bases)}");
+            foreach (var candidate in entry.UnverifiedCandidates)
+                writer.WriteLine($"# Alternative (not selected): {candidate.Path}; folder=#{candidate.SourceFolderIndex}; {candidate.Reason}");
         }
 
         writer.WriteLine();

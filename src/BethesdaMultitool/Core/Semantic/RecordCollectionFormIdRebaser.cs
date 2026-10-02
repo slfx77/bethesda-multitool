@@ -2,7 +2,12 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Reflection;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Semantic;
 
@@ -19,10 +24,14 @@ internal static class RecordCollectionFormIdRebaser
     /// </summary>
     internal static RecordCollection Rebase(RecordCollection records, Func<uint, uint> mapFormId)
     {
-        return (RecordCollection)CloneValue(records, nameof(RecordCollection), mapFormId)!;
+        return (RecordCollection)CloneValue(records, nameof(RecordCollection), mapFormId, records.Game)!;
     }
 
-    private static object? CloneValue(object? value, string propertyName, Func<uint, uint> mapFormId)
+    /// <summary>Rebases an independently selected child model through the same FormID registry.</summary>
+    internal static T RebaseModel<T>(T value, Func<uint, uint> mapFormId, BethesdaGame game) where T : class =>
+        (T)CloneValue(value, typeof(T).Name, mapFormId, game)!;
+
+    private static object? CloneValue(object? value, string propertyName, Func<uint, uint> mapFormId, BethesdaGame game)
     {
         if (value == null)
         {
@@ -53,6 +62,26 @@ internal static class RecordCollectionFormIdRebaser
         if (type.IsPrimitive)
         {
             return value;
+        }
+
+        // These fields are tagged unions; names alone cannot decide whether their values are FormIDs.
+        if (value is PackageLocation location)
+        {
+            return location with { Union = PackageReferenceIntegrity.LocationTypeIsFormId(location.Type)
+                ? MapNonZeroFormId(location.Union, mapFormId) : location.Union };
+        }
+        if (value is PackageTarget target)
+        {
+            return target with { FormIdOrType = PackageReferenceIntegrity.TargetTypeIsFormId(target.Type)
+                ? MapNonZeroFormId(target.FormIdOrType, mapFormId) : target.FormIdOrType };
+        }
+        if (value is DialogueCondition condition)
+        {
+            return RebaseCondition(condition, game, mapFormId);
+        }
+        if (value is PerkCondition perkCondition)
+        {
+            return RebasePerkCondition(perkCondition, game, mapFormId);
         }
 
         // WSLT entries are immutable positional records, so the ordinary property-by-property clone
@@ -210,12 +239,12 @@ internal static class RecordCollectionFormIdRebaser
 
         if (value is IDictionary dictionary)
         {
-            return CloneDictionary(dictionary, propertyName, mapFormId);
+            return CloneDictionary(dictionary, propertyName, mapFormId, game);
         }
 
         if (value is IList list)
         {
-            return CloneList(list, propertyName, mapFormId);
+            return CloneList(list, propertyName, mapFormId, game);
         }
 
         if (!IsEsmModelType(type))
@@ -242,7 +271,7 @@ internal static class RecordCollectionFormIdRebaser
             }
 
             var originalPropertyValue = property.GetValue(value);
-            var clonedPropertyValue = CloneValue(originalPropertyValue, property.Name, mapFormId);
+            var clonedPropertyValue = CloneValue(originalPropertyValue, property.Name, mapFormId, game);
             property.SetValue(clone, clonedPropertyValue);
         }
 
@@ -360,7 +389,59 @@ internal static class RecordCollectionFormIdRebaser
         };
     }
 
-    private static object CloneList(IList source, string propertyName, Func<uint, uint> mapFormId)
+    private static DialogueCondition RebaseCondition(DialogueCondition condition, BethesdaGame game,
+        Func<uint, uint> mapFormId)
+    {
+        var table = ConditionFunctionTable.For(game);
+        uint MapParameter(int slot, uint raw, string? text)
+        {
+            return text is null && table.TryClassifyParam(condition.FunctionIndex, slot, condition.Type,
+                condition.RunOn, condition.Parameter1, out var kind) && kind == ConditionParamKind.FormId
+                ? MapNonZeroFormId(raw, mapFormId) : raw;
+        }
+        return condition with
+        {
+            Parameter1 = MapParameter(0, condition.Parameter1, condition.Parameter1String),
+            Parameter2 = MapParameter(1, condition.Parameter2, condition.Parameter2String),
+            ComparisonValue = condition.UsesGlobalComparison
+                ? BitConverter.UInt32BitsToSingle(MapNonZeroFormId(condition.ComparisonGlobalFormId, mapFormId))
+                : condition.ComparisonValue,
+            Reference = DialogueConditionReferencePolicy.IsSemanticReferenceSlot(condition, game)
+                ? MapNonZeroFormId(condition.Reference, mapFormId) : condition.Reference
+        };
+    }
+
+    private static PerkCondition RebasePerkCondition(PerkCondition condition, BethesdaGame game,
+        Func<uint, uint> mapFormId)
+    {
+        var table = ConditionFunctionTable.For(game);
+        var flags = condition.Flags ?? (byte)(condition.ComparisonOperator << 5);
+        bool IsFormParameter(int slot) =>
+            table.TryClassifyParam(condition.FunctionIndex, slot, flags, condition.RunOn,
+                condition.Parameter1, out var kind) && kind == ConditionParamKind.FormId;
+
+        var firstIsForm = IsFormParameter(0);
+        var secondIsForm = IsFormParameter(1);
+        return condition with
+        {
+            // The numeric value is the decoded parameter, not the runtime pointer retained in
+            // RuntimeRawData. Keep it in the same namespace as its optional resolved FormID.
+            Parameter1 = firstIsForm ? MapNonZeroFormId(condition.Parameter1, mapFormId) : condition.Parameter1,
+            Parameter1FormId = firstIsForm
+                ? MapOptionalFormId(condition.Parameter1FormId, mapFormId) : condition.Parameter1FormId,
+            Parameter2 = secondIsForm ? MapNonZeroFormId(condition.Parameter2, mapFormId) : condition.Parameter2,
+            Parameter2FormId = secondIsForm
+                ? MapOptionalFormId(condition.Parameter2FormId, mapFormId) : condition.Parameter2FormId,
+            ComparisonGlobalFormId = MapOptionalFormId(condition.ComparisonGlobalFormId, mapFormId),
+            ReferenceFormId = DialogueConditionReferencePolicy.IsSemanticReferenceSlot(
+                condition.FunctionIndex, condition.RunOn ?? 0, game)
+                ? MapOptionalFormId(condition.ReferenceFormId, mapFormId) : condition.ReferenceFormId,
+            RuntimeRawData = condition.RuntimeRawData?.ToArray(),
+            RecoveryIssues = condition.RecoveryIssues.ToList()
+        };
+    }
+
+    private static object CloneList(IList source, string propertyName, Func<uint, uint> mapFormId, BethesdaGame game)
     {
         var listType = source.GetType();
         var elementType = listType.IsGenericType ? listType.GetGenericArguments()[0] : typeof(object);
@@ -371,18 +452,21 @@ internal static class RecordCollectionFormIdRebaser
         {
             if (elementType == typeof(uint) && EsmFormIdPropertyRegistry.IsFormIdProperty(propertyName))
             {
-                target.Add(mapFormId((uint)item!));
+                var id = (uint)item!;
+                // SCRV shares this ordered table with SCRO, but its high-bit-tagged local index is not a FormID.
+                target.Add(propertyName == nameof(ScriptRecord.ReferencedObjects) && (id & 0x80000000) != 0
+                    ? id : MapNonZeroFormId(id, mapFormId));
             }
             else
             {
-                target.Add(CloneValue(item, propertyName, mapFormId));
+                target.Add(CloneValue(item, propertyName, mapFormId, game));
             }
         }
 
         return target;
     }
 
-    private static object CloneDictionary(IDictionary source, string propertyName, Func<uint, uint> mapFormId)
+    private static object CloneDictionary(IDictionary source, string propertyName, Func<uint, uint> mapFormId, BethesdaGame game)
     {
         var dictionaryType = source.GetType();
         if (!dictionaryType.IsGenericType)
@@ -401,7 +485,7 @@ internal static class RecordCollectionFormIdRebaser
         foreach (DictionaryEntry entry in source)
         {
             var key = rebaseKeys ? mapFormId((uint)entry.Key) : entry.Key;
-            var value = CloneValue(entry.Value, propertyName, mapFormId);
+            var value = CloneValue(entry.Value, propertyName, mapFormId, game);
             target[key] = value;
         }
 

@@ -36,6 +36,16 @@ public record PerkCondition
     /// <summary>Comparison value (e.g., skill level threshold).</summary>
     public float ComparisonValue { get; init; }
 
+    /// <summary>Full condition type byte, including OR, UseGlobal and other authored flags.</summary>
+    public byte? Flags { get; init; }
+    public uint? RunOn { get; init; }
+    public uint? ReferenceFormId { get; init; }
+    public uint? ComparisonGlobalFormId { get; init; }
+    public uint? RuntimeAddress { get; init; }
+    public string? RuntimeLayoutBasis { get; init; }
+    public byte[]? RuntimeRawData { get; init; }
+    public List<string> RecoveryIssues { get; init; } = [];
+
     /// <summary>Human-readable comparison operator.</summary>
     public string OperatorDisplay => ComparisonOperator switch
     {

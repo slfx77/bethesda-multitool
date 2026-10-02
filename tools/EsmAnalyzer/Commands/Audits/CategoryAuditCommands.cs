@@ -103,7 +103,7 @@ public static class CategoryAuditCommands
         using (var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             var parser = new RecordParser(result.EsmRecords, result.FormIdMap, accessor, result.FileSize);
-            records = parser.ParseAll();
+            records = parser.ParseAll(cancellationToken: cancellationToken);
         }
 
         // Phase 3: Build category index using the authoritative logic

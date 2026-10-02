@@ -42,6 +42,8 @@ public sealed class ScriptDecompiler(
     private readonly string? _scriptName = scriptName;
     private ScriptExpressionDecoder? _exprDecoder;
     private int _indentLevel;
+    private int _outputLine;
+    private ScriptInstructionRecorder? _instructionRecorder;
 
     // State during decompilation
     private BytecodeReader _reader = null!;
@@ -49,6 +51,16 @@ public sealed class ScriptDecompiler(
 
     // Sub-components (initialized on first Decompile call)
     private ScriptVariableReader? _varReader;
+
+    /// <summary>
+    ///     Statement-level opcodes the last <see cref="Decompile" /> call could not name: a flow
+    ///     opcode outside the known set (<c>; Unknown opcode</c>) or a function opcode absent from
+    ///     the game's command table (<c>UnknownFunc_0xNNNN</c>). Function tokens inside expressions
+    ///     are not counted. The byte-order selector compares this across the two orders, because a
+    ///     misread 4-byte call such as <c>UnknownFunc_0x2312</c> walks cleanly and leaves no
+    ///     diagnostic line behind.
+    /// </summary>
+    internal int UnknownOpcodeCount { get; private set; }
 
     /// <summary>
     ///     Decompile compiled bytecode to GECK script source text.
@@ -61,9 +73,23 @@ public sealed class ScriptDecompiler(
     ///     <paramref name="compiledData" /> and use the matching endianness.
     /// </param>
     public string Decompile(byte[] compiledData, BytecodeReader? externalReader = null)
+        => DecompileCore(compiledData, externalReader, null);
+
+    /// <summary>Runs the same decoder with optional byte/line provenance. Stored source is not changed.</summary>
+    public ScriptInstructionMap DecompileWithMap(byte[] compiledData)
+    {
+        var recorder = new ScriptInstructionRecorder(compiledData.Length);
+        var text = DecompileCore(compiledData, null, recorder);
+        return new(text, recorder.Snapshot());
+    }
+
+    private string DecompileCore(byte[] compiledData, BytecodeReader? externalReader, ScriptInstructionRecorder? recorder)
     {
         _output.Clear();
         _indentLevel = 0;
+        _outputLine = 0;
+        _instructionRecorder = recorder;
+        UnknownOpcodeCount = 0;
         _reader = externalReader ?? new BytecodeReader(compiledData, _isBigEndian);
 
         if (_varReader == null)
@@ -78,6 +104,7 @@ public sealed class ScriptDecompiler(
 
         _varReader.HasPendingRef = false;
         _varReader.ExprEnd = compiledData.Length;
+        _exprDecoder!.InstructionRecorder = recorder;
 
         try
         {
@@ -101,6 +128,7 @@ public sealed class ScriptDecompiler(
         }
 
         _output.AppendLine(line);
+        _outputLine++;
     }
 
     #endregion
@@ -109,11 +137,15 @@ public sealed class ScriptDecompiler(
 
     private void DecompileTopLevel()
     {
+        var truncatedPayload = false;
         while (_reader.HasData && _reader.CanRead(4))
         {
             var opcodePos = _reader.Position;
+            using var instruction = _instructionRecorder?.Begin(opcodePos, "Statement");
+            var lineStart = _outputLine + 1;
             var opcode = _reader.ReadUInt16();
             var paramLen = _reader.ReadUInt16();
+            if (instruction is not null) instruction.Opcode = opcode;
 
             // SetRef is special: the "paramLen" field IS the reference index (1-based SCRO),
             // and there are NO additional data bytes. The next opcode follows immediately.
@@ -121,6 +153,8 @@ public sealed class ScriptDecompiler(
             {
                 _varReader!.PendingRefIndex = paramLen;
                 _varReader.HasPendingRef = true;
+                if (_instructionRecorder is not null) _instructionRecorder.PendingReferenceOffset = opcodePos;
+                instruction?.EndAt(_reader.Position);
                 continue;
             }
 
@@ -128,11 +162,18 @@ public sealed class ScriptDecompiler(
             {
                 AppendLine(
                     $"; Truncated at offset 0x{opcodePos:X}: opcode 0x{opcode:X4} needs {paramLen} bytes, {_reader.Remaining} available");
+                if (instruction is not null) instruction.Status = "Truncated";
+                instruction?.EndAt(_reader.Length);
+                instruction?.Lines(lineStart, _outputLine);
+                truncatedPayload = true;
                 break;
             }
 
             var paramEnd = _reader.Position + paramLen;
             var paramStart = _reader.Position;
+            var unknownBefore = UnknownOpcodeCount;
+            var issuesBefore = _reader.StructuralIssues.Count;
+            var textStart = _output.Length;
 
             try
             {
@@ -140,6 +181,7 @@ public sealed class ScriptDecompiler(
             }
             catch (Exception ex)
             {
+                if (instruction is not null) instruction.Status = "Partial";
                 AppendLine($"; Error decoding opcode 0x{opcode:X4} at offset 0x{opcodePos:X}: {ex.Message}");
             }
 
@@ -160,8 +202,24 @@ public sealed class ScriptDecompiler(
                     _reader.Position - paramStart));
             }
 
+            if (instruction is not null)
+            {
+                if (instruction.Status == "Decoded" && UnknownOpcodeCount != unknownBefore) instruction.Status = "Unknown";
+                var text = _output.ToString(textStart, _output.Length - textStart);
+                if (instruction.Status == "Decoded" && (_reader.StructuralIssues.Count != issuesBefore ||
+                    text.Contains("; ", StringComparison.Ordinal) || text.Contains("<truncated", StringComparison.Ordinal)))
+                    instruction.Status = "Partial";
+                instruction.EndAt(paramEnd);
+                instruction.Lines(lineStart, _outputLine);
+            }
+
             // Ensure we're positioned at paramEnd regardless of how much was consumed
             _reader.Position = paramEnd;
+        }
+        if (!truncatedPayload && _reader.HasData && !_reader.CanRead(4))
+        {
+            using var tail = _instructionRecorder?.Begin(_reader.Position, "TrailingBytes");
+            if (tail is not null) { tail.Status = "Truncated"; tail.EndAt(_reader.Length); }
         }
     }
 
@@ -238,6 +296,7 @@ public sealed class ScriptDecompiler(
                 }
                 else
                 {
+                    UnknownOpcodeCount++;
                     AppendLine($"; Unknown opcode 0x{opcode:X4} ({paramLen} bytes) at offset 0x{opcodePos:X}");
                 }
 
@@ -353,9 +412,15 @@ public sealed class ScriptDecompiler(
     {
         var payloadEnd = _reader.Position + paramLen;
         var funcDef = _functions.Get(opcode);
+        if (funcDef == null)
+        {
+            UnknownOpcodeCount++;
+        }
+
         var funcName = GetFunctionDisplayName(funcDef, opcode, _functions);
 
-        var prefix = _varReader!.ConsumePendingRef();
+        if (_varReader!.HasPendingRef) _instructionRecorder?.ConsumeReference();
+        var prefix = _varReader.ConsumePendingRef();
 
         if (paramLen < 2)
         {

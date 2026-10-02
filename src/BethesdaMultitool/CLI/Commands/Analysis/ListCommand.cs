@@ -55,7 +55,7 @@ public static class ListCommand
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"[bold]List:[/] [cyan]{CliHelpers.InputLabel(filePath)}[/] ({fileType})");
+        AnsiConsole.MarkupLine($"[bold]List:[/] [cyan]{Markup.Escape(CliHelpers.InputLabel(filePath))}[/] ({fileType})");
 
         try
         {
@@ -96,7 +96,7 @@ public static class ListCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
             return 1;
         }
     }

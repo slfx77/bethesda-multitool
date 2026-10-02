@@ -29,8 +29,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_BUILD = (
     REPO_ROOT
     / "Sample"
-    / "Full_Builds"
-    / "Fallout New Vegas (Aug 22, 2010)"
+    / "Builds"
+    / "Fallout - New Vegas (2010-8-22, X360 - Prototype)"
     / "Diskuild_1.0.0.252"
 )
 DEFAULT_EXE = DEFAULT_BUILD / "Fallout.exe"

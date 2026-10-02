@@ -46,6 +46,22 @@ public sealed record AssetResolution
 
     /// <summary>Set when <see cref="Kind" /> is <see cref="AssetResolutionKind.ConversionFailed" />.</summary>
     public string? ConversionError { get; init; }
+
+    public IReadOnlyList<AssetRequestEvidence> RequestEvidence { get; init; } = [];
+    public IReadOnlyList<AssetUnverifiedCandidate> UnverifiedCandidates { get; init; } = [];
+    public string? UnresolvedReason { get; init; }
+
+    /// <summary>Evidence category, not an engine outcome or a claim that a missing asset is generated.</summary>
+    public string RequestAssessment
+    {
+        get
+        {
+            if (AssetRequestCatalog.IsDerivedOnly(RequestEvidence))
+                return Kind == AssetResolutionKind.Missing ? "candidate-unavailable; requirement unknown"
+                    : "derived-candidate; requirement unknown";
+            return RequestEvidence.Count > 0 ? "observed-request; runtime requirement unverified" : "request-basis-unavailable";
+        }
+    }
 }
 
 /// <summary>
@@ -92,4 +108,7 @@ public sealed record AssetPackingResult
 
     public string? ErrorMessage { get; init; }
     public IReadOnlyList<AssetResolution> Resolutions { get; init; } = [];
+
+    /// <summary>All collected reasons, including requests satisfied by the baseline.</summary>
+    public IReadOnlyList<AssetRequest> Requests { get; init; } = [];
 }

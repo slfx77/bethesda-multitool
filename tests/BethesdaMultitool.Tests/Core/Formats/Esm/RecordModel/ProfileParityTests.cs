@@ -1,8 +1,12 @@
 using System.Text;
+using BethesdaMultitool.CLI.Shared;
+using BethesdaMultitool.CLI.Show;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Presentation;
 using BethesdaMultitool.Core.Formats.Esm.Presentation.Profiles;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Decoding;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
@@ -28,6 +32,48 @@ public class ProfileParityTests
 {
     /// <summary>Mismatches quoted in the failure message before it is truncated.</summary>
     private const int MaxReportedMismatches = 5;
+
+    [Theory]
+    [InlineData(0f, "x0")]
+    [InlineData(0.5f, "x0.5")]
+    [InlineData(2f, "x2")]
+    public void WeaponCriticalChance_RemainsAMultiplierAcrossDisplaySurfaces(float multiplier, string expected)
+    {
+        var weapon = new WeaponRecord { FormId = 0x1234, CriticalChance = multiplier };
+        var records = new RecordCollection { Weapons = [weapon] };
+        DecodedNode[] tree =
+        [
+            new()
+            {
+                Signature = "CRDT", Label = "Critical Data",
+                Children = [new() { Label = "Crit % Mult", RawValue = multiplier }]
+            }
+        ];
+        var models = new[]
+        {
+            RecordDetailBuilders.BuildWeapon(weapon, FormIdResolver.Empty),
+            new WeaponProfile().Build(weapon.FormId, null, null, tree, BethesdaGame.FalloutNewVegas,
+                FormIdResolver.Empty, records)
+        };
+
+        foreach (var model in models)
+        {
+            var criticalChance = Assert.Single(model.Sections.SelectMany(section => section.Entries),
+                entry => entry.Label == "Critical Chance Multiplier");
+            Assert.Equal(expected, criticalChance.Value);
+        }
+
+        var rendered = false;
+        var output = CliHelpers.CaptureSpectreOutput(console =>
+        {
+            console.Profile.Width = 120;
+            rendered = new WeaponShowRenderer().TryShow(records, FormIdResolver.Empty, weapon.FormId, null,
+                new ShowRenderContext(console));
+        });
+        Assert.True(rendered);
+        Assert.Contains($"Crit Mult: {expected}", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("Crit %:", output, StringComparison.Ordinal);
+    }
 
     /// <summary>
     ///     The record signatures under test. The theory is keyed on the signature rather than on
@@ -59,14 +105,14 @@ public class ProfileParityTests
             creature => creature.FormId,
             creature => creature.EditorId,
             creature => creature.FullName,
-            (creature, _, resolver) => RecordDetailBuilders.BuildCreature(creature, resolver)),
+            (creature, records, resolver) => RecordDetailBuilders.BuildCreature(creature, resolver, records.Game)),
 
         Case("NPC_", "NPCs", 1000, new NpcProfile(),
             records => records.Npcs,
             npc => npc.FormId,
             npc => npc.EditorId,
             npc => npc.FullName,
-            (npc, _, resolver) => RecordDetailBuilders.BuildNpc(npc, resolver)),
+            (npc, records, resolver) => RecordDetailBuilders.BuildNpc(npc, resolver, records.Game)),
 
         // QUST: Variables and RelatedNpcFormIds are cross-record enrichment the profile cannot
         // (and should not) reproduce from the record's own tree.
@@ -92,7 +138,9 @@ public class ProfileParityTests
 
         // PACK: the profile is given a null display name, and two fields decoded from
         // schema-"Unused" bytes are not recoverable from the tree, so they are stripped from the
-        // typed reference rather than asserted.
+        // typed reference rather than asserted. Conditions are stripped too, as QUST strips Variables:
+        // the typed Conditions section names quest variables through cross-record enrichment, and
+        // PackageProfile does not decode CTDA yet.
         Case("PACK", "packages", 50, new PackageProfile(),
             records => records.Packages,
             package => package.FormId,
@@ -102,7 +150,8 @@ public class ProfileParityTests
                 package with
                 {
                     IsStartingLocationLinkedRef = false,
-                    UseWeaponData = package.UseWeaponData is { } u ? u with { WeaponFormId = null } : null
+                    UseWeaponData = package.UseWeaponData is { } u ? u with { WeaponFormId = null } : null,
+                    Conditions = []
                 },
                 resolver))
     ];

@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
@@ -14,6 +15,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 /// <summary>Gathers script, dialogue, condition, and reference diagnostics for a set of target records in an ESM/ESP.</summary>
 public static class EsmScriptDiagnosticsAnalyzer
 {
+    /// <summary>
+    ///     Target label for an explicit record that no requested target relates to (and for every
+    ///     explicit record in an explicit-only run).
+    /// </summary>
+    public const string ExplicitTargetLabel = "explicit";
+
     private static readonly HashSet<string> ActorRecordTypes = new(StringComparer.Ordinal)
     {
         "NPC_", "CREA"
@@ -33,7 +40,9 @@ public static class EsmScriptDiagnosticsAnalyzer
         var data = File.ReadAllBytes(path);
         var game = GameDetector.DetectFromBytes(data, Path.GetFileName(path)).Game;
         var records = EsmParser.EnumerateRecordsWithGrups(data).Records;
-        return AnalyzeRecords(path, records, targets, game, explicitRecordFormIds);
+        return AnalyzeRecordsCore(path, records, targets, game, explicitRecordFormIds,
+            Convert.ToHexStringLower(SHA256.HashData(data)), data.LongLength,
+            PluginFormat.Detect(data).RecordHeaderSize);
     }
 
     /// <summary>Runs script diagnostics for the requested targets against an already-parsed record set.</summary>
@@ -52,13 +61,32 @@ public static class EsmScriptDiagnosticsAnalyzer
         return AnalyzeRecords(sourcePath, records, targets, BethesdaGame.Unknown, explicitRecordFormIds);
     }
 
-    /// <summary>Runs game-aware script diagnostics against an already-parsed record set.</summary>
+    /// <summary>
+    ///     Runs game-aware script diagnostics against an already-parsed record set.
+    ///     <para>
+    ///         Explicit records are attached after discovery: to every target whose discovered
+    ///         relations already include the record (relation <c>...|explicit-record</c>), otherwise
+    ///         once under <see cref="ExplicitTargetLabel" />. They are never copied under a target
+    ///         that does not reach them, so one INFO cannot yield a row per unrelated target.
+    ///     </para>
+    /// </summary>
     public static EsmScriptDiagnosticsResult AnalyzeRecords(
         string sourcePath,
         IReadOnlyList<ParsedMainRecord> records,
         IReadOnlyList<string> targets,
         BethesdaGame game,
         IReadOnlySet<uint>? explicitRecordFormIds = null)
+        => AnalyzeRecordsCore(sourcePath, records, targets, game, explicitRecordFormIds, null, null, null);
+
+    private static EsmScriptDiagnosticsResult AnalyzeRecordsCore(
+        string sourcePath,
+        IReadOnlyList<ParsedMainRecord> records,
+        IReadOnlyList<string> targets,
+        BethesdaGame game,
+        IReadOnlySet<uint>? explicitRecordFormIds,
+        string? sourceSha256,
+        long? sourceLength,
+        int? recordHeaderSize)
     {
         var normalizedTargets = targets
             .Where(t => !string.IsNullOrWhiteSpace(t))
@@ -95,20 +123,6 @@ public static class EsmScriptDiagnosticsAnalyzer
                 .Where(m => ActorRecordTypes.Contains(m.Info.RecordType))
                 .Select(m => m.Info.FormId)
                 .ToHashSet();
-        }
-
-        if (explicitRecordFormIds is { Count: > 0 })
-        {
-            foreach (var target in normalizedTargets.Count == 0 ? ["explicit"] : normalizedTargets)
-            {
-                foreach (var formId in explicitRecordFormIds)
-                {
-                    if (byFormId.TryGetValue(formId, out var record))
-                    {
-                        AddRelation(recordRelations, target, record.Header.Signature, formId, "explicit-record");
-                    }
-                }
-            }
         }
 
         foreach (var target in normalizedTargets)
@@ -224,6 +238,9 @@ public static class EsmScriptDiagnosticsAnalyzer
             }
         }
 
+        var (explicitFormIds, missingExplicitFormIds) =
+            AttachExplicitRecords(recordRelations, byFormId, explicitRecordFormIds);
+
         var recordRows = BuildRecordRows(recordRelations, byFormId, index, game);
         var dialogueRows = BuildDialogueRows(recordRelations, byFormId, index, game);
         var dialogueAuditRows = BuildDialogueAuditRows(dialogueRows, byFormId);
@@ -238,9 +255,13 @@ public static class EsmScriptDiagnosticsAnalyzer
                 continue;
             }
 
+            var firstNewRow = scriptBlocks.Count;
             EsmScriptBlockRowBuilder.ExtractScriptBlocks(recordRow, record, index, validFormIds, scriptBlocks,
-                scriptRefs);
+                scriptRefs, game);
+            AttachSourceTextBytes(record, scriptBlocks, firstNewRow);
         }
+
+        var terminalItems = EsmScriptTerminalItemRowBuilder.BuildRows(recordRows, byFormId, index, game);
 
         return new EsmScriptDiagnosticsResult(
             sourcePath,
@@ -268,14 +289,43 @@ public static class EsmScriptDiagnosticsAnalyzer
                 .ThenBy(r => r.SlotIndex)
                 .ToList())
         {
-            Game = game
+            Game = game,
+            ExplicitRecordFormIds = explicitFormIds,
+            MissingExplicitRecordFormIds = missingExplicitFormIds,
+            TerminalItems = terminalItems,
+            SourceSha256 = sourceSha256,
+            SourceLength = sourceLength,
+            QuestScripts = EsmQuestScriptReader.Read(records,
+                recordRows.Where(row => row.RecordType == "QUST").Select(row => row.FormId).ToHashSet(),
+                game, recordHeaderSize)
         };
     }
 
-    /// <summary>Writes the diagnostics result as a set of CSV reports into the given output directory.</summary>
+    /// <summary>
+    ///     Writes the diagnostics result as a set of CSV reports into the given output directory.
+    ///     <c>target_terminal_items.csv</c> is always written (header only when no TERM record is related);
+    ///     <c>target_conditions.csv</c> keeps its columns, and the TERM join lives in the new file instead.
+    ///     <para>
+    ///         Every script block with a non-empty SCTX also gets its source as a file of its own,
+    ///         <c>scripts/{RecordType}_{FormId:X8}_block{NN:D2}{ext}</c>
+    ///         (<see cref="EsmScriptDiagnosticsCsvWriter.SourceTextFileName" />): the SCTX subrecord's bytes as
+    ///         stored minus one trailing NUL, with no header, no BOM, no transcoding (Windows-1252 stays
+    ///         Windows-1252) and CRLF kept. A block reached by several targets is written once, and the
+    ///         <c>source_text_file</c> column of <c>target_result_scripts.csv</c> names the file on each of its
+    ///         rows. <c>scripts/</c> is created only when there is at least one such block. Existing files of
+    ///         the same name are overwritten, like the CSVs; files an earlier run wrote that this run does not
+    ///         produce are left in place.
+    ///     </para>
+    ///     <para>
+    ///         Selected QUST records also export every physical stage-script occurrence under
+    ///         <c>quest-scripts/</c>, with stored source, reconstruction, original SCDA and a provenance manifest.
+    ///     </para>
+    /// </summary>
     public static void WriteReport(EsmScriptDiagnosticsResult result, string outputDirectory)
     {
         Directory.CreateDirectory(outputDirectory);
+        WriteSourceTextFiles(result, outputDirectory);
+        EsmQuestScriptExportWriter.Write(result, outputDirectory);
         File.WriteAllText(Path.Combine(outputDirectory, "target_matches.csv"),
             EsmScriptDiagnosticsCsvWriter.BuildTargetMatchesCsv(result), Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "target_records.csv"),
@@ -290,8 +340,79 @@ public static class EsmScriptDiagnosticsAnalyzer
             EsmScriptDiagnosticsCsvWriter.BuildScriptBlocksCsv(result), Encoding.UTF8);
         File.WriteAllText(Path.Combine(outputDirectory, "target_scro_refs.csv"),
             EsmScriptDiagnosticsCsvWriter.BuildScriptReferencesCsv(result), Encoding.UTF8);
-        File.WriteAllText(Path.Combine(outputDirectory, "summary.md"),
-            EsmScriptDiagnosticsCsvWriter.BuildSummary(result), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(outputDirectory, "target_terminal_items.csv"),
+            EsmScriptDiagnosticsCsvWriter.BuildTerminalItemsCsv(result), Encoding.UTF8);
+        var summary = EsmScriptDiagnosticsCsvWriter.BuildSummary(result);
+        if (result.QuestScripts.Count > 0)
+            summary += $"\n## Quest stage scripts\n\n{result.QuestScripts.Count} physical fragments. "
+                + "[Source, reconstructions and provenance](quest-scripts/manifest.json).\n";
+        File.WriteAllText(Path.Combine(outputDirectory, "summary.md"), summary, Encoding.UTF8);
+    }
+
+    /// <summary>
+    ///     Writes each distinct block source file once (see <see cref="WriteReport" />). Rows of one block share a
+    ///     name, and the analysis reads every row of a FormID from the one record it keeps for that FormID (the
+    ///     first), so rows that share a name share the bytes.
+    /// </summary>
+    private static void WriteSourceTextFiles(EsmScriptDiagnosticsResult result, string outputDirectory)
+    {
+        var written = new HashSet<string>(StringComparer.Ordinal);
+        string? sourceDirectory = null;
+        foreach (var row in result.ScriptBlocks)
+        {
+            var fileName = EsmScriptDiagnosticsCsvWriter.SourceTextFileName(row, result.Game);
+            if (fileName is null || row.SourceTextBytes is not { } bytes || !written.Add(fileName))
+            {
+                continue;
+            }
+
+            sourceDirectory ??= Directory.CreateDirectory(
+                Path.Combine(outputDirectory, EsmScriptDiagnosticsCsvWriter.SourceTextDirectoryName)).FullName;
+            File.WriteAllBytes(Path.Combine(sourceDirectory, fileName), bytes);
+        }
+    }
+
+    /// <summary>
+    ///     Gives the block rows <see cref="EsmScriptBlockRowBuilder" /> just added for <paramref name="record" />
+    ///     (<paramref name="scriptBlocks" /> from <paramref name="firstNewRow" /> on) their SCTX as stored bytes.
+    ///     The SCTX is found the way the row builder finds the one it decodes into <c>SourceText</c>: the first
+    ///     SCTX after the block's SCHR (after its SCDA for an SCHR-less block) and before the block's end, with
+    ///     blocks located and numbered by <see cref="EsmScriptBlockReader.LocateScriptBlocks" />.
+    /// </summary>
+    private static void AttachSourceTextBytes(
+        ParsedMainRecord record,
+        List<EsmScriptDiagnosticBlockRow> scriptBlocks,
+        int firstNewRow)
+    {
+        if (firstNewRow >= scriptBlocks.Count)
+        {
+            return;
+        }
+
+        var subs = record.Subrecords;
+        var spans = EsmScriptBlockReader.LocateScriptBlocks(subs).ToDictionary(span => span.BlockIndex);
+        for (var i = firstNewRow; i < scriptBlocks.Count; i++)
+        {
+            var row = scriptBlocks[i];
+            if (!spans.TryGetValue(row.BlockIndex, out var span))
+            {
+                continue;
+            }
+
+            var blockStart = span.SchrIndex >= 0 ? span.SchrIndex + 1 : span.ScdaIndex + 1;
+            var sctxIndex = EsmScriptBlockReader.FindFirstSubrecord(subs, "SCTX", blockStart, span.End);
+            if (sctxIndex >= 0)
+            {
+                scriptBlocks[i] = row with { SourceTextBytes = WithoutOneTrailingNul(subs[sctxIndex].Data) };
+            }
+        }
+    }
+
+    /// <summary>A copy of <paramref name="data" /> without its last byte when that byte is a NUL.</summary>
+    private static byte[] WithoutOneTrailingNul(byte[] data)
+    {
+        var length = data.Length > 0 && data[^1] == 0 ? data.Length - 1 : data.Length;
+        return data.AsSpan(0, length).ToArray();
     }
 
     private static Dictionary<uint, EsmScriptFormIdInfo> BuildFormIdIndex(IReadOnlyList<ParsedMainRecord> records)
@@ -339,6 +460,51 @@ public static class EsmScriptDiagnosticsAnalyzer
             .Where(info => LabelMatches(info, target))
             .Select(info => new TargetRecordMatch(info, "label"))
             .ToList();
+    }
+
+    /// <summary>
+    ///     Attaches each explicit record, in FormID order, to every target whose discovered relations
+    ///     already contain it, or under <see cref="ExplicitTargetLabel" /> when none does.
+    /// </summary>
+    /// <returns>Every requested FormID, sorted, and the subset absent from the file.</returns>
+    private static (List<uint> Requested, List<uint> Missing) AttachExplicitRecords(
+        Dictionary<(string Target, string RecordType, uint FormId), HashSet<string>> relations,
+        Dictionary<uint, ParsedMainRecord> byFormId,
+        IReadOnlySet<uint>? explicitRecordFormIds)
+    {
+        var requested = new List<uint>();
+        var missing = new List<uint>();
+        if (explicitRecordFormIds is not { Count: > 0 })
+        {
+            return (requested, missing);
+        }
+
+        foreach (var formId in explicitRecordFormIds.Order())
+        {
+            requested.Add(formId);
+            if (!byFormId.TryGetValue(formId, out var record))
+            {
+                missing.Add(formId);
+                continue;
+            }
+
+            var recordType = record.Header.Signature;
+            var relatedTargets = relations.Keys
+                .Where(key => key.FormId == formId && string.Equals(key.RecordType, recordType, StringComparison.Ordinal))
+                .Select(key => key.Target)
+                .ToList();
+            if (relatedTargets.Count == 0)
+            {
+                relatedTargets.Add(ExplicitTargetLabel);
+            }
+
+            foreach (var target in relatedTargets)
+            {
+                AddRelation(relations, target, recordType, formId, "explicit-record");
+            }
+        }
+
+        return (requested, missing);
     }
 
     private static List<EsmScriptDiagnosticRecordRow> BuildRecordRows(
@@ -426,7 +592,14 @@ public static class EsmScriptDiagnosticsAnalyzer
     {
         var incomingByTargetQuestSpeaker = new Dictionary<(string Target, uint Quest, uint Speaker), HashSet<uint>>();
         var goodbyePairs = new HashSet<(string Target, uint Quest, uint Speaker)>();
-        var rowByInfo = dialogueRows.ToDictionary(r => r.InfoFormId);
+
+        // A dialogue row is unique per (Target, INFO), not per INFO: the same INFO reaches every
+        // target that relates to it, so follow-ups resolve within the row's own target.
+        var rowByTargetInfo = new Dictionary<(string Target, uint InfoFormId), EsmScriptDiagnosticDialogueRow>();
+        foreach (var row in dialogueRows)
+        {
+            rowByTargetInfo.TryAdd((row.Target, row.InfoFormId), row);
+        }
 
         foreach (var row in dialogueRows)
         {
@@ -449,7 +622,7 @@ public static class EsmScriptDiagnosticsAnalyzer
 
             foreach (var infoId in ParseFormIds(row.FollowUpInfos))
             {
-                if (rowByInfo.TryGetValue(infoId, out var followUp))
+                if (rowByTargetInfo.TryGetValue((row.Target, infoId), out var followUp))
                 {
                     incoming.Add(followUp.TopicFormId);
                 }
@@ -712,7 +885,12 @@ public static class EsmScriptDiagnosticsAnalyzer
 
         foreach (var sub in record.Subrecords)
         {
-            if (sub.Data.Length == 4 && formIds.Contains(sub.DataAsFormId))
+            // A bare 4-byte value is a candidate FormID unless the value-kind policy knows it is
+            // something else (a SCRV local index, PKE2 escort distance, a float...): with a low
+            // target FormID those used to match by coincidence.
+            if (sub.Data.Length == 4
+                && !EsmScriptSubrecordSummaryFormatter.FirstDwordIsKnownNonFormId(record, sub)
+                && formIds.Contains(sub.DataAsFormId))
             {
                 return true;
             }
@@ -831,6 +1009,7 @@ public static class EsmScriptDiagnosticsAnalyzer
         BethesdaGame game)
     {
         var parts = new List<string>();
+        Func<uint, string> labelSuffix = formId => ResolveLabelSuffix(index, formId);
         foreach (var sub in record.Subrecords)
         {
             if (sub.Data.Length < 4)
@@ -843,13 +1022,12 @@ public static class EsmScriptDiagnosticsAnalyzer
                 continue;
             }
 
-            if (sub.Signature is "NAME" or "ANAM" or "SNAM" or "TPIC" or "QSTI" or "PNAM" or "TCLT" or
-                "TCLF" or "TCFU" or "PKID" or "SCRI" or "SCRO" or "SCRV" or "TNAM" or "PLDT" or "PTDT")
+            // Package unions, local-variable indexes and per-record scalars are decoded by what
+            // they are; only true FormIDs go through the label index.
+            if (EsmScriptSubrecordSummaryFormatter.TryFormatSummaryToken(record, sub, game, labelSuffix,
+                    out var token))
             {
-                var value = sub.DataAsFormId;
-                parts.Add(value == 0
-                    ? sub.Signature
-                    : $"{sub.Signature}=0x{value:X8}{ResolveLabelSuffix(index, value)}");
+                parts.Add(token);
             }
             else if (sub.Signature == "CTDA")
             {

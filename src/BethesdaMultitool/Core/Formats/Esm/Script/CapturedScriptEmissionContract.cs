@@ -1,5 +1,6 @@
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Script;
 
@@ -13,7 +14,8 @@ namespace BethesdaMultitool.Core.Formats.Esm.Script;
 ///         So a safe bundle now always carries readable SCTX. Captured text still has to prove
 ///         itself against the same record's bytecode — an unproven capture is a claim about what
 ///         the script said, and shipping it beside contradicting SCDA is worse than shipping
-///         neither. When the capture is absent or unproven, <see cref="BuildDecompiledSource" />
+///         neither. When the capture is absent or unproven,
+///         <see cref="BuildDecompiledSource(string?, IReadOnlyList{ScriptVariableInfo}, string?)" />
 ///         renders the accepted SCDA itself, which cannot contradict the bytecode because it *is*
 ///         the bytecode. Every such swap is reported through
 ///         <see cref="SourceDecision.SourceIssue" />, so nothing is silently substituted.
@@ -70,6 +72,7 @@ internal static class CapturedScriptEmissionContract
             return Decompiled(
                 decompiledText,
                 variables,
+                referencedObjects,
                 scriptName,
                 "no source text was resident in the capture");
         }
@@ -79,6 +82,7 @@ internal static class CapturedScriptEmissionContract
             return Decompiled(
                 decompiledText,
                 variables,
+                referencedObjects,
                 scriptName,
                 "DMP-derived SCTX has no same-dump source provenance");
         }
@@ -106,7 +110,7 @@ internal static class CapturedScriptEmissionContract
                 // SCTX whose declaration table disagrees with the same block's SLSD/SCVR —
                 // fall back to the decompilation, whose declaration block is synthesized
                 // from that very table and therefore agrees with it by construction.
-                return Decompiled(decompiledText, variables, scriptName, declarationIssue);
+                return Decompiled(decompiledText, variables, referencedObjects, scriptName, declarationIssue);
             }
 
             return new SourceDecision(true, sourceText, null, null);
@@ -115,23 +119,27 @@ internal static class CapturedScriptEmissionContract
         return Decompiled(
             decompiledText,
             variables,
+            referencedObjects,
             scriptName,
             $"non-tolerated-mismatches={comparison.TotalMismatches} "
             + $"[{FormatCategories(comparison.MismatchesByCategory)}]");
     }
 
     /// <summary>
-    ///     Wrap <see cref="BuildDecompiledSource" /> as a decision, recording why the captured
-    ///     text was not used. When there is no decompilation to fall back on, the bundle still
-    ///     ships — bytecode without source is the pre-ruling behaviour and remains the floor.
+    ///     Wrap <see cref="BuildDecompiledSource(string?, IReadOnlyList{ScriptVariableInfo}, string?)" />
+    ///     as a decision, recording why the captured text was not used. When there is no decompilation
+    ///     to fall back on, the bundle still ships — bytecode without source is the pre-ruling behaviour
+    ///     and remains the floor.
     /// </summary>
     private static SourceDecision Decompiled(
         string? decompiledText,
         IReadOnlyList<ScriptVariableInfo> variables,
+        IReadOnlyList<uint> referencedObjects,
         string? scriptName,
         string reason)
     {
-        var synthesized = BuildDecompiledSource(decompiledText, variables, scriptName);
+        var synthesized = BuildDecompiledSource(decompiledText, variables, scriptName,
+            EmissionBannerLines, referencedObjects);
         return synthesized is null
             ? new SourceDecision(true, null, null, reason)
             : new SourceDecision(true, synthesized, null, $"{reason}; emitted SCTX from SCDA decompilation", true);
@@ -148,13 +156,9 @@ internal static class CapturedScriptEmissionContract
     ///         generated from the exact SLSD/SCVR pairs that ship beside it.
     ///     </para>
     ///     <para>
-    ///         SLSD stores one type bit — 0 = float-or-ref, non-zero = integer — so <c>ref</c> and
-    ///         <c>float</c> are genuinely indistinguishable from the table alone. Ref-ness is taken
-    ///         from bytecode evidence instead: only a reference variable can appear in member
-    ///         position (<c>name.Something</c>) in the decompiled statements. A Type-0 local with no
-    ///         such use is declared <c>float</c>, which is the safe default — both are non-integer,
-    ///         so either declaration satisfies the SLSD storage-class check, and the banner tells a
-    ///         human to trust SCDA over the declaration if they disagree.
+    ///         SLSD stores one type bit — 0 = float-or-ref, non-zero = integer. SCRV entries in
+    ///         the same script's ordered reference table identify reference locals. No name or
+    ///         reconstructed-text heuristic participates in declaration synthesis.
     ///     </para>
     /// </summary>
     /// <returns>Synthesized SCTX, or null when there is no decompiled text to render.</returns>
@@ -163,6 +167,66 @@ internal static class CapturedScriptEmissionContract
         IReadOnlyList<ScriptVariableInfo> variables,
         string? scriptName)
     {
+        return BuildDecompiledSource(decompiledText, variables, scriptName, EmissionBannerLines);
+    }
+
+    internal static string? BuildDecompiledSource(
+        string? decompiledText,
+        IReadOnlyList<ScriptVariableInfo> variables,
+        IReadOnlyList<uint> referencedObjects,
+        string? scriptName) =>
+        BuildDecompiledSource(decompiledText, variables, scriptName, EmissionBannerLines, referencedObjects);
+
+    /// <summary>
+    ///     The banner the three-argument
+    ///     <see cref="BuildDecompiledSource(string?, IReadOnlyList{ScriptVariableInfo}, string?)" /> writes
+    ///     for <c>dmp to-esm</c> emission. Legacy emitted banners remain recognized on re-import.
+    /// </summary>
+    internal const string DecompiledEmissionBannerFirstLine =
+        "; Reconstruction from SCDA — BethesdaMultitool";
+
+    internal const string LegacyDecompiledEmissionBannerFirstLine =
+        "; === Decompiled from captured SCDA — no proven source text in the dump. ===";
+
+    private static readonly string[] EmissionBannerLines =
+    [
+        DecompiledEmissionBannerFirstLine,
+        "; Declarations: SLSD/SCVR and SCRV."
+    ];
+
+    /// <summary>
+    ///     Renders an SCDA decompilation exactly as
+    ///     <see cref="BuildDecompiledSource(string?, IReadOnlyList{ScriptVariableInfo}, string?)" /> does,
+    ///     but opens it with <paramref name="bannerLines" /> instead of the <c>dmp to-esm</c> emission banner.
+    ///     The script exporter uses it so an exported reconstruction states its own provenance (it is not
+    ///     emitted SCTX and must not claim to be). The compatibility overload uses the standard
+    ///     reconstruction banner and has no SCRV reference table.
+    /// </summary>
+    /// <param name="decompiledText">The decompiled statements.</param>
+    /// <param name="variables">The record's SLSD/SCVR table, from which the declarations are synthesized.</param>
+    /// <param name="scriptName">The record's EditorID; when set it becomes the <c>ScriptName</c> line.</param>
+    /// <param name="bannerLines">
+    ///     Lines written first, each on its own line and verbatim: the caller makes them comments
+    ///     (<c>;</c>) and keeps line breaks out of them.
+    /// </param>
+    /// <returns>The rendered text (no trailing line break), or null when there is no decompiled text.</returns>
+    internal static string? BuildDecompiledSource(
+        string? decompiledText,
+        IReadOnlyList<ScriptVariableInfo> variables,
+        string? scriptName,
+        IReadOnlyList<string> bannerLines)
+    {
+        return BuildDecompiledSource(decompiledText, variables, scriptName, bannerLines, []);
+    }
+
+    internal static string? BuildDecompiledSource(
+        string? decompiledText,
+        IReadOnlyList<ScriptVariableInfo> variables,
+        string? scriptName,
+        IReadOnlyList<string> bannerLines,
+        IReadOnlyList<uint> referencedObjects)
+    {
+        ArgumentNullException.ThrowIfNull(bannerLines);
         if (string.IsNullOrWhiteSpace(decompiledText))
         {
             return null;
@@ -170,9 +234,10 @@ internal static class CapturedScriptEmissionContract
 
         var lines = NormalizeToLines(decompiledText);
         var builder = new StringBuilder();
-        builder.AppendLine("; === Decompiled from captured SCDA — no proven source text in the dump. ===");
-        builder.AppendLine("; The compiled bytecode beside this text is authoritative; these statements");
-        builder.AppendLine("; are its rendering. Local declarations are synthesized from SLSD/SCVR.");
+        foreach (var bannerLine in bannerLines)
+        {
+            builder.AppendLine(bannerLine);
+        }
 
         // The decompiler emits the ScriptName line from the bytecode's own opcode. Keep that
         // line first (GECK requires it) and insert declarations directly after it, so the
@@ -199,7 +264,7 @@ internal static class CapturedScriptEmissionContract
             lines.RemoveAt(nameIndex);
         }
 
-        var declarations = BuildDeclarationBlock(variables, decompiledText);
+        var declarations = BuildDeclarationBlock(variables, referencedObjects);
         if (declarations.Count > 0)
         {
             builder.AppendLine();
@@ -235,7 +300,7 @@ internal static class CapturedScriptEmissionContract
     /// </summary>
     private static List<string> BuildDeclarationBlock(
         IReadOnlyList<ScriptVariableInfo> variables,
-        string decompiledText)
+        IReadOnlyList<uint> referencedObjects)
     {
         if (variables.Count == 0)
         {
@@ -254,49 +319,12 @@ internal static class CapturedScriptEmissionContract
         var declarations = new List<string>(variables.Count);
         foreach (var variable in variables)
         {
-            string storage;
-            if (variable.Type != 0)
-            {
-                storage = "short";
-            }
-            else
-            {
-                storage = UsedAsReference(decompiledText, variable.Name!) ? "ref" : "float";
-            }
-
+            var resolved = ScriptVariableTypeResolver.Resolve(variable, referencedObjects);
+            var storage = resolved.Name == "int" ? "short" : resolved.Name;
             declarations.Add($"{storage} {variable.Name}");
         }
 
         return declarations;
-    }
-
-    /// <summary>
-    ///     True when the decompiled statements use the local in member position — the only
-    ///     syntactic slot a non-reference local cannot occupy. Deliberately narrow: a false
-    ///     negative declares a ref as <c>float</c> (harmless, both are non-integer storage),
-    ///     while a false positive would declare a float as <c>ref</c>.
-    /// </summary>
-    private static bool UsedAsReference(string decompiledText, string name)
-    {
-        var index = decompiledText.IndexOf(name, StringComparison.OrdinalIgnoreCase);
-        while (index >= 0)
-        {
-            var after = index + name.Length;
-            var boundedLeft = index == 0 || !IsIdentifierChar(decompiledText[index - 1]);
-            if (boundedLeft && after < decompiledText.Length && decompiledText[after] == '.')
-            {
-                return true;
-            }
-
-            index = decompiledText.IndexOf(name, index + 1, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return false;
-    }
-
-    private static bool IsIdentifierChar(char value)
-    {
-        return char.IsLetterOrDigit(value) || value == '_';
     }
 
     private static List<string> NormalizeToLines(string text)
@@ -376,7 +404,7 @@ internal static class CapturedScriptEmissionContract
             script.DecompiledText,
             script.Variables,
             script.ReferencedObjects,
-            script.IsBigEndian,
+            script.IsBigEndianBytecode,
             ScriptRecordEmissionPolicy.ResolveEditorId(script));
         if (!sourceDecision.ExecutableBundleSafe)
         {
@@ -421,7 +449,7 @@ internal static class CapturedScriptEmissionContract
             var fallback = BuildDecompiledSource(
                 script.DecompiledText,
                 script.Variables,
-                ScriptRecordEmissionPolicy.ResolveEditorId(script));
+                ScriptRecordEmissionPolicy.ResolveEditorId(script), EmissionBannerLines, script.ReferencedObjects);
             if (fallback is not null)
             {
                 return new StandaloneDecision(
@@ -456,7 +484,8 @@ internal static class CapturedScriptEmissionContract
         bool isBigEndian,
         string? scriptName,
         Func<uint, string?> resolveFormName,
-        ScriptFunctionSet? functions = null)
+        ScriptFunctionSet? functions = null,
+        Func<uint, ushort, string?>? resolveExternalVariable = null)
     {
         if (compiledData is not { Length: > 0 })
         {
@@ -471,6 +500,7 @@ internal static class CapturedScriptEmissionContract
                 resolveFormName,
                 isBigEndian,
                 scriptName,
+                resolveExternalVariable,
                 functions: functions);
             return decompiler.Decompile(compiledData);
         }
@@ -482,35 +512,27 @@ internal static class CapturedScriptEmissionContract
         }
     }
 
+    /// <summary>
+    ///     Byte order of an inline (INFO/PACK/TERM) SCDA block, decided by
+    ///     <see cref="ScriptBytecodeByteOrderSelector" /> with the FNV/FO3 command table those
+    ///     blocks are decompiled with. <paramref name="fallbackIsBigEndian" /> is the caller's
+    ///     tie-break: little-endian for on-disk data, the container order for DMP-derived data.
+    ///     Only the order is returned; a caller that records provenance calls the selector itself.
+    /// </summary>
     internal static bool InferBytecodeEndian(
         byte[]? compiledData,
         IReadOnlyList<ScriptVariableInfo> variables,
         IReadOnlyList<uint> referencedObjects,
         bool fallbackIsBigEndian)
     {
-        if (compiledData is not { Length: >= 4 } compiled)
-        {
-            return fallbackIsBigEndian;
-        }
-
-        var littleEndian = ScriptBytecodeAnalyzer.Analyze(
-            compiled,
-            false,
-            variables,
-            referencedObjects);
-        var bigEndian = ScriptBytecodeAnalyzer.Analyze(
-            compiled,
-            true,
-            variables,
-            referencedObjects);
-        var littleClean = littleEndian.WalkedToEnd && !littleEndian.HasDiagnostics;
-        var bigClean = bigEndian.WalkedToEnd && !bigEndian.HasDiagnostics;
-        if (littleClean != bigClean)
-        {
-            return bigClean;
-        }
-
-        return fallbackIsBigEndian;
+        return ScriptBytecodeByteOrderSelector.Select(
+                compiledData,
+                variables,
+                referencedObjects,
+                fallbackIsBigEndian,
+                ScriptBytecodeByteOrderEvidence.AmbiguousContainerFallback,
+                BethesdaGame.FalloutNewVegas)
+            .IsBigEndian;
     }
 
     private static string? FindStandaloneBundleConsistencyIssue(
@@ -557,7 +579,7 @@ internal static class CapturedScriptEmissionContract
 
         var safety = ScriptBytecodeAnalyzer.AnalyzeEmissionSafety(
             compiledData,
-            script.IsBigEndian,
+            script.IsBigEndianBytecode,
             script.Variables,
             script.ReferencedObjects);
         return safety.IsSafeForEmission

@@ -1,12 +1,10 @@
 using System.CommandLine;
-using System.IO.MemoryMappedFiles;
 using System.Text;
 using System.Text.Json;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
-using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
-using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using Spectre.Console;
@@ -18,11 +16,10 @@ namespace BethesdaMultitool.CLI.Commands.Esm;
 /// </summary>
 public static class EsmCommand
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
+    /// <summary>The <c>schema</c> identifier of the <c>esm &lt;file&gt; -f json</c> document.</summary>
+    internal const string JsonSchema = "bethesda-multitool/esm-summary";
+
+    private static readonly JsonWriterOptions JsonOutputOptions = new() { Indented = true };
 
     public static Command Create()
     {
@@ -55,26 +52,14 @@ public static class EsmCommand
             var output = parseResult.GetValue(outputOpt);
             var recordType = parseResult.GetValue(recordTypeOpt);
             var limit = parseResult.GetValue(limitOpt);
-            await ExecuteAsync(input, verbose, format, output, recordType, limit);
-        });
-
-        var reportsCommand = new Command("reports", "Generate GECK-style reports (CSV + TXT) from ESM file");
-        reportsCommand.Arguments.Add(new Argument<string>("esm-input") { Description = "Path to ESM/ESP file" });
-        var reportsOutputOpt = new Option<string?>("-o", "--output")
-        {
-            Description = "Output directory (default: ./esm_reports/)"
-        };
-        reportsCommand.Options.Add(reportsOutputOpt);
-        reportsCommand.SetAction(async (parseResult, _) =>
-        {
-            var input = parseResult.GetValue<string>("esm-input")!;
-            var output = parseResult.GetValue(reportsOutputOpt) ?? "./esm_reports";
-            await ExecuteReportsAsync(input, output);
+            return await ExecuteAsync(input, verbose, format, output, recordType, limit);
         });
 
         command.Subcommands.Add(PackagesCommand.Create());
         command.Subcommands.Add(NpcInventoryCommand.CreateEsmCommand());
-        command.Subcommands.Add(reportsCommand);
+        command.Subcommands.Add(EsmActorDetailsCommand.Create());
+        command.Subcommands.Add(EsmTerminalGraphCommand.Create());
+        command.Subcommands.Add(EsmReportsCommand.Create());
         command.Subcommands.Add(EsmStatsCommand.CreateStatsCommand());
         command.Subcommands.Add(EsmCoverageCommand.CreateCoverageCommand());
         command.Subcommands.Add(EsmDiagnoseScriptsCommand.CreateDiagnoseScriptsCommand());
@@ -89,7 +74,7 @@ public static class EsmCommand
         return command;
     }
 
-    private static async Task ExecuteAsync(
+    private static async Task<int> ExecuteAsync(
         string input,
         bool verbose,
         string format,
@@ -97,16 +82,26 @@ public static class EsmCommand
         string? recordType,
         int? limit)
     {
-        if (!File.Exists(input))
+        // JSON owns stdout: every status line and log line goes to stderr so the document parses as-is.
+        // Logger's AsyncLocal redirect is scoped to this call.
+        var isJson = format.Equals("json", StringComparison.OrdinalIgnoreCase);
+        if (isJson)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", input);
-            return;
+            Logger.SetOutput(Console.Error);
         }
 
-        AnsiConsole.MarkupLine("[blue]Loading:[/] {0}", Path.GetFileName(input));
+        var console = CliConsoles.ForStatus(isJson);
+
+        if (!File.Exists(input))
+        {
+            console.MarkupLine($"[red]Error:[/] File not found: {Markup.Escape(input)}");
+            return 1;
+        }
+
+        console.MarkupLine($"[blue]Loading:[/] {Markup.Escape(Path.GetFileName(input))}");
 
         var fileInfo = new FileInfo(input);
-        AnsiConsole.MarkupLine("[dim]Size:[/] {0:N0} bytes ({1:N2} MB)", fileInfo.Length,
+        console.MarkupLine("[dim]Size:[/] {0:N0} bytes ({1:N2} MB)", fileInfo.Length,
             fileInfo.Length / 1024.0 / 1024.0);
 
         // Load file into memory
@@ -116,17 +111,17 @@ public static class EsmCommand
         var header = EsmParser.ParseFileHeader(data);
         if (header == null)
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] Not a valid ESM/ESP file (missing TES4 header)");
-            return;
+            console.MarkupLine("[red]Error:[/] Not a valid ESM/ESP file (missing TES4 header)");
+            return 1;
         }
 
         // Scan records
-        AnsiConsole.MarkupLine("[blue]Scanning records...[/]");
+        console.MarkupLine("[blue]Scanning records...[/]");
         var recordInfos = EsmParser.ScanRecords(data);
         var recordCounts = EsmParser.GetRecordTypeCounts(data);
 
         // Build FormID -> EditorID map
-        AnsiConsole.MarkupLine("[blue]Building FormID index...[/]");
+        console.MarkupLine("[blue]Building FormID index...[/]");
         var formIdMap = new Dictionary<uint, string>();
         foreach (var record in EsmParser.EnumerateRecords(data))
         {
@@ -157,12 +152,14 @@ public static class EsmCommand
         if (!string.IsNullOrEmpty(output))
         {
             await File.WriteAllTextAsync(output, outputText);
-            AnsiConsole.MarkupLine("[green]Output written to:[/] {0}", output);
+            console.MarkupLine($"[green]Output written to:[/] {Markup.Escape(output)}");
         }
         else
         {
             Console.WriteLine(outputText);
         }
+
+        return 0;
     }
 
     private static Dictionary<RecordCategory, int> GetRecordsByCategory(Dictionary<string, int> recordCounts)
@@ -343,104 +340,79 @@ public static class EsmCommand
         return sb.ToString();
     }
 
-    private static async Task ExecuteReportsAsync(string input, string outputDir)
+    /// <summary>
+    ///     Renders the scan summary as one JSON object with <see cref="Utf8JsonWriter" /> (the
+    ///     <see cref="ReportJsonFormatter" /> pattern). The reflection-based
+    ///     <see cref="JsonSerializer" /> must not be used here: the shipped CLI runs with
+    ///     <c>IsReflectionEnabledByDefault=false</c>, under which serializing an anonymous type throws.
+    ///     Field names match the earlier anonymous-type form; <c>schema</c>, <c>schemaVersion</c>,
+    ///     <c>toolVersion</c> and <c>header.versionRawBits</c> are additions, dictionary keys are written in
+    ///     ordinal order, and a non-finite header version is written as null beside its raw bits.
+    /// </summary>
+    internal static string FormatJson(EsmFileScanResult result)
     {
-        if (!File.Exists(input))
+        using var ms = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(ms, JsonOutputOptions))
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] File not found: {0}", Markup.Escape(input));
-            return;
-        }
+            writer.WriteStartObject();
+            writer.WriteString("schema", JsonSchema);
+            writer.WriteNumber("schemaVersion", 1);
+            writer.WriteString("toolVersion", CliConsoles.ToolVersion);
 
-        try
-        {
-            AnsiConsole.MarkupLine("[bold green]Generating ESM reports...[/]");
-
-            // Phase 1: Analyze ESM file (record scanning + FormID map)
-            AnsiConsole.MarkupLine("  Scanning records...");
-            var analysisResult = await EsmFileAnalyzer.AnalyzeAsync(input);
-
-            if (analysisResult.EsmRecords == null)
+            if (result.Header is { } header)
             {
-                AnsiConsole.MarkupLine("[red]Error:[/] No ESM records found in file.");
-                return;
-            }
-
-            // Phase 2: Semantic parsing
-            AnsiConsole.MarkupLine("  Parsing records...");
-            var fileSize = new FileInfo(input).Length;
-            RecordCollection records;
-            using (var mmf = MemoryMappedFile.CreateFromFile(input, FileMode.Open, null, 0,
-                       MemoryMappedFileAccess.Read))
-            using (var accessor = mmf.CreateViewAccessor(0, fileSize, MemoryMappedFileAccess.Read))
-            {
-                var parser = new RecordParser(
-                    analysisResult.EsmRecords,
-                    analysisResult.FormIdMap,
-                    accessor,
-                    fileSize,
-                    analysisResult.MinidumpInfo);
-                records = parser.ParseAll();
-            }
-
-            AnsiConsole.MarkupLine($"  [green]Parsed {records.TotalRecordsParsed:N0} records.[/]");
-
-            // Phase 3: Generate all reports
-            AnsiConsole.MarkupLine("  Generating reports...");
-            var sources = new ReportDataSources(
-                records, analysisResult.FormIdMap,
-                analysisResult.EsmRecords.AssetStrings,
-                analysisResult.EsmRecords.RuntimeEditorIds);
-            var reports = GeckReportGenerator.GenerateAllReports(sources);
-
-            // Write to output directory
-            Directory.CreateDirectory(outputDir);
-            foreach (var (filename, content) in reports)
-            {
-                var filePath = Path.Combine(outputDir, filename);
-                await File.WriteAllTextAsync(filePath, content);
-            }
-
-            AnsiConsole.MarkupLine(
-                $"\n[bold green]Generated {reports.Count} reports to {Markup.Escape(outputDir)}:[/]");
-            foreach (var (filename, content) in reports.OrderBy(kvp => kvp.Key))
-            {
-                AnsiConsole.MarkupLine($"  {filename} ({content.Length:N0} bytes)");
-            }
-
-            // Summary of key record counts
-            AnsiConsole.MarkupLine($"\n  NPCs: {records.Npcs.Count}, Weapons: {records.Weapons.Count}, " +
-                                   $"Quests: {records.Quests.Count}, Dialogue: {records.Dialogues.Count}, " +
-                                   $"Cells: {records.Cells.Count}, Worldspaces: {records.Worldspaces.Count}");
-        }
-        catch (Exception ex)
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] {0}", Markup.Escape(ex.Message));
-            AnsiConsole.WriteException(ex);
-        }
-    }
-
-    private static string FormatJson(EsmFileScanResult result)
-    {
-        // Create a serializable version
-        var jsonObj = new
-        {
-            header = result.Header != null
-                ? new
+                writer.WriteStartObject("header");
+                if (float.IsFinite(header.Version))
                 {
-                    version = result.Header.Version,
-                    author = result.Header.Author,
-                    description = result.Header.Description,
-                    nextObjectId = result.Header.NextObjectId,
-                    masters = result.Header.Masters
+                    writer.WriteNumber("version", header.Version);
                 }
-                : null,
-            totalRecords = result.TotalRecords,
-            uniqueEditorIds = result.FormIdToEditorId.Count,
-            recordTypeCounts = result.RecordTypeCounts,
-            recordsByCategory = result.RecordsByCategory.ToDictionary(kvp => kvp.Key.ToString(), kvp => kvp.Value)
-        };
+                else
+                {
+                    writer.WriteNull("version");
+                }
 
-        return JsonSerializer.Serialize(jsonObj, JsonOptions);
+                writer.WriteString("versionRawBits", $"0x{BitConverter.SingleToUInt32Bits(header.Version):X8}");
+                writer.WriteString("author", header.Author);
+                writer.WriteString("description", header.Description);
+                writer.WriteNumber("nextObjectId", header.NextObjectId);
+                writer.WriteStartArray("masters");
+                foreach (var master in header.Masters)
+                {
+                    writer.WriteStringValue(master);
+                }
+
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+            else
+            {
+                writer.WriteNull("header");
+            }
+
+            writer.WriteNumber("totalRecords", result.TotalRecords);
+            writer.WriteNumber("uniqueEditorIds", result.FormIdToEditorId.Count);
+
+            writer.WriteStartObject("recordTypeCounts");
+            foreach (var (signature, count) in result.RecordTypeCounts.OrderBy(kvp => kvp.Key, StringComparer.Ordinal))
+            {
+                writer.WriteNumber(signature, count);
+            }
+
+            writer.WriteEndObject();
+
+            writer.WriteStartObject("recordsByCategory");
+            foreach (var (category, count) in result.RecordsByCategory
+                         .Select(kvp => (Name: kvp.Key.ToString(), kvp.Value))
+                         .OrderBy(entry => entry.Name, StringComparer.Ordinal))
+            {
+                writer.WriteNumber(category, count);
+            }
+
+            writer.WriteEndObject();
+            writer.WriteEndObject();
+        }
+
+        return Encoding.UTF8.GetString(ms.ToArray());
     }
 
     private static Command CreateCellGroup()

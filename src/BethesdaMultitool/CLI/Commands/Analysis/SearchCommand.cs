@@ -160,7 +160,7 @@ public static class SearchCommand
             return RunSingleFileSearch(target, pattern, patternLower, contextBytes, limit, countOnly, displayPattern);
         }
 
-        AnsiConsole.MarkupLine($"[red]Error:[/] Path not found: {target}");
+        AnsiConsole.MarkupLine($"[red]Error:[/] Path not found: {Markup.Escape(target)}");
         return 1;
     }
 
@@ -169,7 +169,7 @@ public static class SearchCommand
     {
         var fileInfo = new FileInfo(filePath);
         AnsiConsole.MarkupLine(
-            $"[bold]Searching:[/] [cyan]{Path.GetFileName(filePath)}[/] ({fileInfo.Length:N0} bytes) for \"{Markup.Escape(displayPattern)}\"");
+            $"[bold]Searching:[/] [cyan]{Markup.Escape(Path.GetFileName(filePath))}[/] ({fileInfo.Length:N0} bytes) for \"{Markup.Escape(displayPattern)}\"");
         AnsiConsole.WriteLine();
 
         if (countOnly)
@@ -228,12 +228,12 @@ public static class SearchCommand
 
         if (files.Count == 0)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] No files found in {dirPath}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] No files found in {Markup.Escape(dirPath)}");
             return 1;
         }
 
         AnsiConsole.MarkupLine(
-            $"[bold]Searching {files.Count} files[/] in [cyan]{dirPath}[/] for \"{Markup.Escape(displayPattern)}\"");
+            $"[bold]Searching {files.Count} files[/] in [cyan]{Markup.Escape(dirPath)}[/] for \"{Markup.Escape(displayPattern)}\"");
         AnsiConsole.WriteLine();
 
         if (countOnly)
@@ -331,7 +331,7 @@ public static class SearchCommand
 
                 if (count > 0)
                 {
-                    AnsiConsole.MarkupLine($"[green]{count}[/] match(es) in [cyan]{fileName}[/]");
+                    AnsiConsole.MarkupLine($"[green]{count}[/] match(es) in [cyan]{Markup.Escape(fileName)}[/]");
 
                     // Only load full file for context display
                     var data = File.ReadAllBytes(file);
@@ -357,7 +357,7 @@ public static class SearchCommand
             catch (Exception ex)
             {
                 results.Add((Path.GetFileName(file), 0, -1));
-                AnsiConsole.MarkupLine($"[red]Error reading {Path.GetFileName(file)}:[/] {ex.Message}");
+                AnsiConsole.MarkupLine($"[red]Error reading {Markup.Escape(Path.GetFileName(file))}:[/] {Markup.Escape(ex.Message)}");
             }
         }
 

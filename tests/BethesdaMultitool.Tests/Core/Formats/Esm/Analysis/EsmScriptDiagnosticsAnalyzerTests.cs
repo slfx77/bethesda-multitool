@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.ScriptDiagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -13,6 +14,434 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Analysis;
 
 public sealed class EsmScriptDiagnosticsAnalyzerTests
 {
+    private const uint TerminalId = 0x01011D70;
+    private const uint SubTerminalId = 0x01011D6F;
+    private const uint TerminalRefId = 0x0100AAEB;
+    private const uint TerminalNoteId = 0x0100D001;
+
+    /// <summary>
+    ///     A menu-item script longer than the 180-character preview, with CRLF line endings and a tab, whose tail
+    ///     marker only the full text can carry (the shape of Dead Money 0x01011D70's 291-byte "Yes" script).
+    /// </summary>
+    private const string TerminalSource =
+        "; Synthetic TERM menu-item script (shape of Dead Money 0x01011D70)\r\n" +
+        "If VaultMainTerminalREF.iDownloaded == 3\r\n" +
+        "\tSet VaultCodeBox.bTreasureFound to 1;\r\n" +
+        "\tForceTerminalBack;\r\n" +
+        "Endif\r\n" +
+        "; filler that carries the text past the 180-character preview\r\n" +
+        "ForceTerminalBack;\r\n" +
+        "; TAIL-MARKER-7F3A";
+
+    private const string YesCondition =
+        "GetScriptVariable(VaultMainTerminalREF [0x0100AAEB], var 4) != 1 [Run On: Subject]";
+
+    private const string NoFirstCondition =
+        "GetScriptVariable(VaultMainTerminalREF [0x0100AAEB], var 2) != 1 [Run On: Subject] OR";
+
+    private const string NoSecondCondition =
+        "GetScriptVariable(VaultMainTerminalREF [0x0100AAEB], var 3) != 1 [Run On: Subject]";
+
+    [Fact]
+    public void AnalyzeRecords_TerminalItemsJoinConditionsBlocksAndFullSource()
+    {
+        var result = AnalyzeSyntheticTerminal();
+
+        var items = result.TerminalItems.Where(row => row.FormId == TerminalId).ToArray();
+        Assert.Equal(2, items.Length);
+
+        var yes = items[0];
+        Assert.Equal("explicit", yes.Target);
+        Assert.Equal("explicit-record", yes.Relation);
+        Assert.Equal("VaultRetrieveTerminal", yes.EditorId);
+        Assert.Equal(1, yes.ItemIndex);
+        Assert.Equal("Yes", yes.ItemText);
+        Assert.Equal("Downloading module...", yes.ResultText);
+        Assert.Equal((byte)0x03, yes.FlagsRaw);
+        Assert.Equal("Add Note, Force Redraw", yes.FlagNames);
+        Assert.Null(yes.DisplayNoteFormId);
+        Assert.Null(yes.SubTerminalFormId);
+        Assert.Equal([1], yes.ConditionIndexes);
+        Assert.Equal([YesCondition], yes.ConditionExpressions);
+        Assert.Equal([1], yes.ScriptBlockIndexes);
+        Assert.Equal(TerminalSource.Length, yes.SourceTextLength);
+
+        var no = items[1];
+        Assert.Equal(2, no.ItemIndex);
+        Assert.Equal("No", no.ItemText);
+        Assert.Equal("Canceling request...", no.ResultText);
+        Assert.Equal((byte)0x01, no.FlagsRaw);
+        Assert.Equal("Add Note", no.FlagNames);
+        Assert.Equal(TerminalNoteId, no.DisplayNoteFormId);
+        Assert.Equal("VaultPasswordNote", no.DisplayNoteLabel);
+        Assert.Equal(SubTerminalId, no.SubTerminalFormId);
+        Assert.Equal("VaultSubTerminal", no.SubTerminalLabel);
+        Assert.Equal([2, 3], no.ConditionIndexes);
+        Assert.Equal([NoFirstCondition, NoSecondCondition], no.ConditionExpressions);
+        Assert.Equal([2], no.ScriptBlockIndexes);
+        Assert.Null(no.SourceTextLength);
+
+        // The join keys are the numbers target_conditions.csv and target_result_scripts.csv print.
+        Assert.Equal(
+            [1, 2, 3],
+            result.Conditions.Where(row => row.FormId == TerminalId).Select(row => row.ConditionIndex).ToArray());
+
+        var blocks = result.ScriptBlocks.Where(row => row.FormId == TerminalId).ToArray();
+        Assert.Equal(2, blocks.Length);
+        Assert.Equal(1, blocks[0].BlockIndex);
+        Assert.Equal(TerminalSource, blocks[0].SourceText);
+        Assert.Equal(180, blocks[0].SourceTextPreview.Length);
+        Assert.EndsWith("...", blocks[0].SourceTextPreview, StringComparison.Ordinal);
+        Assert.DoesNotContain("TAIL-MARKER-7F3A", blocks[0].SourceTextPreview, StringComparison.Ordinal);
+        Assert.Equal(1, blocks[0].OwnerMenuItemIndex);
+        Assert.Equal("Yes", blocks[0].OwnerMenuItemText);
+        Assert.Equal(2, blocks[1].BlockIndex);
+        Assert.Equal(string.Empty, blocks[1].SourceText);
+        Assert.Equal(2, blocks[1].OwnerMenuItemIndex);
+        Assert.Equal("No", blocks[1].OwnerMenuItemText);
+
+        // The stored SCTX is the fixture's Latin-1 bytes plus one NUL; the row keeps the bytes minus that NUL.
+        Assert.Equal(Encoding.Latin1.GetBytes(TerminalSource), blocks[0].SourceTextBytes);
+        Assert.Null(blocks[1].SourceTextBytes);
+
+        var blockCsv = ParseCsv(EsmScriptDiagnosticsCsvWriter.BuildScriptBlocksCsv(result));
+        Assert.Equal("source_text_preview", blockCsv[0][17]);
+        Assert.Equal(["source_text_length", "owner_item_index", "owner_item_text", "source_text", "source_text_file"],
+            blockCsv[0][18..]);
+        var yesBlock = blockCsv.Skip(1).Single(fields => fields[3] == "0x01011D70" && fields[5] == "1");
+        Assert.Equal(TerminalSource.Length.ToString(CultureInfo.InvariantCulture), yesBlock[18]);
+        Assert.Equal("1", yesBlock[19]);
+        Assert.Equal("Yes", yesBlock[20]);
+        Assert.Equal(TerminalSource, yesBlock[21]);
+        Assert.Equal("scripts/TERM_01011D70_block01.gek", yesBlock[22]);
+        var noBlock = blockCsv.Skip(1).Single(fields => fields[3] == "0x01011D70" && fields[5] == "2");
+        Assert.Equal(string.Empty, noBlock[22]);
+
+        var itemCsv = ParseCsv(EsmScriptDiagnosticsCsvWriter.BuildTerminalItemsCsv(result));
+        Assert.Equal(3, itemCsv.Count);
+        Assert.Equal(
+            [
+                "target", "relation", "form_id", "editor_id", "item_index", "item_text", "result_text", "flags_raw",
+                "flag_names", "display_note_form_id", "display_note_label", "sub_terminal_form_id",
+                "sub_terminal_label", "condition_indexes", "condition_expressions", "script_block_index",
+                "source_text_length"
+            ],
+            itemCsv[0]);
+        Assert.Equal(
+            [
+                "explicit", "explicit-record", "0x01011D70", "VaultRetrieveTerminal", "1", "Yes",
+                "Downloading module...", "0x03", "Add Note, Force Redraw", "", "", "", "", "1", YesCondition, "1",
+                TerminalSource.Length.ToString(CultureInfo.InvariantCulture)
+            ],
+            itemCsv[1]);
+        Assert.Equal(
+            [
+                "explicit", "explicit-record", "0x01011D70", "VaultRetrieveTerminal", "2", "No",
+                "Canceling request...", "0x01", "Add Note", "0x0100D001", "VaultPasswordNote", "0x01011D6F",
+                "VaultSubTerminal", "2|3", NoFirstCondition + " | " + NoSecondCondition, "2", ""
+            ],
+            itemCsv[2]);
+    }
+
+    [Fact]
+    public void TerminalScriptBlockSubrecordOrder_StopsAtNextMenuItem()
+    {
+        var terminal = AnalyzeSyntheticTerminal();
+        var blocks = terminal.ScriptBlocks.Where(row => row.FormId == TerminalId).ToArray();
+
+        // Before ITXT was a block boundary, block 1 ran on into item 2 as
+        // SCHR>SCDA>SCTX>SCRO>CTDA>ITXT>RNAM>ANAM>INAM>TNAM.
+        Assert.Equal("SCHR>SCDA>SCTX>SCRO>CTDA", blocks[0].SubrecordOrder);
+        Assert.Equal("SCHR>CTDA>CTDA", blocks[1].SubrecordOrder);
+
+        // INFO result-script blocks still end at NEXT and at the next SCHR.
+        const uint infoId = 0xFE000500;
+        var info = EsmScriptDiagnosticsAnalyzer.AnalyzeRecords(
+            "generated.esp",
+            [
+                Record("INFO", infoId,
+                    ScriptHeader(1, 4),
+                    Sub("SCDA", 0xFF, 0xFF, 0x00, 0x00),
+                    StringSub("SCTX", "set SomeGlobal to 1"),
+                    FormIdSubrecord("SCRO", 0xFE000501),
+                    Sub("NEXT"),
+                    ScriptHeader(0, 0))
+            ],
+            [],
+            BethesdaGame.FalloutNewVegas,
+            new HashSet<uint> { infoId });
+        var infoBlocks = info.ScriptBlocks.Where(row => row.FormId == infoId).ToArray();
+        Assert.Equal(2, infoBlocks.Length);
+        Assert.Equal("SCHR>SCDA>SCTX>SCRO>NEXT", infoBlocks[0].SubrecordOrder);
+        Assert.Equal("SCHR", infoBlocks[1].SubrecordOrder);
+        Assert.Null(infoBlocks[0].OwnerMenuItemIndex);
+        Assert.Equal(string.Empty, infoBlocks[0].OwnerMenuItemText);
+        Assert.Empty(info.TerminalItems);
+    }
+
+    [Fact]
+    public void WriteReport_WritesTerminalItemsCsv_AndKeepsTheConditionsHeader()
+    {
+        var result = AnalyzeSyntheticTerminal();
+        var directory = Path.Combine(Path.GetTempPath(), $"scriptdiag_term_{Guid.NewGuid():N}");
+        try
+        {
+            EsmScriptDiagnosticsAnalyzer.WriteReport(result, directory);
+
+            var itemLines = File.ReadAllLines(Path.Combine(directory, "target_terminal_items.csv"));
+            Assert.Equal(3, itemLines.Length);
+            Assert.StartsWith("target,relation,form_id,editor_id,item_index,item_text,result_text,",
+                itemLines[0], StringComparison.Ordinal);
+
+            Assert.Equal(
+                "target,relation,record_type,form_id,editor_id,condition_index,function_name,function_index,type," +
+                "comparison_value,parameter1,parameter1_label,parameter2,parameter2_label,run_on,reference_storage," +
+                "semantic_reference_label,raw_bytes,comparison_kind,comparison_raw_bits,comparison_global_form_id," +
+                "comparison_global_label,parameter3,reference_storage_is_semantic,semantic_reference_form_id," +
+                "ctda_body_length,layout_status",
+                File.ReadLines(Path.Combine(directory, "target_conditions.csv")).First());
+            Assert.Contains("TAIL-MARKER-7F3A",
+                File.ReadAllText(Path.Combine(directory, "target_result_scripts.csv")), StringComparison.Ordinal);
+            Assert.Contains("- Terminal menu items: 2",
+                File.ReadAllText(Path.Combine(directory, "summary.md")), StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, true);
+            }
+        }
+    }
+
+    [Fact]
+    public void WriteReport_WritesVerbatimFullSourceSidecarGek()
+    {
+        // 0x92 is Windows-1252's right single quote: a UTF-8 writer emits E2 80 99 for it and a Latin-1
+        // round trip C2 92, so only an untouched copy of the stored bytes reproduces it.
+        byte[] yesSource =
+        [
+            .. Encoding.ASCII.GetBytes("; Caesar"), 0x92,
+            .. Encoding.ASCII.GetBytes(
+                "s Legion terminal\r\n" +
+                "If VaultMainTerminalREF.iDownloaded == 3\r\n" +
+                "\tSet VaultCodeBox.bTreasureFound to 1;\r\n" +
+                "Endif\r\n" +
+                "ForceTerminalBack;")
+        ];
+        byte[] yesSctx = [.. yesSource, 0x00];
+
+        // Two stored NULs: exactly one is dropped. A copy rebuilt from the decoded text (which trims every
+        // trailing NUL) would lose both.
+        byte[] maybeSctx = [.. Encoding.ASCII.GetBytes("ForceTerminalBack;"), 0x00, 0x00];
+        byte[] maybeFile = [.. Encoding.ASCII.GetBytes("ForceTerminalBack;"), 0x00];
+
+        // Two label targets reach the same TERM, so every block has a row under each target.
+        var result = EsmScriptDiagnosticsAnalyzer.AnalyzeRecords(
+            "DeadMoney.esm",
+            [
+                Record("TERM", TerminalId,
+                    StringSub("EDID", "VaultRetrieveTerminal"),
+                    StringSub("ITXT", "Yes"),
+                    ScriptHeader(0, 4),
+                    Sub("SCDA", 0x23, 0x12, 0x00, 0x00),
+                    Sub("SCTX", yesSctx),
+                    StringSub("ITXT", "No"),
+                    ScriptHeader(0, 0),
+                    StringSub("ITXT", "Maybe"),
+                    ScriptHeader(0, 4),
+                    Sub("SCDA", 0x23, 0x12, 0x00, 0x00),
+                    Sub("SCTX", maybeSctx))
+            ],
+            ["VaultRetrieve", "RetrieveTerminal"],
+            BethesdaGame.FalloutNewVegas);
+        Assert.Equal(6, result.ScriptBlocks.Count(row => row.FormId == TerminalId));
+
+        var directory = Path.Combine(Path.GetTempPath(), $"scriptdiag_gek_{Guid.NewGuid():N}");
+        try
+        {
+            EsmScriptDiagnosticsAnalyzer.WriteReport(result, directory);
+
+            var scriptsDirectory = Path.Combine(directory, "scripts");
+            Assert.Equal(
+                ["TERM_01011D70_block01.gek", "TERM_01011D70_block03.gek"],
+                Directory.GetFiles(scriptsDirectory)
+                    .Select(path => Path.GetFileName(path))
+                    .Order(StringComparer.Ordinal)
+                    .ToArray());
+
+            // Byte for byte: the 0x92 unchanged, CRLF kept, no BOM, no header, nothing appended.
+            Assert.Equal(yesSource, File.ReadAllBytes(Path.Combine(scriptsDirectory, "TERM_01011D70_block01.gek")));
+            Assert.Equal(maybeFile, File.ReadAllBytes(Path.Combine(scriptsDirectory, "TERM_01011D70_block03.gek")));
+
+            var blockCsv = ParseCsv(File.ReadAllText(Path.Combine(directory, "target_result_scripts.csv")));
+            Assert.Equal("source_text_file", blockCsv[0][^1]);
+            var fileByTargetAndBlock = blockCsv.Skip(1)
+                .Where(fields => fields[3] == "0x01011D70")
+                .ToDictionary(fields => (fields[0], fields[5]), fields => fields[^1]);
+            Assert.Equal(6, fileByTargetAndBlock.Count);
+            foreach (var target in new[] { "VaultRetrieve", "RetrieveTerminal" })
+            {
+                Assert.Equal("scripts/TERM_01011D70_block01.gek", fileByTargetAndBlock[(target, "1")]);
+                Assert.Equal(string.Empty, fileByTargetAndBlock[(target, "2")]);
+                Assert.Equal("scripts/TERM_01011D70_block03.gek", fileByTargetAndBlock[(target, "3")]);
+            }
+
+            Assert.True(File.Exists(Path.Combine(directory, "target_terminal_items.csv")));
+            Assert.Equal(
+                "target,relation,record_type,form_id,editor_id,condition_index,function_name,function_index,type," +
+                "comparison_value,parameter1,parameter1_label,parameter2,parameter2_label,run_on,reference_storage," +
+                "semantic_reference_label,raw_bytes,comparison_kind,comparison_raw_bits,comparison_global_form_id," +
+                "comparison_global_label,parameter3,reference_storage_is_semantic,semantic_reference_form_id," +
+                "ctda_body_length,layout_status",
+                File.ReadLines(Path.Combine(directory, "target_conditions.csv")).First());
+            Assert.Contains("- Script source files: 2 in scripts/",
+                File.ReadAllText(Path.Combine(directory, "summary.md")), StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, true);
+            }
+        }
+    }
+
+    /// <summary>
+    ///     The sidecar extension follows the game (<c>.gek</c> only for the GECK-script games). The record's block
+    ///     has no SCHR, so its SCTX is found after the SCDA that opens the block.
+    /// </summary>
+    [Theory]
+    [InlineData(BethesdaGame.FalloutNewVegas, "SCPT_00ABC001_block01.gek")]
+    [InlineData(BethesdaGame.Fallout3, "SCPT_00ABC001_block01.gek")]
+    [InlineData(BethesdaGame.Oblivion, "SCPT_00ABC001_block01.txt")]
+    [InlineData(BethesdaGame.Unknown, "SCPT_00ABC001_block01.txt")]
+    public void WriteReport_SourceSidecarExtensionFollowsTheGame(BethesdaGame game, string expectedFileName)
+    {
+        const uint scriptId = 0x00ABC001;
+        var result = EsmScriptDiagnosticsAnalyzer.AnalyzeRecords(
+            "Plugin.esp",
+            [
+                Record("SCPT", scriptId,
+                    StringSub("EDID", "SidecarScript"),
+                    Sub("SCDA", 0x1D, 0x00, 0x00, 0x00),
+                    StringSub("SCTX", "scn SidecarScript\r\n\r\nBegin GameMode\r\nEnd"))
+            ],
+            [],
+            game,
+            new HashSet<uint> { scriptId });
+
+        var directory = Path.Combine(Path.GetTempPath(), $"scriptdiag_ext_{Guid.NewGuid():N}");
+        try
+        {
+            EsmScriptDiagnosticsAnalyzer.WriteReport(result, directory);
+
+            var file = Assert.Single(Directory.GetFiles(Path.Combine(directory, "scripts")));
+            Assert.Equal(expectedFileName, Path.GetFileName(file));
+            Assert.Equal(
+                Encoding.ASCII.GetBytes("scn SidecarScript\r\n\r\nBegin GameMode\r\nEnd"),
+                File.ReadAllBytes(file));
+            var row = ParseCsv(File.ReadAllText(Path.Combine(directory, "target_result_scripts.csv")))[1];
+            Assert.Equal("scripts/" + expectedFileName, row[^1]);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, true);
+            }
+        }
+    }
+
+    [Fact]
+    public void WriteReport_WritesNoScriptsDirectoryWhenNoBlockHasSource()
+    {
+        const uint infoId = 0xFE000600;
+        var result = EsmScriptDiagnosticsAnalyzer.AnalyzeRecords(
+            "generated.esp",
+            [
+                Record("INFO", infoId,
+                    ScriptHeader(0, 4),
+                    Sub("SCDA", 0x23, 0x12, 0x00, 0x00),
+                    Sub("SCTX", 0x00),
+                    Sub("NEXT"),
+                    ScriptHeader(0, 0))
+            ],
+            [],
+            BethesdaGame.FalloutNewVegas,
+            new HashSet<uint> { infoId });
+
+        var directory = Path.Combine(Path.GetTempPath(), $"scriptdiag_nosrc_{Guid.NewGuid():N}");
+        try
+        {
+            EsmScriptDiagnosticsAnalyzer.WriteReport(result, directory);
+
+            // Block 1's SCTX holds only its NUL (present but empty); block 2 has no SCTX at all.
+            var blocks = result.ScriptBlocks.Where(row => row.FormId == infoId).ToArray();
+            Assert.Equal(2, blocks.Length);
+            var emptySource = blocks[0].SourceTextBytes;
+            Assert.NotNull(emptySource);
+            Assert.Empty(emptySource);
+            Assert.Null(blocks[1].SourceTextBytes);
+            Assert.False(Directory.Exists(Path.Combine(directory, "scripts")));
+            Assert.All(
+                ParseCsv(File.ReadAllText(Path.Combine(directory, "target_result_scripts.csv"))).Skip(1),
+                fields => Assert.Equal(string.Empty, fields[^1]));
+            Assert.DoesNotContain("Script source files",
+                File.ReadAllText(Path.Combine(directory, "summary.md")), StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, true);
+            }
+        }
+    }
+
+    [Fact]
+    public void AnalyzeRecords_Fallout4TerminalItem_KeepsRawAnamAndDoesNotInterpretAClassicWidthCtda()
+    {
+        // Fallout 4 stores a menu-item type enum in ANAM, and its CTDA is 32 bytes: a 28-byte CTDA
+        // there is listed raw, the same fail-closed rule target_conditions.csv applies.
+        const uint fo4TerminalId = 0x00A00001;
+        var result = EsmScriptDiagnosticsAnalyzer.AnalyzeRecords(
+            "Fallout4.esm",
+            [
+                Record("TERM", fo4TerminalId,
+                    StringSub("EDID", "Fo4Terminal"),
+                    StringSub("ITXT", "Open"),
+                    Sub("ANAM", 0x04),
+                    Ctda(0x35, TerminalRefId, 4, 0x20))
+            ],
+            [],
+            BethesdaGame.Fallout4,
+            new HashSet<uint> { fo4TerminalId });
+
+        var item = Assert.Single(result.TerminalItems);
+        Assert.Equal("Open", item.ItemText);
+        Assert.Null(item.ResultText);
+        Assert.Equal((byte)0x04, item.FlagsRaw);
+        Assert.Equal(string.Empty, item.FlagNames);
+        Assert.Equal([1], item.ConditionIndexes);
+        Assert.Equal(
+            ["CTDA not interpreted (game_width_mismatch): 200000000000803F35000000EBAA0001040000000000000000000000"],
+            item.ConditionExpressions);
+        Assert.Empty(item.ScriptBlockIndexes);
+        Assert.Null(item.SourceTextLength);
+    }
+
+    [Theory]
+    [InlineData(BethesdaGame.FalloutNewVegas, 0x00, "None")]
+    [InlineData(BethesdaGame.FalloutNewVegas, 0x02, "Force Redraw")]
+    [InlineData(BethesdaGame.FalloutNewVegas, 0x07, "Add Note, Force Redraw, unknown bits 0x04")]
+    [InlineData(BethesdaGame.Fallout3, 0x01, "Add Note")]
+    [InlineData(BethesdaGame.Fallout4, 0x03, "")]
+    public void FormatMenuItemFlags_NamesFo3FnvBitsAndKeepsUnknownOnes(BethesdaGame game, int flags, string expected)
+    {
+        Assert.Equal(expected, EsmScriptTerminalItemRowBuilder.FormatMenuItemFlags((byte)flags, game));
+    }
+
     [Fact]
     public void AnalyzeFile_ThreadsDetectedGameIntoDiagnostics()
     {
@@ -144,7 +573,9 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
                 Record("PACK", pack,
                     StringSub("EDID", "ChompsLewisFollowPackage"),
                     CtdaGetIsId(chomps),
-                    FormIdSubrecord("PLDT", targetRef),
+                    // PLDT is 12 bytes in every retail FNV PACK: type 0 (Near Reference) + 3 pad
+                    // bytes, the reference at +4, the radius at +8.
+                    NearReferencePldt(targetRef, 256),
                     ScriptHeader(1, 4),
                     Sub("SCDA", 0xFF, 0xFF, 0x00, 0x00),
                     FormIdSubrecord("SCRO", targetRef))
@@ -155,7 +586,8 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         var packageRecord = Assert.Single(result.Records, row => row.RecordType == "PACK");
         Assert.Contains("actor-package", packageRecord.Relation, StringComparison.Ordinal);
         Assert.Contains("CTDA", packageRecord.InterestingSubrecords, StringComparison.Ordinal);
-        Assert.Contains("PLDT", packageRecord.InterestingSubrecords, StringComparison.Ordinal);
+        Assert.Contains("PLDT(type=0:NearReference,ref=0xFE000330 (ChompsMarker),radius=256)",
+            packageRecord.InterestingSubrecords, StringComparison.Ordinal);
 
         var packageScript = Assert.Single(result.ScriptBlocks, row => row.RecordType == "PACK");
         Assert.True(packageScript.CompiledSizeMatches);
@@ -1059,6 +1491,109 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
             row => row.Category == "condition-raw" && row.Detail.Contains("p3=-42", StringComparison.Ordinal));
     }
 
+    /// <summary>
+    ///     A TERM in the subrecord order retail Dead Money stores (0x01011D70 / 0x0100DAD2): item 1 "Yes" carries
+    ///     RNAM, ANAM 0x03, a script (SCHR, SCDA, SCTX, SCRO) and one CTDA; item 2 "No" carries a display note, a
+    ///     sub-terminal, an empty SCHR and an OR-joined pair of CTDAs. Analyzed as an explicit record only.
+    /// </summary>
+    private static EsmScriptDiagnosticsResult AnalyzeSyntheticTerminal()
+    {
+        Assert.True(TerminalSource.Length > 180, "The fixture source must exceed the 180-character preview.");
+        return EsmScriptDiagnosticsAnalyzer.AnalyzeRecords(
+            "DeadMoney.esm",
+            [
+                Record("REFR", TerminalRefId, StringSub("EDID", "VaultMainTerminalREF")),
+                Record("NOTE", TerminalNoteId, StringSub("EDID", "VaultPasswordNote")),
+                Record("TERM", SubTerminalId, StringSub("EDID", "VaultSubTerminal")),
+                Record("TERM", TerminalId,
+                    StringSub("EDID", "VaultRetrieveTerminal"),
+                    Sub("DNAM", 0x02, 0x00, 0x00, 0x00),
+                    StringSub("ITXT", "Yes"),
+                    StringSub("RNAM", "Downloading module..."),
+                    Sub("ANAM", 0x03),
+                    ScriptHeader(1, 4),
+                    Sub("SCDA", 0x23, 0x12, 0x00, 0x00),
+                    StringSub("SCTX", TerminalSource),
+                    FormIdSubrecord("SCRO", TerminalRefId),
+                    Ctda(0x35, TerminalRefId, 4, 0x20),
+                    StringSub("ITXT", "No"),
+                    StringSub("RNAM", "Canceling request..."),
+                    Sub("ANAM", 0x01),
+                    FormIdSubrecord("INAM", TerminalNoteId),
+                    FormIdSubrecord("TNAM", SubTerminalId),
+                    ScriptHeader(0, 0),
+                    Ctda(0x35, TerminalRefId, 2, 0x21),
+                    Ctda(0x35, TerminalRefId, 3, 0x20))
+            ],
+            [],
+            BethesdaGame.FalloutNewVegas,
+            new HashSet<uint> { TerminalId });
+    }
+
+    /// <summary>
+    ///     Minimal RFC 4180 reader for the diagnostics CSVs: quoted fields may hold commas, doubled quotes and line
+    ///     breaks (kept verbatim); an unquoted CR is part of the row terminator.
+    /// </summary>
+    private static List<string[]> ParseCsv(string text)
+    {
+        var rows = new List<string[]>();
+        var fields = new List<string>();
+        var field = new StringBuilder();
+        var inQuotes = false;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (inQuotes)
+            {
+                if (c != '"')
+                {
+                    field.Append(c);
+                }
+                else if (i + 1 < text.Length && text[i + 1] == '"')
+                {
+                    field.Append('"');
+                    i++;
+                }
+                else
+                {
+                    inQuotes = false;
+                }
+
+                continue;
+            }
+
+            switch (c)
+            {
+                case '"':
+                    inQuotes = true;
+                    break;
+                case ',':
+                    fields.Add(field.ToString());
+                    field.Clear();
+                    break;
+                case '\r':
+                    break;
+                case '\n':
+                    fields.Add(field.ToString());
+                    field.Clear();
+                    rows.Add([.. fields]);
+                    fields.Clear();
+                    break;
+                default:
+                    field.Append(c);
+                    break;
+            }
+        }
+
+        if (field.Length > 0 || fields.Count > 0)
+        {
+            fields.Add(field.ToString());
+            rows.Add([.. fields]);
+        }
+
+        return rows;
+    }
+
     private static ParsedMainRecord Record(string signature, uint formId, params ParsedSubrecord[] subrecords)
     {
         return new ParsedMainRecord
@@ -1094,6 +1629,14 @@ public sealed class EsmScriptDiagnosticsAnalyzerTests
         var data = new byte[4];
         BinaryPrimitives.WriteUInt32LittleEndian(data, formId);
         return Sub(signature, data);
+    }
+
+    private static ParsedSubrecord NearReferencePldt(uint referenceFormId, int radius)
+    {
+        var data = new byte[12];
+        BinaryPrimitives.WriteUInt32LittleEndian(data.AsSpan(4), referenceFormId);
+        BinaryPrimitives.WriteInt32LittleEndian(data.AsSpan(8), radius);
+        return Sub("PLDT", data);
     }
 
     private static ParsedSubrecord ScriptHeader(uint refCount, uint compiledSize)

@@ -137,6 +137,8 @@ internal static class EsmFormIdPropertyRegistry
         "PickupSoundFormId",
         "PrecipitationEffectFormId",
         "PreviousInfo",
+        "RawParentTopicFormIds",
+        "RecordLocalProjectileFormId",
         "Projectile",
         "ProjectileFormId",
         "ProjectileFormIds",

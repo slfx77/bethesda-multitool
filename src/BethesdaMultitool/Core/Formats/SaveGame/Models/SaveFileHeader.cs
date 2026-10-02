@@ -11,6 +11,9 @@ public sealed class SaveFileHeader
     /// <summary>Save format version (typically 0x30 for FO3/FNV).</summary>
     public uint Version { get; init; }
 
+    /// <summary>Fixed-width language field when present in the save header.</summary>
+    public string? Language { get; init; }
+
     /// <summary>Screenshot width in pixels.</summary>
     public uint ScreenshotWidth { get; init; }
 

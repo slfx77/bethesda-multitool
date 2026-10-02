@@ -6,7 +6,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 /// <summary>
 ///     Typed runtime reader for BGSMessage (MESG, FormType 0x62).
 ///     Reads full name, iFlags, and iDisplayTime via the PDB layout.
-///     Description and button list are ESM-only.
+///     Button allocations are runtime data; TESDescription stores a file offset, not text.
 /// </summary>
 internal sealed class RuntimeMessageReader(RuntimeMemoryContext context)
 {
@@ -28,6 +28,7 @@ internal sealed class RuntimeMessageReader(RuntimeMemoryContext context)
             return null;
         }
 
+        var data = RuntimeMessageDataReader.Read(context, view);
         return new MessageRecord
         {
             FormId = entry.FormId,
@@ -35,6 +36,18 @@ internal sealed class RuntimeMessageReader(RuntimeMemoryContext context)
             FullName = entry.DisplayName ?? view.BsString("cFullName", "TESFullName"),
             Flags = view.UInt32("iFlags", "BGSMessage"),
             DisplayTime = view.UInt32("iDisplayTime", "BGSMessage"),
+            Buttons = data.Buttons,
+            ButtonConditions = data.Conditions,
+            ButtonSource = MessageFieldSource.RuntimeObject,
+            DescriptionSource = MessageFieldSource.Unavailable,
+            RuntimeButtons = new RuntimeMessageButtons
+            {
+                ObjectFileOffset = view.FileOffset,
+                Evidence = data.Evidence,
+                Buttons = data.Buttons,
+                ButtonConditions = data.Conditions
+            },
+            RuntimeEvidence = data.Evidence,
             Offset = view.FileOffset,
             IsBigEndian = true
         };

@@ -55,6 +55,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         string? editorId = null;
         string? fullName = null;
         string? text = null;
+        uint? scriptFormId = null;
         string? modelPath = null;
         string? iconPath = null;
         string? messageIconPath = null;
@@ -79,6 +80,9 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "DESC":
                     text = Context.ReadDescription(subData);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    scriptFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "MODL":
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
@@ -117,6 +121,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             Text = text,
+            ScriptFormId = scriptFormId,
             ModelPath = modelPath,
             IconPath = iconPath,
             MessageIconPath = messageIconPath,
@@ -220,12 +225,19 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         {
             if (!curHasMenuItem) return;
             curSerializedLocals!.Complete();
+            var isDmpDerived = Context.MinidumpInfo is not null;
+            // The container order is only a DMP fragment's tie-break: serialized SCDA is
+            // little-endian inside an Xbox 360 ESM too, so on-disk bytecode the payload cannot
+            // decide is read little-endian. (A short call such as the July 2010 prototype's
+            // '23 12 00 00' is decided before that, by naming ForceTerminalBack little-endian
+            // where the big-endian reading is an unknown 0x2312.)
             var isBigEndianBytecode = curCompiledData is { Length: > 0 }
                                       && CapturedScriptEmissionContract.InferBytecodeEndian(
                                           curCompiledData,
                                           curVariables,
                                           curReferencedObjects,
-                                          record.IsBigEndian);
+                                          isDmpDerived && record.IsBigEndian);
+            var bindings = new List<ScriptExternalVariableBinding>();
             var decompiledText = CapturedScriptEmissionContract.DecompileInline(
                 curCompiledData,
                 curVariables,
@@ -235,8 +247,7 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     ? $"{editorId}_Menu_{menuItems.Count + 1}"
                     : $"TERM_{record.FormId:X8}_Menu_{menuItems.Count + 1}",
                 Context.ResolveFormName,
-                ScriptFunctionTables.For(Context.Game));
-            var isDmpDerived = Context.MinidumpInfo is not null;
+                ScriptFunctionTables.For(Context.Game), Context.ExternalScriptVariables?.Track(bindings));
             var sourceOrigin = isDmpDerived && !string.IsNullOrEmpty(curSourceText)
                 ? ScriptSourceTextOrigin.DmpFragment
                 : ScriptSourceTextOrigin.None;
@@ -277,7 +288,11 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                 Conditions = curConditions.Count > 0 ? [..curConditions] : [],
                 CompiledData = curCompiledData,
                 SourceText = sourceDecision.SourceText,
+                WithheldSourceReason = isDmpDerived && !string.IsNullOrEmpty(curSourceText) && sourceDecision.SourceText is null
+                    ? sourceDecision.SourceIssue ?? sourceDecision.BundleIssue ?? "source validation failed"
+                    : null,
                 DecompiledText = decompiledText,
+                ExternalVariableBindings = bindings,
                 SourceTextOrigin = sourceDecision.ResolveSourceTextOrigin(sourceOrigin),
                 IsDmpDerived = isDmpDerived,
                 Variables = curVariables.Count > 0 ? [..curVariables] : [],
@@ -503,12 +518,29 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
     /// <summary>
     ///     Parse all Message (MESG) records.
     /// </summary>
-    internal List<MessageRecord> ParseMessages()
+    internal List<MessageRecord> ParseMessages(IReadOnlyList<DialogueRecord>? dialogues = null)
     {
         var messages = ParseAccessorOnly("MESG", 2048, ParseMessageFromAccessor);
 
-        Context.MergeRuntimeRecords(messages, 0x62, m => m.FormId,
-            (reader, entry) => reader.ReadRuntimeMessage(entry), "messages");
+        Context.MergeRuntimeOverlayRecords(messages, [0x62], m => m.FormId,
+            (reader, entry) => reader.ReadRuntimeMessage(entry), MessageRuntimeMerger.Merge, "messages");
+
+        if (messages.Any(message => message.RuntimeEvidence != null))
+        {
+            if (dialogues == null)
+            {
+                var handler = new DialogueRecordHandler(Context);
+                var parsed = handler.ParseDialogue();
+                handler.MergeRuntimeDialogueData(parsed);
+                dialogues = parsed;
+            }
+            var segments = DialogueTesFileScriptRecovery.CalibrateSegments(dialogues, Context.MinidumpInfo);
+            for (var index = 0; index < messages.Count; index++)
+            {
+                Context.CancellationToken.ThrowIfCancellationRequested();
+                messages[index] = RuntimeMessageDescriptionRecovery.Recover(Context, messages[index], segments);
+            }
+        }
 
         return messages;
     }
@@ -526,9 +558,19 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
         string? editorId = null, fullName = null, description = null, icon = null;
         uint questFormId = 0, flags = 0, displayTime = 0;
         var buttons = new List<string>();
+        var buttonConditions = new List<List<DialogueCondition>>();
+        var unassignedConditions = new List<DialogueCondition>();
+        var currentConditions = unassignedConditions;
+        var conditionStrings = new ConditionStringSiblingBinder();
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
+            var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
+            if (conditionStrings.TryConsume(sub.Signature, subData))
+            {
+                continue;
+            }
+
             switch (sub.Signature)
             {
                 case "EDID":
@@ -563,15 +605,21 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
                     break;
                 case "ITXT":
                 {
-                    var btnText =
-                        EsmStringUtils.ReadNullTermString(data.AsSpan(sub.DataOffset, sub.DataLength));
-                    if (!string.IsNullOrEmpty(btnText))
+                    // ITXT is a boundary even when its text is empty. Dropping an empty button
+                    // would shift every later index and assign its conditions to the wrong button.
+                    buttons.Add(EsmStringUtils.ReadNullTermString(subData));
+                    currentConditions = [];
+                    buttonConditions.Add(currentConditions);
+                    break;
+                }
+                case "CTDA":
+                    if (CtdaParser.TryDecode(subData, record.IsBigEndian, out var condition, out _))
                     {
-                        buttons.Add(btnText);
+                        currentConditions.Add(condition);
+                        conditionStrings.Begin(currentConditions);
                     }
 
                     break;
-                }
             }
         }
 
@@ -581,11 +629,15 @@ internal sealed class TextRecordHandler(RecordParserContext context) : RecordHan
             EditorId = editorId,
             FullName = fullName,
             Description = description,
+            DescriptionSource = description == null ? MessageFieldSource.Unavailable : MessageFieldSource.StoredRecord,
             Icon = icon,
             QuestFormId = questFormId,
             Flags = flags,
             DisplayTime = displayTime,
             Buttons = buttons,
+            StoredButtonCount = buttons.Count,
+            ButtonConditions = buttonConditions,
+            UnassignedConditions = unassignedConditions,
             Offset = record.Offset,
             IsBigEndian = record.IsBigEndian
         };

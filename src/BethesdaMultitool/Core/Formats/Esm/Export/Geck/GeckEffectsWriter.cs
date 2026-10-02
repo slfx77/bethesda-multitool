@@ -36,12 +36,16 @@ internal static class GeckEffectsWriter
         }
 
         sections.Add(new ReportSection("Requirements", reqFields));
+        if (perk.RuntimeRecoveryIssues.Count > 0)
+        {
+            sections.Add(new ReportSection("Runtime Recovery", perk.RuntimeRecoveryIssues
+                .Select(issue => new ReportField("Limitation", ReportValue.String(issue))).ToList()));
+        }
 
         // Entries
         if (perk.Entries.Count > 0)
         {
             var items = perk.Entries
-                .OrderBy(e => e.Rank).ThenBy(e => e.TypeName)
                 .Select(entry =>
                 {
                     var fields = new List<ReportField>
@@ -108,6 +112,11 @@ internal static class GeckEffectsWriter
                         fields.Add(new ReportField("Conditions", ReportValue.Int(conditionCount)));
                     }
 
+                    fields.Add(new ReportField("Detail", new ReportValue.CompositeVal(
+                        PerkEffectProjection.Fields(entry).Concat(PerkEffectProjection.Conditions(entry))
+                            .Select(field => new ReportField(field.Key, ReportValue.String(field.Value))).ToList(),
+                        "Entry detail")));
+
                     var abilityStr = entry.AbilityFormId.HasValue
                         ? $" Ability: {resolver.FormatFull(entry.AbilityFormId.Value)}"
                         : "";
@@ -167,7 +176,9 @@ internal static class GeckEffectsWriter
                     }
 
                     fields.Add(new ReportField("Condition",
-                        ReportValue.String($"{c.OperatorDisplay} {c.ComparisonValue:G}")));
+                        ReportValue.String($"{c.OperatorDisplay} {PerkEffectProjection.Comparison(c)}")));
+                    fields.AddRange(PerkEffectProjection.ConditionFields(c)
+                        .Select(field => new ReportField(field.Key, ReportValue.String(field.Value))));
 
                     // Build summary string
                     string summary;
@@ -283,6 +294,12 @@ internal static class GeckEffectsWriter
             sb.AppendLine($"Display Name:   {perk.FullName ?? "(none)"}");
             sb.AppendLine($"Endianness:     {(perk.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
             sb.AppendLine($"Offset:         0x{perk.Offset:X8}");
+            foreach (var issue in perk.RuntimeRecoveryIssues) { sb.AppendLine($"Runtime Recovery: {issue}"); }
+            foreach (var condition in perk.Conditions)
+            {
+                sb.AppendLine($"Condition: {condition.FunctionName} (#{condition.FunctionIndex}) ({condition.Parameter1}, {condition.Parameter2}) {condition.OperatorDisplay} {PerkEffectProjection.Comparison(condition)}");
+                foreach (var field in PerkEffectProjection.ConditionFields(condition)) { sb.AppendLine($"  {field.Key}: {field.Value}"); }
+            }
 
             if (!string.IsNullOrEmpty(perk.Description))
             {
@@ -310,12 +327,14 @@ internal static class GeckEffectsWriter
             {
                 sb.AppendLine();
                 sb.AppendLine("Entries:");
-                foreach (var entry in perk.Entries.OrderBy(e => e.Rank).ThenBy(e => e.TypeName))
+                for (var entryIndex = 0; entryIndex < perk.Entries.Count; entryIndex++)
                 {
-                    var abilityStr = entry.AbilityFormId.HasValue
-                        ? $" Ability: {resolver.FormatFull(entry.AbilityFormId.Value)}"
-                        : "";
-                    sb.AppendLine($"  [Rank {entry.Rank}] {entry.TypeName}{abilityStr}");
+                    var entry = perk.Entries[entryIndex];
+                    sb.AppendLine($"  Entry [{entryIndex}]:");
+                    foreach (var field in PerkEffectProjection.Fields(entry).Concat(PerkEffectProjection.Conditions(entry)))
+                    {
+                        sb.AppendLine($"    {field.Key}: {field.Value}");
+                    }
                 }
             }
         }

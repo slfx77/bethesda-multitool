@@ -69,12 +69,17 @@ internal static class EsmDiffUnifiedCommand
         // Mode: specific FormID
         if (!string.IsNullOrEmpty(formIdStr))
         {
-            var targetFormId = formIdStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                ? Convert.ToUInt32(formIdStr, 16)
-                : uint.Parse(formIdStr);
+            // Same FormID syntax as show and semdiff (and so as 'esm diff --semantic'): hex, 0x optional.
+            if (CliHelpers.ParseFormId(formIdStr) is not { } targetFormId)
+            {
+                AnsiConsole.MarkupLine($"[red]ERROR:[/] Invalid FormID: {Markup.Escape(formIdStr)}");
+                return 1;
+            }
+
             return EsmDiffRecordsCommand.DiffSpecificRecord(dataA, dataB, bigEndianA, bigEndianB, targetFormId,
                 maxBytes, showBytes,
-                false, false, labelA, labelB);
+                false, false, labelA, labelB,
+                Path.GetFileName(fileAPath), Path.GetFileName(fileBPath));
         }
 
         // Mode: specific record type with byte-level diff
@@ -82,7 +87,8 @@ internal static class EsmDiffUnifiedCommand
         {
             return EsmDiffRecordsCommand.DiffRecordType(dataA, dataB, bigEndianA, bigEndianB, recordType, limit,
                 maxBytes, showBytes,
-                false, false, labelA, labelB);
+                false, false, labelA, labelB,
+                Path.GetFileName(fileAPath), Path.GetFileName(fileBPath));
         }
 
         // Mode: full comparison (stats mode, or no specific filter)

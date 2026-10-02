@@ -35,12 +35,14 @@ public static class SchemaRecordDecoder
         bool bigEndian = false,
         FormIdNameResolver? resolveName = null,
         BethesdaGame game = BethesdaGame.Unknown,
-        ushort? formVersion = null)
+        ushort? formVersion = null,
+        Action<SchemaFormIdObservation>? observeFormId = null)
     {
         ArgumentNullException.ThrowIfNull(schema);
         ArgumentNullException.ThrowIfNull(subrecords);
 
         var ctx = new DecodeContext(bigEndian, resolveName, game, schema.Signature, formVersion);
+        ctx.Observations = observeFormId is null ? null : [];
 
         // Map each entry-point signature to the top-level member that consumes it. Arrays map via their
         // element's signature(s); a plain signed member maps directly.
@@ -58,6 +60,8 @@ public static class SchemaRecordDecoder
         while (i < subrecords.Count)
         {
             var sub = subrecords[i];
+            ctx.SubrecordOrdinal = i;
+            ctx.SubrecordSignature = sub.Signature;
             if (!bySignature.TryGetValue(sub.Signature, out var member))
             {
                 output.Add(RawNode(sub.Signature, sub.Signature, sub.Data));
@@ -101,6 +105,23 @@ public static class SchemaRecordDecoder
             }
         }
 
+        if (observeFormId != null)
+        {
+            foreach (var observation in ctx.Observations!)
+            {
+                // CIS text replaces the corresponding CTDA placeholder. Do not turn its old bits
+                // into an edge, even though they were read before the authoritative sibling arrived.
+                var cis = observation.Field == "Parameter #1" ? "CIS1" :
+                    observation.Field == "Parameter #2" ? "CIS2" : null;
+                if (observation.SubrecordSignature == "CTDA" && cis != null &&
+                    subrecords.Skip(observation.SubrecordOrdinal + 1)
+                        .TakeWhile(s => s.Signature is "CIS1" or "CIS2").Any(s => s.Signature == cis))
+                {
+                    continue;
+                }
+                observeFormId(observation);
+            }
+        }
         return output;
     }
 
@@ -174,6 +195,8 @@ public static class SchemaRecordDecoder
             while (i < subrecords.Count && subrecords[i].Signature == elementSig)
             {
                 var sub = subrecords[i];
+                ctx.SubrecordOrdinal = i;
+                ctx.SubrecordSignature = sub.Signature;
                 var node = IsMemberActive(element, ctx)
                     ? DecodeSignedMember(element, sub.Signature, sub.Data, ctx)
                     : RawNode(sub.Signature, sub.Signature, sub.Data);
@@ -190,6 +213,8 @@ public static class SchemaRecordDecoder
             while (i < subrecords.Count)
             {
                 var sub = subrecords[i];
+                ctx.SubrecordOrdinal = i;
+                ctx.SubrecordSignature = sub.Signature;
                 var variant =
                     union.Variants.FirstOrDefault(v => IsMemberActive(v, ctx) && v.Signature == sub.Signature);
                 if (variant is null)
@@ -258,6 +283,8 @@ public static class SchemaRecordDecoder
             }
 
             var sub = subrecords[i];
+            ctx.SubrecordOrdinal = i;
+            ctx.SubrecordSignature = sub.Signature;
             children.Add(DecodeSignedMember(child, sub.Signature, sub.Data, ctx));
             i++;
         }
@@ -373,6 +400,7 @@ public static class SchemaRecordDecoder
             }
             case FormIdDef:
             {
+                ctx.Field = label;
                 var (value, raw, formId) = DecodeFormId(data, 0, data.Length, ctx, leMap);
                 return new DecodedNode
                     { Label = label, Value = value, RawValue = raw, FormId = formId, Signature = sig };
@@ -495,6 +523,7 @@ public static class SchemaRecordDecoder
                         return offset;
                     }
 
+                    ctx.Field = formIdDef.Name ?? "FormID";
                     var (value, raw, formId) = DecodeFormId(data, offset, limit, ctx, leMap);
                     output.Add(new DecodedNode
                         { Label = formIdDef.Name ?? "FormID", Value = value, RawValue = raw, FormId = formId });
@@ -596,13 +625,14 @@ public static class SchemaRecordDecoder
                 });
                 return offset + size;
             }
-            case FormIdDef:
+            case FormIdDef formIdDef:
             {
                 if (limit - offset < 4)
                 {
                     return limit;
                 }
 
+                ctx.Field = $"{formIdDef.Name ?? "Item"} [{index}]";
                 var (value, raw, formId) = DecodeFormId(data, offset, limit, ctx, leMap);
                 output.Add(new DecodedNode
                     { Label = $"Item [{index}]", Value = value, RawValue = raw, FormId = formId });
@@ -641,6 +671,9 @@ public static class SchemaRecordDecoder
             return ("0x00000000 (none)", value, null);
         }
 
+        ctx.Observations?.Add(new SchemaFormIdObservation(ctx.SubrecordSignature, ctx.SubrecordOrdinal,
+            ctx.Field, offset, value, ctx.Origin));
+
         var name = ctx.ResolveName?.Invoke(value);
         var display = name is { Length: > 0 }
             ? $"{name} (0x{value:X8})"
@@ -656,7 +689,23 @@ public static class SchemaRecordDecoder
     private static DecodedNode DecodeInlineUnion(UnionDef union, byte[] data, int offset, int limit, DecodeContext ctx,
         IReadOnlyDictionary<int, LeFieldKind>? leMap)
     {
+        var priorOrigin = ctx.Origin;
+        ctx.Origin = SchemaFormIdOrigin.UnionFallback;
+        try
+        {
+            return DecodeInlineUnionCore(union, data, offset, limit, ctx, leMap);
+        }
+        finally
+        {
+            ctx.Origin = priorOrigin;
+        }
+    }
+
+    private static DecodedNode DecodeInlineUnionCore(UnionDef union, byte[] data, int offset, int limit,
+        DecodeContext ctx, IReadOnlyDictionary<int, LeFieldKind>? leMap)
+    {
         var label = union.Name ?? "Value";
+        ctx.Field = label;
         var repr = union.Variants.First(v => IsMemberActive(v, ctx));
         if (repr is FieldDef { Type: PrimType.ByteArray } opaque)
         {
@@ -704,8 +753,33 @@ public static class SchemaRecordDecoder
         }
 
         var label = union.Name ?? "Value";
+        ctx.Field = label;
         switch (union.DeciderName)
         {
+            case "wbPxDTLocationDecider":
+            {
+                if (FindSiblingRawValue(siblings, "Type") is not { } type || type < 0 || type >= union.Variants.Count)
+                {
+                    return false;
+                }
+                switch (union.Variants[(int)type])
+                {
+                    case FormIdDef:
+                        var (value, raw, formId) = DecodeFormId(data, offset, limit, ctx, leMap);
+                        node = new DecodedNode { Label = label, Value = value, RawValue = raw, FormId = formId };
+                        break;
+                    case FieldDef field:
+                        var (scalar, scalarRaw, _) = DecodeScalar(field, data, offset, limit, ctx, leMap, out _);
+                        node = new DecodedNode { Label = label, Value = scalar, RawValue = scalarRaw };
+                        break;
+                    case UnusedDef:
+                        node = DecodeRawConditionValue(label, data, offset, limit, ctx, leMap);
+                        break;
+                    default:
+                        return false;
+                }
+                return true;
+            }
             case "wbConditionRunOnDecider":
             {
                 // FNV gives two functions a second meaning for this word: it is a sparse
@@ -1061,6 +1135,7 @@ public static class SchemaRecordDecoder
         FieldDef field, byte[] data, int offset, int limit, DecodeContext ctx,
         IReadOnlyDictionary<int, LeFieldKind>? leMap, out int size)
     {
+        ctx.Field = field.Name ?? "Field";
         var available = limit - offset;
 
         // A fixed-LE override for the field starting at this offset (word-swap or plain little-endian even
@@ -1224,6 +1299,12 @@ public static class SchemaRecordDecoder
         ushort? formVersion)
     {
         private ConditionFunctionTable? _conditionTable;
+
+        public List<SchemaFormIdObservation>? Observations { get; set; }
+        public string SubrecordSignature { get; set; } = "";
+        public int SubrecordOrdinal { get; set; }
+        public string Field { get; set; } = "";
+        public SchemaFormIdOrigin Origin { get; set; }
 
         public bool BigEndian { get; } = bigEndian;
         public FormIdNameResolver? ResolveName { get; } = resolveName;

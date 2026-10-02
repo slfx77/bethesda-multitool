@@ -8,7 +8,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class NpcShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var npc = records.Npcs.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, n => n.FormId, n => n.EditorId));
@@ -17,13 +17,13 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var panel = new Panel(BuildContent(npc, records, resolver))
         {
             Header = new PanelHeader(
                 $"[bold]NPC_[/] {Markup.Escape(npc.EditorId ?? "")} — {Markup.Escape(npc.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 
@@ -36,15 +36,15 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
             $"[cyan]FormID:[/]   0x{npc.FormId:X8}",
             $"[cyan]EditorID:[/] {Markup.Escape(npc.EditorId ?? "(none)")}",
             $"[cyan]Name:[/]     {Markup.Escape(npc.FullName ?? "(none)")}",
-            $"[cyan]Race:[/]     {(npc.Race.HasValue ? resolver.FormatWithEditorId(npc.Race.Value) : "(none)")}",
-            $"[cyan]Class:[/]    {(npc.Class.HasValue ? resolver.FormatWithEditorId(npc.Class.Value) : "(none)")}",
+            $"[cyan]Race:[/]     {(npc.Race.HasValue ? ShowHelpers.Ref(resolver, npc.Race.Value) : "(none)")}",
+            $"[cyan]Class:[/]    {(npc.Class.HasValue ? ShowHelpers.Ref(resolver, npc.Class.Value) : "(none)")}",
             $"[cyan]Female:[/]   {isFemale}",
             $"[cyan]Level:[/]    {npc.Stats?.Level.ToString() ?? "(unknown)"}"
         };
 
         if (npc.HairFormId.HasValue)
         {
-            lines.Add($"[cyan]Hair:[/]       {resolver.FormatWithEditorId(npc.HairFormId.Value)}");
+            lines.Add($"[cyan]Hair:[/]       {ShowHelpers.Ref(resolver, npc.HairFormId.Value)}");
         }
 
         var hairColorStr = NpcRecord.FormatHairColor(npc.HairColor);
@@ -55,14 +55,14 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
 
         if (npc.EyesFormId.HasValue)
         {
-            lines.Add($"[cyan]Eyes:[/]       {resolver.FormatWithEditorId(npc.EyesFormId.Value)}");
+            lines.Add($"[cyan]Eyes:[/]       {ShowHelpers.Ref(resolver, npc.EyesFormId.Value)}");
         }
 
         if (npc.HeadPartFormIds is { Count: > 0 })
         {
             lines.Add("[cyan]Head Parts:[/]");
             foreach (var hdptId in npc.HeadPartFormIds)
-                lines.Add($"  {resolver.FormatWithEditorId(hdptId)}");
+                lines.Add($"  {ShowHelpers.Ref(resolver, hdptId)}");
         }
 
         if (npc.Height.HasValue)
@@ -77,12 +77,12 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
 
         if (npc.OriginalRace.HasValue)
         {
-            lines.Add($"[cyan]Original Race:[/] {resolver.FormatWithEditorId(npc.OriginalRace.Value)}");
+            lines.Add($"[cyan]Original Race:[/] {ShowHelpers.Ref(resolver, npc.OriginalRace.Value)}");
         }
 
         if (npc.FaceNpc.HasValue)
         {
-            lines.Add($"[cyan]Face NPC:[/]   {resolver.FormatWithEditorId(npc.FaceNpc.Value)}");
+            lines.Add($"[cyan]Face NPC:[/]   {ShowHelpers.Ref(resolver, npc.FaceNpc.Value)}");
         }
 
         if (npc.RaceFacePreset.HasValue)
@@ -113,7 +113,7 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
                     continue; // Skip Big Guns slot when merged into Guns
                 }
 
-                var skillName = resolver.GetSkillName(i) ?? $"Skill#{i}";
+                var skillName = ShowHelpers.Plain(resolver.GetSkillName(i), $"Skill#{i}");
                 lines.Add($"  {skillName}: {npc.Skills[i]}");
             }
         }
@@ -124,7 +124,7 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
             lines.Add("[bold]Factions:[/]");
             foreach (var faction in npc.Factions)
             {
-                lines.Add($"  {resolver.FormatWithEditorId(faction.FactionFormId)} (rank {faction.Rank})");
+                lines.Add($"  {ShowHelpers.Ref(resolver, faction.FactionFormId)} (rank {faction.Rank})");
             }
         }
 
@@ -134,7 +134,7 @@ internal sealed class NpcShowRenderer : IRecordDisplayRenderer
             lines.Add("[bold]Inventory:[/]");
             foreach (var item in npc.Inventory)
             {
-                lines.Add($"  {resolver.FormatWithEditorId(item.ItemFormId)} x{item.Count}");
+                lines.Add($"  {ShowHelpers.Ref(resolver, item.ItemFormId)} x{item.Count}");
             }
         }
 

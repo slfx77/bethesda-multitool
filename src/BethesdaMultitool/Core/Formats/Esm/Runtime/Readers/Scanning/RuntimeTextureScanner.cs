@@ -54,9 +54,8 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
     /// </summary>
     public List<ExtractedTexture> ScanForTextures(IProgress<(long Scanned, long Total)>? progress = null)
     {
-        var textures = new ConcurrentBag<ExtractedTexture>();
-        var dataHashes = new ConcurrentDictionary<long, byte>();
-        var sourceTextureCandidates = new ConcurrentBag<(uint PixelDataPtr, uint FilenamePtr)>();
+        var textures = new ConcurrentDictionary<long, ExtractedTexture>();
+        var sourceTextureCandidates = new ConcurrentBag<(long SourceOffset, uint PixelDataPtr, uint FilenamePtr)>();
         _texturesFound = 0;
         var log = Logger.Instance;
 
@@ -71,9 +70,9 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
                 if (offset + NiPixelDataSize <= chunk.Length && IsNiPixelDataCandidate(chunk, offset))
                 {
                     var texture = ValidateAndExtract(chunk, offset, fileOffset);
-                    if (texture != null && dataHashes.TryAdd(texture.DataHash, 0))
+                    if (texture != null && RuntimeCandidateSelection.KeepLowestOffset(
+                            textures, texture.DataHash, texture, static value => value.SourceOffset))
                     {
-                        textures.Add(texture);
                         Interlocked.Increment(ref _texturesFound);
                         var potTag = texture.IsNonPowerOfTwo ? " [non-POT]" : "";
                         log.Debug(
@@ -91,14 +90,14 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
                     if (filenamePtr != 0 && pixelDataPtr != 0 &&
                         _context.IsValidPointer(filenamePtr) && _context.IsValidPointer(pixelDataPtr))
                     {
-                        sourceTextureCandidates.Add((pixelDataPtr, filenamePtr));
+                        sourceTextureCandidates.Add((fileOffset, pixelDataPtr, filenamePtr));
                     }
                 }
             },
             NiSourceTextureSize, // Smaller struct: 72 < 116
             progress);
 
-        var result = textures.OrderBy(t => t.SourceOffset).ToList();
+        var result = textures.Values.OrderBy(t => t.SourceOffset).ToList();
 
         log.Info("Texture scanner: found {0} unique textures, {1} NiSourceTexture candidates",
             result.Count, sourceTextureCandidates.Count);
@@ -216,7 +215,7 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
     /// </summary>
     private List<ExtractedTexture> ResolveFilenames(
         List<ExtractedTexture> textures,
-        ConcurrentBag<(uint PixelDataPtr, uint FilenamePtr)> candidates)
+        ConcurrentBag<(long SourceOffset, uint PixelDataPtr, uint FilenamePtr)> candidates)
     {
         var log = Logger.Instance;
         var vaToIndex = BuildPixelDataVaIndex(textures);
@@ -228,7 +227,12 @@ internal sealed class RuntimeTextureScanner(RuntimeMemoryContext context)
         var filenames = new string?[textures.Count];
         var matchCount = 0;
 
-        foreach (var (pixelDataPtr, filenamePtr) in candidates)
+        // Candidates arrive from parallel workers. Canonical physical order makes competing
+        // valid names stable; it does not imply an engine preference between aliases.
+        foreach (var (_, pixelDataPtr, filenamePtr) in candidates
+                     .OrderBy(candidate => candidate.SourceOffset)
+                     .ThenBy(candidate => candidate.PixelDataPtr)
+                     .ThenBy(candidate => candidate.FilenamePtr))
         {
             if (!vaToIndex.TryGetValue(pixelDataPtr, out var index))
             {

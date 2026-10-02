@@ -9,15 +9,31 @@ namespace BethesdaMultitool.CLI.Shared;
 /// </summary>
 internal static class CliSemanticLoader
 {
+    /// <summary>
+    ///     Loads <paramref name="filePath" /> behind a progress bar, returning null after printing the error
+    ///     when the file is missing or fails to load.
+    /// </summary>
+    /// <param name="filePath">ESM/ESP or DMP path.</param>
+    /// <param name="description">Initial progress-task label.</param>
+    /// <param name="options">Load options; the progress callbacks are replaced unless the caller supplied them.</param>
+    /// <param name="cancellationToken">Cancels the load.</param>
+    /// <param name="console">
+    ///     Where the progress bar and error lines go. Null means the shared <see cref="AnsiConsole.Console" />
+    ///     (stdout); a command whose stdout carries a machine-readable document passes
+    ///     <see cref="CliConsoles.Stderr" /> so nothing but the document reaches stdout.
+    /// </param>
     internal static async Task<UnifiedAnalysisResult?> TryLoadAsync(
         string filePath,
         string description,
         SemanticFileLoadOptions? options = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IAnsiConsole? console = null)
     {
+        console ??= AnsiConsole.Console;
+
         if (!File.Exists(filePath))
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {Markup.Escape(filePath)}");
+            console.MarkupLine($"[red]Error:[/] File not found: {Markup.Escape(filePath)}");
             return null;
         }
 
@@ -25,7 +41,7 @@ internal static class CliSemanticLoader
 
         try
         {
-            return await AnsiConsole.Progress()
+            return await console.Progress()
                 .Columns(
                     new TaskDescriptionColumn(),
                     new ProgressBarColumn(),
@@ -59,7 +75,7 @@ internal static class CliSemanticLoader
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
+            console.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
             return null;
         }
     }

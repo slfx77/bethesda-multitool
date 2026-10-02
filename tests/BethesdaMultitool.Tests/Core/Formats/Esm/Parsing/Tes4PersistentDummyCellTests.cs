@@ -15,7 +15,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 ///     (0,0) tile in the viewer. Classification is now structural (GRUP Type-1 direct child vs
 ///     Type-4/5 block member).
 /// </summary>
-[Trait("Category", TestCategories.BucketB)]
 public class Tes4PersistentDummyCellTests
 {
     private const uint WorldFormId = 0x00000858;
@@ -177,6 +176,7 @@ public class Tes4PersistentDummyCellTests
 ///     dummy may carry a grid.
 /// </summary>
 [Collection(SequentialIntegrationGroup.Name)]
+[Trait("Category", TestCategories.BucketB)]
 public class Tes4PersistentDummyCellIntegrationTests
 {
     [Theory]

@@ -32,7 +32,7 @@ public record TerminalRecord
     /// <summary>Password-note FormID (PNAM subrecord, BGSNote). Null when absent.</summary>
     public uint? PasswordNoteFormId { get; init; }
 
-    /// <summary>Terminal difficulty (0-4).</summary>
+    /// <summary>Terminal hacking difficulty (DNAM byte 0): 0-4, or 5 for a terminal that requires a key.</summary>
     public byte Difficulty { get; init; }
 
     /// <summary>Terminal flags.</summary>
@@ -58,7 +58,10 @@ public record TerminalRecord
     /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
     public bool IsBigEndian { get; init; }
 
-    /// <summary>Human-readable difficulty name.</summary>
+    /// <summary>
+    ///     Human-readable difficulty name, per the xEdit FNV/FO3 "Base Hacking Difficulty" enum as generated
+    ///     into <c>FalloutNvSchema.g.cs</c> / <c>Fallout3Schema.g.cs</c> (5 = Requires Key).
+    /// </summary>
     public string DifficultyName => Difficulty switch
     {
         0 => "Very Easy",
@@ -66,6 +69,7 @@ public record TerminalRecord
         2 => "Average",
         3 => "Hard",
         4 => "Very Hard",
+        5 => "Requires Key",
         _ => $"Unknown ({Difficulty})"
     };
 }

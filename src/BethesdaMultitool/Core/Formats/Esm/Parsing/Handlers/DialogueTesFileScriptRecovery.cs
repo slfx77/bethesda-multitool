@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Minidump;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 
@@ -163,32 +164,15 @@ internal static class DialogueTesFileScriptRecovery
         string? editorId,
         bool captureRecordBytes)
     {
-        if (mappedDumpOffset + HeaderSize > context.FileSize)
+        var memory = new RuntimeMemoryContext(context.Accessor!, context.FileSize, context.MinidumpInfo!);
+        var header = memory.ReadBytesAtVa(targetVa, HeaderSize);
+        if (header == null)
         {
             return new DialogueTesFileScriptRecoveryResult
             {
                 Status = DialogueTesFileScriptRecoveryStatus.HeaderReadFailed,
-                TesFileOffset = tesFileOffset,
-                SegmentBaseVirtualAddress = segmentBaseVirtualAddress,
-                TargetVirtualAddress = targetVa,
-                MappedDumpOffset = mappedDumpOffset
-            };
-        }
-
-        var header = new byte[HeaderSize];
-        try
-        {
-            context.Accessor!.ReadArray(mappedDumpOffset, header, 0, HeaderSize);
-        }
-        catch
-        {
-            return new DialogueTesFileScriptRecoveryResult
-            {
-                Status = DialogueTesFileScriptRecoveryStatus.HeaderReadFailed,
-                TesFileOffset = tesFileOffset,
-                SegmentBaseVirtualAddress = segmentBaseVirtualAddress,
-                TargetVirtualAddress = targetVa,
-                MappedDumpOffset = mappedDumpOffset
+                TesFileOffset = tesFileOffset, SegmentBaseVirtualAddress = segmentBaseVirtualAddress,
+                TargetVirtualAddress = targetVa, MappedDumpOffset = mappedDumpOffset
             };
         }
 
@@ -248,42 +232,19 @@ internal static class DialogueTesFileScriptRecovery
             };
         }
 
-        if (dataSize > MaxRecordDataSize || mappedDumpOffset + HeaderSize + dataSize > context.FileSize)
+        var recordData = dataSize <= MaxRecordDataSize && targetVa <= long.MaxValue - HeaderSize
+            ? memory.ReadBytesAtVa(targetVa + HeaderSize, (int)dataSize) : null;
+        if (recordData == null)
         {
             return new DialogueTesFileScriptRecoveryResult
             {
-                Status = DialogueTesFileScriptRecoveryStatus.HeaderReadFailed,
-                TesFileOffset = tesFileOffset,
-                SegmentBaseVirtualAddress = segmentBaseVirtualAddress,
-                TargetVirtualAddress = targetVa,
-                MappedDumpOffset = mappedDumpOffset,
-                Signature = signature,
-                RecordFormId = recordFormId,
-                RecordFlags = flags,
-                RecordDataSize = dataSize,
-                HeaderBytes = header
-            };
-        }
-
-        var recordData = new byte[dataSize];
-        try
-        {
-            context.Accessor!.ReadArray(mappedDumpOffset + HeaderSize, recordData, 0, (int)dataSize);
-        }
-        catch
-        {
-            return new DialogueTesFileScriptRecoveryResult
-            {
-                Status = DialogueTesFileScriptRecoveryStatus.HeaderReadFailed,
-                TesFileOffset = tesFileOffset,
-                SegmentBaseVirtualAddress = segmentBaseVirtualAddress,
-                TargetVirtualAddress = targetVa,
-                MappedDumpOffset = mappedDumpOffset,
-                Signature = signature,
-                RecordFormId = recordFormId,
-                RecordFlags = flags,
-                RecordDataSize = dataSize,
-                HeaderBytes = header
+                Status = dataSize > MaxRecordDataSize
+                    ? DialogueTesFileScriptRecoveryStatus.RecordTooLarge
+                    : DialogueTesFileScriptRecoveryStatus.PayloadReadFailed,
+                TesFileOffset = tesFileOffset, SegmentBaseVirtualAddress = segmentBaseVirtualAddress,
+                TargetVirtualAddress = targetVa, MappedDumpOffset = mappedDumpOffset,
+                Signature = signature, RecordFormId = recordFormId, RecordFlags = flags,
+                RecordDataSize = dataSize, HeaderBytes = header
             };
         }
 

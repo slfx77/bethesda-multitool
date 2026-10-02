@@ -13,7 +13,7 @@ internal static class AssetPackBsaPlanner
 {
     public static IReadOnlyList<BsaOutputPlan> Plan(
         string outputBsaPath,
-        IReadOnlyList<(string Path, byte[] Data)> packedFiles,
+        IReadOnlyList<PackedAsset> packedFiles,
         long maxArchiveBytes)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(outputBsaPath);
@@ -44,7 +44,7 @@ internal static class AssetPackBsaPlanner
 
     private static IEnumerable<BsaOutputPlan> ChunkBucket(
         AssetPackBucket bucket,
-        IEnumerable<(string Path, byte[] Data)> files,
+        IEnumerable<PackedAsset> files,
         long maxArchiveBytes)
     {
         var ordered = files
@@ -62,7 +62,7 @@ internal static class AssetPackBsaPlanner
             yield break;
         }
 
-        var chunk = new List<(string Path, byte[] Data)>();
+        var chunk = new List<PackedAsset>();
         var chunkIndex = 0;
         var chunkEstimate = new BsaSizeEstimate();
         foreach (var file in ordered)
@@ -95,16 +95,16 @@ internal static class AssetPackBsaPlanner
         }
     }
 
-    private static long EstimateBsaSize(List<(string Path, byte[] Data)> files)
+    private static long EstimateBsaSize(List<PackedAsset> files)
     {
-        var unique = new Dictionary<(string Folder, string Name), byte[]>(files.Count);
-        foreach (var (path, data) in files)
+        var unique = new Dictionary<(string Folder, string Name), long>(files.Count);
+        foreach (var file in files)
         {
-            var normalized = path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
+            var normalized = file.Path.Replace('/', '\\').TrimStart('\\').ToLowerInvariant();
             var slash = normalized.LastIndexOf('\\');
             var folder = slash >= 0 ? normalized[..slash] : "";
             var name = slash >= 0 ? normalized[(slash + 1)..] : normalized;
-            unique.TryAdd((folder, name), data);
+            unique.TryAdd((folder, name), file.Length);
         }
 
         var folderCount = unique.Keys.Select(k => k.Folder).Distinct(StringComparer.Ordinal).Count();
@@ -114,7 +114,7 @@ internal static class AssetPackBsaPlanner
             .Distinct(StringComparer.Ordinal)
             .Sum(folder => folder.Length + 1);
         var totalFileNameLength = unique.Keys.Sum(k => k.Name.Length + 1);
-        var dataLength = unique.Values.Sum(static data => (long)data.Length);
+        var dataLength = unique.Values.Sum();
 
         return 36L
                + folderCount * 16L
@@ -268,7 +268,7 @@ internal static class AssetPackBsaPlanner
         private long _total = 36;
 
         /// <summary>Returns the projected total BSA size if the given file were added, without adding it.</summary>
-        public long EstimateWith((string Path, byte[] Data) file)
+        public long EstimateWith(PackedAsset file)
         {
             var key = Normalize(file.Path);
             if (_files.Contains(key))
@@ -276,7 +276,7 @@ internal static class AssetPackBsaPlanner
                 return _total;
             }
 
-            var estimate = _total + 16 + key.Name.Length + 1 + file.Data.Length;
+            var estimate = _total + 16 + key.Name.Length + 1 + file.Length;
             if (!_folders.Contains(key.Folder))
             {
                 estimate += 16 + 1 + key.Folder.Length + 1;
@@ -286,7 +286,7 @@ internal static class AssetPackBsaPlanner
         }
 
         /// <summary>Adds a file to the running BSA size estimate (ignores duplicates by path).</summary>
-        public void Add((string Path, byte[] Data) file)
+        public void Add(PackedAsset file)
         {
             var key = Normalize(file.Path);
             if (!_files.Add(key))
@@ -294,7 +294,7 @@ internal static class AssetPackBsaPlanner
                 return;
             }
 
-            _total += 16 + key.Name.Length + 1 + file.Data.Length;
+            _total += 16 + key.Name.Length + 1 + file.Length;
             if (_folders.Add(key.Folder))
             {
                 _total += 16 + 1 + key.Folder.Length + 1;

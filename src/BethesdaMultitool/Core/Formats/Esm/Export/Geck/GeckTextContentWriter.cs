@@ -5,6 +5,9 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 
@@ -205,10 +208,40 @@ internal static class GeckTextContentWriter
         return sb.ToString();
     }
 
-    internal static void AppendTerminalsSection(StringBuilder sb, List<TerminalRecord> terminals)
+    /// <summary>
+    ///     Appends the Terminals section. Every legacy line keeps its place (identity lines, the Header block and
+    ///     the <c>Menu Items (n):</c> list of item texts); added after them are the record's DNAM flags, server
+    ///     type, SCRI/PNAM/SNAM links, the terminals whose items open this one ("Linked From"), and one full
+    ///     block per menu item: its stable 1-based index and text, RNAM result text, ANAM flags, display note,
+    ///     sub-menu, every condition and its embedded result script (provenance-labeled source, the separately
+    ///     labeled BethesdaMultitool decompilation, locals and references). Nothing is truncated.
+    /// </summary>
+    /// <param name="sb">The report being built.</param>
+    /// <param name="terminals">The TERM records.</param>
+    /// <param name="resolver">EditorID/display-name source.</param>
+    /// <param name="conditions">
+    ///     Condition context (game and quest-variable names); null assumes <see cref="GameProfiles.DefaultGame" />
+    ///     and says so.
+    /// </param>
+    /// <param name="isMemoryDumpInput">True when the records came from a memory dump (see <see cref="ScriptSourceProvenance" />).</param>
+    internal static void AppendTerminalsSection(
+        StringBuilder sb,
+        List<TerminalRecord> terminals,
+        FormIdResolver resolver,
+        ConditionDisplayContext? conditions = null,
+        bool isMemoryDumpInput = false)
     {
-        GeckReportHelpers.AppendSectionHeader(sb, $"Terminals ({terminals.Count})");
+        ArgumentNullException.ThrowIfNull(resolver);
+        conditions ??= ConditionDisplayContext.ForResolver(resolver, GameProfiles.DefaultGame, gameAssumed: true);
 
+        GeckReportHelpers.AppendSectionHeader(sb, $"Terminals ({terminals.Count})");
+        if (conditions.GameAssumed && terminals.Any(t => t.MenuItems.Any(i => i.Conditions.Count > 0)))
+        {
+            sb.AppendLine(
+                $"Conditions:     function names assume {conditions.Game} (not detected from the input)");
+        }
+
+        var incoming = TerminalMenuItemDescriber.BuildIncomingLinks(terminals);
         foreach (var terminal in terminals.OrderBy(t => t.EditorId ?? ""))
         {
             GeckReportHelpers.AppendRecordHeader(sb, "TERM", terminal.EditorId);
@@ -219,6 +252,20 @@ internal static class GeckTextContentWriter
             sb.AppendLine($"Difficulty:     {terminal.DifficultyName}");
             sb.AppendLine($"Endianness:     {(terminal.IsBigEndian ? "Big-Endian (Xbox 360)" : "Little-Endian (PC)")}");
             sb.AppendLine($"Offset:         0x{terminal.Offset:X8}");
+            sb.AppendLine($"Flags:          {TerminalMenuItemDescriber.FormatTerminalFlags(terminal.Flags)}");
+            sb.AppendLine($"Server Type:    {TerminalMenuItemDescriber.FormatServerType(terminal.ServerType)}");
+            AppendFormLine(sb, "Script:", terminal.ScriptFormId, resolver);
+            AppendFormLine(sb, "Password Note:", terminal.PasswordNoteFormId, resolver);
+            AppendFormLine(sb, "Sound Loop:", terminal.SoundLoopFormId, resolver);
+
+            if (incoming.TryGetValue(terminal.FormId, out var parents))
+            {
+                sb.AppendLine($"Linked From ({parents.Count}):");
+                foreach (var link in parents)
+                {
+                    sb.AppendLine($"  {TerminalMenuItemDescriber.FormatIncomingLink(link)}");
+                }
+            }
 
             if (!string.IsNullOrEmpty(terminal.HeaderText))
             {
@@ -238,6 +285,11 @@ internal static class GeckTextContentWriter
                 {
                     sb.AppendLine($"  - {item.Text ?? "(no text)"}");
                 }
+
+                foreach (var description in TerminalMenuItemDescriber.Describe(terminal, conditions, isMemoryDumpInput))
+                {
+                    AppendMenuItemBlock(sb, description);
+                }
             }
         }
     }
@@ -245,17 +297,217 @@ internal static class GeckTextContentWriter
     /// <summary>
     ///     Generate a report for Terminals only.
     /// </summary>
-    internal static string GenerateTerminalsReport(List<TerminalRecord> terminals,
-        Dictionary<uint, string>? _lookup = null)
+    internal static string GenerateTerminalsReport(
+        List<TerminalRecord> terminals,
+        FormIdResolver? resolver = null,
+        ConditionDisplayContext? conditions = null,
+        bool isMemoryDumpInput = false)
     {
         var sb = new StringBuilder();
-        AppendTerminalsSection(sb, terminals);
+        AppendTerminalsSection(sb, terminals, resolver ?? conditions?.Resolver ?? FormIdResolver.Empty, conditions,
+            isMemoryDumpInput);
         return sb.ToString();
     }
 
-    internal static void AppendMessagesSection(StringBuilder sb, List<MessageRecord> messages,
-        FormIdResolver resolver)
+    /// <summary>
+    ///     Appends an embedded script (a terminal menu item's or an INFO result-script slot's) in the report
+    ///     layout shared by terminal_report.txt and dialogue_report.txt: a heading line with the summary, then
+    ///     (unless the block is empty) its provenance token, bytecode order, the source under its
+    ///     <see cref="ScriptSourceProvenance" /> label, the decompiled text under
+    ///     <see cref="ScriptSourceProvenance.DecompiledTextLabel" />, locals, references and any incomplete-bundle
+    ///     note. Bodies are written in full, one report line per source line (CR stripped, TABs kept).
+    /// </summary>
+    internal static void AppendEmbeddedScript(StringBuilder sb, string indent, EmbeddedScriptText script)
     {
+        ArgumentNullException.ThrowIfNull(sb);
+        ArgumentNullException.ThrowIfNull(script);
+
+        AppendLabeledText(sb, indent, $"{script.Heading}:", script.Summary);
+        var classification = script.Classification;
+        var empty = classification.Kind == ScriptTextKind.None && script.DecompiledText is null && script.BytecodeOrder is null &&
+                    script.Variables.Count == 0 && script.References.Count == 0 && script.BundleNote is null;
+        if (empty)
+        {
+            return;
+        }
+
+        var inner = indent + "  ";
+        sb.AppendLine($"{inner}{"Provenance:",-16}{FormatProvenance(classification)}");
+        if (script.BytecodeOrder is { } order)
+        {
+            sb.AppendLine($"{inner}{"Bytecode Order:",-16}{order}");
+        }
+
+        if (classification.HasSourceText && script.SourceText is { } source)
+        {
+            sb.AppendLine($"{inner}{classification.Label}:");
+            AppendTextLines(sb, inner + "  ", source);
+        }
+        else
+        {
+            sb.AppendLine($"{inner}{"Source:",-16}{classification.Label}");
+        }
+
+        if (script.DecompiledText is { } decompiled)
+        {
+            sb.AppendLine($"{inner}{ScriptSourceProvenance.DecompiledTextLabel}:");
+            AppendTextLines(sb, inner + "  ", decompiled);
+        }
+
+        if (script.Variables.Count > 0)
+        {
+            sb.AppendLine($"{inner}Variables ({script.Variables.Count}):");
+            foreach (var variable in script.Variables)
+            {
+                sb.AppendLine($"{inner}  [{variable.Index}] {ScriptVariableTypeResolver.FormatDeclaration(variable, script.RawReferences)}");
+            }
+        }
+
+        if (script.References.Count > 0)
+        {
+            sb.AppendLine($"{inner}References ({script.References.Count}):");
+            for (var i = 0; i < script.References.Count; i++)
+            {
+                sb.AppendLine($"{inner}  {i + 1}: {script.References[i]}");
+            }
+        }
+
+        if (script.BundleNote is { } note)
+        {
+            sb.AppendLine($"{inner}{"Bundle:",-16}{note}");
+        }
+    }
+
+    /// <summary>
+    ///     Writes <paramref name="text" /> one report line per source line, each prefixed by
+    ///     <paramref name="indent" />. CR is stripped, TABs are kept, and a terminal line break adds no empty line.
+    /// </summary>
+    internal static void AppendTextLines(StringBuilder sb, string indent, string text)
+    {
+        var lines = text.Split('\n');
+        var count = lines.Length > 1 && lines[^1].Length == 0 ? lines.Length - 1 : lines.Length;
+        for (var i = 0; i < count; i++)
+        {
+            sb.Append(indent).AppendLine(lines[i].TrimEnd('\r'));
+        }
+    }
+
+    /// <summary>
+    ///     A <c>Label:</c> value line (label padded to the report's 16-column field), or, for a value that spans
+    ///     lines, the label on its own line and the value indented beneath it.
+    /// </summary>
+    internal static void AppendLabeledText(StringBuilder sb, string indent, string label, string text)
+    {
+        if (text.AsSpan().IndexOfAny('\r', '\n') < 0)
+        {
+            sb.AppendLine($"{indent}{PadLabel(label)}{text}");
+            return;
+        }
+
+        sb.AppendLine($"{indent}{label}");
+        AppendTextLines(sb, indent + "  ", text);
+    }
+
+    /// <summary>Pads a <c>Label:</c> to the report's 16-column field, always leaving at least one space.</summary>
+    private static string PadLabel(string label)
+    {
+        return label.Length >= 16 ? label + " " : label.PadRight(16);
+    }
+
+    private static void AppendMenuItemBlock(StringBuilder sb, TerminalMenuItemDescriber.ItemDescription item)
+    {
+        sb.AppendLine();
+        var text = item.Text is null ? "(no text)" : item.Text.ReplaceLineEndings(" ");
+        sb.AppendLine($"Menu Item [{item.Index}] {text}");
+        if (item.Text is not null && item.Text.AsSpan().IndexOfAny('\r', '\n') >= 0)
+        {
+            AppendLabeledText(sb, "  ", "Item Text:", item.Text);
+        }
+
+        AppendLabeledText(sb, "  ", "Result Text:", item.ResultText ?? "(no RNAM)");
+        sb.AppendLine($"  {"Flags:",-16}{item.FlagsDisplay}");
+        if (item.DisplayNoteLabel is { } note)
+        {
+            sb.AppendLine($"  {"Display Note:",-16}{note}");
+        }
+
+        if (item.SubTerminalLabel is { } subMenu)
+        {
+            sb.AppendLine($"  {"Sub-menu:",-16}{subMenu}");
+        }
+
+        if (item.ConditionLines.Count > 0)
+        {
+            sb.AppendLine($"  Conditions ({item.ConditionLines.Count}):");
+            for (var i = 0; i < item.ConditionLines.Count; i++)
+            {
+                sb.AppendLine($"    {item.Conditions[i].Index}: {item.ConditionLines[i]}");
+            }
+
+            if (item.ConditionGrouping is { } grouping)
+            {
+                sb.AppendLine($"  {"Grouping:",-16}{grouping}");
+            }
+        }
+
+        var script = item.Script;
+        AppendEmbeddedScript(sb, "  ", new EmbeddedScriptText(
+            "Result Script",
+            script.Summary,
+            script.Classification,
+            script.SourceText,
+            script.DecompiledText,
+            script.BytecodeOrder,
+            script.Variables,
+            script.References.Select(reference => reference.Display).ToArray(),
+            script.BundleNote,
+            script.References.Select(reference => reference.Raw).ToArray()));
+    }
+
+    private static string FormatProvenance(ScriptSourceClassification classification)
+    {
+        return classification.CorrespondenceToken == ScriptSourceProvenance.CorrespondenceNotApplicable
+            ? classification.Token
+            : $"{classification.Token} (correspondence: {classification.CorrespondenceToken})";
+    }
+
+    private static void AppendFormLine(StringBuilder sb, string label, uint? formId, FormIdResolver resolver)
+    {
+        if (formId is { } id && id != 0)
+        {
+            sb.AppendLine($"{PadLabel(label)}{TerminalMenuItemDescriber.FormatFormId(id, resolver)}");
+        }
+    }
+
+    /// <summary>
+    ///     One embedded script as <see cref="AppendEmbeddedScript" /> prints it. Every string is plain text.
+    /// </summary>
+    /// <param name="Heading">The slot heading, e.g. <c>Result Script</c> or <c>Result Script (Begin)</c>.</param>
+    /// <param name="Summary">One-line summary: compiled size, or why there is no code.</param>
+    /// <param name="Classification">How the source text is labeled.</param>
+    /// <param name="SourceText">The source text in full, or null.</param>
+    /// <param name="DecompiledText">BethesdaMultitool's decompilation in full, or null.</param>
+    /// <param name="BytecodeOrder">The byte order the SCDA was decoded with, or null without SCDA.</param>
+    /// <param name="Variables">The SLSD/SCVR locals.</param>
+    /// <param name="References">The SCRO/SCRV table as text, in stored order.</param>
+    /// <param name="BundleNote">The incomplete-bundle wording, or null.</param>
+    /// <param name="RawReferences">The owning script's SCRO/SCRV values, used to distinguish reference locals from floats.</param>
+    internal sealed record EmbeddedScriptText(
+        string Heading,
+        string Summary,
+        ScriptSourceClassification Classification,
+        string? SourceText,
+        string? DecompiledText,
+        string? BytecodeOrder,
+        IReadOnlyList<ScriptVariableInfo> Variables,
+        IReadOnlyList<string> References,
+        string? BundleNote,
+        IReadOnlyList<uint> RawReferences);
+
+    internal static void AppendMessagesSection(StringBuilder sb, List<MessageRecord> messages,
+        FormIdResolver resolver, ConditionDisplayContext? conditions = null)
+    {
+        conditions ??= ConditionDisplayContext.ForResolver(resolver, GameProfiles.DefaultGame, gameAssumed: true);
         GeckReportHelpers.AppendSectionHeader(sb, $"Messages ({messages.Count})");
         sb.AppendLine();
 
@@ -306,6 +558,23 @@ internal static class GeckTextContentWriter
                 sb.AppendLine($"  Text:        {msg.Description}");
             }
 
+            foreach (var line in RuntimeMessageEvidenceFormatter.FormatSelectedSources(msg))
+            {
+                sb.AppendLine($"  {line}");
+            }
+            if (msg.ButtonSource == MessageFieldSource.RuntimeObject || msg.RuntimeButtons is null)
+                foreach (var line in RuntimeMessageEvidenceFormatter.Format(msg.RuntimeEvidence))
+                    sb.AppendLine($"  {line}");
+
+            if (msg.UnassignedConditions.Count > 0)
+            {
+                sb.AppendLine("  Unassigned conditions (before first button; ownership unknown):");
+                foreach (var line in MessageConditionFormatter.Format(msg.UnassignedConditions, conditions))
+                {
+                    sb.AppendLine($"    {line}");
+                }
+            }
+
             if (msg.Buttons.Count > 0)
             {
                 sb.AppendLine(
@@ -313,7 +582,16 @@ internal static class GeckTextContentWriter
                 for (var i = 0; i < msg.Buttons.Count; i++)
                 {
                     sb.AppendLine($"    [{i + 1}] {msg.Buttons[i]}");
+                    foreach (var line in MessageConditionFormatter.Format(msg.GetButtonConditions(i), conditions))
+                    {
+                        sb.AppendLine($"      {line}");
+                    }
                 }
+            }
+
+            foreach (var line in RuntimeMessageEvidenceFormatter.FormatAlternative(msg, conditions))
+            {
+                sb.AppendLine($"  {line}");
             }
 
             if (!string.IsNullOrEmpty(msg.Icon))
@@ -326,10 +604,10 @@ internal static class GeckTextContentWriter
     }
 
     internal static string GenerateMessagesReport(List<MessageRecord> messages,
-        FormIdResolver? resolver = null)
+        FormIdResolver? resolver = null, ConditionDisplayContext? conditions = null)
     {
         var sb = new StringBuilder();
-        AppendMessagesSection(sb, messages, resolver ?? FormIdResolver.Empty);
+        AppendMessagesSection(sb, messages, resolver ?? conditions?.Resolver ?? FormIdResolver.Empty, conditions);
         return sb.ToString();
     }
 }

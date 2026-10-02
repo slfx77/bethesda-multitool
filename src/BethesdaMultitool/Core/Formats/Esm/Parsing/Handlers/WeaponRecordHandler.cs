@@ -55,6 +55,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
         string? fullName = null;
         string? modelPath = null;
         string? embeddedWeaponNode = null;
+        uint? scriptFormId = null;
         ObjectBounds? bounds = null;
 
         // DATA subrecord (15 bytes)
@@ -178,6 +179,9 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
                     break;
                 case "NNAM":
                     embeddedWeaponNode = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    scriptFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 case "OBND" when sub.DataLength == 12:
                     bounds = RecordParserContext.ReadObjectBounds(subData, record.IsBigEndian);
@@ -483,6 +487,7 @@ internal sealed class WeaponRecordHandler(RecordParserContext context) : RecordH
             FullName = fullName,
             ModelPath = modelPath,
             EmbeddedWeaponNode = embeddedWeaponNode,
+            ScriptFormId = scriptFormId,
             Bounds = bounds,
             Value = value,
             Health = health,

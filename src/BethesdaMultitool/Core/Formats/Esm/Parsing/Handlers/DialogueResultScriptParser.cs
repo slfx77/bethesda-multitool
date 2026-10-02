@@ -17,7 +17,8 @@ internal static class DialogueResultScriptParser
         string? editorId,
         uint infoFormId,
         Func<uint, string?> resolveFormName,
-        bool isDmpDerived = false)
+        bool isDmpDerived = false,
+        ExternalScriptVariableResolver? externalVariables = null)
     {
         if (blocks.Count == 0)
         {
@@ -29,9 +30,11 @@ internal static class DialogueResultScriptParser
         {
             var block = blocks[i];
             block.SerializedLocals.Complete();
-            var isBigEndianBytecode = InferBytecodeEndian(block);
+            var isBigEndianBytecode = InferBytecodeEndian(block, isDmpDerived);
+            var bindings = new List<ScriptExternalVariableBinding>();
             var decompiledText = TryDecompileResultScript(
-                block, editorId, infoFormId, i, resolveFormName, isBigEndianBytecode);
+                block, editorId, infoFormId, i, resolveFormName, isBigEndianBytecode,
+                externalVariables?.Track(bindings));
             var sourceOrigin = isDmpDerived && !string.IsNullOrEmpty(block.SourceText)
                 ? ScriptSourceTextOrigin.DmpFragment
                 : ScriptSourceTextOrigin.None;
@@ -50,11 +53,15 @@ internal static class DialogueResultScriptParser
             resultScripts.Add(new DialogueResultScript
             {
                 SourceText = sourceDecision.SourceText,
+                WithheldSourceReason = isDmpDerived && !string.IsNullOrEmpty(block.SourceText) && sourceDecision.SourceText is null
+                    ? sourceDecision.SourceIssue ?? sourceDecision.BundleIssue ?? "source validation failed"
+                    : null,
                 // A decompiled fallback is not the fragment's own text, so it must not inherit
                 // the fragment's provenance — reports separate the two.
                 SourceTextOrigin = sourceDecision.ResolveSourceTextOrigin(sourceOrigin),
                 IsDmpDerived = isDmpDerived,
                 DecompiledText = decompiledText,
+                ExternalVariableBindings = bindings,
                 CompiledData = block.CompiledData,
                 Variables = [.. block.Variables],
                 ReferencedObjects = [.. block.ReferencedObjects],
@@ -269,6 +276,7 @@ internal static class DialogueResultScriptParser
             merged.Add(new DialogueResultScript
             {
                 SourceText = bundle.SourceText,
+                WithheldSourceReason = bundle.WithheldSourceReason,
                 SourceTextOrigin = bundle.SourceTextOrigin,
                 IsDmpDerived = bundle.IsDmpDerived,
                 DecompiledText = bundle.DecompiledText,
@@ -324,7 +332,8 @@ internal static class DialogueResultScriptParser
         uint infoFormId,
         int index,
         Func<uint, string?> resolveFormName,
-        bool isBigEndianBytecode)
+        bool isBigEndianBytecode,
+        Func<uint, ushort, string?>? resolveExternalVariable)
     {
         if (block.CompiledData is not { Length: > 0 })
         {
@@ -341,7 +350,8 @@ internal static class DialogueResultScriptParser
                 block.ReferencedObjects,
                 resolveFormName,
                 isBigEndianBytecode,
-                scriptName);
+                scriptName,
+                resolveExternalVariable);
             return decompiler.Decompile(block.CompiledData);
         }
         catch (Exception ex)
@@ -350,13 +360,19 @@ internal static class DialogueResultScriptParser
         }
     }
 
-    private static bool InferBytecodeEndian(DialogueResultScriptBuilder block)
+    /// <summary>
+    ///     A block's <see cref="DialogueResultScriptBuilder.IsBigEndianBytecode" /> is only the
+    ///     container order its SCDA arrived in. When the payload cannot decide, on-disk data falls
+    ///     back to little-endian (serialized SCDA is little-endian inside an Xbox 360 ESM too) and a
+    ///     DMP fragment keeps that container order, as it always has.
+    /// </summary>
+    private static bool InferBytecodeEndian(DialogueResultScriptBuilder block, bool isDmpDerived)
     {
         return CapturedScriptEmissionContract.InferBytecodeEndian(
             block.CompiledData,
             block.Variables,
             block.ReferencedObjects,
-            block.IsBigEndianBytecode);
+            isDmpDerived && block.IsBigEndianBytecode);
     }
 
     internal sealed class DialogueResultScriptBuilder

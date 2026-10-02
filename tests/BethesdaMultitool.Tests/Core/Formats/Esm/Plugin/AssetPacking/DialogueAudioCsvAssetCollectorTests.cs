@@ -7,6 +7,86 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin.AssetPacking;
 
 public class DialogueAudioCsvAssetCollectorTests
 {
+    [Theory]
+    [InlineData(false, 0, "ExcludedUnbound")]
+    [InlineData(true, 2, "UnboundRequested")]
+    public async Task CollectAsync_UnboundAudioRequiresOptInAndPreservesSelectedIdentity(
+        bool includeUnboundAudio, int expectedPaths, string expectedDisposition)
+    {
+        using var csv = new TempFile();
+        const string voice = @"sound\voice\falloutnv.esm\maleadult01default\tempvdialogueulysses_greeting_00137139_1";
+        File.WriteAllText(csv.Path,
+            "File,FormID,Source,Text,ModelName,ModelSha256,ModelPath,ModelBytes\n" +
+            $"{voice}.xma,00137139,whisper,Save the talk.,large-v3,abc123,C:\\models\\large.bin,123\n" +
+            $"{voice}.ogg,00137139,whisper,Duplicate row.,small,def456,C:\\models\\small.bin,45\n");
+
+        var result = await DialogueAudioCsvAssetCollector.CollectAsync(
+            new RecordCollection(), null, [csv.Path], NullConversionProgressSink.Instance,
+            CancellationToken.None, outputEspFileName: "converted.esp", includeUnboundAudio: includeUnboundAudio);
+
+        Assert.Equal(expectedPaths, result.Paths.Count);
+        Assert.Equal(0, result.RowsMatched);
+        Assert.Equal(includeUnboundAudio ? 1 : 0, result.UnboundRowsIncluded);
+        var row = Assert.Single(result.AuditRows!);
+        Assert.Equal(1, row.RowOrdinal);
+        Assert.False(row.IsBound);
+        Assert.Equal(expectedDisposition, row.Disposition);
+        Assert.Equal((uint)0x00137139, row.FormId);
+        Assert.Equal((byte)1, row.ResponseNumber);
+        Assert.Equal("abc123", row.ModelSha256);
+        Assert.Empty(result.PackPathRenames!);
+        Assert.All(row.Requests, request => Assert.Equal(request.RequestedPath, request.PackPath));
+        if (includeUnboundAudio)
+        {
+            Assert.Contains(voice + ".ogg", result.Paths);
+            Assert.Contains(voice + ".lip", result.Paths);
+        }
+    }
+
+    [Theory]
+    [InlineData("Complete", "Packed")]
+    [InlineData("Failed", "Prepared")]
+    [InlineData("Cancelled", "Prepared")]
+    public void AudioAudit_SeparatesPreparedBytesFromCompletedPacking(string status, string expectedOutcome)
+    {
+        using var csv = new TempFile();
+        var output = csv.Path + ".dialogue-audio.json";
+        try
+        {
+            const string request = @"sound\voice\falloutnv.esm\voice\topic_00137139_1.ogg";
+            var audit = new DialogueAudioPackingAudit([
+                new DialogueAudioPackingRow(csv.Path, 1, Path.ChangeExtension(request, ".xma"),
+                    0x00137139, 1, "large-v3", "abc123", "model.bin", "123", false,
+                    "UnboundRequested", [new DialogueAudioPackingRequest(request, request)])
+            ]);
+            audit.Record(request, new DataFolderResolution
+            {
+                Kind = AssetResolutionKind.ResolvedExact,
+                ResolvedPath = Path.ChangeExtension(request, ".xma"),
+                SourceFolderIndex = 0,
+                Source = new LooseFileAssetSource
+                {
+                    AbsolutePath = "source.xma", NormalizedPath = Path.ChangeExtension(request, ".xma"),
+                    IsXbox360 = true
+                }
+            }, "Prepared", request, [1, 2, 3]);
+            audit.Write(csv.Path, status, status == "Complete" ? ["voices.bsa"] : []);
+
+            using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(output));
+            var row = document.RootElement.GetProperty("rows")[0];
+            Assert.Equal("Unbound", row.GetProperty("binding").GetString());
+            Assert.Equal("abc123", row.GetProperty("transcriptionModel").GetProperty("sha256").GetString());
+            var asset = row.GetProperty("assets")[0];
+            Assert.Equal(expectedOutcome, asset.GetProperty("outcome").GetString());
+            Assert.Equal("source.xma", asset.GetProperty("sourceContainer").GetString());
+            Assert.Equal("039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81", asset.GetProperty("sha256").GetString());
+        }
+        finally
+        {
+            File.Delete(output);
+        }
+    }
+
     [Fact]
     public async Task CollectAsync_MissingPrototypeOverlayAudioCountsVanillaFallback()
     {

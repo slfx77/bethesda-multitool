@@ -368,6 +368,99 @@ public class SemdiffRecordParserTests
 
     #endregion
 
+    #region Record header, identity and bounded parses
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ParseRecords_ReadsVersionControlAndFormVersion_LittleAndBigEndian(bool bigEndian)
+    {
+        // Distinct values at header offsets 16 (VCI1, u32), 20 (form version, u16) and 22 (VCI2, u16):
+        // the header of ACHR 0x000E739E in the 2010 retail DVD's FalloutNV.esm. A misplaced offset
+        // or a wrong byte order reads a different number for at least one of them.
+        var data = SemdiffTestRecords.RecordBytes(bigEndian, "ACHR", 0x000E739E, 0x00000400,
+            0x00195609, 15, 3, false,
+            ("NAME", new byte[] { 0x56, 0x34, 0x12, 0x00 }),
+            ("DATA", new byte[24]));
+
+        var record = Assert.Single(SemdiffRecordParser.ParseRecordsWithSubrecords(data, bigEndian, null, null));
+
+        Assert.Equal("ACHR", record.Type);
+        Assert.Equal(0x000E739Eu, record.FormId);
+        Assert.Equal(0x00000400u, record.Flags);
+        Assert.Equal(40u, record.DataSize);
+        Assert.Equal(0x00195609u, record.VersionControl1);
+        Assert.Equal((ushort)15, record.FormVersion);
+        Assert.Equal((ushort)3, record.VersionControl2);
+        Assert.Equal(24, record.HeaderSize);
+    }
+
+    [Fact]
+    public void CompareRecordFields_MismatchedSignatures_Throws()
+    {
+        var quest = new SemdiffTypes.ParsedRecord("QUST", 0x01011E59, 0, 0,
+            [new SemdiffTypes.ParsedSubrecord("DATA", new byte[8], 24)]);
+        var reference = new SemdiffTypes.ParsedRecord("REFR", 0x01011E59, 0, 0,
+            [new SemdiffTypes.ParsedSubrecord("DATA", new byte[24], 24)]);
+
+        Assert.Throws<ArgumentException>(() =>
+            SemdiffRecordParser.CompareRecordFields(quest, reference, false, false));
+    }
+
+    [Fact]
+    public void ReadEditorId_StopsAtTheFirstNul()
+    {
+        // EDID is NUL-terminated, not NUL-padded: bytes after the terminator are not part of it.
+        var subrecords = new List<SemdiffTypes.ParsedSubrecord>
+        {
+            new("EDID", Encoding.ASCII.GetBytes("TopicX\0ic013\0"), 24)
+        };
+
+        Assert.Equal("TopicX", SemdiffRecordParser.ReadEditorId(subrecords));
+        Assert.Null(SemdiffRecordParser.ReadEditorId([new SemdiffTypes.ParsedSubrecord("EDID", [0x00], 24)]));
+        Assert.Null(SemdiffRecordParser.ReadEditorId([new SemdiffTypes.ParsedSubrecord("NAME", [0x41], 24)]));
+    }
+
+    [Fact]
+    public void ParseRecordsWithEditorId_ReturnsOnlyThatSignatureAndEditorId()
+    {
+        byte[] data =
+        [
+            .. SemdiffTestRecords.RecordBytes(false, "QUST", 0x01000001, 0, 0, 15, 0, false,
+                ("EDID", Encoding.ASCII.GetBytes("Other\0"))),
+            .. SemdiffTestRecords.RecordBytes(false, "SCPT", 0x01000002, 0, 0, 15, 0, false,
+                ("EDID", Encoding.ASCII.GetBytes("NVDLC03X13VR\0"))),
+            .. SemdiffTestRecords.RecordBytes(false, "QUST", 0x01000003, 0, 0, 15, 0, false,
+                ("EDID", Encoding.ASCII.GetBytes("NVDLC03X13VR\0")))
+        ];
+
+        var found = SemdiffRecordParser.ParseRecordsWithEditorId(data, false, "QUST", "nvdlc03x13vr");
+
+        var quest = Assert.Single(found);
+        Assert.Equal("QUST", quest.Type);
+        Assert.Equal(0x01000003u, quest.FormId);
+        Assert.Empty(SemdiffRecordParser.ParseRecordsWithEditorId(data, false, "DIAL", "NVDLC03X13VR"));
+    }
+
+    [Fact]
+    public void ParseRecordsWithFormIds_KeepsOnlyTheListedFormIds()
+    {
+        byte[] data =
+        [
+            .. BuildMinimalRecordLE("DIAL", 0x010134AA, "EDID", [0x41, 0x00]),
+            .. BuildMinimalRecordLE("DIAL", 0x010134AB, "EDID", [0x42, 0x00]),
+            .. BuildMinimalRecordLE("QUST", 0x01011E59, "EDID", [0x43, 0x00])
+        ];
+
+        var records = SemdiffRecordParser.ParseRecordsWithFormIds(data, false, null,
+            new HashSet<uint> { 0x010134AA, 0x01011E59 }, out var skipped);
+
+        Assert.Equal(0, skipped);
+        Assert.Equal([0x010134AAu, 0x01011E59u], records.Select(r => r.FormId).ToList());
+    }
+
+    #endregion
+
     #region End-to-End: Parse + Compare
 
     [Fact]

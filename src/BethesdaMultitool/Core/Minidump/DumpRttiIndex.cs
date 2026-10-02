@@ -109,26 +109,28 @@ public sealed class DumpRttiIndex
     ///     Walk the module's RTTI tables. Returns null when the dump names no game module or none of
     ///     it was captured.
     /// </summary>
-    public static DumpRttiIndex? Build(MinidumpInfo info, IMemoryAccessor accessor, long fileSize)
+    public static DumpRttiIndex? Build(MinidumpInfo info, IMemoryAccessor accessor, long fileSize,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var image = ModuleImage.Build(info, accessor, fileSize);
         if (image is null)
         {
             return null;
         }
 
-        var typeDescriptors = FindTypeDescriptors(image);
+        var typeDescriptors = FindTypeDescriptors(image, cancellationToken);
         if (typeDescriptors.Count == 0)
         {
             return null;
         }
 
-        var locators = FindCompleteObjectLocators(image, typeDescriptors);
+        var locators = FindCompleteObjectLocators(image, typeDescriptors, cancellationToken);
         var referencedTypeDescriptors = new HashSet<uint>(locators.Values.Select(c => c.PTypeDescriptor));
 
         var classIdByName = new Dictionary<string, int>(StringComparer.Ordinal);
         var classes = new List<DumpRttiClass>();
-        var vtables = FindVtables(image, locators, typeDescriptors, classIdByName, classes);
+        var vtables = FindVtables(image, locators, typeDescriptors, classIdByName, classes, cancellationToken);
 
         return new DumpRttiIndex(
             vtables,
@@ -146,7 +148,7 @@ public sealed class DumpRttiIndex
     ///     falsifier — every one of the 2,030 real descriptors on xex44 satisfies it, while a
     ///     stray occurrence of the tag inside unrelated data generally does not.
     /// </summary>
-    private static Dictionary<uint, string> FindTypeDescriptors(ModuleImage image)
+    private static Dictionary<uint, string> FindTypeDescriptors(ModuleImage image, CancellationToken cancellationToken)
     {
         var result = new Dictionary<uint, string>();
         var tag = ".?A"u8;
@@ -158,6 +160,7 @@ public sealed class DumpRttiIndex
 
             while (searchFrom < bytes.Length)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var relative = bytes.AsSpan(searchFrom).IndexOf(tag);
                 if (relative < 0)
                 {
@@ -208,11 +211,11 @@ public sealed class DumpRttiIndex
     ///     address is a candidate <c>pTypeDescriptor</c> at locator+12.
     /// </summary>
     private static Dictionary<uint, LocatorInfo> FindCompleteObjectLocators(
-        ModuleImage image, Dictionary<uint, string> typeDescriptors)
+        ModuleImage image, Dictionary<uint, string> typeDescriptors, CancellationToken cancellationToken)
     {
         var result = new Dictionary<uint, LocatorInfo>();
 
-        foreach (var (wordVa, word) in EnumerateWords(image))
+        foreach (var (wordVa, word) in EnumerateWords(image, cancellationToken))
         {
             if (!typeDescriptors.ContainsKey(word) || wordVa < 12)
             {
@@ -247,11 +250,11 @@ public sealed class DumpRttiIndex
         Dictionary<uint, LocatorInfo> locators,
         Dictionary<uint, string> typeDescriptors,
         Dictionary<string, int> classIdByName,
-        List<DumpRttiClass> classes)
+        List<DumpRttiClass> classes, CancellationToken cancellationToken)
     {
         var result = new Dictionary<uint, DumpRttiVtable>();
 
-        foreach (var (wordVa, word) in EnumerateWords(image))
+        foreach (var (wordVa, word) in EnumerateWords(image, cancellationToken))
         {
             if (!locators.TryGetValue(word, out var locator))
             {
@@ -346,13 +349,15 @@ public sealed class DumpRttiIndex
     }
 
     /// <summary>Every 4-aligned big-endian word in the image, with its virtual address.</summary>
-    private static IEnumerable<(uint Va, uint Word)> EnumerateWords(ModuleImage image)
+    private static IEnumerable<(uint Va, uint Word)> EnumerateWords(ModuleImage image, CancellationToken cancellationToken)
     {
         foreach (var run in image.Runs)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var align = (int)((4 - (run.StartVa & 3)) & 3);
             for (var offset = align; offset + 4 <= run.Bytes.Length; offset += 4)
             {
+                if ((offset & 0xFFFF) == align) cancellationToken.ThrowIfCancellationRequested();
                 yield return (run.StartVa + (uint)offset, BinaryUtils.ReadUInt32BE(run.Bytes, offset));
             }
         }

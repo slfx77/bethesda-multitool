@@ -7,14 +7,16 @@ using BethesdaMultitool.Core.Formats.Esm.Reporting;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
 /// <summary>
-///     Walks a <see cref="RecordCollection" /> and a raw DMP file to gather every
-///     referenced asset path (.nif/.dds/.wav/.kf/.egm/.egt/...) that the plugin needs
-///     in order to render and play correctly.
+///     Walks a <see cref="RecordCollection" /> and a raw DMP file to gather
+///     explicit paths, observed strings, and derived candidates for asset packing.
+///     A collected path alone does not establish a runtime requirement.
 ///     Output paths are normalized to lowercase + backslash separators, with no
 ///     leading separator and no "Data\" prefix. This matches BSA-internal convention.
 /// </summary>
 internal static class AssetPathCollector
 {
+    private static readonly string[] MorphSiblingExtensions = [".egm", ".egt", ".tri"];
+
     /// <summary>
     ///     Collect every asset path referenced by the converted plugin's record collection
     ///     and (optionally) the raw bytes of the source DMP.
@@ -22,24 +24,32 @@ internal static class AssetPathCollector
     public static HashSet<string> Collect(
         RecordCollection records,
         string? dmpFilePath,
-        IConversionProgressSink sink)
+        IConversionProgressSink sink,
+        AssetRequestCatalog? requests = null,
+        string? recordSourcePath = null)
     {
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         var beforeRecords = paths.Count;
-        ScanRecords(records, paths, null);
+        ScanRecords(records, paths, null, requests, recordSourcePath);
         sink.Info("AssetCollect", $"ESP records contributed {paths.Count - beforeRecords} unique asset paths");
 
         if (dmpFilePath is not null && File.Exists(dmpFilePath))
         {
             var beforeDmp = paths.Count;
-            ScanDmpFile(dmpFilePath, paths);
+            var observed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            ScanDmpFile(dmpFilePath, observed);
+            foreach (var path in observed)
+            {
+                paths.Add(path);
+                requests?.Add(path, new AssetRequestEvidence("dump-string", SourcePath: dmpFilePath));
+            }
             sink.Info("AssetCollect",
                 $"DMP string scan contributed {paths.Count - beforeDmp} additional asset paths");
         }
 
         var beforeSiblings = paths.Count;
-        DeriveNifSiblings(paths);
+        DeriveNifSiblings(paths, requests);
         sink.Info("AssetCollect",
             $"NIF sibling derivation added {paths.Count - beforeSiblings} EGM/EGT/TRI paths");
 
@@ -75,14 +85,18 @@ internal static class AssetPathCollector
     private static void ScanRecords(
         RecordCollection records,
         HashSet<string> paths,
-        List<AssetPathReference>? sources)
+        List<AssetPathReference>? sources,
+        AssetRequestCatalog? requests = null,
+        string? recordSourcePath = null)
     {
         // 1) Explicit dictionary: FormID → model path. Cheapest collection pass.
         //    These paths can't be source-tracked (the dictionary is a projection, not the
         //    canonical owner) — for rewrite purposes the record fields are scanned below.
-        foreach (var modelPath in records.ModelPathIndex.Values)
+        foreach (var (formId, modelPath) in records.ModelPathIndex)
         {
-            TryAddPath(modelPath, paths);
+            if (TryAddPath(modelPath, paths))
+                requests?.Add(TryNormalizeRequestPath(modelPath)!, new AssetRequestEvidence(
+                    "model-index-projection", formId, Field: "ModelPathIndex", SourcePath: recordSourcePath));
         }
 
         // 2) Reflection over every IEnumerable property on RecordCollection. Skip dictionaries
@@ -116,7 +130,7 @@ internal static class AssetPathCollector
                     continue;
                 }
 
-                ScanRecordObject(record, paths, sources, 0);
+                ScanRecordObject(record, paths, sources, 0, requests, null, null, "", recordSourcePath);
             }
         }
     }
@@ -129,7 +143,12 @@ internal static class AssetPathCollector
         object record,
         HashSet<string> paths,
         List<AssetPathReference>? sources,
-        int depth)
+        int depth,
+        AssetRequestCatalog? requests,
+        uint? ownerFormId,
+        string? ownerType,
+        string fieldPrefix,
+        string? recordSourcePath)
     {
         if (depth > 3)
         {
@@ -137,6 +156,11 @@ internal static class AssetPathCollector
         }
 
         var type = record.GetType();
+        if (requests is not null && depth == 0 && type.GetProperty("FormId")?.GetValue(record) is uint formId)
+        {
+            ownerFormId = formId;
+            ownerType = type.Name;
+        }
         var propertyAccessors = TypePathAccessorCache.GetOrAdd(type);
 
         foreach (var (prop, isPathLike) in propertyAccessors)
@@ -159,15 +183,20 @@ internal static class AssetPathCollector
             switch (value)
             {
                 case string s when isPathLike:
-                    if (TryAddPath(s, paths, FieldRootHint(record)) && sources is not null)
+                    if (TryAddPath(s, paths, FieldRootHint(record)))
                     {
-                        sources.Add(BuildReference(record, prop, s));
+                        sources?.Add(BuildReference(record, prop, s));
+                        requests?.Add(TryNormalizeRequestPath(s, FieldRootHint(record))!, new AssetRequestEvidence(
+                            "record-field", ownerFormId, ownerType, fieldPrefix + prop.Name,
+                            SourcePath: recordSourcePath));
                     }
 
                     break;
                 case IEnumerable en when prop.PropertyType != typeof(string):
+                    var itemIndex = -1;
                     foreach (var item in en)
                     {
+                        itemIndex++;
                         if (item is null)
                         {
                             continue;
@@ -178,11 +207,15 @@ internal static class AssetPathCollector
                             // String inside an IEnumerable (e.g. List<string>) — we can detect
                             // the path but can't rewrite it from the list (no settable index).
                             // Skip source-tracking but still gather it for packing.
-                            TryAddPath(itemStr, paths, FieldRootHint(record));
+                            if (TryAddPath(itemStr, paths, FieldRootHint(record)))
+                                requests?.Add(TryNormalizeRequestPath(itemStr, FieldRootHint(record))!,
+                                    new AssetRequestEvidence("record-field", ownerFormId, ownerType,
+                                        $"{fieldPrefix}{prop.Name}[{itemIndex}]", SourcePath: recordSourcePath));
                         }
                         else if (!item.GetType().IsPrimitive && item is not string)
                         {
-                            ScanRecordObject(item, paths, sources, depth + 1);
+                            ScanRecordObject(item, paths, sources, depth + 1, requests, ownerFormId, ownerType,
+                                $"{fieldPrefix}{prop.Name}[{itemIndex}].", recordSourcePath);
                         }
                     }
 
@@ -195,7 +228,8 @@ internal static class AssetPathCollector
                             "BethesdaMultitool.Core.Formats.Esm.Models",
                             StringComparison.Ordinal) == true)
                     {
-                        ScanRecordObject(value, paths, sources, depth + 1);
+                        ScanRecordObject(value, paths, sources, depth + 1, requests, ownerFormId, ownerType,
+                            fieldPrefix + prop.Name + ".", recordSourcePath);
                     }
 
                     break;
@@ -414,51 +448,28 @@ internal static class AssetPathCollector
     // NIF sibling derivation
     // ====================================================================================
 
-    /// <summary>
-    ///     For every facegen-eligible .nif path in the set, add the matching .egm, .egt,
-    ///     and .tri siblings in the same directory. FNV loads these automatically only for
-    ///     head/face meshes — adding them for every NIF (weapons, ammo, statics, etc.)
-    ///     floods the missing-asset list with thousands of bogus entries that no asset on
-    ///     disk would ever satisfy.
-    /// </summary>
-    private static void DeriveNifSiblings(HashSet<string> paths)
+    /// <summary>Directory-based candidates only; neither availability nor per-owner necessity is established.</summary>
+    private static void DeriveNifSiblings(HashSet<string> paths, AssetRequestCatalog? requests)
     {
-        // Snapshot the current set — we're going to add to it.
-        var nifPaths = paths
-            .Where(p => p.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)
-                        && IsFaceGenEligibleNif(p))
-            .ToList();
-
+        var nifPaths = paths.Where(p => p.EndsWith(".nif", StringComparison.OrdinalIgnoreCase)
+            && IsFaceGenEligibleNif(p)).ToArray();
         foreach (var nif in nifPaths)
         {
-            var prefix = nif[..^4];
-            paths.Add(prefix + ".egm");
-            paths.Add(prefix + ".egt");
-            paths.Add(prefix + ".tri");
+            foreach (var extension in MorphSiblingExtensions)
+            {
+                var path = nif[..^4] + extension;
+                paths.Add(path);
+                if (requests is null) continue;
+                foreach (var parent in requests.Get(nif))
+                    requests.Add(path, parent with
+                    {
+                        Basis = "morph-companion-candidate", ParentPath = nif, ParentBasis = parent.Basis
+                    });
+            }
         }
     }
 
-    /// <summary>
-    ///     Heuristic: a .nif path is "facegen-eligible" (has .egm/.egt/.tri siblings) when
-    ///     it lives under one of the *specific* directories the engine loads facegen data
-    ///     for. Inspecting FNV PC Data the actual locations are limited to:
-    ///     <list type="bullet">
-    ///         <item>
-    ///             <description><c>meshes\characters\head\</c> — race head meshes (headhuman, headold, eyelefthuman, …)</description>
-    ///         </item>
-    ///         <item>
-    ///             <description><c>meshes\armor\headgear\…\</c> — hat/helmet face-morph data</description>
-    ///         </item>
-    ///         <item>
-    ///             <description><c>meshes\dlc*\armor\</c> — DLC headgear variants</description>
-    ///         </item>
-    ///     </list>
-    ///     Notably <c>meshes\creatures\</c> never has facegen siblings (brahmin skeletons,
-    ///     gecko skeletons, etc. are 4-legged body meshes, no face), and generic body NIFs
-    ///     under <c>meshes\characters\</c> don't either. Earlier passes that auto-derived
-    ///     siblings for everything under <c>characters\</c> / <c>creatures\</c> flooded the
-    ///     missing-asset audit with thousands of bogus entries.
-    /// </summary>
+    /// <summary>Retained request heuristic; directory membership does not prove a FaceGen consumer.</summary>
     private static bool IsFaceGenEligibleNif(string normalizedPath)
     {
         return normalizedPath.Contains("\\head\\", StringComparison.OrdinalIgnoreCase)

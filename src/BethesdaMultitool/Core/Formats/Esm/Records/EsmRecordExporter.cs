@@ -1,10 +1,13 @@
-using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
+using BethesdaMultitool.Core.Formats.Esm.Export.Scripts;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Records;
 
@@ -52,8 +55,23 @@ public static class EsmRecordExporter
         Log.Debug($"  [ESM] Exported {gameSettings.Count} game settings to game_settings.txt");
     }
 
-    /// <summary>Writes each SCTX script source record to a text file in the output directory.</summary>
-    public static async Task ExportScriptSourcesAsync(List<SctxRecord> scriptSources, string outputDir)
+    /// <summary>
+    ///     Writes each carved SCTX fragment VERBATIM to <c>script_sources/sctx_NNNN_0xOFFSET{ext}</c> (the
+    ///     Windows-1252 bytes the fragment was decoded from, no BOM, nothing added) and describes them in
+    ///     <c>script_sources/manifest.json</c>. The fragments come from a keyword-filtered scan of a memory dump
+    ///     and have no owning record, so the manifest names them <c>carved-sctx-fragment</c> and carries the
+    ///     partial-capture note. The extension is the dump game's default (<c>.gek</c>).
+    /// </summary>
+    /// <param name="scriptSources">The carved fragments.</param>
+    /// <param name="outputDir">The directory that receives <c>script_sources/</c>.</param>
+    /// <param name="sourcePath">
+    ///     The dump the fragments were carved from. When given, the manifest records its path, size and
+    ///     SHA-256; when null, its <c>source</c> is null.
+    /// </param>
+    public static async Task ExportScriptSourcesAsync(
+        List<SctxRecord> scriptSources,
+        string outputDir,
+        string? sourcePath = null)
     {
         if (scriptSources.Count == 0)
         {
@@ -63,119 +81,90 @@ public static class EsmRecordExporter
         var sctxDir = Path.Combine(outputDir, "script_sources");
         Directory.CreateDirectory(sctxDir);
 
+        // A memory dump is only ever Fallout: New Vegas (MinidumpAnalyzer pins it), so its fragments take
+        // that game's script extension.
+        var extension = ScriptExportFileNamer.DefaultExtension(GameProfiles.DefaultGame);
+        var fragments = new List<CarvedScriptFragment>(scriptSources.Count);
         for (var i = 0; i < scriptSources.Count; i++)
         {
             var sctx = scriptSources[i];
-            var filename = $"sctx_{i:D4}_0x{sctx.Offset:X8}.txt";
-            await File.WriteAllTextAsync(Path.Combine(sctxDir, filename), sctx.Text);
+            var filename = $"sctx_{i:D4}_0x{sctx.Offset:X8}{extension}";
+            var bytes = EsmStringUtils.EncodeGameText(sctx.Text);
+            await File.WriteAllBytesAsync(Path.Combine(sctxDir, filename), bytes);
+            fragments.Add(new CarvedScriptFragment(
+                filename,
+                sctx.Offset,
+                sctx.Length,
+                ScriptExportWriter.DetectLineEndings(sctx.Text),
+                bytes.Length,
+                Convert.ToHexStringLower(SHA256.HashData(bytes))));
+        }
+
+        var source = sourcePath is null
+            ? null
+            : ScriptExportSource.Describe(sourcePath, null, GameProfiles.DefaultGame, true, null);
+        await using (var stream = new FileStream(
+                         Path.Combine(sctxDir, "manifest.json"),
+                         FileMode.Create,
+                         FileAccess.Write,
+                         FileShare.None))
+        {
+            ScriptExportManifestWriter.WriteCarvedFragments(stream, source, fragments, DateTimeOffset.UtcNow);
         }
 
         Log.Debug($"  [ESM] Exported {scriptSources.Count} script sources to script_sources/");
     }
 
     /// <summary>
-    ///     Export parsed scripts as individual text files.
-    ///     Each file contains header info, source text (SCTX), decompiled bytecode, variables, and references.
+    ///     Exports parsed scripts as individual files under <c>{outputDir}/scripts/</c> for the memory-dump
+    ///     extraction pipeline (carve, GUI Extract and Batch). Author-written source goes to
+    ///     <c>{stem}{ext}</c> verbatim, a script with no source text but decompiled bytecode gets a
+    ///     <c>{stem}.decompiled{ext}</c> reconstruction, and <c>scripts.manifest.json</c> records the source,
+    ///     each file's provenance and hash, and the variables and references the old per-script report
+    ///     wrapper carried. The extension is the game's default; existing files are replaced, as re-extraction
+    ///     always has.
     /// </summary>
-    public static async Task ExportParsedScriptsAsync(
-        List<ScriptRecord> scripts,
+    /// <param name="scripts">
+    ///     The scripts to export. For a memory dump these must be the dump's OWN scripts, captured before any
+    ///     load-order merge, because every file is labelled with <paramref name="source" />'s provenance.
+    /// </param>
+    /// <param name="formIdMap">Names referenced FormIDs in the manifest; null leaves them unnamed.</param>
+    /// <param name="outputDir">The directory that receives <c>scripts/</c>.</param>
+    /// <param name="source">Identity of the input the scripts were read from.</param>
+    /// <returns>What was written, or null when there were no scripts (nothing is created then).</returns>
+    public static Task<ScriptExportSummary?> ExportParsedScriptsAsync(
+        IReadOnlyList<ScriptRecord> scripts,
         Dictionary<uint, string>? formIdMap,
-        string outputDir)
+        string outputDir,
+        ScriptExportSource source)
     {
+        ArgumentNullException.ThrowIfNull(scripts);
+        ArgumentNullException.ThrowIfNull(source);
         if (scripts.Count == 0)
         {
-            return;
+            return Task.FromResult<ScriptExportSummary?>(null);
         }
 
-        var scriptsDir = Path.Combine(outputDir, "scripts");
-        Directory.CreateDirectory(scriptsDir);
-
-        foreach (var script in scripts)
+        var options = new ScriptExportOptions
         {
-            var name = script.EditorId ?? $"0x{script.FormId:X8}";
-            var safeName = string.Join("_", name.Split(Path.GetInvalidFileNameChars()));
-            var filename = $"{safeName}.txt";
-            var content = FormatScriptExport(script, name, formIdMap);
-            await File.WriteAllTextAsync(Path.Combine(scriptsDir, filename), content);
-        }
+            Extension = ScriptExportFileNamer.DefaultExtension(source.Game),
+            Decompiled = ScriptDecompiledPolicy.Missing,
+            Overwrite = true
+        };
+        Func<uint, string?>? resolveEditorId = formIdMap is null ? null : formId => formIdMap.GetValueOrDefault(formId);
+        var summary = ScriptExportWriter.Write(
+            scripts,
+            source,
+            options,
+            Path.Combine(outputDir, "scripts"),
+            resolveEditorId,
+            DateTimeOffset.UtcNow);
 
-        Log.Debug($"  [ESM] Exported {scripts.Count} reconstructed scripts to scripts/");
-    }
-
-    private static string FormatScriptExport(
-        ScriptRecord script, string name, Dictionary<uint, string>? formIdMap)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"; Script: {name}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"; FormID: 0x{script.FormId:X8}");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"; Type: {script.ScriptType}");
-        sb.AppendLine(CultureInfo.InvariantCulture,
-            $"; Variables: {script.Variables.Count}, Refs: {script.RefObjectCount}, Compiled: {script.CompiledSize:N0} bytes");
-        sb.AppendLine();
-
-        AppendScriptSource(sb, script);
-        AppendScriptDecompiled(sb, script);
-        AppendScriptVariables(sb, script);
-        AppendScriptReferences(sb, script, formIdMap);
-
-        return sb.ToString();
-    }
-
-    private static void AppendScriptSource(StringBuilder sb, ScriptRecord script)
-    {
-        if (!script.HasSource)
-        {
-            return;
-        }
-
-        sb.AppendLine("; === Source Text (SCTX) ===");
-        sb.AppendLine(script.SourceText);
-        sb.AppendLine();
-    }
-
-    private static void AppendScriptDecompiled(StringBuilder sb, ScriptRecord script)
-    {
-        if (string.IsNullOrEmpty(script.DecompiledText))
-        {
-            return;
-        }
-
-        sb.AppendLine("; === Decompiled Bytecode (SCDA) ===");
-        sb.AppendLine(script.DecompiledText);
-        sb.AppendLine();
-    }
-
-    private static void AppendScriptVariables(StringBuilder sb, ScriptRecord script)
-    {
-        if (script.Variables.Count == 0)
-        {
-            return;
-        }
-
-        sb.AppendLine("; === Variables ===");
-        foreach (var v in script.Variables)
-        {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"; [{v.Index}] {v.TypeName} {v.Name ?? "(unnamed)"}");
-        }
-
-        sb.AppendLine();
-    }
-
-    private static void AppendScriptReferences(
-        StringBuilder sb, ScriptRecord script, Dictionary<uint, string>? formIdMap)
-    {
-        if (script.ReferencedObjects.Count == 0)
-        {
-            return;
-        }
-
-        sb.AppendLine("; === Referenced Objects ===");
-        foreach (var refId in script.ReferencedObjects)
-        {
-            var editorId = formIdMap?.GetValueOrDefault(refId);
-            var display = editorId != null ? $"{editorId} [0x{refId:X8}]" : $"0x{refId:X8}";
-            sb.AppendLine(CultureInfo.InvariantCulture, $"; {display}");
-        }
+        Log.Debug(
+            $"  [ESM] Exported {summary.ScriptCount} scripts to scripts/ ({summary.StoredSourceFiles} plugin source, " +
+            $"{summary.CapturedSourceFiles} captured source, {summary.DecompiledFiles} decompiled, " +
+            $"{summary.SkippedScripts} skipped)");
+        return Task.FromResult<ScriptExportSummary?>(summary);
     }
 
     /// <summary>

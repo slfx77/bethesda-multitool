@@ -68,7 +68,7 @@ public class RecordParserTests(ITestOutputHelper output)
     {
         // Build 3 big-endian CREA records with EDID, FULL, ACBS, DATA subrecords.
         // ACBS = 24 bytes (same layout as NPC_)
-        // DATA = 8 bytes minimum: type(1) combat(1) magic(1) stealth(1) damage(4 BE)
+        // DATA = type/skills(4), health(Int32), damage(Int16), SPECIAL(7).
         var creatures = new[]
         {
             ("Gecko", "Gecko", (byte)0x01, (byte)30, (short)15, 0x00010001u),
@@ -87,14 +87,15 @@ public class RecordParserTests(ITestOutputHelper output)
             BinaryPrimitives.WriteInt16BigEndian(acbs.AsSpan(8), 10); // level
 
             // DATA = 17 bytes to match schema: type(1) combat(1) magic(1) stealth(1)
-            //        attackDamage(4 BE) health(2 BE) remaining(7)
+            //        health(4 BE) attackDamage(2 BE) SPECIAL(7)
             var data = new byte[17];
             data[0] = type; // creature type
             data[1] = combat; // combat skill
             data[2] = 20; // magic skill
             data[3] = 25; // stealth skill
-            BinaryPrimitives.WriteInt32BigEndian(data.AsSpan(4), damage); // attack damage
-            BinaryPrimitives.WriteInt16BigEndian(data.AsSpan(8), 100); // health
+            BinaryPrimitives.WriteInt32BigEndian(data.AsSpan(4), 675); // health
+            BinaryPrimitives.WriteInt16BigEndian(data.AsSpan(8), damage); // attack damage
+            new byte[] { 2, 4, 3, 1, 2, 4, 1 }.CopyTo(data, 10);
 
             var recordBytes = BuildRecordBytes(formId, "CREA", true,
                 ("EDID", NullTermString(edid)),
@@ -145,9 +146,42 @@ public class RecordParserTests(ITestOutputHelper output)
         _output.WriteLine($"Deathclaw: Type={deathclaw.CreatureType}, Combat={deathclaw.CombatSkill}, " +
                           $"Magic={deathclaw.MagicSkill}, Stealth={deathclaw.StealthSkill}");
 
-        // For 8-byte DATA (no schema match for this size), the fallback path
-        // reads raw bytes: type=subData[0], combat=subData[1], etc.
         Assert.Equal(0x03, deathclaw.CreatureType);
         Assert.Equal(80, deathclaw.CombatSkill);
+        Assert.Equal(675, deathclaw.Health);
+        Assert.Equal(100, deathclaw.AttackDamage);
+        Assert.Equal(new byte[] { 2, 4, 3, 1, 2, 4, 1 }, deathclaw.Attributes);
+    }
+
+    [Theory]
+    [InlineData(false, 675, 0xABCD)]
+    [InlineData(false, -17, 0x1234)]
+    [InlineData(false, 0, 0)]
+    [InlineData(true, 70000, 0)]
+    public void CreatureData_HealthDamageAndAttributesRespectSourceLayout(bool bigEndian, int health, int reserved)
+    {
+        byte[] data = [1, 40, 50, 50, 0, 0, 0, 0, 0, 0, 2, 4, 3, 1, 2, 4, 1];
+        if (bigEndian)
+        {
+            BinaryPrimitives.WriteInt32BigEndian(data.AsSpan(4), health);
+            BinaryPrimitives.WriteInt16BigEndian(data.AsSpan(8), 15);
+        }
+        else
+        {
+            BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(4), (short)health);
+            BinaryPrimitives.WriteUInt16LittleEndian(data.AsSpan(6), (ushort)reserved);
+            BinaryPrimitives.WriteInt16LittleEndian(data.AsSpan(8), 15);
+        }
+        var bytes = BuildRecordBytes(0x01014D8D, "CREA", bigEndian, ("DATA", data));
+        var scan = MakeScanResult([new DetectedMainRecord("CREA", (uint)(bytes.Length - 24),
+            0, 0x01014D8D, 0, bigEndian)]);
+        using var mmf = MemoryMappedFile.CreateNew(null, bytes.Length);
+        using var accessor = mmf.CreateViewAccessor(0, bytes.Length);
+        accessor.WriteArray(0, bytes, 0, bytes.Length);
+        var parser = new RecordParser(scan, accessor: accessor, fileSize: bytes.Length);
+        var creature = Assert.Single(parser.ParseCreatures());
+        Assert.Equal(health, creature.Health);
+        Assert.Equal(15, creature.AttackDamage);
+        Assert.Equal(new byte[] { 2, 4, 3, 1, 2, 4, 1 }, creature.Attributes);
     }
 }

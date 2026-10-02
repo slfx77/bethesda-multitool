@@ -7,6 +7,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 using BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
 using BethesdaMultitool.Core.Formats.Esm.Export.ModelExport;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+using BethesdaMultitool.Core.Formats.Esm.Export.Scripts;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Records;
@@ -26,8 +27,10 @@ namespace BethesdaMultitool.CLI.Shared;
 internal static class AnalysisExtractionHelper
 {
     internal static async Task ExtractEsmRecordsAsync(string input, string extractEsm,
-        AnalysisResult result, bool verbose)
+        AnalysisResult result, bool verbose, AnalysisStages? stages = null)
     {
+        stages ??= new AnalysisStages();
+        stages.CancellationToken.ThrowIfCancellationRequested();
         // Set logger level based on verbose flag
         if (verbose)
         {
@@ -43,10 +46,10 @@ internal static class AnalysisExtractionHelper
         RecordCollection semanticResult;
         RuntimeStringOwnershipAnalysis? stringOwnership;
         StringPoolSummary? stringPool;
-        using (var loaded = SemanticFileLoader.LoadFromAnalysisResult(
+        using (var loaded = stages.Run("semantic parse", _ => SemanticFileLoader.LoadFromAnalysisResult(
                    input,
                    result,
-                   SemanticFileLoader.ResolveSemanticFileType(input)))
+                   SemanticFileLoader.ResolveSemanticFileType(input), cancellationToken: stages.CancellationToken)))
         {
             semanticResult = loaded.Records;
 
@@ -62,7 +65,7 @@ internal static class AnalysisExtractionHelper
             }
 
             // Extract string pool data to enrich the CSV exports
-            var stringData = ExtractRuntimeStringData(result, loaded.Accessor!);
+            var stringData = ExtractRuntimeStringData(result, loaded.Accessor!, stages);
             stringPool = stringData?.StringPool;
             stringOwnership = stringData?.OwnershipAnalysis;
         }
@@ -74,10 +77,10 @@ internal static class AnalysisExtractionHelper
             result.EsmRecords.RuntimeEditorIds,
             stringPool,
             stringOwnership);
-        var splitReports = GeckReportGenerator.GenerateAllReports(sources);
+        var splitReports = stages.Run("report generation", _ => GeckReportGenerator.GenerateAllReports(sources));
         foreach (var (filename, content) in splitReports)
         {
-            await File.WriteAllTextAsync(Path.Combine(extractEsm, filename), content);
+            await File.WriteAllTextAsync(Path.Combine(extractEsm, filename), content, stages.CancellationToken);
         }
 
         if (stringPool != null)
@@ -87,8 +90,15 @@ internal static class AnalysisExtractionHelper
                 $"{stringPool.FilePaths:N0} paths, {stringPool.EditorIds:N0} EditorIDs");
         }
 
-        // Export script source files (individual .txt per script)
-        await EsmRecordExporter.ExportScriptSourcesAsync(result.EsmRecords.ScriptSources, extractEsm);
+        // Export captured script fragments as .gek files with the input identity and hash.
+        await EsmRecordExporter.ExportScriptSourcesAsync(result.EsmRecords.ScriptSources, extractEsm, result.FilePath);
+        await stages.RunAsync("script export", async _ =>
+        {
+            var source = ScriptExportSource.Describe(input, result, semanticResult.Game,
+                result.MinidumpInfo is not null, null);
+            await EsmRecordExporter.ExportParsedScriptsAsync(
+                semanticResult.Scripts, result.FormIdMap, extractEsm, source);
+        });
 
         AnsiConsole.MarkupLine($"[green]ESM export complete.[/] {splitReports.Count} CSV files generated");
         AnsiConsole.MarkupLine($"  NPCs: {semanticResult.Npcs.Count}, Weapons: {semanticResult.Weapons.Count}, " +
@@ -301,7 +311,8 @@ internal static class AnalysisExtractionHelper
 
     internal static RuntimeStringReportData? ExtractRuntimeStringData(
         AnalysisResult result,
-        MemoryMappedViewAccessor accessor)
+        MemoryMappedViewAccessor accessor,
+        AnalysisStages? stages = null)
     {
         if (result.MinidumpInfo == null)
         {
@@ -311,11 +322,13 @@ internal static class AnalysisExtractionHelper
         try
         {
             AnsiConsole.MarkupLine("[blue]Extracting string pool data...[/]");
-            return RuntimeStringReportHelper.Extract(result, accessor);
+            return RuntimeStringReportHelper.Extract(result, accessor, stages: stages);
         }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex)
         {
             AnsiConsole.MarkupLine($"[yellow]Warning:[/] String pool extraction failed: {ex.Message}");
+            if (stages != null) throw;
             return null;
         }
     }
@@ -325,9 +338,9 @@ internal static class AnalysisExtractionHelper
     ///     Returns null if the dump doesn't have minidump info (required for coverage).
     /// </summary>
     internal static StringPoolSummary? ExtractStringPool(
-        AnalysisResult result, MemoryMappedViewAccessor accessor)
+        AnalysisResult result, MemoryMappedViewAccessor accessor, AnalysisStages? stages = null)
     {
-        return ExtractRuntimeStringData(result, accessor)?.StringPool;
+        return ExtractRuntimeStringData(result, accessor, stages)?.StringPool;
     }
 
     private static void ExportMeshSubdirectory(

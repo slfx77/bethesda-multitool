@@ -114,7 +114,8 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context) : RecordH
         foreach (var topicId in allTopicIds)
         {
             topicById.TryGetValue(topicId, out var topic);
-            var topicName = topic?.FullName ?? topic?.EditorId ?? Context.ResolveFormName(topicId);
+            var topicName = DialogueTopicLabels.IsGreeting(topic?.EditorId) ? topic.EditorId :
+                topic?.FullName ?? topic?.EditorId ?? Context.ResolveFormName(topicId);
 
             var infos = infosByTopic.GetValueOrDefault(topicId, []);
             var infoNodes = infos.Select(info => new InfoDialogueNode
@@ -309,12 +310,15 @@ internal sealed class DialogueTreeBuilder(RecordParserContext context) : RecordH
     /// </summary>
     private static uint? DetermineQuestIdForTopic(TopicDialogueNode topicNode)
     {
+        var infoQuestIds = topicNode.InfoChain.Select(i => i.Info.QuestFormId).Where(id => id is > 0)
+            .Distinct().Take(2).ToArray();
+        // A shared greeting cannot belong exclusively to the first (or most common) child's quest.
+        // Keep its INFO-specific memberships while presenting the common topic in the shared/orphan list.
+        if (DialogueTopicLabels.IsGreeting(topicNode.Topic?.EditorId) && infoQuestIds.Length > 1) { return null; }
         var questId = topicNode.Topic?.QuestFormId;
         if (!questId.HasValue || questId.Value == 0)
         {
-            questId = topicNode.InfoChain
-                .Select(i => i.Info.QuestFormId)
-                .FirstOrDefault(q => q.HasValue && q.Value != 0);
+            questId = infoQuestIds.Length == 1 ? infoQuestIds[0] : null;
         }
 
         return questId;

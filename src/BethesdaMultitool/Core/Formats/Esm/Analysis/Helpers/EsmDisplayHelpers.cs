@@ -4,6 +4,8 @@ using BethesdaMultitool.Core.Formats.Esm.Conversion;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Utils;
+using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using Spectre.Console;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
@@ -227,7 +229,8 @@ public static class EsmDisplayHelpers
     }
 
     /// <summary>Formats a human-readable detail string for known subrecord signatures; returns false if unrecognized.</summary>
-    public static bool TryFormatSubrecordDetails(string signature, byte[] data, bool bigEndian, out string details)
+    public static bool TryFormatSubrecordDetails(string signature, byte[] data, bool bigEndian, out string details,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
         details = string.Empty;
 
@@ -245,7 +248,7 @@ public static class EsmDisplayHelpers
                 var reference = data.Length >= 28 ? ReadUInt32(data, 24, bigEndian) : 0u;
 
                 details = string.Join(", ",
-                    FormatConditionType(type),
+                    FormatConditionType(type, game),
                     $"Func=0x{function:X4}",
                     $"Comp={FormatFloat(compareValue)} (0x{compareValueRaw:X8})",
                     $"Param1=0x{param1:X8}",
@@ -356,12 +359,13 @@ public static class EsmDisplayHelpers
         return str.Length < data.Length - 1 ? $"\"{str}\"..." : $"\"{str}\"";
     }
 
-    private static string FormatConditionType(byte type)
+    private static string FormatConditionType(byte type, BethesdaGame game)
     {
         var opBits = type & 0xE0;
         var compare = opBits switch
         {
             0x00 => "Equal",
+            0x20 => "NotEqual",
             0x40 => "Greater",
             0x60 => "GreaterOrEqual",
             0x80 => "Less",
@@ -375,25 +379,12 @@ public static class EsmDisplayHelpers
             flags.Add("Or");
         }
 
-        if ((type & 0x02) != 0)
-        {
-            flags.Add("UseAliases");
-        }
-
         if ((type & 0x04) != 0)
         {
             flags.Add("UseGlobal");
         }
 
-        if ((type & 0x08) != 0)
-        {
-            flags.Add("UsePackData");
-        }
-
-        if ((type & 0x10) != 0)
-        {
-            flags.Add("SwapSubjectTarget");
-        }
+        flags.AddRange(ConditionTypeFlags.Describe(type, game));
 
         var flagText = flags.Count == 0 ? "None" : string.Join("|", flags);
         return $"Type=0x{type:X2} ({compare}; {flagText})";
@@ -482,7 +473,7 @@ public static class EsmDisplayHelpers
     ///     Displays a complete record with info table, subrecords, and optional hex dump.
     /// </summary>
     internal static void DisplayRecord(AnalyzerRecordInfo rec, byte[] fileData, bool bigEndian, bool showHex,
-        bool showPreview = false)
+        bool showPreview = false, int hexLimit = 256)
     {
         // Get decompressed data if needed
         byte[] recordData;
@@ -549,8 +540,9 @@ public static class EsmDisplayHelpers
         if (showHex && recordData.Length > 0)
         {
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[bold]Hex Dump (first 256 bytes):[/]");
-            RenderHexDumpPanel(recordData, 256);
+            var count = hexLimit == 0 ? recordData.Length : Math.Min(hexLimit, recordData.Length);
+            AnsiConsole.MarkupLine($"[bold]Decoded payload ({count} of {recordData.Length} bytes):[/]");
+            RenderHexDumpPanel(recordData, count);
         }
 
         AnsiConsole.WriteLine();

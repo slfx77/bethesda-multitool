@@ -143,7 +143,7 @@ internal static class ConditionSanitizer
 
     /// <summary>
     ///     Filter a list of PERK CTDA conditions. Same logic as <see cref="Filter" /> but
-    ///     PerkCondition has no Reference/RunOn fields.
+    ///     Includes captured comparison globals and the semantic Reference arm.
     /// </summary>
     public static List<PerkCondition> FilterPerk(
         IReadOnlyList<PerkCondition> conditions,
@@ -156,6 +156,26 @@ internal static class ConditionSanitizer
         foreach (var cond in conditions)
         {
             var patched = cond;
+
+            if (cond.ComparisonGlobalFormId is > 0)
+            {
+                if (TryFixFormId(cond.ComparisonGlobalFormId.Value, validFormIds, remapTable,
+                        out var global, out var drop, ref remappedParameters))
+                {
+                    patched = patched with { ComparisonGlobalFormId = global };
+                }
+                else if (drop) { droppedConditions++; continue; }
+            }
+            if (cond.ReferenceFormId is > 0 && DialogueConditionReferencePolicy.IsSemanticReferenceSlot(
+                    cond.FunctionIndex, cond.RunOn ?? 0u, BethesdaGame.FalloutNewVegas))
+            {
+                if (TryFixFormId(cond.ReferenceFormId.Value, validFormIds, remapTable,
+                        out var reference, out var drop, ref remappedParameters))
+                {
+                    patched = patched with { ReferenceFormId = reference };
+                }
+                else if (drop) { droppedConditions++; continue; }
+            }
 
             if (!TryFixFormParameter(cond.FunctionIndex, 0, cond.Parameter1,
                     validFormIds, remapTable, out var newP1, out var dropP1, ref remappedParameters))

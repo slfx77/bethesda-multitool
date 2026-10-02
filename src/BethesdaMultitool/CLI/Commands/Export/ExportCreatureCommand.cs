@@ -1,5 +1,6 @@
 using System.CommandLine;
 using BethesdaMultitool.CLI.Rendering.Gltf;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -114,6 +115,7 @@ internal static class ExportCreatureCommand
         var esmData = File.ReadAllBytes(esmPath);
         var bigEndian = NpcBrowserService.DetectEsmBigEndian(esmData);
         var resolver = NpcAppearanceResolver.Build(esmData, bigEndian);
+        resolver.DescribeSingleSource(esmPath);
 
         var creatures = resolver.GetAllCreatures();
         if (creatures.Count == 0)
@@ -134,10 +136,9 @@ internal static class ExportCreatureCommand
 
         Directory.CreateDirectory(outputDir);
 
-        using var meshArchives = MeshArchiveSet.Open(meshesBsaPath, extraMeshesBsa);
-        using var textureResolver = texturesBsaPaths is { Length: > 0 }
-            ? new NifTextureResolver(texturesBsaPaths)
-            : new NifTextureResolver();
+        using var meshArchives = MeshArchiveSet.Open(AssetSourcePlan.FromPaths(
+            new[] { meshesBsaPath }.Concat(extraMeshesBsa ?? [])));
+        using var textureResolver = new NifTextureResolver(AssetSourcePlan.FromPaths(texturesBsaPaths ?? []));
 
         var exported = 0;
         var skipped = 0;
@@ -155,6 +156,8 @@ internal static class ExportCreatureCommand
 
                 foreach (var (formId, creature) in targetCreatures)
                 {
+                    using var meshReads = meshArchives.Selection.CaptureReads();
+                    using var textureReads = textureResolver.AssetSelection!.CaptureReads();
                     task.Description = $"Exporting {creature.EditorId ?? $"0x{formId:X8}"}";
 
                     if (creature.SkeletonPath == null || creature.BodyModelPaths is not { Length: > 0 })
@@ -196,6 +199,7 @@ internal static class ExportCreatureCommand
                     var fileName = $"{creature.EditorId ?? $"creature_{formId:X8}"}.glb";
                     var outputPath = Path.Combine(outputDir, fileName);
 
+                    scene.AssetReadReceipts = meshReads.Receipts.Concat(textureReads.Receipts).Distinct().ToArray();
                     GlbWriter.Write(scene, textureResolver, outputPath);
                     try
                     {

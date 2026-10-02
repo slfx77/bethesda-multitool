@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Csv;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Strings;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Export.Geck;
@@ -23,6 +24,8 @@ public static class GeckReportGenerator
     {
         var sb = new StringBuilder();
         resolver ??= result.CreateResolver();
+        var conditions = ConditionDisplayContext.From(result, resolver);
+        var isMemoryDumpInput = LooksLikeMemoryDumpInput(result);
 
         // Header
         GeckReportHelpers.AppendHeader(sb, "ESM Memory Dump Semantic Parse Report");
@@ -89,23 +92,23 @@ public static class GeckReportGenerator
 
         if (result.Terminals.Count > 0)
         {
-            GeckDialogueWriter.AppendTerminalsSection(sb, result.Terminals);
+            GeckDialogueWriter.AppendTerminalsSection(sb, result.Terminals, resolver, conditions, isMemoryDumpInput);
         }
 
         if (result.Dialogues.Count > 0)
         {
-            GeckDialogueWriter.AppendDialogueSection(sb, result.Dialogues, resolver);
+            GeckDialogueWriter.AppendDialogueSection(sb, result.Dialogues, resolver, conditions, isMemoryDumpInput);
         }
 
         if (result.Messages.Count > 0)
         {
-            GeckDialogueWriter.AppendMessagesSection(sb, result.Messages, resolver);
+            GeckDialogueWriter.AppendMessagesSection(sb, result.Messages, resolver, conditions);
         }
 
         // Scripts
         if (result.Scripts.Count > 0)
         {
-            GeckScriptWriter.AppendScriptsSection(sb, result.Scripts, resolver);
+            GeckScriptWriter.AppendScriptsSection(sb, result.Scripts, resolver, isMemoryDumpInput);
         }
 
         // Items
@@ -289,6 +292,8 @@ public static class GeckReportGenerator
         var result = sources.Records;
         var files = new Dictionary<string, string>();
         var resolver = sources.Resolver;
+        var conditions = ConditionDisplayContext.From(result, resolver);
+        var isMemoryDumpInput = sources.RuntimeEditorIds is { Count: > 0 } || LooksLikeMemoryDumpInput(result);
 
         // Summary file
         var summarySb = new StringBuilder();
@@ -361,19 +366,22 @@ public static class GeckReportGenerator
 
         if (result.Terminals.Count > 0)
         {
-            files["terminals.csv"] = CsvSupplementalWriter.GenerateTerminalsCsv(result.Terminals, resolver);
-            files["terminal_report.txt"] = GeckDialogueWriter.GenerateTerminalsReport(result.Terminals);
+            files["terminals.csv"] = CsvSupplementalWriter.GenerateTerminalsCsv(
+                result.Terminals, resolver, conditions, isMemoryDumpInput);
+            files["terminal_report.txt"] = GeckDialogueWriter.GenerateTerminalsReport(
+                result.Terminals, resolver, conditions, isMemoryDumpInput);
         }
 
         if (result.Dialogues.Count > 0)
         {
             files["dialogue.csv"] = CsvMiscWriter.GenerateDialogueCsv(result.Dialogues, resolver);
-            files["dialogue_report.txt"] = GeckDialogueWriter.GenerateDialogueReport(result.Dialogues, resolver);
+            files["dialogue_report.txt"] = GeckDialogueWriter.GenerateDialogueReport(
+                result.Dialogues, resolver, conditions, isMemoryDumpInput);
         }
 
         if (result.Scripts.Count > 0)
         {
-            files["script_report.txt"] = GeckScriptWriter.GenerateScriptsReport(result.Scripts, resolver);
+            files["script_report.txt"] = GeckScriptWriter.GenerateScriptsReport(result.Scripts, resolver, isMemoryDumpInput);
         }
 
         if (result.DialogueTree != null)
@@ -559,7 +567,7 @@ public static class GeckReportGenerator
         if (result.Messages.Count > 0)
         {
             files["messages.csv"] = CsvSupplementalWriter.GenerateMessagesCsv(result.Messages, resolver);
-            files["message_report.txt"] = GeckDialogueWriter.GenerateMessagesReport(result.Messages, resolver);
+            files["message_report.txt"] = GeckDialogueWriter.GenerateMessagesReport(result.Messages, resolver, conditions);
         }
 
         // World objects
@@ -647,5 +655,23 @@ public static class GeckReportGenerator
         }
 
         return files;
+    }
+
+    /// <summary>
+    ///     Whether <paramref name="result" /> was read from a memory dump, for script-text labels and absence
+    ///     wording (<see cref="Script.ScriptSourceProvenance" />). A <see cref="RecordCollection" /> records no
+    ///     input kind, so this reads the markers only a dump parse sets: runtime Script objects
+    ///     (<see cref="RecordCollection.RuntimeScripts" />, filled only when a runtime reader exists, and
+    ///     <c>ScriptRecord.FromRuntime</c>), and embedded TERM/INFO script material, which the parsers flag
+    ///     <c>IsDmpDerived</c> whenever a minidump is attached. A plugin parse sets none of them, so plugin text
+    ///     is never relabeled as dump text. A dump that captured none of them still labels each embedded script
+    ///     by its own flag, which <see cref="Script.ScriptSourceProvenance" /> honors per item.
+    /// </summary>
+    private static bool LooksLikeMemoryDumpInput(RecordCollection result)
+    {
+        return result.RuntimeScripts.Count > 0 ||
+               result.Scripts.Any(script => script.FromRuntime) ||
+               result.Terminals.Any(terminal => terminal.MenuItems.Any(item => item.IsDmpDerived)) ||
+               result.Dialogues.Any(info => info.ResultScripts.Any(script => script.IsDmpDerived));
     }
 }

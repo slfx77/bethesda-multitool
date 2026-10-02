@@ -512,6 +512,91 @@ public class ScriptDialogueEncoderTests
         Assert.Equal(littleEndianScda, scda.Bytes);
     }
 
+    /// <summary>
+    ///     A 4-byte inline call walks cleanly in BOTH orders, so the walk alone used to tie and fall
+    ///     back to the big-endian container. The July 2010 X360 prototype carries such blocks:
+    ///     INFO 0x000E7093 '7A 11 00 00' (ShowRepairMenu, 0x117A, rendered by its short name srm)
+    ///     and TERM 0x001645E0 '23 12 00 00' (ForceTerminalBack, 0x1223). Read big-endian they are
+    ///     the unlisted 0x7A11 and 0x2312. The DMP rows keep the container as their tie-break, so
+    ///     only the known-opcode comparison can decide them.
+    /// </summary>
+    [Theory]
+    [InlineData("7A110000", "srm", false)]
+    [InlineData("7A110000", "srm", true)]
+    [InlineData("23120000", "ForceTerminalBack", false)]
+    [InlineData("23120000", "ForceTerminalBack", true)]
+    public void InferBytecodeEndian_FourByteInlineCall_PrefersOrderWithKnownOpcode(
+        string scdaHex,
+        string expectedDecompiledText,
+        bool isDmpDerived)
+    {
+        var littleEndianScda = Convert.FromHexString(scdaHex);
+        var schr = new byte[20];
+        BinaryPrimitives.WriteUInt32BigEndian(schr.AsSpan(8), (uint)littleEndianScda.Length);
+        schr[18] = 0x01;
+
+        var data = BuildSubrecordStream(
+            true,
+            ("SCHR", schr),
+            ("SCDA", littleEndianScda));
+
+        var scripts = DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
+            data,
+            data.Length,
+            true,
+            null,
+            0x000E7093,
+            _ => null,
+            isDmpDerived);
+
+        var script = Assert.Single(scripts);
+        Assert.False(script.IsBigEndianBytecode);
+        Assert.Equal(expectedDecompiledText, script.DecompiledText);
+        Assert.Equal(littleEndianScda, script.CompiledData);
+    }
+
+    /// <summary>
+    ///     <c>70 12 00 00</c> is a lone call no payload rule can decide: little-endian it reads 0x1270,
+    ///     big-endian 0x7012, neither is in the FNV table (its game commands end at 0x126F) and both
+    ///     walk cleanly. Only the caller's default decides it, and that default depends on where the
+    ///     block came from: on-disk data is little-endian even inside a big-endian (Xbox 360)
+    ///     container, while a DMP fragment keeps its container order. The DMP row proves the
+    ///     on-disk result is the gate's doing, not a hard-coded answer. This parser serves INFO
+    ///     result scripts and, through <c>BuildResultScripts</c>, PACK event scripts.
+    /// </summary>
+    [Theory]
+    [InlineData(false, false, "UnknownFunc_0x1270")]
+    [InlineData(true, true, "UnknownFunc_0x7012")]
+    public void InferBytecodeEndian_UndecidableInlinePayload_OnDiskDefaultsLittleEndian(
+        bool isDmpDerived,
+        bool expectedBigEndianBytecode,
+        string expectedDecompiledText)
+    {
+        byte[] undecidableScda = [0x70, 0x12, 0x00, 0x00];
+        var schr = new byte[20];
+        BinaryPrimitives.WriteUInt32BigEndian(schr.AsSpan(8), (uint)undecidableScda.Length);
+        schr[18] = 0x01;
+
+        var data = BuildSubrecordStream(
+            true,
+            ("SCHR", schr),
+            ("SCDA", undecidableScda));
+
+        var scripts = DialogueResultScriptParser.ParseResultScriptsFromSubrecords(
+            data,
+            data.Length,
+            true,
+            null,
+            0x000E7093,
+            _ => null,
+            isDmpDerived);
+
+        var script = Assert.Single(scripts);
+        Assert.Equal(expectedBigEndianBytecode, script.IsBigEndianBytecode);
+        Assert.Equal(expectedDecompiledText, script.DecompiledText);
+        Assert.Equal(undecidableScda, script.CompiledData);
+    }
+
     [Fact]
     public void DialogueResultScriptParser_PreservesLocalsAndOrderedMixedReferenceTable()
     {

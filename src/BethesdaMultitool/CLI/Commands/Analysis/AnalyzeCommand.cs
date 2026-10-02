@@ -46,6 +46,8 @@ public static class AnalyzeCommand
             Description = "Export semantic parse (GECK-style report) to file"
         };
         var verboseOpt = new Option<bool>("-v", "--verbose") { Description = "Show detailed progress" };
+        var progressOpt = new Option<string?>("--progress-jsonl")
+        { Description = "Write stage events and timings to a new JSONL file" };
         var terrainGlbOpt = new Option<string?>("--terrain-glb")
         {
             Description = "Export runtime terrain meshes to glTF Binary (.glb) file (requires -s)"
@@ -69,12 +71,13 @@ public static class AnalyzeCommand
         command.Options.Add(extractEsmOpt);
         command.Options.Add(semanticOpt);
         command.Options.Add(verboseOpt);
+        command.Options.Add(progressOpt);
         command.Options.Add(terrainGlbOpt);
         command.Options.Add(terrainDiagOpt);
         command.Options.Add(extractMeshesOpt);
         command.Options.Add(extractTexturesOpt);
 
-        command.SetAction(async (parseResult, _) =>
+        command.SetAction(async (parseResult, cancellationToken) =>
         {
             var options = new AnalyzeOptions
             {
@@ -89,18 +92,27 @@ public static class AnalyzeCommand
                 ExtractMeshes = parseResult.GetValue(extractMeshesOpt),
                 ExtractTextures = parseResult.GetValue(extractTexturesOpt)
             };
-            await ExecuteAsync(options);
+            using var journal = new AnalysisProgressJournal(parseResult.GetValue(progressOpt));
+            var stages = new AnalysisStages(cancellationToken, journal.Report);
+            try
+            {
+                await stages.RunAsync("analysis", _ => ExecuteAsync(options, stages));
+                return 0;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return 130;
+            }
         });
 
         return command;
     }
 
-    private static async Task ExecuteAsync(AnalyzeOptions opts)
+    private static async Task ExecuteAsync(AnalyzeOptions opts, AnalysisStages stages)
     {
         if (!File.Exists(opts.Input))
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {opts.Input}");
-            return;
+            throw new FileNotFoundException("Input file was not found.", opts.Input);
         }
 
         // Configure logger for verbose mode
@@ -132,7 +144,9 @@ public static class AnalyzeCommand
                     task.Description = $"[green]{p.Phase}[/][grey]{filesInfo}[/]";
                 });
 
-                result = await analyzer.AnalyzeAsync(opts.Input, progress, true, opts.Verbose);
+                await stages.RunAsync("dump scan", _ => ScanAsync());
+                async Task ScanAsync() => result = await analyzer.AnalyzeAsync(opts.Input, progress, true, opts.Verbose,
+                    stages.CancellationToken);
                 task.Value = 100;
                 task.Description = $"[green]Complete[/] [grey]({result.CarvedFiles.Count} files)[/]";
             });
@@ -154,7 +168,7 @@ public static class AnalyzeCommand
                 Directory.CreateDirectory(outputDir);
             }
 
-            await File.WriteAllTextAsync(opts.Output, report);
+            await File.WriteAllTextAsync(opts.Output, report, stages.CancellationToken);
             AnsiConsole.MarkupLine($"[green]Report saved to:[/] {opts.Output}");
         }
         else
@@ -165,12 +179,13 @@ public static class AnalyzeCommand
         RecordCollection? semanticResult = null;
         if (!string.IsNullOrEmpty(opts.Semantic) && result.EsmRecords != null)
         {
-            semanticResult = await ExportSemanticReportAsync(result, opts.Semantic, opts.TerrainGlb);
+            semanticResult = await ExportSemanticReportAsync(result, opts.Semantic, opts.TerrainGlb, stages);
         }
 
         if (!string.IsNullOrEmpty(opts.ExtractEsm) && result.EsmRecords != null)
         {
-            await AnalysisExtractionHelper.ExtractEsmRecordsAsync(opts.Input, opts.ExtractEsm, result, opts.Verbose);
+            await stages.RunAsync("ESM export", _ => AnalysisExtractionHelper.ExtractEsmRecordsAsync(
+                opts.Input, opts.ExtractEsm, result, opts.Verbose, stages));
 
             if (opts.TerrainDiag)
             {
@@ -191,7 +206,7 @@ public static class AnalyzeCommand
     }
 
     private static async Task<RecordCollection?> ExportSemanticReportAsync(
-        AnalysisResult result, string outputPath, string? terrainObjPath = null)
+        AnalysisResult result, string outputPath, string? terrainObjPath = null, AnalysisStages? stages = null)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.MarkupLine("[blue]Generating semantic parse (GECK-style report)...[/]");
@@ -232,7 +247,7 @@ public static class AnalyzeCommand
             }
 
             // Extract string pool data to enrich the report
-            stringPool = AnalysisExtractionHelper.ExtractStringPool(result, accessor);
+            stringPool = AnalysisExtractionHelper.ExtractStringPool(result, accessor, stages);
         }
 
         // Generate the GECK-style report

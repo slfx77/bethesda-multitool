@@ -6,6 +6,8 @@ internal enum DialogueTesFileScriptRecoveryStatus
     UncalibratedBase,
     MappedPageMissing,
     HeaderReadFailed,
+    PayloadReadFailed,
+    RecordTooLarge,
     SignatureMismatch,
     FormIdMismatch,
     CompressedRecord,

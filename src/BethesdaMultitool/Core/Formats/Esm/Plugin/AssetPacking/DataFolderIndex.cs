@@ -634,7 +634,7 @@ internal sealed class DataFolderIndex : IDisposable
         _byPath.TryAdd(normalizedPath, source);
 
         // Basename index always accumulates: every candidate is visible to the fuzzy resolver.
-        var basename = Path.GetFileName(normalizedPath);
+        var basename = AssetPathRules.GetVirtualFileName(normalizedPath);
         if (string.IsNullOrEmpty(basename))
         {
             return;

@@ -58,6 +58,8 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
         byte magicSkill = 0;
         byte stealthSkill = 0;
         short attackDamage = 0;
+        int? health = null;
+        byte[]? attributes = null;
         uint? script = null;
         uint? deathItem = null;
         uint? equippedItem = null;
@@ -117,6 +119,13 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
                         combatSkill = v.Byte("CombatSkill");
                         magicSkill = v.Byte("MagicSkill");
                         stealthSkill = v.Byte("StealthSkill");
+                        // Physical PC CREA DATA stores S16 health plus two reserved bytes.
+                        // Retain the independently observed July X360 Int32 source layout.
+                        // Runtime-structure fallback is handled separately from this payload path.
+                        health = record.IsBigEndian
+                            ? v.Int32("Health")
+                            : BinaryPrimitives.ReadInt16LittleEndian(subData[4..]);
+                        attributes = v.Bytes("Remaining");
                         if (sub.DataLength >= 10)
                         {
                             attackDamage = record.IsBigEndian
@@ -279,6 +288,8 @@ internal sealed class CreatureRecordHandler(RecordParserContext context) : Recor
             MagicSkill = magicSkill,
             StealthSkill = stealthSkill,
             AttackDamage = attackDamage,
+            Health = health,
+            Attributes = attributes,
             Script = script,
             DeathItem = deathItem,
             EquippedItem = equippedItem,

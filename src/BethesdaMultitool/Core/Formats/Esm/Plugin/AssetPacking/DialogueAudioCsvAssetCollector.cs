@@ -16,7 +16,9 @@ internal sealed record DialogueAudioCsvCollectionResult(
     IReadOnlyDictionary<string, string>? PackPathRenames = null,
     int PathsRewrittenViaTriple = 0,
     int PathsRewrittenViaPrefix = 0,
-    int RetailOverlayFallbacks = 0);
+    int RetailOverlayFallbacks = 0,
+    IReadOnlyList<DialogueAudioPackingRow>? AuditRows = null,
+    int UnboundRowsIncluded = 0);
 
 /// <summary>
 ///     Imports Bethesda Audio Transcriber CSV rows as dialogue voice asset requests.
@@ -41,7 +43,8 @@ internal static class DialogueAudioCsvAssetCollector
         CancellationToken cancellationToken,
         IReadOnlyDictionary<uint, uint>? newRecordSourceToAllocated = null,
         string? outputEspFileName = null,
-        IReadOnlyList<EmittedDialogueAudioBinding>? audioBindings = null)
+        IReadOnlyList<EmittedDialogueAudioBinding>? audioBindings = null,
+        bool includeUnboundAudio = false)
     {
         if (csvPaths.Count == 0)
         {
@@ -135,6 +138,8 @@ internal static class DialogueAudioCsvAssetCollector
         var rewritten = 0;
         var rewrittenViaTriple = 0;
         var rewrittenViaPrefix = 0;
+        var auditRows = new List<DialogueAudioPackingRow>();
+        var unboundRowsIncluded = 0;
 
         foreach (var csvPath in csvPaths)
         {
@@ -155,13 +160,16 @@ internal static class DialogueAudioCsvAssetCollector
                 newRecordSourceToAllocated, outputEspName, renames,
                 bindingsByTriple, bindingsByPrefix, bindingsByAllocated,
                 bindingsBySource,
-                csvCatalog.SelectedRowOrdinalsByCsvPath.GetValueOrDefault(csvPath));
+                csvCatalog.SelectedRowOrdinalsByCsvPath.GetValueOrDefault(csvPath) ?? new HashSet<int>(),
+                includeUnboundAudio);
             csvFilesRead++;
             rowsRead += result.RowsRead;
             rowsMatched += result.RowsMatched;
             rewritten += result.PathsRewrittenForNewEsp;
             rewrittenViaTriple += result.PathsRewrittenViaTriple;
             rewrittenViaPrefix += result.PathsRewrittenViaPrefix;
+            auditRows.AddRange(result.AuditRows ?? []);
+            unboundRowsIncluded += result.UnboundRowsIncluded;
         }
 
         sink.Info("AssetCollect",
@@ -170,7 +178,8 @@ internal static class DialogueAudioCsvAssetCollector
             $"({convertedInfoCount:N0} ESP INFO IDs, {dmpInfoCount:N0} source-DMP-only INFO IDs, " +
             $"{rewritten:N0} rewritten onto new ESP path, " +
             $"{rewrittenViaTriple:N0} via triple-key fallback, " +
-            $"{rewrittenViaPrefix:N0} via prefix-key fallback).");
+            $"{rewrittenViaPrefix:N0} via prefix-key fallback, " +
+            $"{unboundRowsIncluded:N0} unbound row(s) included).");
 
         return new DialogueAudioCsvCollectionResult(
             paths,
@@ -182,7 +191,9 @@ internal static class DialogueAudioCsvAssetCollector
             renames,
             rewrittenViaTriple,
             rewrittenViaPrefix,
-            retailOverlayFallbacks);
+            retailOverlayFallbacks,
+            auditRows,
+            unboundRowsIncluded);
     }
 
     private static Dictionary<(uint FormId, byte ResponseNumber), string> BuildPreferredSourceTexts(
@@ -230,7 +241,8 @@ internal static class DialogueAudioCsvAssetCollector
             bindingsByAllocated = null,
         IReadOnlyDictionary<(uint SourceFid, byte SourceResp), EmittedDialogueAudioBinding>?
             bindingsBySource = null,
-        IReadOnlySet<int>? selectedRowOrdinals = null)
+        IReadOnlySet<int>? selectedRowOrdinals = null,
+        bool includeUnboundAudio = false)
     {
         using var reader = new StreamReader(csvPath);
         var headerFields = DialogueAudioCsvReader.ReadCsvRecord(reader);
@@ -250,6 +262,10 @@ internal static class DialogueAudioCsvAssetCollector
         // it we can still attempt prefix matching but can't pick between candidates that
         // share a (voice, topic-prefix, resp) bucket.
         var textIndex = DialogueAudioCsvReader.FindColumn(headerFields, "Text");
+        var modelNameIndex = DialogueAudioCsvReader.FindColumn(headerFields, "ModelName");
+        var modelShaIndex = DialogueAudioCsvReader.FindColumn(headerFields, "ModelSha256");
+        var modelPathIndex = DialogueAudioCsvReader.FindColumn(headerFields, "ModelPath");
+        var modelBytesIndex = DialogueAudioCsvReader.FindColumn(headerFields, "ModelBytes");
 
         var rowsRead = 0;
         var rowsMatched = 0;
@@ -257,6 +273,8 @@ internal static class DialogueAudioCsvAssetCollector
         var rewrittenViaTriple = 0;
         var rewrittenViaPrefix = 0;
         var initialPathCount = paths.Count;
+        var auditRows = new List<DialogueAudioPackingRow>();
+        var unboundRowsIncluded = 0;
 
         while (!reader.EndOfStream)
         {
@@ -346,13 +364,12 @@ internal static class DialogueAudioCsvAssetCollector
                     }
                 }
 
-                if (matchedBinding is null)
-                {
-                    continue;
-                }
             }
-            else
+
+            var isBound = dialogueFormIds.Contains(formId) || allocatedFormId.HasValue || matchedBinding is not null;
+            if (!isBound && !includeUnboundAudio)
             {
+                auditRows.Add(CreateAuditRow("ExcludedUnbound", []));
                 continue;
             }
 
@@ -393,10 +410,12 @@ internal static class DialogueAudioCsvAssetCollector
             }
 
             var matchedPath = false;
+            var requests = new List<DialogueAudioPackingRequest>();
             foreach (var (resolveAs, packAs) in ExpandDialogueAudioRequests(
                          filePath, formId, allocatedFormId, outputEspFileName,
                          matchedBinding))
             {
+                requests.Add(new DialogueAudioPackingRequest(resolveAs, packAs));
                 matchedPath |= paths.Add(resolveAs);
                 if (packPathRenames is not null
                     && !string.Equals(resolveAs, packAs, StringComparison.OrdinalIgnoreCase))
@@ -405,7 +424,18 @@ internal static class DialogueAudioCsvAssetCollector
                 }
             }
 
-            if (matchedPath)
+            var disposition = isBound ? "BoundRequested" : "UnboundRequested";
+            if (requests.Count == 0)
+            {
+                disposition = "InvalidVoicePath";
+            }
+            auditRows.Add(CreateAuditRow(disposition, requests));
+            if (!isBound && requests.Count > 0)
+            {
+                unboundRowsIncluded++;
+            }
+
+            if (matchedPath && isBound)
             {
                 rowsMatched++;
                 if (allocatedFormId.HasValue)
@@ -422,6 +452,14 @@ internal static class DialogueAudioCsvAssetCollector
                     }
                 }
             }
+
+            DialogueAudioPackingRow CreateAuditRow(string disposition, IReadOnlyList<DialogueAudioPackingRequest> rowRequests) =>
+                new(csvPath, rowsRead, filePath, formId, sourceResponseNumber,
+                    Field(modelNameIndex), Field(modelShaIndex), Field(modelPathIndex), Field(modelBytesIndex),
+                    isBound, disposition, rowRequests);
+
+            string? Field(int index) => index >= 0 && index < fields.Count && fields[index].Length > 0
+                ? fields[index] : null;
         }
 
         return new DialogueAudioCsvCollectionResult(
@@ -433,7 +471,9 @@ internal static class DialogueAudioCsvAssetCollector
             rewritten,
             packPathRenames,
             rewrittenViaTriple,
-            rewrittenViaPrefix);
+            rewrittenViaPrefix,
+            AuditRows: auditRows,
+            UnboundRowsIncluded: unboundRowsIncluded);
     }
 
     /// <summary>

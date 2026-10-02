@@ -1,15 +1,19 @@
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Carving;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Extraction;
 using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 using BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
 using BethesdaMultitool.Core.Formats.Esm.Export.ModelExport;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+using BethesdaMultitool.Core.Formats.Esm.Export.Scripts;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.RuntimeBuffer;
 using BethesdaMultitool.Core.Utils;
 
@@ -80,9 +84,11 @@ internal static class MinidumpExtractionReporter
                 authority.RefWindows);
             var stringData = RuntimeStringReportHelper.Extract(analysisResult, accessor);
 
-            // Merge supplementary records (load order) for name enrichment
-            if (supplementaryRecords != null)
-                semanticResult = supplementaryRecords.MergeWith(semanticResult);
+            // Merge supplementary records (load order) for name enrichment. The dump's own scripts and
+            // game are taken first: the per-script export labels every file with the dump's provenance,
+            // so a load-order script merged in here must never reach it.
+            var dumpGame = semanticResult.Game;
+            (semanticResult, var dumpScripts) = SelectDumpScripts(semanticResult, supplementaryRecords);
 
             var worldspaceNames = WorldspaceNameIndex.Build(semanticResult, analysisResult.FormIdMap);
 
@@ -104,12 +110,12 @@ internal static class MinidumpExtractionReporter
                 await File.WriteAllTextAsync(reportPath, content);
             }
 
-            // Export individual script files (source + decompiled bytecode)
-            if (semanticResult.Scripts.Count > 0)
+            // Export the dump's own scripts as individual files (verbatim source, decompiled
+            // reconstructions for the rest, and a manifest) — never the load-order fallbacks.
+            if (dumpScripts.Count > 0)
             {
-                await EsmRecordExporter.ExportParsedScriptsAsync(
-                    semanticResult.Scripts, analysisResult.FormIdMap, esmDir);
-                scriptsExtracted = semanticResult.Scripts.Count;
+                scriptsExtracted = await ExportDumpScriptsAsync(
+                    dumpScripts, analysisResult, filePath, esmDir, dumpGame);
             }
 
             reportGenerated = allReports.Count > 0;
@@ -256,6 +262,53 @@ internal static class MinidumpExtractionReporter
 
         return (reportGenerated, heightmapsExported, scriptsExtracted,
             runtimeTexturesExported, runtimeMeshesExported, null);
+    }
+
+    /// <summary>
+    ///     Merges the load-order <paramref name="supplementaryRecords" /> under the dump's records (for name
+    ///     enrichment) and returns, separately, the scripts the DUMP itself holds, captured before the merge.
+    ///     <see cref="RecordCollection.MergeWith" /> keeps every base record whose FormID the dump lacks, so
+    ///     after it the script list mixes load-order scripts with dump scripts; exporting that list under the
+    ///     dump's provenance would present retail-fallback scripts as captured content.
+    /// </summary>
+    /// <param name="dumpRecords">The dump's semantic parse.</param>
+    /// <param name="supplementaryRecords">Load-order records, or null when none were supplied.</param>
+    /// <returns>The records for reports (merged when supplementary records exist) and the dump's own scripts.</returns>
+    internal static (RecordCollection Records, IReadOnlyList<ScriptRecord> DumpScripts) SelectDumpScripts(
+        RecordCollection dumpRecords,
+        RecordCollection? supplementaryRecords)
+    {
+        ArgumentNullException.ThrowIfNull(dumpRecords);
+        IReadOnlyList<ScriptRecord> dumpScripts = [.. dumpRecords.Scripts];
+        var records = supplementaryRecords is null ? dumpRecords : supplementaryRecords.MergeWith(dumpRecords);
+        return (records, dumpScripts);
+    }
+
+    /// <summary>
+    ///     Writes the dump's scripts to <c>esm_data/scripts/</c> under a memory-dump source description (the
+    ///     dump is hashed once, as a stream). A failure here is logged and does not stop the remaining
+    ///     extraction outputs.
+    /// </summary>
+    /// <returns>The number of scripts exported, or 0 when the export failed.</returns>
+    private static async Task<int> ExportDumpScriptsAsync(
+        IReadOnlyList<ScriptRecord> dumpScripts,
+        AnalysisResult analysisResult,
+        string filePath,
+        string esmDir,
+        BethesdaGame dumpGame)
+    {
+        try
+        {
+            var source = ScriptExportSource.Describe(filePath, analysisResult, dumpGame, true, null);
+            var summary = await EsmRecordExporter.ExportParsedScriptsAsync(
+                dumpScripts, analysisResult.FormIdMap, esmDir, source);
+            return summary?.ScriptCount ?? 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Logger.Instance.Warn($"[ESM] Script export failed: {ex.Message}");
+            return 0;
+        }
     }
 
     /// <summary>

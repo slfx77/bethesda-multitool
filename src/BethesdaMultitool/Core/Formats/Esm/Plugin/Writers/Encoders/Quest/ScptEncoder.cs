@@ -110,11 +110,13 @@ public sealed class ScptEncoder : IRecordEncoder
 
         if (script.CompiledData is { Length: > 0 } compiledData)
         {
-            // Xbox 360 stores SCDA bytecode in native (big-endian) form. The PC engine
-            // reads opcodes/operands as little-endian; emitting BE bytes verbatim makes the
-            // very first opcode (ScriptName, 0x001D BE) decode as 0x1D00 — the "command
-            // 7424" spam the engine logs for every converted script.
-            var scda = script.IsBigEndian
+            // A runtime Script object from an Xbox 360 dump holds SCDA in native (big-endian)
+            // form. The PC engine reads opcodes/operands as little-endian; emitting BE bytes
+            // verbatim makes the very first opcode (ScriptName, 0x001D BE) decode as 0x1D00 —
+            // the "command 7424" spam the engine logs for every converted script. Serialized
+            // ESM SCDA is already little-endian even inside a big-endian container, so the
+            // swap keys off the bytecode's own order, never the container's.
+            var scda = script.IsBigEndianBytecode
                 ? ScriptBytecodeEndianConverter.SwapBigEndianToLittleEndian(
                     compiledData, script.Variables, script.ReferencedObjects)
                 : compiledData;

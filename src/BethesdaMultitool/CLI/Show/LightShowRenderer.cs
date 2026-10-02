@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class LightShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var light = records.Lights.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, l => l.FormId, l => l.EditorId));
@@ -16,7 +16,7 @@ internal sealed class LightShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var r8 = (byte)(light.Color & 0xFF);
         var g8 = (byte)((light.Color >> 8) & 0xFF);
         var b8 = (byte)((light.Color >> 16) & 0xFF);
@@ -68,7 +68,7 @@ internal sealed class LightShowRenderer : IRecordDisplayRenderer
         {
             Header = new PanelHeader($"[bold]LIGH[/] {Markup.Escape(light.EditorId ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

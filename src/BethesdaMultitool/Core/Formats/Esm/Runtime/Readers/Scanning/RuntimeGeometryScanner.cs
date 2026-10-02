@@ -69,8 +69,8 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
     /// <summary>Scans the DMP memory for renderable mesh geometry, reporting progress as it goes.</summary>
     public List<ExtractedMesh> ScanForMeshes(IProgress<(long Scanned, long Total)>? progress = null)
     {
-        var meshes = new ConcurrentBag<ExtractedMesh>();
-        var vertexHashes = new ConcurrentDictionary<long, byte>();
+        var meshes = new ConcurrentDictionary<long, ExtractedMesh>();
+        var validCandidates = 0;
         _meshesFound = 0;
         var log = Logger.Instance;
 
@@ -81,9 +81,11 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
             (chunk, offset, fileOffset) =>
             {
                 var mesh = ValidateAndExtract(chunk, offset, fileOffset, ExtractionOptions.Default);
-                if (mesh != null && vertexHashes.TryAdd(mesh.VertexHash, 0))
+                if (mesh == null) return;
+                Interlocked.Increment(ref validCandidates);
+                if (RuntimeCandidateSelection.KeepLowestOffset(
+                        meshes, mesh.VertexHash, mesh, static value => value.SourceOffset))
                 {
-                    meshes.Add(mesh);
                     Interlocked.Increment(ref _meshesFound);
                     log.Debug(
                         "  Found {0} at 0x{1:X}: {2} vertices, {3} triangles, bound radius {4:F1}",
@@ -93,10 +95,10 @@ internal sealed class RuntimeGeometryScanner(RuntimeMemoryContext context)
             TriShapeStructSize,
             progress);
 
-        var result = meshes.OrderBy(m => m.SourceOffset).ToList();
+        var result = meshes.Values.OrderBy(m => m.SourceOffset).ToList();
 
         log.Info("Geometry scanner: found {0} unique meshes ({1} duplicates filtered)",
-            result.Count, vertexHashes.Count - result.Count);
+            result.Count, validCandidates - result.Count);
 
         return result;
     }

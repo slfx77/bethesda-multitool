@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class MusicTypeShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var musc = records.MusicTypes.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, m => m.FormId, m => m.EditorId));
@@ -16,7 +16,7 @@ internal sealed class MusicTypeShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]       0x{musc.FormId:X8}",
@@ -33,7 +33,7 @@ internal sealed class MusicTypeShowRenderer : IRecordDisplayRenderer
         {
             Header = new PanelHeader($"[bold]MUSC[/] {Markup.Escape(musc.EditorId ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

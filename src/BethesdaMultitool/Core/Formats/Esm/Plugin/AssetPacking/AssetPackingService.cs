@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Esm.Reporting;
 using BethesdaMultitool.Core.Orchestration;
@@ -47,6 +48,12 @@ public sealed class AssetPackingService
 
         var stopwatch = Stopwatch.StartNew();
         var resolutions = new ConcurrentBag<AssetResolution>();
+        var requests = new AssetRequestCatalog();
+        var lookups = new ConcurrentDictionary<string, DataFolderResolution>(StringComparer.OrdinalIgnoreCase);
+        var preparedPaths = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var requestAuditStatus = "Failed";
+        DialogueAudioPackingAudit? audioAudit = null;
+        var completedArchives = new List<string>();
 
         sink.OnPhaseStart("AssetPacking", null);
 
@@ -59,9 +66,10 @@ public sealed class AssetPackingService
                 .ConfigureAwait(false);
 
             // 2) Collect every referenced asset path.
-            var requested = AssetPathCollector.Collect(espResult.Records, options.DmpPath, sink);
+            var requested = AssetPathCollector.Collect(espResult.Records, options.DmpPath, sink, requests, options.ConvertedEsmPath);
             IReadOnlyDictionary<string, string>? packPathRenames = null;
             var forcedPackPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var unboundAudioPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             if (options.DialogueAudioCsvPaths.Count > 0)
             {
                 var dialogueAudio = await DialogueAudioCsvAssetCollector
@@ -77,8 +85,22 @@ public sealed class AssetPackingService
                         Path.GetFileName(options.ConvertedEsmPath),
                         options.EmittedDialogueAudioBindings.Count > 0
                             ? options.EmittedDialogueAudioBindings
-                            : null)
+                            : null,
+                        options.IncludeUnboundDialogueAudio)
                     .ConfigureAwait(false);
+
+                audioAudit = new DialogueAudioPackingAudit(dialogueAudio.AuditRows ?? []);
+                foreach (var row in dialogueAudio.AuditRows ?? [])
+                {
+                    foreach (var request in row.Requests)
+                    {
+                        if (!dialogueAudio.Paths.Contains(request.RequestedPath)) continue;
+                        requests.Add(request.RequestedPath, new AssetRequestEvidence(
+                            row.IsBound ? "dialogue-audio-bound" : "dialogue-audio-unbound", row.FormId, "INFO",
+                            $"response:{row.ResponseNumber}; row:{row.RowOrdinal}", SourcePath: row.CsvPath));
+                        if (!row.IsBound) unboundAudioPaths.Add(request.RequestedPath);
+                    }
+                }
 
                 foreach (var path in dialogueAudio.Paths)
                 {
@@ -96,7 +118,7 @@ public sealed class AssetPackingService
             var npcFaceAssets = NpcFaceAssetCollector.Collect(
                 espResult.Records,
                 options.NewRecordSourceToAllocatedFormIds,
-                Path.GetFileName(options.ConvertedEsmPath));
+                Path.GetFileName(options.ConvertedEsmPath), requests);
             if (npcFaceAssets.SourcePaths.Count > 0)
             {
                 var mergedRenames = packPathRenames is null
@@ -121,9 +143,13 @@ public sealed class AssetPackingService
 
             sink.Info("AssetPacking", $"Total unique asset paths to resolve: {requested.Count}");
 
+            foreach (var path in requested) requests.Ensure(path);
+
             if (requested.Count == 0)
             {
-                return BuildEmptyResult(options, sink, resolutions.ToList(), stopwatch, null);
+                audioAudit?.Write(options.OutputBsaPath, "Complete", completedArchives);
+                requestAuditStatus = "Complete";
+                return BuildEmptyResult(options, sink, resolutions.Select(requests.Annotate).ToList(), stopwatch, null, requests);
             }
 
             // 3) Build baseline and secondary folder indexes.
@@ -154,6 +180,8 @@ public sealed class AssetPackingService
 
                 var resolver = new DataFolderResolver(
                     baseline, secondaryDisposables, options.OverrideVanillaBaseline);
+                var unboundAudioResolver = new DataFolderResolver(
+                    baseline, secondaryDisposables, options.OverrideVanillaBaseline, enableFuzzy: false);
                 // Companion fetcher lets the converter pull the `_s.ddx` specular companion
                 // for any `_n.ddx` normal map it's processing. The merge step packs the spec
                 // map into the normal map's alpha channel so the runtime gets vanilla-shape
@@ -193,6 +221,7 @@ public sealed class AssetPackingService
                 // and feed them back into the request set so the resolver picks them up.
                 await CollectNifEmbeddedTexturesAsync(
                     requested,
+                    requests,
                     resolver,
                     sink,
                     cancellationToken).ConfigureAwait(false);
@@ -202,22 +231,28 @@ public sealed class AssetPackingService
                 // workloads (6000+ assets per BSA). DataFolderResolver.Resolve and
                 // PrototypeAssetConverter.ConvertAsync are reentrant (read-only index
                 // lookups + per-call temp state), so we fan out across all cores.
-                var packedFiles = new ConcurrentBag<(string Path, byte[] Data)>();
+                using var spool = new AssetSpool();
+                var packedFiles = new ConcurrentBag<PackedAsset>();
                 var stats = new RunningStats();
 
                 await ParallelWork.ForEachAsync(
                     "asset-pack-resolve", requested, ConcurrencyPolicy.FullCores,
                     async (requestedPath, ct) =>
                     {
-                        var resolution = forcedPackPaths.Contains(requestedPath)
-                            ? resolver.ResolveForForcedPack(requestedPath)
-                            : resolver.Resolve(requestedPath);
+                        var resolution = unboundAudioPaths.Contains(requestedPath)
+                            ? unboundAudioResolver.ResolveForForcedPack(requestedPath)
+                            : forcedPackPaths.Contains(requestedPath)
+                                ? resolver.ResolveForForcedPack(requestedPath)
+                                : resolver.Resolve(requestedPath);
+                        resolution = requests.RequireExactMorphParent(requestedPath, resolution, resolver);
+                        lookups[requestedPath] = resolution;
                         Interlocked.Increment(ref stats.Total);
 
                         switch (resolution.Kind)
                         {
                             case AssetResolutionKind.AlreadyInBaseline:
                                 Interlocked.Increment(ref stats.AlreadyInBaseline);
+                                audioAudit?.Record(requestedPath, resolution, "AlreadyInBaseline");
                                 // Don't emit a resolution entry for these — would balloon the log.
                                 break;
 
@@ -229,19 +264,26 @@ public sealed class AssetPackingService
                                     resolution,
                                     options,
                                     packedFiles,
+                                    spool,
                                     stats,
                                     resolutions,
+                                    preparedPaths,
                                     sink,
                                     packPathRenames,
+                                    audioAudit,
+                                    unboundAudioPaths.Contains(requestedPath),
                                     ct).ConfigureAwait(false);
                                 break;
 
                             case AssetResolutionKind.Missing:
                                 Interlocked.Increment(ref stats.Missing);
+                                audioAudit?.Record(requestedPath, resolution, "Missing");
                                 resolutions.Add(new AssetResolution
                                 {
                                     RequestedPath = requestedPath,
-                                    Kind = AssetResolutionKind.Missing
+                                    Kind = AssetResolutionKind.Missing,
+                                    UnresolvedReason = resolution.UnresolvedReason,
+                                    UnverifiedCandidates = resolution.UnverifiedCandidates
                                 });
                                 if (options.VerbosePerAsset)
                                 {
@@ -260,8 +302,9 @@ public sealed class AssetPackingService
 
                 // Snapshot ConcurrentBag → List once so all downstream consumers (BSA
                 // writer, audit, result) see a stable enumeration order.
-                var packedSnapshot = packedFiles.ToList();
-                var resolutionsSnapshot = resolutions.ToList();
+                spool.Seal();
+                var packedSnapshot = PackedAsset.CoalesceOutputPaths(packedFiles, cancellationToken);
+                var resolutionsSnapshot = resolutions.Select(requests.Annotate).ToList();
                 AssetPackAuditWriter.ReportVoiceLipPairDiagnostics(
                     packedSnapshot,
                     resolutionsSnapshot,
@@ -270,7 +313,9 @@ public sealed class AssetPackingService
 
                 if (packedSnapshot.Count == 0)
                 {
-                    return BuildEmptyResult(options, sink, resolutionsSnapshot, stopwatch, stats);
+                    audioAudit?.Write(options.OutputBsaPath, "Complete", completedArchives);
+                    requestAuditStatus = "Complete";
+                    return BuildEmptyResult(options, sink, resolutionsSnapshot, stopwatch, stats, requests);
                 }
 
                 // 5) Write output BSAs. FO3/FNV archives are safest when no file data
@@ -293,9 +338,9 @@ public sealed class AssetPackingService
                         .ToList();
 
                 var (looseDirectory, looseBytes) = WriteLooseAssets(
-                    options.OutputBsaPath, looseFiles, sink);
+                    options.OutputBsaPath, looseFiles, sink, cancellationToken);
 
-                var outputPlans = PlanBsaOutputs(options.OutputBsaPath, archiveFiles);
+                var outputPlans = AssetPackBsaPlanner.Plan(options.OutputBsaPath, archiveFiles, DefaultMaxBsaBytes);
                 AssetPackBsaPlanner.DeleteStaleBsaOutputs(options.OutputBsaPath, outputPlans, sink);
 
                 var outputPaths = new List<string>(outputPlans.Count);
@@ -307,16 +352,17 @@ public sealed class AssetPackingService
                         $"{Path.GetFileName(plan.OutputPath)}");
 
                     using var writer = BsaWriter.CreateWithAutoFlags(plan.Files.Select(p => p.Path));
-                    foreach (var (path, data) in plan.Files)
+                    foreach (var file in plan.Files)
                     {
-                        writer.AddFile(path, data);
+                        file.AddTo(writer);
                     }
 
-                    writer.Write(plan.OutputPath);
+                    writer.Write(plan.OutputPath, cancellationToken);
 
                     var size = new FileInfo(plan.OutputPath).Length;
                     totalOutputSize += size;
                     outputPaths.Add(plan.OutputPath);
+                    completedArchives.Add(plan.OutputPath);
 
                     if (size > int.MaxValue)
                     {
@@ -340,7 +386,9 @@ public sealed class AssetPackingService
                 sink.Info("AssetPacking",
                     $"BSA output written: {outputPaths.Count:N0} archive(s), " +
                     $"{totalOutputSize:N0} total bytes in {stopwatch.Elapsed.TotalSeconds:F2}s");
+                audioAudit?.Write(options.OutputBsaPath, "Complete", completedArchives);
 
+                requestAuditStatus = "Complete";
                 return new AssetPackingResult
                 {
                     Success = true,
@@ -362,7 +410,8 @@ public sealed class AssetPackingService
                         LooseOutputSizeBytes = looseBytes,
                         Elapsed = stopwatch.Elapsed
                     },
-                    Resolutions = resolutionsSnapshot
+                    Resolutions = resolutionsSnapshot,
+                    Requests = requests.Snapshot()
                 };
             }
             finally
@@ -375,6 +424,8 @@ public sealed class AssetPackingService
         }
         catch (OperationCanceledException)
         {
+            requestAuditStatus = "Cancelled";
+            WriteIncompleteAudioAudit("Cancelled");
             stopwatch.Stop();
             sink.Warn("AssetPacking", "Asset packing canceled");
             return new AssetPackingResult
@@ -382,11 +433,14 @@ public sealed class AssetPackingService
                 Success = false,
                 ErrorMessage = "Asset packing canceled",
                 Stats = EmptyStats(stopwatch.Elapsed),
-                Resolutions = resolutions.ToList()
+                Resolutions = resolutions.Select(requests.Annotate).ToList(),
+                Requests = requests.Snapshot()
             };
         }
         catch (Exception ex)
         {
+            requestAuditStatus = "Failed";
+            WriteIncompleteAudioAudit("Failed");
             stopwatch.Stop();
             sink.Error("AssetPacking", $"Asset packing failed: {ex.Message}");
             return new AssetPackingResult
@@ -394,8 +448,26 @@ public sealed class AssetPackingService
                 Success = false,
                 ErrorMessage = ex.Message,
                 Stats = EmptyStats(stopwatch.Elapsed),
-                Resolutions = resolutions.ToList()
+                Resolutions = resolutions.Select(requests.Annotate).ToList(),
+                Requests = requests.Snapshot()
             };
+        }
+
+        finally
+        {
+            if (options.WriteAuditFile)
+                AssetRequestAuditWriter.TryWrite(options, requests.Snapshot(), lookups,
+                    resolutions.Select(requests.Annotate).ToList(), preparedPaths, completedArchives,
+                    requestAuditStatus, sink);
+        }
+
+        void WriteIncompleteAudioAudit(string status)
+        {
+            try { audioAudit?.Write(options.OutputBsaPath, status, completedArchives); }
+            catch (Exception error)
+            {
+                sink.Warn("AssetPacking", $"Could not write dialogue audio audit: {error.Message}");
+            }
         }
     }
 
@@ -407,6 +479,7 @@ public sealed class AssetPackingService
     /// </summary>
     private static async Task CollectNifEmbeddedTexturesAsync(
         HashSet<string> requested,
+        AssetRequestCatalog requests,
         DataFolderResolver resolver,
         IConversionProgressSink sink,
         CancellationToken cancellationToken)
@@ -419,7 +492,7 @@ public sealed class AssetPackingService
             return;
         }
 
-        var discovered = new ConcurrentBag<string>();
+        var discovered = new ConcurrentBag<(string Path, string Parent, string Source)>();
         var scanned = 0;
         var scanFailures = 0;
 
@@ -451,7 +524,7 @@ public sealed class AssetPackingService
 
                 foreach (var path in NifEmbeddedAssetCollector.ScanBytes(bytes))
                 {
-                    discovered.Add(path);
+                    discovered.Add((path, nifPath, resolution.Source.NormalizedPath));
                 }
 
                 Interlocked.Increment(ref scanned);
@@ -459,8 +532,15 @@ public sealed class AssetPackingService
             }, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         var added = 0;
-        foreach (var path in discovered)
+        foreach (var (path, parentPath, selectedPath) in discovered)
         {
+            requests.Ensure(path);
+            foreach (var parent in requests.Get(parentPath))
+                requests.Add(path, parent with
+                {
+                    Basis = "nif-embedded-path", ParentPath = parentPath, ParentBasis = parent.Basis,
+                    SelectedParentPath = selectedPath
+                });
             if (requested.Add(path))
             {
                 added++;
@@ -478,32 +558,40 @@ public sealed class AssetPackingService
         string requestedPath,
         DataFolderResolution resolution,
         AssetPackingOptions options,
-        ConcurrentBag<(string Path, byte[] Data)> packedFiles,
+        ConcurrentBag<PackedAsset> packedFiles,
+        AssetSpool spool,
         RunningStats stats,
         ConcurrentBag<AssetResolution> resolutions,
+        ConcurrentDictionary<string, string> preparedPaths,
         IConversionProgressSink sink,
         IReadOnlyDictionary<string, string>? packPathRenames,
+        DialogueAudioPackingAudit? audioAudit,
+        bool exactUnboundAudio,
         CancellationToken cancellationToken)
     {
         if (resolution.Source is null || resolution.ResolvedPath is null)
         {
+            audioAudit?.Record(requestedPath, resolution, "Missing");
             Interlocked.Increment(ref stats.Missing);
             resolutions.Add(new AssetResolution
             {
                 RequestedPath = requestedPath,
-                Kind = AssetResolutionKind.Missing
+                Kind = AssetResolutionKind.Missing,
+                UnresolvedReason = "source-unavailable"
             });
             return;
         }
 
-        if (resolution.Kind == AssetResolutionKind.ResolvedFuzzy && !options.IncludeFuzzyMatches)
+        if (resolution.Kind == AssetResolutionKind.ResolvedFuzzy && !options.IncludeFuzzyMatches && !exactUnboundAudio)
         {
+            audioAudit?.Record(requestedPath, resolution, "ExcludedFuzzy");
             // User opted out of fuzzy packing.
             Interlocked.Increment(ref stats.Missing);
             resolutions.Add(new AssetResolution
             {
                 RequestedPath = requestedPath,
-                Kind = AssetResolutionKind.Missing
+                Kind = AssetResolutionKind.Missing,
+                UnresolvedReason = "fuzzy-excluded"
             });
             return;
         }
@@ -515,12 +603,14 @@ public sealed class AssetPackingService
         }
         catch (Exception ex)
         {
+            audioAudit?.Record(requestedPath, resolution, "ReadFailed", error: ex.Message);
             sink.Warn("AssetPacking", $"Read failed for {resolution.ResolvedPath}: {ex.Message}");
             Interlocked.Increment(ref stats.Missing);
             resolutions.Add(new AssetResolution
             {
                 RequestedPath = requestedPath,
-                Kind = AssetResolutionKind.Missing
+                Kind = AssetResolutionKind.Missing,
+                UnresolvedReason = "source-read-failed"
             });
             return;
         }
@@ -532,11 +622,13 @@ public sealed class AssetPackingService
         // already in memory and the check short-circuits on the first non-zero byte.
         if (rawBytes.Length == 0 || BinaryUtils.IsAllZero(rawBytes))
         {
+            audioAudit?.Record(requestedPath, resolution, "EmptyOrZeroFilled");
             Interlocked.Increment(ref stats.Missing);
             resolutions.Add(new AssetResolution
             {
                 RequestedPath = requestedPath,
-                Kind = AssetResolutionKind.Missing
+                Kind = AssetResolutionKind.Missing,
+                UnresolvedReason = "empty-or-zero-source"
             });
             if (options.VerbosePerAsset)
             {
@@ -555,12 +647,50 @@ public sealed class AssetPackingService
 
         if (resolution.Source.IsXbox360)
         {
-            var converted = await converter
-                .ConvertAsync(rawBytes, resolution.Source.NormalizedPath, cancellationToken)
-                .ConfigureAwait(false);
+            var conversionClock = Stopwatch.StartNew();
+            var metadata = new Dictionary<string, string?>
+            {
+                ["requestedPath"] = requestedPath,
+                ["sourcePath"] = resolution.Source.NormalizedPath,
+                ["resolvedPath"] = resolution.ResolvedPath,
+                ["sourceFolderIndex"] = resolution.SourceFolderIndex.ToString(CultureInfo.InvariantCulture),
+                ["inputBytes"] = rawBytes.Length.ToString(CultureInfo.InvariantCulture)
+            };
+            sink.Info("AssetPacking", $"Converting {resolution.Source.NormalizedPath}",
+                code: "asset-conversion-start", metadata: new Dictionary<string, string?>(metadata));
+            ConvertedAsset converted;
+            try
+            {
+                converted = await converter.ConvertAsync(rawBytes, resolution.Source.NormalizedPath, cancellationToken)
+                    .ConfigureAwait(false);
+                metadata["outcome"] = !converted.Success ? "failed" : converted.WasConverted ? "converted" : "pass-through";
+                metadata["outputPath"] = converted.OutputPath;
+                metadata["outputBytes"] = converted.Success ? converted.Data.Length.ToString(CultureInfo.InvariantCulture) : null;
+                metadata["error"] = converted.FailureReason;
+            }
+            catch (OperationCanceledException)
+            {
+                audioAudit?.Record(requestedPath, resolution, "Cancelled");
+                metadata["outcome"] = "canceled";
+                throw;
+            }
+            catch (Exception exception)
+            {
+                audioAudit?.Record(requestedPath, resolution, "ConversionFailed", error: exception.Message);
+                metadata["outcome"] = "failed";
+                metadata["error"] = exception.Message;
+                throw;
+            }
+            finally
+            {
+                metadata["elapsedMilliseconds"] = conversionClock.Elapsed.TotalMilliseconds.ToString("F3", CultureInfo.InvariantCulture);
+                sink.Info("AssetPacking", $"Conversion {metadata.GetValueOrDefault("outcome")}: {resolution.Source.NormalizedPath}",
+                    code: "asset-conversion-end", metadata: metadata);
+            }
 
             if (!converted.Success)
             {
+                audioAudit?.Record(requestedPath, resolution, "ConversionFailed", error: converted.FailureReason);
                 Interlocked.Increment(ref stats.ConversionFailed);
                 conversionError = converted.FailureReason;
                 resolutions.Add(new AssetResolution
@@ -610,7 +740,22 @@ public sealed class AssetPackingService
         packedPath = PrototypeAssetConverter.PredictPackedPath(
             packedPath, resolution.Source.NormalizedPath, resolution.Source.IsXbox360);
 
-        packedFiles.Add((packedPath, outputBytes));
+        try
+        {
+            packedFiles.Add(spool.Append(packedPath, outputBytes, cancellationToken));
+            preparedPaths[requestedPath] = packedPath;
+            audioAudit?.Record(requestedPath, resolution, "Prepared", packedPath, outputBytes);
+        }
+        catch (OperationCanceledException)
+        {
+            audioAudit?.Record(requestedPath, resolution, "Cancelled", packedPath);
+            throw;
+        }
+        catch (Exception error)
+        {
+            audioAudit?.Record(requestedPath, resolution, "SpoolFailed", packedPath, error: error.Message);
+            throw;
+        }
 
         var kind = (resolution.Kind, wasConverted) switch
         {
@@ -659,7 +804,8 @@ public sealed class AssetPackingService
         IConversionProgressSink sink,
         List<AssetResolution> resolutions,
         Stopwatch stopwatch,
-        RunningStats? runningStats)
+        RunningStats? runningStats,
+        AssetRequestCatalog requests)
     {
         stopwatch.Stop();
         sink.Info("AssetPacking", "No assets needed packing — output BSA not written");
@@ -694,7 +840,8 @@ public sealed class AssetPackingService
             OutputPath = null,
             OutputPaths = [],
             Stats = stats,
-            Resolutions = resolutions
+            Resolutions = resolutions,
+            Requests = requests.Snapshot()
         };
     }
 
@@ -708,7 +855,7 @@ public sealed class AssetPackingService
         IReadOnlyList<(string Path, byte[] Data)> packedFiles,
         long maxArchiveBytes = DefaultMaxBsaBytes)
     {
-        return AssetPackBsaPlanner.Plan(outputBsaPath, packedFiles, maxArchiveBytes);
+        return AssetPackBsaPlanner.Plan(outputBsaPath, packedFiles.Select(file => PackedAsset.FromBytes(file.Path, file.Data)).ToList(), maxArchiveBytes);
     }
 
     /// <summary>
@@ -720,7 +867,12 @@ public sealed class AssetPackingService
     internal static (string? Directory, long Bytes) WriteLooseAssets(
         string outputBsaPath,
         IReadOnlyList<(string Path, byte[] Data)> looseFiles,
-        IConversionProgressSink sink)
+        IConversionProgressSink sink) => WriteLooseAssets(outputBsaPath,
+            looseFiles.Select(file => PackedAsset.FromBytes(file.Path, file.Data)).ToList(), sink, CancellationToken.None);
+
+    private static (string? Directory, long Bytes) WriteLooseAssets(
+        string outputBsaPath, IReadOnlyList<PackedAsset> looseFiles, IConversionProgressSink sink,
+        CancellationToken cancellationToken)
     {
         if (looseFiles.Count == 0)
         {
@@ -739,23 +891,26 @@ public sealed class AssetPackingService
         var written = 0;
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var (path, data) in looseFiles)
+        foreach (var file in looseFiles)
         {
-            var relative = path.Replace('/', '\\').TrimStart('\\');
+            var relative = file.Path.Replace('/', '\\').TrimStart('\\');
             if (!seen.Add(relative))
             {
                 continue;
             }
 
-            var absolute = Path.Combine(root, relative);
+            // `relative` is engine-spelled; re-spell it for the host, or a Unix run writes one file
+            // literally named "music\endgame\endgame_02.mp3" beside the archives.
+            var absolute = HostPath.Combine(root, relative);
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(absolute)!);
-                File.WriteAllBytes(absolute, data);
-                bytes += data.Length;
+                using var destination = File.Create(absolute);
+                file.CopyTo(destination, cancellationToken);
+                bytes += file.Length;
                 written++;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 sink.Warn("AssetPacking",
                     $"Could not write loose asset {relative}: {ex.GetType().Name}: {ex.Message}");

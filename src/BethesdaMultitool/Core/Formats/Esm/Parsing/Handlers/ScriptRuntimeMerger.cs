@@ -218,7 +218,11 @@ internal static class ScriptRuntimeMerger
         var variableCount = existing.VariableCount;
         var lastVariableId = existing.LastVariableId;
         var refObjectCount = existing.RefObjectCount;
-        var compiledDataIsBigEndian = existing.IsBigEndian;
+        // The BYTECODE order, not the container's: an ESM fragment's serialized SCDA can be
+        // little-endian inside a big-endian record, while a runtime Script object's SCDA has
+        // already been swapped to big-endian by the engine.
+        var compiledDataIsBigEndian = existing.IsBigEndianBytecode;
+        var bytecodeByteOrderEvidence = existing.BytecodeByteOrderEvidence;
 
         // SCDA's 1-based reference slots and local-variable operands make bytecode, SCRO/SCRV,
         // and SLSD one atomic unit. A nonempty prefix from a broken list walk must never be
@@ -246,7 +250,7 @@ internal static class ScriptRuntimeMerger
                                     && runtimeLocalBindingsComplete;
         var existingBytecodeMatchesRuntime = runtimeCompiledData != null
                                              && existing.CompiledData is { Length: > 0 } originalCompiledData
-                                             && existing.IsBigEndian
+                                             && existing.IsBigEndianBytecode
                                              && originalCompiledData.AsSpan().SequenceEqual(runtimeCompiledData);
         var adoptedRuntimeBundle = false;
         var executableBundleChanged = false;
@@ -305,6 +309,11 @@ internal static class ScriptRuntimeMerger
                 needsUpdate = true;
                 executableBundleChanged = true;
             }
+
+            // Whatever rule chose the fragment's order, the SCDA is now the runtime object's. This
+            // alone does not force an update: a fragment whose big-endian SCDA and tables already
+            // equal the runtime bundle is returned unchanged, keeping its own evidence.
+            bytecodeByteOrderEvidence = ScriptBytecodeByteOrderEvidence.RuntimeScriptObject;
         }
 
         // RuntimeScriptReader returns source only after observing its terminating NUL. Tie a
@@ -393,7 +402,9 @@ internal static class ScriptRuntimeMerger
             ReferencedObjects = referencedObjects,
             OwnerQuestFormId = ownerQuestFormId,
             QuestScriptDelay = questScriptDelay,
-            IsBigEndian = compiledDataIsBigEndian,
+            // IsBigEndian keeps the container order the fragment was read from.
+            IsBigEndianBytecode = compiledDataIsBigEndian,
+            BytecodeByteOrderEvidence = bytecodeByteOrderEvidence,
             FromRuntime = true
         };
     }
@@ -483,7 +494,14 @@ internal static class ScriptRuntimeMerger
             OwnerQuestFormId = runtime.OwnerQuestFormId,
             QuestScriptDelay = runtime.QuestScriptDelay,
             Offset = runtime.DumpOffset,
+            // Both explicitly: the Script object lives in a big-endian Xbox 360 dump, and its SCDA
+            // has already been swapped to big-endian by the engine. A later `with` that changes
+            // the container flag must never drag the bytecode order along with it.
             IsBigEndian = true,
+            IsBigEndianBytecode = true,
+            BytecodeByteOrderEvidence = completeCompiledBundle
+                ? ScriptBytecodeByteOrderEvidence.RuntimeScriptObject
+                : ScriptBytecodeByteOrderEvidence.NotApplicable,
             FromRuntime = true
         };
     }
@@ -506,15 +524,15 @@ internal static class ScriptRuntimeMerger
     ///     SCRI subrecords on NPC_/CREA/ACTI/etc. link objects to their scripts.
     ///     Also builds ref-to-base-to-script chains from placed references.
     /// </summary>
-    internal static void BuildObjectToScriptMap(
+    internal static void BuildObjectToScriptLinks(
         RecordParserContext context,
-        Dictionary<uint, uint> objectToScript)
+        List<ScriptOwnerLink> objectToScript)
     {
         // Record types that can have SCRI subrecords (objects with attached scripts)
         HashSet<string> scriTypes =
         [
             "NPC_", "CREA", "ACTI", "CONT", "DOOR", "FURN", "WEAP", "ARMO", "MISC",
-            "BOOK", "ALCH", "KEYM", "AMMO", "LIGH", "LVLC", "LVLN", "FACT", "QUST"
+            "BOOK", "ALCH", "KEYM", "AMMO", "LIGH", "LVLC", "LVLN", "FACT", "QUST", "TERM"
         ];
 
         var buffer = ArrayPool<byte>.Shared.Rent(65536);
@@ -535,22 +553,17 @@ internal static class ScriptRuntimeMerger
             ArrayPool<byte>.Shared.Return(buffer);
         }
 
-        // Build ref-to-base-to-script chains: for each ref that has a base with a script,
-        // add the ref to script's variables mapping
-        foreach (var (refFormId, baseFormId) in context.RefToBase)
-        {
-            if (objectToScript.TryGetValue(baseFormId, out var scriptFormId))
-            {
-                objectToScript.TryAdd(refFormId, scriptFormId);
-            }
-        }
+        // Keep every physical base link: conflicting captures must not become a first-wins name.
+        foreach (var refr in context.ScanResult.RefrRecords)
+            if (refr.Header.FormId != 0)
+                objectToScript.Add(new ScriptOwnerLink(refr.Header.FormId, refr.BaseFormId));
     }
 
     private static void TryExtractScriFormId(
         RecordParserContext context,
         DetectedMainRecord record,
         byte[] buffer,
-        Dictionary<uint, uint> objectToScript)
+        List<ScriptOwnerLink> objectToScript)
     {
         var recordData = context.ReadRecordData(record, buffer);
         if (recordData == null)
@@ -567,8 +580,7 @@ internal static class ScriptRuntimeMerger
                 var scriptFormId = record.IsBigEndian
                     ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(sub.DataOffset, 4))
                     : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(sub.DataOffset, 4));
-                objectToScript.TryAdd(record.FormId, scriptFormId);
-                break; // Only one SCRI per record
+                objectToScript.Add(new ScriptOwnerLink(record.FormId, scriptFormId));
             }
         }
     }

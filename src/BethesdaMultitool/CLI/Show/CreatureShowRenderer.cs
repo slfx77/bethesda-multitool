@@ -8,7 +8,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var creature = records.Creatures.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, c => c.FormId, c => c.EditorId));
@@ -17,13 +17,13 @@ internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var panel = new Panel(BuildContent(creature, records, resolver))
         {
             Header = new PanelHeader(
                 $"[bold]CREA[/] {Markup.Escape(creature.EditorId ?? "")} — {Markup.Escape(creature.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 
@@ -36,7 +36,7 @@ internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
             $"[cyan]EditorID:[/]     {Markup.Escape(creature.EditorId ?? "(none)")}",
             $"[cyan]Name:[/]         {Markup.Escape(creature.FullName ?? "(none)")}",
             $"[cyan]Type:[/]         {creature.CreatureTypeName}",
-            $"[cyan]Level:[/]        {creature.Stats?.Level.ToString() ?? "(unknown)"}"
+            $"[cyan]Level (encoded):[/] {creature.Stats?.Level.ToString() ?? "(unknown)"}"
         };
 
         lines.Add("");
@@ -74,12 +74,12 @@ internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
 
         if (creature.Script.HasValue)
         {
-            lines.Add($"[cyan]Script:[/]       {resolver.FormatWithEditorId(creature.Script.Value)}");
+            lines.Add($"[cyan]Script:[/]       {ShowHelpers.Ref(resolver, creature.Script.Value)}");
         }
 
         if (creature.DeathItem.HasValue)
         {
-            lines.Add($"[cyan]Death Item:[/]   {resolver.FormatWithEditorId(creature.DeathItem.Value)}");
+            lines.Add($"[cyan]Death Item:[/]   {ShowHelpers.Ref(resolver, creature.DeathItem.Value)}");
         }
 
         if (creature.Factions is { Count: > 0 })
@@ -88,7 +88,7 @@ internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
             lines.Add("[bold]Factions:[/]");
             foreach (var faction in creature.Factions)
             {
-                lines.Add($"  {resolver.FormatWithEditorId(faction.FactionFormId)} (rank {faction.Rank})");
+                lines.Add($"  {ShowHelpers.Ref(resolver, faction.FactionFormId)} (rank {faction.Rank})");
             }
         }
 
@@ -98,7 +98,7 @@ internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
             lines.Add("[bold]Spells/Abilities:[/]");
             foreach (var spell in creature.Spells)
             {
-                lines.Add($"  {resolver.FormatWithEditorId(spell)}");
+                lines.Add($"  {ShowHelpers.Ref(resolver, spell)}");
             }
         }
 
@@ -108,7 +108,7 @@ internal sealed class CreatureShowRenderer : IRecordDisplayRenderer
             lines.Add("[bold]AI Packages:[/]");
             foreach (var package in creature.Packages)
             {
-                lines.Add($"  {resolver.FormatWithEditorId(package)}");
+                lines.Add($"  {ShowHelpers.Ref(resolver, package)}");
             }
         }
 

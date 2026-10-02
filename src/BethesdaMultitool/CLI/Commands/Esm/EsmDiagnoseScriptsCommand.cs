@@ -9,6 +9,9 @@ namespace BethesdaMultitool.CLI.Commands.Esm;
 
 public static class EsmDiagnoseScriptsCommand
 {
+    /// <summary>The targets used when neither <c>--actor</c> nor <c>--record</c> is given.</summary>
+    private static readonly string[] LegacyDefaultTargets = ["Ulysses", "Chomps Lewis"];
+
     public static Command CreateDiagnoseScriptsCommand()
     {
         var command = new Command("diagnose-scripts", "Generate targeted dialogue/package script diagnostics");
@@ -34,7 +37,9 @@ public static class EsmDiagnoseScriptsCommand
         };
         var recordOpt = new Option<string[]>("--record")
         {
-            Description = "Explicit record FormID to include in diagnostics (hex, repeatable)",
+            Description =
+                "Explicit record FormID to include in diagnostics (hex, repeatable). Without --actor, only the " +
+                "explicit records are diagnosed",
             AllowMultipleArgumentsPerToken = false
         };
 
@@ -52,49 +57,104 @@ public static class EsmDiagnoseScriptsCommand
             var output = parseResult.GetValue(outputOpt)!;
             var sourceDmp = parseResult.GetValue(sourceDmpOpt);
             var pcEsm = parseResult.GetValue(pcEsmOpt);
-            var records = ParseFormIdSet(parseResult.GetValue(recordOpt) ?? []);
-            return await RunAsync(input, actors, records, sourceDmp, pcEsm, output, cancellationToken);
+            var recordTokens = parseResult.GetValue(recordOpt) ?? [];
+            return await RunAsync(input, actors, recordTokens, sourceDmp, pcEsm, output, AnsiConsole.Console,
+                cancellationToken);
         });
 
         return command;
     }
 
-    private static async Task<int> RunAsync(
+    /// <summary>
+    ///     Picks the diagnostic targets. Non-blank <c>--actor</c> values win. With none, any explicit
+    ///     record makes the run explicit-only: no implicit actors, so an explicit record is never
+    ///     reported under an actor it has nothing to do with. With neither option the legacy default
+    ///     actors are used and <paramref name="usedLegacyDefaults" /> is set so the caller can say so.
+    /// </summary>
+    internal static IReadOnlyList<string> ResolveTargets(
+        IReadOnlyList<string> actors,
+        IReadOnlySet<uint> explicitRecords,
+        out bool usedLegacyDefaults)
+    {
+        var named = actors
+            .Where(actor => !string.IsNullOrWhiteSpace(actor))
+            .Select(actor => actor.Trim())
+            .ToList();
+        usedLegacyDefaults = false;
+        if (named.Count > 0)
+        {
+            return named;
+        }
+
+        if (explicitRecords.Count > 0 || actors.Count > 0)
+        {
+            return [];
+        }
+
+        usedLegacyDefaults = true;
+        return LegacyDefaultTargets;
+    }
+
+    internal static async Task<int> RunAsync(
         string input,
-        string[] actors,
-        IReadOnlySet<uint> explicitRecordFormIds,
+        IReadOnlyList<string> actors,
+        IReadOnlyList<string> recordTokens,
         string? sourceDmp,
         string? pcEsm,
         string outputDirectory,
+        IAnsiConsole console,
         CancellationToken cancellationToken)
     {
         if (!File.Exists(input))
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] File not found: {input}");
+            console.MarkupLine($"[red]ERROR:[/] File not found: {Markup.Escape(input)}");
             return 1;
         }
 
         if (!string.IsNullOrWhiteSpace(sourceDmp) && !File.Exists(sourceDmp))
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] Source DMP not found: {sourceDmp}");
+            console.MarkupLine($"[red]ERROR:[/] Source DMP not found: {Markup.Escape(sourceDmp)}");
             return 1;
         }
 
         if (!string.IsNullOrWhiteSpace(pcEsm) && !File.Exists(pcEsm))
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] PC ESM not found: {pcEsm}");
+            console.MarkupLine($"[red]ERROR:[/] PC ESM not found: {Markup.Escape(pcEsm)}");
             return 1;
         }
 
-        var targets = actors.Length > 0
-            ? actors.Where(a => !string.IsNullOrWhiteSpace(a)).ToList()
-            : ["Ulysses", "Chomps Lewis"];
+        var explicitRecordFormIds = ParseFormIdSet(recordTokens, console);
+        if (recordTokens.Count > 0 && explicitRecordFormIds.Count == 0)
+        {
+            // Falling back to the legacy actors here would diagnose something nobody asked for.
+            console.MarkupLine("[red]ERROR:[/] --record was given but none of its values is a hex FormID");
+            return 1;
+        }
 
-        AnsiConsole.MarkupLine(
-            $"[blue]Generating script diagnostics:[/] {Path.GetFileName(input)} " +
-            $"for {Markup.Escape(string.Join(", ", targets))}");
+        if (actors.Count > 0 && actors.All(string.IsNullOrWhiteSpace) && explicitRecordFormIds.Count == 0)
+        {
+            console.MarkupLine("[red]ERROR:[/] --actor was given but every value is blank");
+            return 1;
+        }
+
+        var targets = ResolveTargets(actors, explicitRecordFormIds, out var usedLegacyDefaults);
+        if (usedLegacyDefaults)
+        {
+            console.MarkupLine(
+                "[yellow]Note:[/] neither --actor nor --record was given; using the legacy default targets " +
+                $"{Markup.Escape(string.Join(", ", targets))}");
+        }
+
+        console.MarkupLine(
+            $"[blue]Generating script diagnostics:[/] {Markup.Escape(Path.GetFileName(input))} " +
+            $"for {Markup.Escape(DescribeScope(targets, explicitRecordFormIds))}");
 
         var result = EsmScriptDiagnosticsAnalyzer.AnalyzeFile(input, targets, explicitRecordFormIds);
+        foreach (var missing in result.MissingExplicitRecordFormIds)
+        {
+            console.MarkupLine($"[yellow]Explicit record not found:[/] 0x{missing:X8}");
+        }
+
         EsmScriptDiagnosticsAnalyzer.WriteReport(result, outputDirectory);
 
         UnifiedAnalysisResult? source = null;
@@ -105,14 +165,14 @@ public static class EsmDiagnoseScriptsCommand
             {
                 if (!string.IsNullOrWhiteSpace(sourceDmp))
                 {
-                    AnsiConsole.MarkupLine(
+                    console.MarkupLine(
                         $"[blue]Loading source DMP:[/] {Markup.Escape(Path.GetFileName(sourceDmp))}");
                     source = await SemanticFileLoader.LoadAsync(sourceDmp, cancellationToken: cancellationToken);
                 }
 
                 if (!string.IsNullOrWhiteSpace(pcEsm))
                 {
-                    AnsiConsole.MarkupLine($"[blue]Loading master ESM:[/] {Markup.Escape(Path.GetFileName(pcEsm))}");
+                    console.MarkupLine($"[blue]Loading master ESM:[/] {Markup.Escape(Path.GetFileName(pcEsm))}");
                     master = await SemanticFileLoader.LoadAsync(pcEsm, cancellationToken: cancellationToken);
                 }
 
@@ -123,7 +183,7 @@ public static class EsmDiagnoseScriptsCommand
                     master?.Records);
                 EsmScriptProvenanceAnalyzer.WriteReport(provenance, outputDirectory);
 
-                AnsiConsole.MarkupLine(
+                console.MarkupLine(
                     $"[green]Wrote provenance diagnostics:[/] " +
                     $"[cyan]{provenance.SourceVsEmittedRefs.Count:N0}[/] ref comparison row(s), " +
                     $"[cyan]{provenance.ResultScripts.Count:N0}[/] result-script row(s), " +
@@ -140,17 +200,33 @@ public static class EsmDiagnoseScriptsCommand
         var structuralFailures = result.ScriptBlocks.Count(r =>
             !r.CompiledSizeMatches || !r.RefCountMatches || !r.WalkedToEnd || r.HasDiagnostics);
         var missingRefs = result.ScriptReferences.Count(r => r.Status is "Null" or "Missing");
+        var explicitFound = result.ExplicitRecordFormIds.Count - result.MissingExplicitRecordFormIds.Count;
 
-        AnsiConsole.MarkupLine(
-            $"[green]Wrote script diagnostics:[/] {outputDirectory} " +
+        console.MarkupLine(
+            $"[green]Wrote script diagnostics:[/] {Markup.Escape(outputDirectory)} " +
             $"([cyan]{result.TargetMatches.Count:N0}[/] target match(es), " +
+            $"[cyan]{explicitFound:N0}[/] explicit record(s), " +
             $"[cyan]{result.ScriptBlocks.Count:N0}[/] script block(s), " +
             $"[cyan]{structuralFailures:N0}[/] structural failure(s), " +
             $"[cyan]{missingRefs:N0}[/] null/missing ref(s))");
         return 0;
     }
 
-    private static HashSet<uint> ParseFormIdSet(IEnumerable<string> values)
+    private static string DescribeScope(IReadOnlyList<string> targets, IReadOnlySet<uint> explicitRecordFormIds)
+    {
+        var explicitText = explicitRecordFormIds.Count == 0
+            ? string.Empty
+            : "explicit record(s) " + string.Join(", ", explicitRecordFormIds.Order().Select(id => $"0x{id:X8}"));
+        if (targets.Count == 0)
+        {
+            return explicitText;
+        }
+
+        var targetText = string.Join(", ", targets);
+        return explicitText.Length == 0 ? targetText : $"{targetText} + {explicitText}";
+    }
+
+    private static HashSet<uint> ParseFormIdSet(IEnumerable<string> values, IAnsiConsole console)
     {
         var result = new HashSet<uint>();
         foreach (var value in values)
@@ -172,7 +248,7 @@ public static class EsmDiagnoseScriptsCommand
             }
             else
             {
-                AnsiConsole.MarkupLine($"[yellow]Skipping invalid FormID:[/] {Markup.Escape(value)}");
+                console.MarkupLine($"[yellow]Skipping invalid FormID:[/] {Markup.Escape(value)}");
             }
         }
 

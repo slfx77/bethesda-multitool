@@ -9,7 +9,7 @@ using static BethesdaMultitool.Tests.Helpers.EsmTestRecordBuilder;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 
-[Trait("Category", TestCategories.BucketB)]
+[Collection(SequentialIntegrationGroup.Name)]
 public sealed class IngredientParserTests
 {
     private const string RetailEditorId = "DoNotCreateNewIngredientsWeArentUsingThemInFallout";
@@ -74,6 +74,7 @@ public sealed class IngredientParserTests
     }
 
     [Fact]
+    [Trait("Category", TestCategories.BucketB)]
     public async Task RetailFalloutNv_HasOneExplicitlyNonCreatableIngredient()
     {
         BucketBTestGuard.SkipUnlessEnabled();

@@ -142,7 +142,7 @@ public static class EsmParser
         // bytes: HEDR + the MAST masters sit early (before the truncated ONAM tail) and ParseSubrecords
         // stops cleanly at the buffer end, so load-order resolution still gets what it needs. Full-file
         // callers are unaffected (DataSize fits, so Min picks it).
-        var headerDataLength = Math.Min((int)header.DataSize, data.Length - format.RecordHeaderSize);
+        var headerDataLength = (int)Math.Min(header.DataSize, (uint)(data.Length - format.RecordHeaderSize));
         var headerData = data.Slice(format.RecordHeaderSize, headerDataLength);
         var subrecords = ParseSubrecords(headerData, bigEndian);
 
@@ -284,13 +284,20 @@ public static class EsmParser
     /// <summary>
     ///     Parse all subrecords within a record's data area.
     /// </summary>
-    public static List<ParsedSubrecord> ParseSubrecords(ReadOnlySpan<byte> data, bool bigEndian = false)
+    public static List<ParsedSubrecord> ParseSubrecords(ReadOnlySpan<byte> data, bool bigEndian = false,
+        Action<SubrecordReadDiagnostic>? diagnostic = null)
     {
         var result = new List<ParsedSubrecord>();
         var offset = 0;
 
-        while (offset + SubrecordHeaderSize <= data.Length)
+        while (offset < data.Length)
         {
+            var remaining = data.Length - offset;
+            if (remaining < SubrecordHeaderSize)
+            {
+                diagnostic?.Invoke(new(null, offset, SubrecordHeaderSize, remaining, bigEndian, "Truncated subrecord header"));
+                break;
+            }
             var sig = ReadSignature(data[offset..], bigEndian);
 
             // Validate signature is printable ASCII
@@ -306,40 +313,51 @@ public static class EsmParser
 
             if (!validSig)
             {
+                diagnostic?.Invoke(new(sig, offset, 0, remaining, bigEndian, "Invalid subrecord signature"));
                 break;
             }
 
             var dataLen = ReadUInt16(data, offset + 4, bigEndian);
 
             // Handle XXXX extended size marker
-            if (sig == "XXXX" && dataLen == 4)
+            if (sig == "XXXX")
             {
+                if (dataLen != 4 || remaining - SubrecordHeaderSize < 4)
+                {
+                    diagnostic?.Invoke(new(sig, offset, 4, remaining - SubrecordHeaderSize, bigEndian,
+                        "Invalid or truncated extended size"));
+                    break;
+                }
                 var extendedSize = ReadUInt32(data, offset + 6, bigEndian);
                 offset += SubrecordHeaderSize + 4;
-
-                // Next subrecord uses extended size
-                if (offset + SubrecordHeaderSize <= data.Length)
+                remaining = data.Length - offset;
+                if (remaining < SubrecordHeaderSize)
                 {
-                    sig = ReadSignature(data[offset..], bigEndian);
-                    offset += SubrecordHeaderSize;
-
-                    if (offset + extendedSize <= data.Length)
-                    {
-                        result.Add(new ParsedSubrecord
-                        {
-                            Signature = sig,
-                            Data = data.Slice(offset, (int)extendedSize).ToArray(),
-                            BigEndian = bigEndian
-                        });
-                        offset += (int)extendedSize;
-                    }
+                    diagnostic?.Invoke(new(null, offset, extendedSize, remaining, bigEndian, "Missing extended subrecord header"));
+                    break;
                 }
-
+                sig = ReadSignature(data[offset..], bigEndian);
+                offset += SubrecordHeaderSize;
+                remaining -= SubrecordHeaderSize;
+                if (extendedSize > remaining)
+                {
+                    diagnostic?.Invoke(new(sig, offset, extendedSize, remaining, bigEndian, "Extended payload exceeds bounds"));
+                    break;
+                }
+                result.Add(new ParsedSubrecord
+                {
+                    Signature = sig,
+                    Data = data.Slice(offset, (int)extendedSize).ToArray(),
+                    BigEndian = bigEndian
+                });
+                offset += (int)extendedSize;
                 continue;
             }
 
-            if (offset + SubrecordHeaderSize + dataLen > data.Length)
+            if (dataLen > remaining - SubrecordHeaderSize)
             {
+                diagnostic?.Invoke(new(sig, offset + SubrecordHeaderSize, dataLen, remaining - SubrecordHeaderSize,
+                    bigEndian, "Subrecord payload exceeds bounds"));
                 break;
             }
 

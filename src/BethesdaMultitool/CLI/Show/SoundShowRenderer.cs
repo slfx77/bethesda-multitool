@@ -8,7 +8,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class SoundShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var snd = records.Sounds.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, s => s.FormId, s => s.EditorId));
@@ -17,7 +17,7 @@ internal sealed class SoundShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]      0x{snd.FormId:X8}",
@@ -52,7 +52,7 @@ internal sealed class SoundShowRenderer : IRecordDisplayRenderer
         {
             Header = new PanelHeader($"[bold]SOUN[/] {Markup.Escape(snd.EditorId ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

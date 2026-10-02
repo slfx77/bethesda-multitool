@@ -40,7 +40,7 @@ internal static class GeckActorWriter
                 sb.AppendLine("Stats:");
                 if (npc.Stats != null)
                 {
-                    sb.AppendLine($"  Level:          {npc.Stats.Level}");
+                    sb.AppendLine($"  Level (encoded): {npc.Stats.Level}");
                 }
 
                 if (npc.SpecialStats is { Length: 7 } sp)
@@ -86,16 +86,15 @@ internal static class GeckActorWriter
                 {
                     var str = sp2[0];
                     var end = sp2[2];
-                    var lck = sp2[6];
-                    var baseHealth = end * 5 + 50;
-                    var calcHealth = baseHealth + npc.Stats.Level * 10;
+                    var baseHealth = Core.Actors.ActorStatisticsService.Format(Core.Actors.ActorStatisticsService.StoredHealth(npc));
+                    const string calcHealth = "Unavailable";
                     var calcFatigue = npc.Stats.FatigueBase + (str + end) * 10;
 
                     sb.AppendLine($"  {"Base Health:",-18}{baseHealth,-10}{"Calculated Health:",-22}{calcHealth}");
                     sb.AppendLine(
                         $"  {"Fatigue:",-18}{npc.Stats.FatigueBase,-10}{"Calc Fatigue:",-22}{calcFatigue}");
                     sb.AppendLine(
-                        $"  {"Critical Chance:",-18}{(float)lck,-10:F0}{"Speed Mult:",-22}{npc.Stats.SpeedMultiplier}%");
+                        $"  {"Critical Chance:",-18}{Core.Actors.ActorStatisticsService.Format(Core.Actors.ActorStatisticsService.CriticalChance()),-10}{"Speed Mult:",-22}{npc.Stats.SpeedMultiplier}%");
                     sb.AppendLine(
                         $"  {"Melee Damage:",-18}{str * 0.5f,-10:F2}{"Unarmed Damage:",-22}{0.5f + str * 0.1f:F2}");
                     sb.AppendLine(
@@ -340,7 +339,7 @@ internal static class GeckActorWriter
             {
                 sb.AppendLine();
                 sb.AppendLine("Stats (ACBS):");
-                sb.AppendLine($"  Level:          {creature.Stats.Level}");
+                sb.AppendLine($"  Level (encoded): {creature.Stats.Level}");
                 sb.AppendLine($"  Fatigue Base:   {creature.Stats.FatigueBase}");
                 sb.AppendLine($"  Barter Gold:    {creature.Stats.BarterGold}");
                 sb.AppendLine($"  Speed Mult:     {creature.Stats.SpeedMultiplier}");

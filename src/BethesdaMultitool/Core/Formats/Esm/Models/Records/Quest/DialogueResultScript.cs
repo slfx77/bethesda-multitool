@@ -8,6 +8,9 @@ public record DialogueResultScript
     /// <summary>Source text from SCTX, when present.</summary>
     public string? SourceText { get; init; }
 
+    /// <summary>Captured SCTX withheld by source/executable validation, rather than absent from the capture.</summary>
+    public string? WithheldSourceReason { get; init; }
+
     /// <summary>Where the recovered SCTX came from within the current dump.</summary>
     public ScriptSourceTextOrigin SourceTextOrigin { get; init; }
 
@@ -19,6 +22,8 @@ public record DialogueResultScript
 
     /// <summary>Decompiled bytecode from SCDA, when source text is unavailable.</summary>
     public string? DecompiledText { get; init; }
+
+    public List<ScriptExternalVariableBinding> ExternalVariableBindings { get; init; } = [];
 
     /// <summary>Raw compiled bytecode from SCDA.</summary>
     public byte[]? CompiledData { get; init; }
@@ -53,6 +58,7 @@ public record DialogueResultScript
 
     /// <summary>Whether any script content was recovered.</summary>
     public bool HasContent =>
+        WithheldSourceReason is not null ||
         !string.IsNullOrEmpty(SourceText) ||
         !string.IsNullOrEmpty(DecompiledText) ||
         CompiledData is { Length: > 0 } ||

@@ -15,6 +15,9 @@ public record MiscItemRecord
     /// <summary>Display name.</summary>
     public string? FullName { get; init; }
 
+    /// <summary>Explicit attached script FormID from the stored SCRI subrecord.</summary>
+    public uint? ScriptFormId { get; init; }
+
     // DATA subrecord (8 bytes)
     /// <summary>Base value in caps.</summary>
     public int Value { get; init; }

@@ -1,4 +1,3 @@
-using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Magic;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
@@ -17,15 +16,18 @@ public sealed class PerkEncoder : IRecordEncoder
 {
     // CTDA schema field names: Type, ComparisonValue, FunctionIndex, Parameter1,
     // Parameter2, RunOn, Reference. Type stores the comparison operator in bits 5–7;
-    // the unmodeled low-bit flags, RunOn, and Reference currently zero-fill.
+    // retain the low-bit flags and the independent run-on/reference/global fields.
     private static readonly Dictionary<string, Func<PerkCondition, object?>> CtdaExtractors =
         new(StringComparer.Ordinal)
         {
-            ["Type"] = m => EncodeComparisonType(m.ComparisonOperator),
-            ["ComparisonValue"] = m => m.ComparisonValue,
+            ["Type"] = m => (byte)(EncodeComparisonType(m.ComparisonOperator) | ((m.Flags ?? 0) & 0x1F)),
+            ["ComparisonValue"] = m => m.ComparisonGlobalFormId is { } global
+                ? BitConverter.UInt32BitsToSingle(global) : m.ComparisonValue,
             ["FunctionIndex"] = m => m.FunctionIndex,
             ["Parameter1"] = m => m.Parameter1,
-            ["Parameter2"] = m => m.Parameter2
+            ["Parameter2"] = m => m.Parameter2,
+            ["RunOn"] = m => m.RunOn ?? 0u,
+            ["Reference"] = m => m.ReferenceFormId ?? 0u
         };
 
     public string RecordType => "PERK";
@@ -125,7 +127,7 @@ public sealed class PerkEncoder : IRecordEncoder
     {
         if (validFormIds is null)
         {
-            return conditions;
+            return conditions.Where(condition => condition.RecoveryIssues.Count == 0).ToList();
         }
 
         return ConditionSanitizer.FilterPerk(
@@ -162,6 +164,16 @@ public sealed class PerkEncoder : IRecordEncoder
         ref int droppedCtdas,
         ref int remappedCtdaParams)
     {
+        if (entry.RuntimeAddress.HasValue &&
+            (entry.Type == byte.MaxValue || entry.RecoveryIssues.Count > 0 ||
+             entry.ConditionGroups.Any(group => group.RecoveryIssues.Count > 0 ||
+                 group.Conditions.Any(condition => condition.RecoveryIssues.Count > 0)) ||
+             entry.FunctionType == 4))
+        {
+            warnings.Add($"PERK 0x{perkFormId:X8}: runtime entry 0x{entry.RuntimeAddress:X8} was not emitted; " +
+                "recovery is incomplete or activation-script serialization is unsupported. Raw evidence remains in reports.");
+            return;
+        }
         // PRKE — 3 bytes: type + rank + priority.
         var prke = new byte[3];
         prke[0] = entry.Type;
@@ -290,44 +302,43 @@ public sealed class PerkEncoder : IRecordEncoder
     /// <summary>
     ///     Build the EPFD payload for an entry-type-2 PerkEntry. The byte shape depends on
     ///     EPFT (FunctionType):
-    ///     <list type="bullet">
-    ///         <item>0-3 (Set/Add/Multiply/Add Range): float (4B)</item>
-    ///         <item>4 (Add AV Mult): float (4B) — model stores in EffectValue</item>
-    ///         <item>5-6 (Absolute / Negative Absolute Value): no payload</item>
-    ///         <item>7 (Add Leveled List): FormID (4B)</item>
-    ///         <item>8 (Add Activate Choice): zstring</item>
-    ///     </list>
-    ///     Returns null when no payload should be emitted (function types 5/6).
+    ///     0=None, 1=one float, 2=two floats, 3=leveled-list FormID, 4=activation script.
+    ///     The result operation is DATA[1], not EPFT. Runtime structures are never reused as EPFD.
     /// </summary>
     private static byte[]? BuildEpfdPayload(PerkEntry entry, uint perkFormId, List<string> warnings)
     {
         switch (entry.FunctionType)
         {
-            case 0 or 1 or 2 or 3 or 4:
+            case 1:
             {
                 var payload = new byte[4];
                 SubrecordEncoder.WriteFloat(payload, 0, entry.EffectValue ?? 0f);
                 return payload;
             }
-            case 5 or 6:
+            case 0:
                 return null;
-            case 7:
+            case 2:
+            {
+                var payload = new byte[8];
+                SubrecordEncoder.WriteFloat(payload, 0, entry.EffectValue ?? 0f);
+                SubrecordEncoder.WriteFloat(payload, 4, entry.EffectValue2 ?? 0f);
+                return payload;
+            }
+            case 3:
             {
                 var payload = new byte[4];
                 SubrecordEncoder.WriteFormId(payload, 0, entry.EffectFormId ?? 0u);
                 return payload;
             }
-            case 8:
+            case 4:
             {
                 if (entry.RawFunctionData is { Length: > 0 } rawActivateChoiceData)
                 {
                     return rawActivateChoiceData;
                 }
 
-                // zstring; if the model only has EffectData (best-effort text), fall back to it.
-                var text = entry.EffectData ?? string.Empty;
-                var bytes = Encoding.Latin1.GetBytes(text + "\0");
-                return bytes;
+                // EPF2 holds the label and EPF3 the flags. EPFD is not a label string.
+                return [];
             }
             default:
                 if (entry.RawFunctionData is { Length: > 0 } rawUnknownFunctionData)
@@ -344,8 +355,8 @@ public sealed class PerkEncoder : IRecordEncoder
     private static byte[] BuildPerkCtdaSubrecord(PerkCondition condition)
     {
         // CTDA (28B) per PDB CONDITION_ITEM_DATA. Type at offset 0 stores the comparison
-        // operator in bits 5–7; low bits are condition flags. PerkCondition does not yet model
-        // those flags, RunOn (offset 20), or Reference (offset 24), so they zero-fill.
+        // operator in bits 5–7; low bits are condition flags. Preserve the independent
+        // RunOn (offset 20), Reference (offset 24), and UseGlobal comparison union.
         return SchemaModelSerializer.Serialize("CTDA", "", 28, condition, CtdaExtractors);
     }
 

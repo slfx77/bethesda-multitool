@@ -134,14 +134,29 @@ public static class EsmHelpers
     /// </summary>
     public static byte[] GetRecordData(byte[] fileData, AnalyzerRecordInfo rec, bool bigEndian)
     {
-        var rawData = fileData.AsSpan((int)rec.Offset + EsmParser.MainRecordHeaderSize, (int)rec.DataSize);
+        var start = (long)rec.Offset + rec.RecordHeaderSize;
+        if (rec.Offset < 0 || rec.RecordHeaderSize < 0 || start < 0 || start > fileData.LongLength ||
+            rec.DataSize > int.MaxValue || rec.DataSize > fileData.LongLength - start)
+        {
+            throw new InvalidDataException($"{rec.Signature} 0x{rec.FormId:X8}: payload at 0x{start:X}, " +
+                $"declared={rec.DataSize}, available={Math.Max(0, fileData.LongLength - start)}");
+        }
+        var rawData = fileData.AsSpan((int)start, (int)rec.DataSize);
         var isCompressed = (rec.Flags & 0x00040000) != 0;
 
         if (isCompressed)
         {
+            if (rawData.Length < 4)
+            {
+                throw new InvalidDataException($"{rec.Signature} 0x{rec.FormId:X8}: truncated compressed size at 0x{start:X}");
+            }
             var decompressedSize = bigEndian
                 ? BinaryUtils.ReadUInt32BE(rawData)
                 : BinaryUtils.ReadUInt32LE(rawData);
+            if (decompressedSize > int.MaxValue)
+            {
+                throw new InvalidDataException($"{rec.Signature} 0x{rec.FormId:X8}: decoded length {decompressedSize} exceeds supported length");
+            }
             return DecompressZlib(rawData[4..].ToArray(), (int)decompressedSize);
         }
 

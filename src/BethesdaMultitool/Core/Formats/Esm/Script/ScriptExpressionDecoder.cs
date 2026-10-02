@@ -10,6 +10,7 @@ internal sealed class ScriptExpressionDecoder
 {
     private readonly ScriptFunctionSet _functions;
     private readonly ScriptVariableReader _varReader;
+    internal ScriptInstructionRecorder? InstructionRecorder { get; set; }
 
     /// <summary>Creates the expression decoder using the given variable-name reader and command table.</summary>
     public ScriptExpressionDecoder(ScriptVariableReader varReader, ScriptFunctionSet? functions = null)
@@ -96,6 +97,8 @@ internal sealed class ScriptExpressionDecoder
         var remaining = exprEnd - reader.Position;
         if (remaining > 0)
         {
+            using var opaque = InstructionRecorder?.Begin(reader.Position, "ExpressionUnknown");
+            if (opaque is not null) { opaque.Status = "Unknown"; opaque.EndAt(exprEnd); }
             var hexDump = BitConverter.ToString(reader.ReadBytes(remaining)).Replace("-", " ");
             stack.Push(new ExprNode($"<unknown: {hexDump}>", ExprNode.Atomic));
         }
@@ -180,7 +183,11 @@ internal sealed class ScriptExpressionDecoder
                     return _varReader.ReadAsciiNumber(reader);
                 }
 
-                reader.ReadByte();
+                using (var opaque = InstructionRecorder?.Begin(reader.Position, "ExpressionUnknown"))
+                {
+                    if (opaque is not null) { opaque.Status = "Unknown"; opaque.EndAt(reader.Position + 1); }
+                    reader.ReadByte();
+                }
                 return $"<push:0x{subToken:X2}>";
         }
     }
@@ -227,18 +234,35 @@ internal sealed class ScriptExpressionDecoder
 
     internal string DecodeExpressionFunctionCall(BytecodeReader reader)
     {
+        using var instruction = InstructionRecorder?.Begin(reader.Position, "ExpressionCall");
+        try { return DecodeExpressionFunctionCallCore(reader, instruction); }
+        catch
+        {
+            if (instruction is not null) instruction.Status = "Partial";
+            throw;
+        }
+        finally { instruction?.EndAt(reader.Position); }
+    }
+
+    private string DecodeExpressionFunctionCallCore(BytecodeReader reader, ScriptInstructionRecorder.Scope? instruction)
+    {
         // Format: [opcode:2] [callParamLen:2] {[paramCount:2] [params...]} if callParamLen > 0
         if (!reader.CanRead(4))
         {
+            if (instruction is not null) { instruction.Status = "Truncated"; instruction.EndAt(reader.Length); }
             return "<truncated function call>";
         }
 
         var opcode = reader.ReadUInt16();
         var callParamLen = reader.ReadUInt16();
+        if (instruction is not null) instruction.Opcode = opcode;
         var callEnd = reader.Position + callParamLen;
 
         var funcDef = _functions.Get(opcode);
+        if (instruction is not null)
+            instruction.Status = callEnd > reader.Length || callEnd > _varReader.ExprEnd ? "Truncated" : funcDef is null ? "Unknown" : "Decoded";
         var funcName = ScriptDecompiler.GetFunctionDisplayName(funcDef, opcode, _functions);
+        if (_varReader.HasPendingRef) InstructionRecorder?.ConsumeReference();
         var prefix = _varReader.ConsumePendingRef();
 
         // If callParamLen is 0, there are no parameters (no paramCount field)
@@ -261,6 +285,7 @@ internal sealed class ScriptExpressionDecoder
         }
 
         // Ensure we don't over-read past the call boundary
+        if (instruction?.Status == "Decoded" && reader.Position != callEnd) instruction.Status = "Partial";
         reader.Position = callEnd;
 
         return paramStrings.Count > 0

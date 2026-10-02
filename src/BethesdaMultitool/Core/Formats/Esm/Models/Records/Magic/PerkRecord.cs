@@ -48,6 +48,9 @@ public record PerkRecord
     /// <summary>Perk conditions (skill/stat requirements, perk prerequisites).</summary>
     public List<PerkCondition> Conditions { get; init; } = [];
 
+    /// <summary>Partial-capture or traversal limitations from the runtime lists.</summary>
+    public List<string> RuntimeRecoveryIssues { get; init; } = [];
+
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 

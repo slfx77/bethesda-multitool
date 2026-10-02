@@ -23,6 +23,10 @@ internal static class DialogueTreeCommand
             { Description = "Filter by quest FormID (hex, e.g. 0x12345)" };
         var outputOpt = new Option<string?>("-o", "--output") { Description = "Output file path" };
 
+        var loadOrderOpt = LoadOrderOptions.CreateOption();
+        var allowMissingOpt = LoadOrderOptions.CreateAllowMissingMastersOption();
+        command.Options.Add(loadOrderOpt);
+        command.Options.Add(allowMissingOpt);
         command.Arguments.Add(inputArg);
         command.Options.Add(limitOpt);
         command.Options.Add(questOpt);
@@ -34,7 +38,8 @@ internal static class DialogueTreeCommand
             var limit = parseResult.GetValue(limitOpt);
             var quest = parseResult.GetValue(questOpt);
             var output = parseResult.GetValue(outputOpt);
-            await RunTreeAsync(input, limit, quest, output, cancellationToken);
+            await RunTreeAsync(input, limit, quest, output, parseResult.GetValue(loadOrderOpt),
+                parseResult.GetValue(allowMissingOpt), cancellationToken);
         });
 
         return command;
@@ -49,6 +54,10 @@ internal static class DialogueTreeCommand
             { Description = "NPC FormID (hex) or partial name. Omit for --list.", Arity = ArgumentArity.ZeroOrOne };
         var listOpt = new Option<bool>("--list") { Description = "List all NPCs with dialogue" };
 
+        var loadOrderOpt = LoadOrderOptions.CreateOption();
+        var allowMissingOpt = LoadOrderOptions.CreateAllowMissingMastersOption();
+        command.Options.Add(loadOrderOpt);
+        command.Options.Add(allowMissingOpt);
         command.Arguments.Add(inputArg);
         command.Arguments.Add(npcArg);
         command.Options.Add(listOpt);
@@ -58,16 +67,19 @@ internal static class DialogueTreeCommand
             var input = parseResult.GetValue(inputArg)!;
             var npc = parseResult.GetValue(npcArg);
             var list = parseResult.GetValue(listOpt);
-            await RunNpcAsync(input, npc, list, cancellationToken);
+            await RunNpcAsync(input, npc, list, parseResult.GetValue(loadOrderOpt),
+                parseResult.GetValue(allowMissingOpt), cancellationToken);
         });
 
         return command;
     }
 
-    private static async Task RunTreeAsync(string input, int? limit, string? questFilter, string? output,
+    private static async Task RunTreeAsync(string input, int? limit, string? questFilter, string? output, string[]? loadOrder, bool allowMissing,
         CancellationToken cancellationToken)
     {
-        var loaded = await DialogueCommand.LoadAndParseAsync(input, cancellationToken);
+        var selected = await SelectedViewCli.LoadAsync(input, loadOrder, allowMissing, cancellationToken);
+        var loaded = selected == null ? await DialogueCommand.LoadAndParseAsync(input, cancellationToken)
+            : (selected.Records, selected.Records.FormIdToEditorId);
         if (loaded == null)
         {
             return;
@@ -92,7 +104,8 @@ internal static class DialogueTreeCommand
         var tree = result.DialogueTree;
         if (!string.IsNullOrEmpty(questFilter))
         {
-            var questFormId = CliHelpers.ParseFormId(questFilter) ?? 0;
+            var questFormId = selected != null ? selected.Index.ResolveTarget(questFilter, selected.Order)
+                : CliHelpers.ParseFormId(questFilter) ?? 0;
             if (questFormId == 0)
             {
                 AnsiConsole.MarkupLine("[red]Error:[/] Invalid FormID: {0}", questFilter);
@@ -130,7 +143,11 @@ internal static class DialogueTreeCommand
 
         if (!string.IsNullOrEmpty(output))
         {
-            await File.WriteAllTextAsync(output, report, cancellationToken);
+            if (File.Exists(output)) { throw new IOException($"Output already exists: {output}"); }
+            await SelectedViewCli.WriteProvenanceAsync(selected, output, cancellationToken);
+            await using var file = new FileStream(output, FileMode.CreateNew);
+            await using var writer = new StreamWriter(file);
+            await writer.WriteAsync(report.AsMemory(), cancellationToken);
             AnsiConsole.MarkupLine("[green]Dialogue tree written to:[/] {0}", output);
         }
         else
@@ -139,10 +156,12 @@ internal static class DialogueTreeCommand
         }
     }
 
-    private static async Task RunNpcAsync(string input, string? npcFilter, bool listMode,
+    private static async Task RunNpcAsync(string input, string? npcFilter, bool listMode, string[]? loadOrder, bool allowMissing,
         CancellationToken cancellationToken)
     {
-        var loaded = await DialogueCommand.LoadAndParseAsync(input, cancellationToken);
+        var selected = await SelectedViewCli.LoadAsync(input, loadOrder, allowMissing, cancellationToken);
+        var loaded = selected == null ? await DialogueCommand.LoadAndParseAsync(input, cancellationToken)
+            : (selected.Records, selected.Records.FormIdToEditorId);
         if (loaded == null)
         {
             return;
@@ -175,7 +194,8 @@ internal static class DialogueTreeCommand
         }
 
         // Find the NPC -- try hex FormID first, then partial name match
-        uint targetFormId = 0;
+        uint targetFormId = selected != null && npcFilter.Contains(':')
+            ? selected.Index.ResolveTarget(npcFilter, selected.Order) : 0;
         if (npcFilter.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ||
             uint.TryParse(npcFilter, NumberStyles.HexNumber, null, out _))
         {
@@ -295,7 +315,8 @@ internal static class DialogueTreeCommand
             .ToDictionary(g => g.Key, g => g.First().TopicTypeName);
         var topicNameMap = result.DialogTopics
             .GroupBy(t => t.FormId)
-            .ToDictionary(g => g.Key, g => g.First().FullName ?? g.First().EditorId ?? $"0x{g.Key:X8}");
+            .ToDictionary(g => g.Key, g => DialogueTopicLabels.IsGreeting(g.First().EditorId) ? g.First().EditorId! :
+                g.First().FullName ?? g.First().EditorId ?? $"0x{g.Key:X8}");
 
         foreach (var questGroup in questGroups)
         {

@@ -1,3 +1,7 @@
+using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel;
+using BethesdaMultitool.Core.Formats.Esm.RecordModel.Schema;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Enums;
 
 /// <summary>
@@ -39,6 +43,36 @@ public static class FlagRegistry
         new(0x08000000, "No Rotating to Head-Track"),
         new(0x40000000, "No Perception Condition")
     ];
+
+    /// <summary>
+    /// Project FO3/FNV actor flag names from the same game/record schema as the
+    /// raw record view. Unknown-game flags stay numeric; other game paths are unchanged.
+    /// </summary>
+    public static FlagBit[] GetActorBaseFlags(BethesdaGame game, string recordType) => (game, recordType) switch
+    {
+        (BethesdaGame.Fallout3, "NPC_") => Fallout3NpcFlags.Value,
+        (BethesdaGame.FalloutNewVegas, "NPC_") => FalloutNvNpcFlags.Value,
+        (BethesdaGame.Fallout3, "CREA") => Fallout3CreatureFlags.Value,
+        (BethesdaGame.FalloutNewVegas, "CREA") => FalloutNvCreatureFlags.Value,
+        (BethesdaGame.Unknown, _) => [],
+        _ => ActorBaseFlags
+    };
+
+    private static readonly Lazy<FlagBit[]> Fallout3NpcFlags = new(() => ReadActorFlags(BethesdaGame.Fallout3, "NPC_"));
+    private static readonly Lazy<FlagBit[]> FalloutNvNpcFlags = new(() => ReadActorFlags(BethesdaGame.FalloutNewVegas, "NPC_"));
+    private static readonly Lazy<FlagBit[]> Fallout3CreatureFlags = new(() => ReadActorFlags(BethesdaGame.Fallout3, "CREA"));
+    private static readonly Lazy<FlagBit[]> FalloutNvCreatureFlags = new(() => ReadActorFlags(BethesdaGame.FalloutNewVegas, "CREA"));
+
+    private static FlagBit[] ReadActorFlags(BethesdaGame game, string recordType)
+    {
+        var record = EsmSchemas.IndexForGame(game)?[recordType];
+        var acbs = record?.Members.OfType<StructDef>().SingleOrDefault(member => member.Signature == "ACBS");
+        var flags = acbs?.Members.OfType<FieldDef>().SingleOrDefault(field => field.Name == "Flags");
+        return flags?.InlineFlags?.Bits
+            .Where(bit => bit.Bit is >= 0 and < 32 && !string.IsNullOrWhiteSpace(bit.Label) &&
+                          !bit.Label.StartsWith("Unknown", StringComparison.OrdinalIgnoreCase))
+            .Select(bit => new FlagBit(1u << bit.Bit, bit.Label)).ToArray() ?? [];
+    }
 
     // ================================================================
     // ACBS - Template Use Flags
@@ -320,12 +354,32 @@ public static class FlagRegistry
     // TERM - Terminal Flags
     // ================================================================
 
+    /// <summary>
+    ///     TERM DNAM byte 1 (record flags). Names follow the xEdit FNV/FO3 definition as generated into
+    ///     <c>FalloutNvSchema.g.cs</c> / <c>Fallout3Schema.g.cs</c> (TERM DNAM "Flags"). Bit 3 is
+    ///     "Hide Welcome Text when displaying Image"; "Force Redraw" is a MENU-ITEM flag (ANAM bit 1, see
+    ///     <see cref="TerminalMenuItemFlags" />), not a record flag.
+    /// </summary>
     public static readonly FlagBit[] TerminalFlags =
     [
         new(0x01, "Leveled"),
         new(0x02, "Unlocked"),
         new(0x04, "Alternate Colors"),
-        new(0x08, "Force Redraw")
+        new(0x08, "Hide Welcome Text when displaying Image")
+    ];
+
+    // ================================================================
+    // TERM - Menu Item Flags (ANAM)
+    // ================================================================
+
+    /// <summary>
+    ///     TERM menu-item ANAM byte. Names follow the xEdit FNV/FO3 definition as generated into
+    ///     <c>FalloutNvSchema.g.cs</c> / <c>Fallout3Schema.g.cs</c> (menu item ANAM "Flags").
+    /// </summary>
+    public static readonly FlagBit[] TerminalMenuItemFlags =
+    [
+        new(0x01, "Add Note"),
+        new(0x02, "Force Redraw")
     ];
 
     // ================================================================

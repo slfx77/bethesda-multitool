@@ -45,7 +45,8 @@ public sealed class PngWriterTests
         using var decoded = new MagickImage(png);
         Assert.Equal((uint)width, decoded.Width);
         Assert.Equal((uint)height, decoded.Height);
-        var roundTripped = decoded.GetPixels().ToByteArray(PixelMapping.RGBA);
+        using var pixelView = decoded.GetPixels();
+        var roundTripped = pixelView.ToByteArray(PixelMapping.RGBA);
         Assert.Equal(pixels, roundTripped);
     }
 
@@ -76,7 +77,8 @@ public sealed class PngWriterTests
             var png = File.ReadAllBytes(path);
             Assert.Equal(8, png[24]); // 8-bit IHDR depth
             using var decoded = new MagickImage(png);
-            var roundTripped = decoded.GetPixels().ToByteArray(PixelMapping.RGBA);
+            using var pixelView = decoded.GetPixels();
+            var roundTripped = pixelView.ToByteArray(PixelMapping.RGBA);
             Assert.Equal(pixels, roundTripped);
         }
         finally

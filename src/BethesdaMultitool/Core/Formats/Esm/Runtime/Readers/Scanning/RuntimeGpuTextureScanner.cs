@@ -57,8 +57,7 @@ internal sealed class RuntimeGpuTextureScanner(RuntimeMemoryContext context)
     public List<ExtractedTexture> ScanForGpuTextures(
         IProgress<(long Scanned, long Total)>? progress = null)
     {
-        var textures = new ConcurrentBag<ExtractedTexture>();
-        var dataHashes = new ConcurrentDictionary<long, byte>();
+        var textures = new ConcurrentDictionary<long, ExtractedTexture>();
         _texturesFound = 0;
         var log = Logger.Instance;
 
@@ -73,9 +72,9 @@ internal sealed class RuntimeGpuTextureScanner(RuntimeMemoryContext context)
                     return;
 
                 var texture = ValidateAndExtract(chunk, offset, fileOffset);
-                if (texture != null && dataHashes.TryAdd(texture.DataHash, 0))
+                if (texture != null && RuntimeCandidateSelection.KeepLowestOffset(
+                        textures, texture.DataHash, texture, static value => value.SourceOffset))
                 {
-                    textures.Add(texture);
                     Interlocked.Increment(ref _texturesFound);
                     log.Debug(
                         "  Found GPU texture at 0x{0:X}: {1}x{2}, fmt=0x{3:X2}, {4} mips, {5:N0} bytes",
@@ -87,7 +86,7 @@ internal sealed class RuntimeGpuTextureScanner(RuntimeMemoryContext context)
             StructSize,
             progress);
 
-        var result = textures.OrderBy(t => t.SourceOffset).ToList();
+        var result = textures.Values.OrderBy(t => t.SourceOffset).ToList();
 
         // Resolve filenames via NiSourceTexture back-pointer at +0x08
         if (result.Count > 0)

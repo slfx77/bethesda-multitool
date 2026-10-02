@@ -62,7 +62,7 @@ internal static class SemanticFileLoader
         }
 
         var analysisResult = await AnalyzeOnlyAsync(filePath, options, cancellationToken);
-        return LoadFromAnalysisResult(filePath, analysisResult, fileType, options);
+        return LoadFromAnalysisResult(filePath, analysisResult, fileType, options, cancellationToken);
     }
 
     /// <summary>
@@ -85,7 +85,8 @@ internal static class SemanticFileLoader
         string filePath,
         AnalysisResult analysisResult,
         AnalysisFileType fileType,
-        IProgress<(int percent, string phase)>? parseProgress = null)
+        IProgress<(int percent, string phase)>? parseProgress = null,
+        CancellationToken cancellationToken = default)
     {
         return LoadFromAnalysisResult(
             filePath,
@@ -95,7 +96,7 @@ internal static class SemanticFileLoader
             {
                 FileType = fileType,
                 ParseProgress = parseProgress
-            });
+            }, cancellationToken);
     }
 
     /// <summary>
@@ -106,8 +107,10 @@ internal static class SemanticFileLoader
         string filePath,
         AnalysisResult analysisResult,
         AnalysisFileType fileType,
-        SemanticFileLoadOptions? options)
+        SemanticFileLoadOptions? options,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         options ??= new SemanticFileLoadOptions();
         fileType = ResolveSemanticFileType(filePath, fileType);
         if (analysisResult.EsmRecords == null)
@@ -128,7 +131,7 @@ internal static class SemanticFileLoader
                 fileType,
                 options,
                 new MmfMemoryAccessor(accessor),
-                fileInfo.Length);
+                fileInfo.Length, cancellationToken);
             result.SetDisposables(mmf, accessor);
             return result;
         }
@@ -146,8 +149,10 @@ internal static class SemanticFileLoader
         AnalysisFileType fileType,
         SemanticFileLoadOptions? options,
         IMemoryAccessor accessor,
-        long fileSize)
+        long fileSize,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         options ??= new SemanticFileLoadOptions();
         fileType = ResolveSemanticFileType(filePath, fileType);
         if (fileType == AnalysisFileType.ClassicGameData)
@@ -187,7 +192,7 @@ internal static class SemanticFileLoader
             analysisResult.MinidumpInfo,
             localizedStrings);
         var parser = new RecordParser(context);
-        var records = parser.ParseAll(options.ParseProgress, options.ResidentRecoveryMasterFormIds);
+        var records = parser.ParseAll(options.ParseProgress, options.ResidentRecoveryMasterFormIds, cancellationToken);
         ApplyCellWorldspaceAuthorityIfNeeded(records, analysisResult.EsmRecords, fileType, options);
 
         // Fallout 76 and Starfield store terrain heights in external .btd files, not in-record VHGT
@@ -213,7 +218,8 @@ internal static class SemanticFileLoader
                 Records = records,
                 Resolver = resolver,
                 RawResult = analysisResult,
-                FilePath = filePath
+                FilePath = filePath,
+                ParserContext = options.RetainParserContext ? context : null
             };
             result.SetTerrainInjection(terrain);
             return result;

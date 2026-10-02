@@ -118,7 +118,7 @@ internal static class EsmWorldExtractor
         }
     }
 
-    private static ExtractedRefrRecord? ExtractRefrFromBuffer(
+    internal static ExtractedRefrRecord? ExtractRefrFromBuffer(
         byte[] data,
         int dataSize,
         DetectedMainRecord header,

@@ -18,6 +18,9 @@ public record WeaponRecord
     /// <summary>Display name (e.g., "10mm Pistol").</summary>
     public string? FullName { get; init; }
 
+    /// <summary>Explicit attached script FormID from the stored SCRI subrecord.</summary>
+    public uint? ScriptFormId { get; init; }
+
     // DATA subrecord (15 bytes)
     /// <summary>Base value in caps.</summary>
     public int Value { get; init; }

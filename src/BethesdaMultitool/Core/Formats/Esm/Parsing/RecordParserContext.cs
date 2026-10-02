@@ -27,6 +27,7 @@ public sealed class RecordParserContext
     private readonly bool _recoverPartialCompressed;
     private Action<DetectedMainRecord>? _recordReadObserver;
     private Dictionary<uint, uint>? _refToBase;
+    private readonly HashSet<(long Offset, int PayloadOffset)> _reportedSubrecordBounds = [];
 
     /// <summary>
     ///     Creates the parser context over a scan result, optionally backed by a memory-mapped
@@ -178,6 +179,21 @@ public sealed class RecordParserContext
     internal Dictionary<uint, string>? PlacedObjectModelIndex { get; set; }
 
     public EsmRecordScanResult ScanResult { get; }
+    internal CancellationToken CancellationToken { get; private set; }
+
+    internal IDisposable UseCancellation(CancellationToken token)
+    {
+        var prior = CancellationToken;
+        CancellationToken = token;
+        return new CancellationScope(this, prior);
+    }
+
+    private sealed class CancellationScope(RecordParserContext context, CancellationToken prior) : IDisposable
+    {
+        public void Dispose() => context.CancellationToken = prior;
+    }
+
+    internal BethesdaMultitool.Core.Formats.Esm.Script.ExternalScriptVariableResolver? ExternalScriptVariables { get; set; }
     public IMemoryAccessor? Accessor { get; }
     public long FileSize { get; }
     public RuntimeStructReader? RuntimeReader { get; }
@@ -535,27 +551,46 @@ public sealed class RecordParserContext
             .FirstOrDefault();
     }
 
-    /// <summary>
-    ///     Reads record data from the accessor, decompressing if the record is compressed.
-    ///     Returns null if data cannot be read or decompression fails.
-    /// </summary>
+    /// <summary>Payload reads rejected before accessing input bytes.</summary>
+    public List<RecordReadDiagnostic> RecordReadDiagnostics { get; } = [];
+
+    /// <summary>Reads a record payload, decompressing when required.</summary>
     public (byte[] Data, int Size)? ReadRecordData(DetectedMainRecord record, byte[] buffer)
     {
-        var dataStart = record.Offset + record.HeaderSize;
-        var dataSize = (int)record.DataSize;
-
-        if (dataStart + dataSize > FileSize)
+        CancellationToken.ThrowIfCancellationRequested();
+        if (record.Offset < 0 || record.HeaderSize < 0 || record.Offset > FileSize ||
+            record.HeaderSize > FileSize - record.Offset)
         {
-            Logger.Instance.Debug(
-                "  [ReadRecordData] NULL: {0} 0x{1:X8} at offset 0x{2:X} — exceeds file size ({3}+{4} > {5})",
-                record.RecordType, record.FormId, record.Offset, dataStart, dataSize, FileSize);
+            RecordReadFailure(record, null, 0, "Header exceeds input bounds");
             return null;
         }
+
+        var dataStart = record.Offset + record.HeaderSize;
+        var available = FileSize - dataStart;
+        if (record.DataSize > int.MaxValue || record.DataSize > available)
+        {
+            RecordReadFailure(record, dataStart, available,
+                record.DataSize > int.MaxValue ? "Payload exceeds supported length" : "Payload exceeds input bounds");
+            return null;
+        }
+
+        var dataSize = (int)record.DataSize;
 
         // Full semantic parsing installs this only after CaptureAllFullNames. Centralizing the
         // callback here covers every typed handler while allowing repeated handler reads of one
         // descriptor to be deduplicated by the progress reporter.
         _recordReadObserver?.Invoke(record);
+
+        if (dataSize == 0)
+        {
+            if (record.IsCompressed)
+            {
+                RecordReadFailure(record, dataStart, available, "Compressed payload is empty");
+                return null;
+            }
+
+            return (Array.Empty<byte>(), 0);
+        }
 
         // The previous Math.Min(record.DataSize, buffer.Length) silently truncated any record
         // larger than the caller's rented buffer — most visibly LAND quadrants whose later
@@ -586,6 +621,7 @@ public sealed class RecordParserContext
 
         if (!record.IsCompressed)
         {
+            ValidateSubrecordBounds(record, useBuffer, readSize);
             return (useBuffer, readSize);
         }
 
@@ -601,6 +637,7 @@ public sealed class RecordParserContext
             useBuffer.AsSpan(0, dataSize), record.IsBigEndian);
         if (decompressed != null)
         {
+            ValidateSubrecordBounds(record, decompressed, decompressed.Length);
             return (decompressed, decompressed.Length);
         }
 
@@ -621,6 +658,7 @@ public sealed class RecordParserContext
                         record.RecordType, record.FormId, partial.Length);
                 }
 
+                ValidateSubrecordBounds(record, partial, partial.Length);
                 return (partial, partial.Length);
             }
         }
@@ -629,6 +667,39 @@ public sealed class RecordParserContext
             "  [ReadRecordData] NULL: {0} 0x{1:X8} decompression failed (flags=0x{2:X8}, dataSize={3})",
             record.RecordType, record.FormId, record.Flags, dataSize);
         return null;
+    }
+
+    private void RecordReadFailure(DetectedMainRecord record, long? dataOffset, long available, string reason)
+    {
+        var diagnostic = new RecordReadDiagnostic(record.RecordType, record.FormId, record.Offset,
+            dataOffset, record.DataSize, available, record.IsBigEndian, "record payload", reason);
+        RecordReadDiagnostics.Add(diagnostic);
+        Logger.Instance.Warn(
+            "{0}: {1} 0x{2:X8}; record offset=0x{3:X}, data offset={4}, declared={5}, available={6}, byte order={7}, stage={8}",
+            reason, record.RecordType, record.FormId, record.Offset,
+            dataOffset.HasValue ? $"0x{dataOffset.Value:X}" : "unavailable", record.DataSize, available,
+            record.IsBigEndian ? "big-endian" : "little-endian", diagnostic.Stage);
+    }
+
+    private void ValidateSubrecordBounds(DetectedMainRecord record, byte[] data, int size)
+    {
+        if (ScanResult.IsTes3 || EsmSubrecordUtils.FindBoundsIssue(data.AsSpan(0, size), record.IsBigEndian) is not { } issue ||
+            !_reportedSubrecordBounds.Add((record.Offset, issue.PayloadOffset))) return;
+        long? fileOffset = null;
+        if (!record.IsCompressed)
+        {
+            var start = record.Offset + record.HeaderSize;
+            fileOffset = MinidumpInfo is { IsValid: true } dump && dump.FileOffsetToVirtualAddress(start) is { } address
+                ? dump.VirtualAddressToFileOffset(address + issue.PayloadOffset)
+                : start + issue.PayloadOffset;
+        }
+        RecordReadDiagnostics.Add(new(record.RecordType, record.FormId, record.Offset, fileOffset,
+            issue.DeclaredLength, issue.AvailableLength, record.IsBigEndian, "subrecord payload", issue.Reason,
+            issue.Signature, issue.PayloadOffset, record.IsCompressed ? "decoded" : "stored"));
+        Logger.Instance.Warn(
+            "{0}: {1} 0x{2:X8}; record offset=0x{3:X}, payload offset=0x{4:X}, declared={5}, available={6}, byte order={7}",
+            issue.Reason, record.RecordType, record.FormId, record.Offset, issue.PayloadOffset,
+            issue.DeclaredLength, issue.AvailableLength, record.IsBigEndian ? "big-endian" : "little-endian");
     }
 
     /// <summary>
@@ -754,6 +825,7 @@ public sealed class RecordParserContext
         {
             foreach (var record in ScanResult.MainRecords)
             {
+                CancellationToken.ThrowIfCancellationRequested();
                 if (FormIdToFullName.ContainsKey(record.FormId))
                 {
                     continue;

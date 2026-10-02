@@ -3,7 +3,7 @@ namespace BethesdaMultitool.Core.Formats.SaveGame.Decoding;
 /// <summary>
 ///     Maps each ChangedForm type to its applicable change flag definitions.
 ///     Flag values and names sourced from the CHANGE_TYPE enum in the game PDB
-///     (Fallout_Debug_Final/types_full.txt, lines 301695-301767).
+///     (`cvdump -t` of the 2010-8-22 Fallout_Debug.pdb, lines 301695-301767).
 ///     Flags are type-contextual: the same bit position means different things
 ///     depending on the ChangeType byte of the changed form record.
 /// </summary>

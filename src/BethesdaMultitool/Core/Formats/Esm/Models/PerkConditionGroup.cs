@@ -12,6 +12,9 @@ public record PerkConditionGroup
     /// </summary>
     public sbyte? RunOn { get; init; }
 
+    public uint? RuntimeAddress { get; init; }
+    public List<string> RecoveryIssues { get; init; } = [];
+
     /// <summary>Conditions belonging to this PRKC selector, in source order.</summary>
     public List<PerkCondition> Conditions { get; init; } = [];
 }

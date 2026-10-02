@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class StaticShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var stat = records.Statics.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, s => s.FormId, s => s.EditorId));
@@ -16,7 +16,7 @@ internal sealed class StaticShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]      0x{stat.FormId:X8}",
@@ -34,7 +34,7 @@ internal sealed class StaticShowRenderer : IRecordDisplayRenderer
         {
             Header = new PanelHeader($"[bold]STAT[/] {Markup.Escape(stat.EditorId ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

@@ -1,5 +1,6 @@
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Script;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;
 
@@ -308,6 +309,10 @@ internal static class OrphanedRefAnalyzer
     // Decompilation for Context
     // ═══════════════════════════════════════════════════════════════════════
 
+    /// <param name="bigEndian">
+    ///     The ESM container's byte order. It no longer selects the SCDA order: each script's
+    ///     bytecode order is chosen from its own payload (see <see cref="ScriptBytecodeByteOrderSelector" />).
+    /// </param>
     public static void DecompileContextForOrphans(
         List<ParsedScript> scripts,
         HashSet<uint> orphanedFormIds,
@@ -344,11 +349,21 @@ internal static class OrphanedRefAnalyzer
 
             try
             {
+                // Serialized SCDA is little-endian even inside a big-endian (Xbox 360) container,
+                // so the order comes from the payload, never from the container's bigEndian flag.
+                // Unknown walks the selector with the FNV/FO3 command table, the decompiler's default.
+                var bytecodeOrder = ScriptBytecodeByteOrderSelector.Select(
+                    script.CompiledData,
+                    script.Variables,
+                    script.ReferencedObjects,
+                    false,
+                    ScriptBytecodeByteOrderEvidence.AmbiguousSerializedDefault,
+                    BethesdaGame.Unknown);
                 var decompiler = new ScriptDecompiler(
                     script.Variables,
                     script.ReferencedObjects,
                     ResolveFormName,
-                    bigEndian,
+                    bytecodeOrder.IsBigEndian,
                     script.EditorId);
 
                 var decompiled = decompiler.Decompile(script.CompiledData);

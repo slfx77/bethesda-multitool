@@ -43,24 +43,25 @@ public sealed class CellWorldspaceAuthorityHooverSeedTests
         0x001353CC, 0x001353CE, 0x001353CF, 0x00135402, 0x0013545D
     ];
 
-    private static JsonElement LoadReferences()
+    [Fact]
+    public void EveryOrphanMapsToTheKnownHooverDamInteriorAndGapsDoNot()
     {
         var path = Path.Combine(SourceContract.RepoRoot, "data", "cell_worldspace_authority.json");
         using var stream = File.OpenRead(path);
         using var doc = JsonDocument.Parse(stream);
-        return doc.RootElement.GetProperty("references").Clone();
-    }
-
-    [Fact]
-    public void EveryOrphanInTheBandMapsToHooverDamPowerPlant()
-    {
-        var references = LoadReferences();
+        // JsonElement property lookup walks the object. Index this small band in one pass
+        // instead of searching the complete references map once for each of its 477 entries.
+        var bandKeys = Enumerable.Range((int)BandFirst, (int)(BandLast - BandFirst + 1))
+            .Select(fid => $"0x{fid:X8}").ToHashSet(StringComparer.Ordinal);
+        var references = doc.RootElement.GetProperty("references").EnumerateObject()
+            .Where(property => bandKeys.Contains(property.Name))
+            .ToDictionary(property => property.Name, property => property.Value, StringComparer.Ordinal);
         var gaps = new HashSet<uint>(BandGaps);
         var mapped = 0;
         for (var fid = BandFirst; fid <= BandLast; fid++)
         {
             var key = $"0x{fid:X8}";
-            var present = references.TryGetProperty(key, out var value);
+            var present = references.TryGetValue(key, out var value);
             if (gaps.Contains(fid))
             {
                 if (present)
@@ -78,14 +79,6 @@ public sealed class CellWorldspaceAuthorityHooverSeedTests
 
         // 477-slot band minus 10 gaps = the 467 records decoded from the xex21 cache fragment.
         Assert.Equal(467, mapped);
-    }
-
-    [Fact]
-    public void TheTargetCellIsAKnownInterior()
-    {
-        var path = Path.Combine(SourceContract.RepoRoot, "data", "cell_worldspace_authority.json");
-        using var stream = File.OpenRead(path);
-        using var doc = JsonDocument.Parse(stream);
         var cell = doc.RootElement.GetProperty("cells").GetProperty(HooverPowerPlant);
 
         Assert.True(cell.GetProperty("is_interior").GetBoolean());

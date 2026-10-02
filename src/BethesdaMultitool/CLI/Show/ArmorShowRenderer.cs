@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class ArmorShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var armor = records.Armor.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, a => a.FormId, a => a.EditorId));
@@ -16,7 +16,7 @@ internal sealed class ArmorShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]    0x{armor.FormId:X8}",
@@ -35,7 +35,7 @@ internal sealed class ArmorShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]ARMO[/] {Markup.Escape(armor.EditorId ?? "")} — {Markup.Escape(armor.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

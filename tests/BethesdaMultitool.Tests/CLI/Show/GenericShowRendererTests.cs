@@ -12,6 +12,22 @@ namespace BethesdaMultitool.Tests.CLI.Show;
 public class GenericShowRendererTests
 {
     [Fact]
+    public void AppendDecodedTree_Full_PreservesLongNestedTextInVerbatimBlock()
+    {
+        var source = "first\r\n\t" + new string('x', 2200);
+        var tree = new List<DecodedNode>
+        {
+            new() { Label = "Result", Children = [new() { Label = "Script", Value = source }] }
+        };
+        var lines = new List<string>();
+        var blocks = new List<VerbatimBlock>();
+        GenericShowRenderer.AppendDecodedTree(lines, tree, 0, true, blocks);
+        var block = Assert.Single(blocks);
+        Assert.Equal(new VerbatimBlock("Result / Script", source), block);
+        Assert.DoesNotContain(source, string.Join("\n", lines));
+    }
+
+    [Fact]
     public void AppendDecodedTree_RendersLeavesStructsArraysAndReferences()
     {
         // A miniature of an Oblivion TREE: a string leaf, a struct with children, an array element, and a

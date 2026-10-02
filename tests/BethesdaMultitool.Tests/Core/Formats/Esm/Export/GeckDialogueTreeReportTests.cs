@@ -144,7 +144,8 @@ public sealed class GeckDialogueTreeReportTests
         var conditions = Assert.Single(report.Sections, section => section.Name == "Conditions");
         var text = Assert.IsType<ReportValue.StringVal>(Assert.Single(conditions.Fields).Value).Raw;
 
-        Assert.StartsWith("Func4096", text, StringComparison.Ordinal);
+        // The shared condition describer names an unknown function by its hex index.
+        Assert.StartsWith("Func 0x1000", text, StringComparison.Ordinal);
         Assert.DoesNotContain("GetWantBlocking", text, StringComparison.Ordinal);
     }
 

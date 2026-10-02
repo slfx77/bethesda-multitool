@@ -42,7 +42,8 @@ internal sealed class CreatureProfile : IRecordProfile
                 RecordDetailHelpers.Scalar("Editor ID", editorId ?? "(none)"),
                 RecordDetailHelpers.Scalar("Name", displayName ?? "(none)"),
                 RecordDetailHelpers.Scalar("Type", new CreatureRecord { CreatureType = creatureType }.CreatureTypeName),
-                RecordDetailHelpers.Scalar("Level", Level(tree))
+                .. Level(tree, game),
+                RecordDetailHelpers.Scalar("Actor Flags", RecordDetailHelpers.ActorFlags(Flags(tree), game, "CREA"))
             ]),
             RecordDetailHelpers.Section("Combat",
             [
@@ -78,15 +79,25 @@ internal sealed class CreatureProfile : IRecordProfile
         return RecordDetailHelpers.Model("CREA", formId, editorId, displayName, sections);
     }
 
-    // ACBS Level — the decoded union value (variant 0 = "Level"); same read NpcProfile uses. Stats is
-    // populated only when the full ACBS parsed, signalled by its last field (Template Flags).
-    private static string Level(IReadOnlyList<DecodedNode> tree)
+    // Match the typed model's complete-ACBS admission; a partial field is not a full Stats row.
+    private static uint? Flags(IReadOnlyList<DecodedNode> tree)
     {
         var acbs = TopBySignature(tree, "ACBS");
         return Int(ChildByLabel(acbs, "Template Flags")) is not null
-               && Int(ChildByLabel(acbs, "Level")) is { } level
-            ? level.ToString()
-            : "(unknown)";
+               && Int(ChildByLabel(acbs, "Flags")) is { } flags && flags is >= 0 and <= uint.MaxValue
+            ? (uint)flags
+            : null;
+    }
+
+    // ACBS Level — complete ACBS only; match the typed record's stored-level presentation.
+    private static IEnumerable<RecordDetailEntry> Level(IReadOnlyList<DecodedNode> tree, BethesdaGame game)
+    {
+        var acbs = TopBySignature(tree, "ACBS");
+        var complete = Int(ChildByLabel(acbs, "Template Flags")) is not null;
+        return RecordDetailHelpers.ActorLevel(game, Flags(tree),
+            complete ? Int(ChildByLabel(acbs, "Level")) : null,
+            complete ? Int(ChildByLabel(acbs, "Calc min")) : null,
+            complete ? Int(ChildByLabel(acbs, "Calc max")) : null);
     }
 
     // Reconstruct NpcAiData exactly as the typed ParseAiData does: bytes 0-4 + the U32 flags @8, and

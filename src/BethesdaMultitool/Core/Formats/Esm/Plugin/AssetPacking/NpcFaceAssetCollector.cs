@@ -3,18 +3,16 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 
 /// <summary>
-///     Collects the per-NPC FaceGen texture sidecars whose runtime path is derived from
-///     the plugin filename rather than stored in an NPC_ subrecord. FNV does not fall back
-///     from an overriding plugin's namespace to <c>falloutnv.esm</c> for these files, so a
-///     normal "already in baseline" decision is insufficient: the source bytes must be
-///     copied into the emitted plugin's namespace.
+///     Constructs per-NPC prebake candidates. A missing candidate does not establish that
+///     it is required or generated. Resolved candidates retain the existing output-plugin rebasing policy.
 /// </summary>
 internal static class NpcFaceAssetCollector
 {
     public static Result Collect(
         RecordCollection records,
         IReadOnlyDictionary<uint, uint> sourceToAllocatedFormIds,
-        string outputPluginFileName)
+        string outputPluginFileName,
+        AssetRequestCatalog? requests = null)
     {
         ArgumentNullException.ThrowIfNull(records);
         ArgumentException.ThrowIfNullOrWhiteSpace(outputPluginFileName);
@@ -42,17 +40,19 @@ internal static class NpcFaceAssetCollector
 
             Add(
                 $"textures\\characters\\facemods\\falloutnv.esm\\{sourceHex}_0.dds",
-                $"textures\\characters\\facemods\\{outputToken}\\{targetHex}_0.dds");
+                $"textures\\characters\\facemods\\{outputToken}\\{targetHex}_0.dds", npc.FormId, sourceFormId, "face");
             Add(
                 $"textures\\characters\\bodymods\\falloutnv.esm\\{sourceHex}modbody{gender}.dds",
-                $"textures\\characters\\bodymods\\{outputToken}\\{targetHex}modbody{gender}.dds");
+                $"textures\\characters\\bodymods\\{outputToken}\\{targetHex}modbody{gender}.dds", npc.FormId, sourceFormId, "body");
         }
 
         return new Result(sourcePaths, renames);
 
-        void Add(string sourcePath, string packPath)
+        void Add(string sourcePath, string packPath, uint owner, uint sourceOwner, string component)
         {
             sourcePaths.Add(sourcePath);
+            requests?.Add(sourcePath, new AssetRequestEvidence("npc-prebake-candidate", owner, "NpcRecord",
+                component, SourceOwnerFormId: sourceOwner));
             // FormID allocation is one-to-one. First-wins remains defensive if malformed
             // input presents the same source NPC more than once.
             renames.TryAdd(sourcePath, packPath);

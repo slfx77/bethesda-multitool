@@ -108,7 +108,7 @@ internal sealed class WeaponProfile : IRecordProfile
             RecordDetailHelpers.Section("Combat",
             [
                 RecordDetailHelpers.Scalar("Damage", damage.ToString()),
-                RecordDetailHelpers.Scalar("Critical Chance", criticalChance.ToString("P0")),
+                RecordDetailHelpers.Scalar("Critical Chance Multiplier", FormattableString.Invariant($"x{criticalChance:R}")),
                 RecordDetailHelpers.Scalar("Critical Damage", criticalDamage.ToString()),
                 RecordDetailHelpers.Scalar("Attack Speed", speed.ToString("F2")),
                 RecordDetailHelpers.Scalar("Shots / Sec", shotsPerSec.ToString("F2")),

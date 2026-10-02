@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
+using BethesdaMultitool.Core.Formats.Esm.Script;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Parsing;
 
@@ -36,35 +37,35 @@ internal static class QuestScriptEnricher
             return;
         }
 
-        var runtimeObjectToScript = new Dictionary<uint, uint>();
+        var runtimeObjectToScript = new List<ScriptOwnerLink>();
         foreach (var npc in npcs.Where(n => n.Script is > 0))
         {
-            runtimeObjectToScript.TryAdd(npc.FormId, npc.Script!.Value);
+            runtimeObjectToScript.Add(new ScriptOwnerLink(npc.FormId, npc.Script!.Value));
         }
 
         foreach (var creature in creatures.Where(c => c.Script is > 0))
         {
-            runtimeObjectToScript.TryAdd(creature.FormId, creature.Script!.Value);
+            runtimeObjectToScript.Add(new ScriptOwnerLink(creature.FormId, creature.Script!.Value));
         }
 
         foreach (var container in containers.Where(c => c.Script is > 0))
         {
-            runtimeObjectToScript.TryAdd(container.FormId, container.Script!.Value);
+            runtimeObjectToScript.Add(new ScriptOwnerLink(container.FormId, container.Script!.Value));
         }
 
         foreach (var activator in activators.Where(a => a.Script is > 0))
         {
-            runtimeObjectToScript.TryAdd(activator.FormId, activator.Script!.Value);
+            runtimeObjectToScript.Add(new ScriptOwnerLink(activator.FormId, activator.Script!.Value));
         }
 
         foreach (var door in doors.Where(d => d.Script is > 0))
         {
-            runtimeObjectToScript.TryAdd(door.FormId, door.Script!.Value);
+            runtimeObjectToScript.Add(new ScriptOwnerLink(door.FormId, door.Script!.Value));
         }
 
         foreach (var furn in furniture.Where(f => f.Script is > 0))
         {
-            runtimeObjectToScript.TryAdd(furn.FormId, furn.Script!.Value);
+            runtimeObjectToScript.Add(new ScriptOwnerLink(furn.FormId, furn.Script!.Value));
         }
 
         if (runtimeObjectToScript.Count > 0)

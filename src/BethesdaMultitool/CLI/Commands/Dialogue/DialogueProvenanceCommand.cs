@@ -79,7 +79,7 @@ internal static class DialogueProvenanceCommand
             accessor,
             fileInfo.Length,
             analysisResult.MinidumpInfo);
-        var parsed = parser.ParseAll();
+        var parsed = parser.ParseAll(cancellationToken: cancellationToken);
         var inspector = new DialogueProvenanceInspector(parser._context, parsed.Dialogues);
 
         var dialogue = parsed.Dialogues.FirstOrDefault(info => info.FormId == formId);
@@ -292,6 +292,8 @@ internal static class DialogueProvenanceCommand
             DialogueTesFileScriptRecoveryStatus.UncalibratedBase => "TES-file base not calibrated",
             DialogueTesFileScriptRecoveryStatus.MappedPageMissing => "Mapped TES-file page missing",
             DialogueTesFileScriptRecoveryStatus.HeaderReadFailed => "Mapped header unreadable",
+            DialogueTesFileScriptRecoveryStatus.PayloadReadFailed => "Mapped payload missing or incomplete",
+            DialogueTesFileScriptRecoveryStatus.RecordTooLarge => "Mapped payload exceeds inspector bound",
             DialogueTesFileScriptRecoveryStatus.SignatureMismatch => "Mapped bytes are not INFO",
             DialogueTesFileScriptRecoveryStatus.FormIdMismatch => "Mapped INFO FormID mismatch",
             DialogueTesFileScriptRecoveryStatus.CompressedRecord => "Mapped INFO is compressed",

@@ -257,7 +257,7 @@ public static class EsmScriptProvenanceAnalyzer
                 script.SourceText ?? string.Empty,
                 ToReferenceSlots(script.ReferencedObjects),
                 script.Variables,
-                script.IsBigEndian || script.FromRuntime,
+                script.IsBigEndianBytecode,
                 origin,
                 "script");
             lookup.AddScript(script, snapshot);
@@ -615,12 +615,21 @@ public static class EsmScriptProvenanceAnalyzer
                     continue;
                 }
 
+                // Link only true FormIDs: a package union's FormID arm (never its type byte or an
+                // object-type enum), and the per-record value-kind policy for the rest, so SCRV local
+                // indexes, QUST CNAM log text and scalar TNAM/ANAM values no longer link.
                 if (sub.Signature is "PKID" or "SCRI" or "NAME" or "PLDT" or "PTDT" or "PLD2" or "PTD2"
-                    or "INAM" or "TNAM" or "CNAM" or "SCRO" or "SCRV" or "QSTI" or "TPIC" or "TCLT"
-                    or "TCLF" or "TCFU" or "ANAM")
+                        or "INAM" or "TNAM" or "CNAM" or "SCRO" or "QSTI" or "TPIC" or "TCLT"
+                        or "TCLF" or "TCFU" or "ANAM"
+                    && EsmScriptSubrecordSummaryFormatter.TryGetLinkedFormId(
+                        record,
+                        sub,
+                        diagnostics.Game,
+                        out var linkedFormId,
+                        out var linkedDetail))
                 {
-                    AddLinkedTrace(rows, recordRow, sub.Signature.ToLowerInvariant(), sub.DataAsFormId, labels,
-                        $"{sub.Signature}=0x{sub.DataAsFormId:X8}");
+                    AddLinkedTrace(rows, recordRow, sub.Signature.ToLowerInvariant(), linkedFormId, labels,
+                        linkedDetail);
                 }
             }
         }

@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using BethesdaMultitool.Core.Actors;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 
@@ -12,7 +13,7 @@ internal static class CsvActorWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Gender,Level,SPECIAL_ST,SPECIAL_PE,SPECIAL_EN,SPECIAL_CH,SPECIAL_IN,SPECIAL_AG,SPECIAL_LK,Barter,EnergyWeapons,Explosives,Guns,Lockpick,Medicine,MeleeWeapons,Repair,Science,Sneak,Speech,Survival,Unarmed,BaseHealth,CalcHealth,CalcFatigue,CritChance,MeleeDmg,UnarmedDmg,PoisonResist,RadResist,Aggression,Confidence,Mood,EnergyLevel,Responsibility,Assistance,FatigueBase,BarterGold,SpeedMult,Karma,Disposition,CalcMin,CalcMax,Flags,RaceFormID,RaceName,RaceDisplayName,ClassFormID,ClassName,ClassDisplayName,ScriptFormID,VoiceTypeFormID,TemplateFormID,HairFormID,HairName,HairDisplayName,HairLength,HairColor,EyesFormID,EyesName,EyesDisplayName,CombatStyleFormID,CombatStyleName,CombatStyleDisplayName,HasFaceGen,Endianness,Offset,SubFormID,SubName,SubDisplayName,SubDetail");
+            "RowType,FormID,EditorID,Name,Gender,Level,SPECIAL_ST,SPECIAL_PE,SPECIAL_EN,SPECIAL_CH,SPECIAL_IN,SPECIAL_AG,SPECIAL_LK,Barter,EnergyWeapons,Explosives,Guns,Lockpick,Medicine,MeleeWeapons,Repair,Science,Sneak,Speech,Survival,Unarmed,BaseHealth,CalcHealth,CalcFatigue,CritChance,MeleeDmg,UnarmedDmg,PoisonResist,RadResist,Aggression,Confidence,Mood,EnergyLevel,Responsibility,Assistance,FatigueBase,BarterGold,SpeedMult,Karma,Disposition,CalcMin,CalcMax,Flags,RaceFormID,RaceName,RaceDisplayName,ClassFormID,ClassName,ClassDisplayName,ScriptFormID,VoiceTypeFormID,TemplateFormID,HairFormID,HairName,HairDisplayName,HairLength,HairColor,EyesFormID,EyesName,EyesDisplayName,CombatStyleFormID,CombatStyleName,CombatStyleDisplayName,HasFaceGen,Endianness,Offset,SubFormID,SubName,SubDisplayName,SubDetail,CritChanceStatus,LevelEncoding");
 
         foreach (var npc in npcs.OrderBy(n => n.EditorId ?? ""))
         {
@@ -29,10 +30,11 @@ internal static class CsvActorWriter
 
             // Derived stats (computed from SPECIAL + Level + Fatigue)
             var hasDerived = sp is { Length: 7 } && s != null;
-            var baseHealth = hasDerived ? (sp![2] * 5 + 50).ToString() : "";
-            var calcHealth = hasDerived ? (sp![2] * 5 + 50 + s!.Level * 10).ToString() : "";
+            var baseHealth = ActorStatisticsService.StoredHealth(npc).Value?.ToString("R", CultureInfo.InvariantCulture) ?? "";
+            var calcHealth = ""; // Requires a calibrated engine profile and runtime actor values.
             var calcFatigue = hasDerived ? (s!.FatigueBase + (sp![0] + sp[2]) * 10).ToString() : "";
-            var critChance = sp is { Length: 7 } ? sp[6].ToString("F0") : "";
+            var criticalChance = ActorStatisticsService.CriticalChance();
+            var critChance = criticalChance.Value?.ToString("R", CultureInfo.InvariantCulture) ?? "";
             var meleeDmg = sp is { Length: 7 } ? (sp[0] * 0.5f).ToString("F2") : "";
             var unarmedDmg = sp is { Length: 7 } ? (0.5f + sp[0] * 0.1f).ToString("F2") : "";
             var poisonResist = sp is { Length: 7 } ? ((sp[2] - 1) * 5f).ToString("F2") : "";
@@ -97,7 +99,7 @@ internal static class CsvActorWriter
                 resolver.ResolveCsv(npc.HairFormId ?? 0),
                 resolver.ResolveDisplayNameCsv(npc.HairFormId ?? 0),
                 npc.HairLength?.ToString("F2") ?? "",
-                NpcRecord.FormatHairColor(npc.HairColor) ?? "",
+                Fmt.CsvEscape(NpcRecord.FormatHairColor(npc.HairColor)),
                 Fmt.FIdN(npc.EyesFormId),
                 resolver.ResolveCsv(npc.EyesFormId ?? 0),
                 resolver.ResolveDisplayNameCsv(npc.EyesFormId ?? 0),
@@ -107,33 +109,33 @@ internal static class CsvActorWriter
                 npc.FaceGenGeometrySymmetric != null ? "Yes" : "",
                 Fmt.Endian(npc.IsBigEndian),
                 npc.Offset.ToString(),
-                "", "", "", ""));
+                "", "", "", "", criticalChance.Status, s is null ? "Unavailable" : "ACBS.Int16"));
 
             // Sub-row padding: 69 empty columns between FormID (col 2) and SubFormID (col 72)
-            // Total header columns: 76 (RowType + FormID + 69 data cols + SubFormID + SubName + SubDisplayName + SubDetail)
+            // Legacy 75-column prefix is unchanged; status and encoding are appended.
             var subPad = new string(',', 69); // 69 empty columns
             foreach (var f in npc.Factions)
             {
                 sb.AppendLine(
-                    $"FACTION,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(f.FactionFormId)},{resolver.ResolveCsv(f.FactionFormId)},{resolver.ResolveDisplayNameCsv(f.FactionFormId)},{f.Rank}");
+                    $"FACTION,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(f.FactionFormId)},{resolver.ResolveCsv(f.FactionFormId)},{resolver.ResolveDisplayNameCsv(f.FactionFormId)},{f.Rank},,");
             }
 
             foreach (var spellId in npc.Spells)
             {
                 sb.AppendLine(
-                    $"SPELL,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(spellId)},{resolver.ResolveCsv(spellId)},{resolver.ResolveDisplayNameCsv(spellId)},");
+                    $"SPELL,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(spellId)},{resolver.ResolveCsv(spellId)},{resolver.ResolveDisplayNameCsv(spellId)},,,");
             }
 
             foreach (var item in npc.Inventory)
             {
                 sb.AppendLine(
-                    $"INVENTORY,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(item.ItemFormId)},{resolver.ResolveCsv(item.ItemFormId)},{resolver.ResolveDisplayNameCsv(item.ItemFormId)},{item.Count}");
+                    $"INVENTORY,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(item.ItemFormId)},{resolver.ResolveCsv(item.ItemFormId)},{resolver.ResolveDisplayNameCsv(item.ItemFormId)},{item.Count},,");
             }
 
             foreach (var pkgId in npc.Packages)
             {
                 sb.AppendLine(
-                    $"PACKAGE,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(pkgId)},{resolver.ResolveCsv(pkgId)},{resolver.ResolveDisplayNameCsv(pkgId)},");
+                    $"PACKAGE,{Fmt.FId(npc.FormId)}{subPad},{Fmt.FId(pkgId)},{resolver.ResolveCsv(pkgId)},{resolver.ResolveDisplayNameCsv(pkgId)},,,");
             }
         }
 
@@ -145,7 +147,7 @@ internal static class CsvActorWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Name,CreatureType,CreatureTypeName,Level,FatigueBase,AttackDamage,CombatSkill,MagicSkill,StealthSkill,ScriptFormID,ModelPath,Endianness,Offset,SubFormID,SubName,SubDisplayName,SubDetail");
+            "RowType,FormID,EditorID,Name,CreatureType,CreatureTypeName,Level,FatigueBase,AttackDamage,CombatSkill,MagicSkill,StealthSkill,ScriptFormID,ModelPath,Endianness,Offset,SubFormID,SubName,SubDisplayName,SubDetail,LevelEncoding");
 
         foreach (var c in creatures.OrderBy(c => c.EditorId ?? ""))
         {
@@ -166,7 +168,7 @@ internal static class CsvActorWriter
                 Fmt.CsvEscape(c.ModelPath),
                 Fmt.Endian(c.IsBigEndian),
                 c.Offset.ToString(),
-                "", "", "", ""));
+                "", "", "", "", c.Stats is null ? "Unavailable" : "ACBS.Int16"));
 
             foreach (var f in c.Factions)
             {
@@ -178,7 +180,7 @@ internal static class CsvActorWriter
                     Fmt.FId(f.FactionFormId),
                     resolver.ResolveCsv(f.FactionFormId),
                     resolver.ResolveDisplayNameCsv(f.FactionFormId),
-                    f.Rank.ToString()));
+                    f.Rank.ToString(), ""));
             }
 
             foreach (var spellId in c.Spells)
@@ -191,7 +193,7 @@ internal static class CsvActorWriter
                     Fmt.FId(spellId),
                     resolver.ResolveCsv(spellId),
                     resolver.ResolveDisplayNameCsv(spellId),
-                    ""));
+                    "", ""));
             }
         }
 

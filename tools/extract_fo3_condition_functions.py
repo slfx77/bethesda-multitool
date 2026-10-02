@@ -38,8 +38,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_EXE = (
     REPO_ROOT
     / "Sample"
-    / "Full_Builds"
-    / "Fallout 3 (PC Final)"
+    / "Builds"
+    / "Fallout 3 (2026-2-15, Steam - Final)"
     / "Fallout3.exe"
 )
 DEFAULT_OUTPUT = (

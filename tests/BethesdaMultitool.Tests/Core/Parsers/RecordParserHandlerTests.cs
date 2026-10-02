@@ -659,7 +659,7 @@ public class RecordParserHandlerTests
         Assert.Equal((byte)3, entry.EntryPointFunction);
         Assert.Equal((byte)2, entry.PerkConditionTabCount);
         Assert.Equal((byte)1, entry.FunctionType);
-        Assert.Equal("Add Value", entry.FunctionTypeName);
+        Assert.Equal("One Value", entry.FunctionTypeName);
         Assert.Equal(1.1f, entry.EffectValue.GetValueOrDefault(), 3);
         Assert.Equal(2, entry.ConditionGroups.Count);
 

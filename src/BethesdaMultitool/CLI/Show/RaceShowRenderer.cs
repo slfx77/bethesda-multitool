@@ -7,14 +7,14 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class RaceShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var race = records.Races.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, n => n.FormId, n => n.EditorId));
         if (race == null)
             return false;
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]      0x{race.FormId:X8}",
@@ -27,9 +27,9 @@ internal sealed class RaceShowRenderer : IRecordDisplayRenderer
         };
 
         if (race.OlderRaceFormId.HasValue)
-            lines.Add($"[cyan]Older Race:[/]  {resolver.FormatWithEditorId(race.OlderRaceFormId.Value)}");
+            lines.Add($"[cyan]Older Race:[/]  {ShowHelpers.Ref(resolver, race.OlderRaceFormId.Value)}");
         if (race.YoungerRaceFormId.HasValue)
-            lines.Add($"[cyan]Younger Race:[/] {resolver.FormatWithEditorId(race.YoungerRaceFormId.Value)}");
+            lines.Add($"[cyan]Younger Race:[/] {ShowHelpers.Ref(resolver, race.YoungerRaceFormId.Value)}");
 
         lines.Add("");
         lines.Add("[bold]Head Parts (NAM0):[/]");
@@ -62,7 +62,7 @@ internal sealed class RaceShowRenderer : IRecordDisplayRenderer
             lines.Add("");
             lines.Add("[bold]Abilities:[/]");
             foreach (var abilId in race.AbilityFormIds)
-                lines.Add($"  {resolver.FormatWithEditorId(abilId)}");
+                lines.Add($"  {ShowHelpers.Ref(resolver, abilId)}");
         }
 
         if (race.SkillBoosts.Count > 0)
@@ -78,7 +78,7 @@ internal sealed class RaceShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]RACE[/] {Markup.Escape(race.EditorId ?? "")} — {Markup.Escape(race.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

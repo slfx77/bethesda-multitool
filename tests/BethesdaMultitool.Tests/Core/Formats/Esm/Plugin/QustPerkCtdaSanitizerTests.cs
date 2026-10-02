@@ -181,7 +181,7 @@ public class QustPerkCtdaSanitizerTests
         {
             new()
             {
-                Type = 2, EntryPoint = 0, FunctionType = 0, EffectValue = 1f,
+                Type = 2, EntryPoint = 0, FunctionType = 1, EffectValue = 1f,
                 ConditionGroups =
                 {
                     new PerkConditionGroup
@@ -212,7 +212,7 @@ public class QustPerkCtdaSanitizerTests
         {
             new()
             {
-                Type = 2, EntryPoint = 0, FunctionType = 0, EffectValue = 1f,
+                Type = 2, EntryPoint = 0, FunctionType = 1, EffectValue = 1f,
                 ConditionGroups =
                 {
                     new PerkConditionGroup

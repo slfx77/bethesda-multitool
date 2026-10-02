@@ -144,13 +144,13 @@ internal static class DmpScriptAuditAnalyzer
             diagnostics.AddRange(ScriptBytecodeAnalyzer
                 .AnalyzeEmissionSafety(
                     scda,
-                    script.IsBigEndian,
+                    script.IsBigEndianBytecode,
                     script.Variables,
                     script.ReferencedObjects)
                 .Diagnostics);
         }
 
-        var trivial = script.CompiledSize == 4 && IsProvenTrivialScda(scda, script.IsBigEndian);
+        var trivial = script.CompiledSize == 4 && IsProvenTrivialScda(scda, script.IsBigEndianBytecode);
         if (trivial && comparison.SourceStatementCount > 0)
         {
             hard.Add("executable-source-with-trivial-scda");
@@ -401,7 +401,7 @@ internal static class DmpScriptAuditAnalyzer
             script.Variables,
             script.ReferencedObjects,
             _ => null,
-            script.IsBigEndian,
+            script.IsBigEndianBytecode,
             script.EditorId).Decompile(scda);
     }
 

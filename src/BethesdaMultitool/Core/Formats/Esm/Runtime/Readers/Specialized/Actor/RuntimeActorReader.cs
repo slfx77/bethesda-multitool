@@ -124,14 +124,13 @@ internal sealed class RuntimeActorReader
             return CreateMinimalNpc(entry, offset, scriptFormId);
         }
 
-        // Read iHealth (TESHealthForm::iHealth). Sanity-gate to discard reads that
-        // overshoot the struct or capture cleared memory; zero is treated as
-        // "unknown — let the encoder synthesize from SPECIAL".
+        // Preserve a stored zero; an absent/out-of-bounds field remains unavailable.
         int? baseHealth = null;
-        var rawHealth = (int)view.UInt32("iHealth", "TESHealthForm");
-        if (rawHealth is > 0 and < 100_000)
+        var healthOffset = view.Offset("iHealth", "TESHealthForm");
+        if (healthOffset is >= 0 && healthOffset <= view.Buffer.Length - 4)
         {
-            baseHealth = rawHealth;
+            var rawHealth = view.Int32("iHealth", "TESHealthForm");
+            if (rawHealth is >= 0 and < 100_000) baseHealth = rawHealth;
         }
 
         // Follow pointer fields to get FormIDs (all PDB-aligned in core region)

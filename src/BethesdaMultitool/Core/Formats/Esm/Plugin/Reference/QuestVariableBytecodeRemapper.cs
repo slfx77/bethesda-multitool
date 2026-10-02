@@ -120,7 +120,7 @@ internal static class QuestVariableBytecodeRemapper
                     script.CompiledData,
                     script.Variables,
                     script.ReferencedObjects,
-                    script.IsBigEndian);
+                    script.IsBigEndianBytecode);
             }
         }
 
@@ -431,7 +431,7 @@ internal static class QuestVariableBytecodeRemapper
                     script.SourceText,
                     script.Variables,
                     script.ReferencedObjects,
-                    script.IsBigEndian,
+                    script.IsBigEndianBytecode,
                     index,
                     formIdAliases);
                 if (rewrite.CompiledData is not null)

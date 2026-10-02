@@ -192,6 +192,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         string? modelPath = null;
         string? maleWorldModelPath = null;
         string? femaleWorldModelPath = null;
+        uint? scriptFormId = null;
         string? iconPath = null;
         string? messageIconPath = null;
         byte[]? textureHashData = null;
@@ -223,6 +224,9 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
                 // worn/biped model; retain that field without confusing an armature reference for it.
                 case "MODL" when !IsModernArmorAddonReference(Context.Game, subData):
                     modelPath = EsmStringUtils.ReadNullTermString(subData);
+                    break;
+                case "SCRI" when sub.DataLength == 4:
+                    scriptFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
                     break;
                 // Across the TES4+ ARMO layouts, MOD2/MOD4 are the male/female dropped-world
                 // models. A placed ARMO must use one of these instead of its skinned biped mesh.
@@ -290,6 +294,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
             FullName = fullName,
             ModelPath = modelPath,
             WorldModelPath = maleWorldModelPath ?? femaleWorldModelPath,
+            ScriptFormId = scriptFormId,
             IconPath = iconPath,
             MessageIconPath = messageIconPath,
             TextureHashData = textureHashData,
@@ -352,6 +357,7 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
         string? messageIconPath = null;
         byte[]? textureHashData = null;
         ObjectBounds? bounds = null;
+        uint? scriptFormId = null;
         var value = 0;
         float weight = 0;
 
@@ -392,12 +398,16 @@ internal sealed class ItemRecordHandler(RecordParserContext context) : RecordHan
 
                     break;
                 }
+                case "SCRI" when sub.DataLength == 4:
+                    scriptFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
             }
         }
 
         return new MiscItemRecord
         {
             FormId = record.FormId,
+            ScriptFormId = scriptFormId,
             EditorId = editorId ?? Context.GetEditorId(record.FormId),
             FullName = fullName,
             ModelPath = modelPath,

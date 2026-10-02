@@ -8,7 +8,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class ChallengeShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var chal = records.Challenges.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, c => c.FormId, c => c.EditorId));
@@ -17,7 +17,7 @@ internal sealed class ChallengeShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]    0x{chal.FormId:X8}",
@@ -40,7 +40,7 @@ internal sealed class ChallengeShowRenderer : IRecordDisplayRenderer
 
         if (chal.Value1 != 0)
         {
-            lines.Add($"[cyan]Value 1:[/]   {resolver.FormatWithEditorId(chal.Value1)}");
+            lines.Add($"[cyan]Value 1:[/]   {ShowHelpers.Ref(resolver, chal.Value1)}");
         }
 
         if (chal.Value2 != 0)
@@ -55,7 +55,7 @@ internal sealed class ChallengeShowRenderer : IRecordDisplayRenderer
 
         if (chal.Script != 0)
         {
-            lines.Add($"[cyan]Script:[/]    {resolver.FormatWithEditorId(chal.Script)}");
+            lines.Add($"[cyan]Script:[/]    {ShowHelpers.Ref(resolver, chal.Script)}");
         }
 
         if (!string.IsNullOrEmpty(chal.Description))
@@ -70,7 +70,7 @@ internal sealed class ChallengeShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]CHAL[/] {Markup.Escape(chal.EditorId ?? "")} — {Markup.Escape(chal.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

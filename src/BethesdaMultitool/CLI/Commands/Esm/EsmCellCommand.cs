@@ -1,12 +1,17 @@
 using System.CommandLine;
-using System.Globalization;
 using System.IO.MemoryMappedFiles;
+using System.Text;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.CLI.Shared;
+using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Esm.Inspection;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
 using BethesdaMultitool.Core.Formats.Esm.Records;
+using BethesdaMultitool.Core.Semantic.LoadOrder;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Esm;
@@ -32,7 +37,7 @@ public static class EsmCellCommand
         };
         var persistentOption = new Option<bool>("-p", "--include-persistent")
         {
-            Description = "Include persistent refs from the worldspace persistent cell " +
+            Description = "Include other persistent refs in the same worldspace " +
                           "whose positions fall within this cell's grid bounds"
         };
         var typeOption = new Option<string?>("-t", "--type")
@@ -45,21 +50,38 @@ public static class EsmCellCommand
             DefaultValueFactory = _ => 50
         };
 
+        var formatOption = new Option<string>("--format")
+        {
+            Description = "Output format: table, json, or csv (JSON/CSV preserve full float precision)",
+            DefaultValueFactory = _ => "table"
+        };
+        var outputOption = new Option<string?>("--output") { Description = "Write to a new file; existing files are never overwritten" };
+        var offsetOption = new Option<string?>("--offset") { Description = "Select a physical CELL occurrence by decimal or 0x hexadecimal file offset" };
+        var loadOrderOption = LoadOrderOptions.CreateOption();
+        var allowMissingOption = LoadOrderOptions.CreateAllowMissingMastersOption();
         command.Arguments.Add(fileArg);
         command.Arguments.Add(cellArg);
         command.Options.Add(persistentOption);
         command.Options.Add(typeOption);
         command.Options.Add(limitOption);
+        command.Options.Add(formatOption);
+        command.Options.Add(outputOption);
+        command.Options.Add(offsetOption);
+        command.Options.Add(loadOrderOption);
+        command.Options.Add(allowMissingOption);
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
-            await RunObjectsAsync(
+            return await RunObjectsAsync(
                 parseResult.GetValue(fileArg)!,
                 parseResult.GetValue(cellArg)!,
                 parseResult.GetValue(persistentOption),
                 parseResult.GetValue(typeOption),
                 parseResult.GetValue(limitOption),
-                cancellationToken);
+                parseResult.GetValue(formatOption)!,
+                parseResult.GetValue(outputOption),
+                parseResult.GetValue(offsetOption),
+                cancellationToken, parseResult.GetValue(loadOrderOption), parseResult.GetValue(allowMissingOption));
         });
 
         return command;
@@ -90,147 +112,99 @@ public static class EsmCellCommand
         return command;
     }
 
-    private static async Task RunObjectsAsync(
-        string filePath, string cellQuery, bool includePersistent,
-        string? typeFilter, int limit, CancellationToken cancellationToken)
+    internal static async Task<int> RunObjectsAsync(
+        string filePath, string cellQuery, bool includePersistent, string? typeFilter, int limit,
+        string format, string? outputPath, string? offsetText, CancellationToken cancellationToken,
+        string[]? loadOrderSpecifications = null, bool allowMissingMasters = false)
     {
-        if (!File.Exists(filePath))
+        // Parent command actions do not run for subcommands. Establish this command's async
+        // logging sink before semantic parsing so redirected stdout remains a document.
+        Logger.SetOutput(Console.Error);
+        format = format.ToLowerInvariant();
+        typeFilter = string.IsNullOrWhiteSpace(typeFilter) ? null : typeFilter.ToUpperInvariant();
+        if (format is not ("table" or "json" or "csv") || limit < 0 ||
+            (typeFilter != null && !PlacementQuery.IsPlacement(typeFilter)))
         {
-            AnsiConsole.MarkupLine($"[red]ERROR:[/] File not found: {filePath}");
-            return;
+            Console.Error.WriteLine("Use --format table|json|csv, --limit >= 0, and --type REFR|ACHR|ACRE.");
+            return 2;
         }
-
-        var (records, scanResult) = await LoadRecordsAsync(filePath, cancellationToken);
-        if (records == null || scanResult == null)
+        long? offset = null;
+        if (offsetText != null)
         {
-            return;
-        }
-
-        // Find all cells (worldspace cells + top-level cells)
-        var allCells = CollectAllCells(records);
-
-        // Resolve the target cell
-        var targetCell = FindCell(allCells, cellQuery);
-        if (targetCell == null)
-        {
-            AnsiConsole.MarkupLine($"[yellow]No cell found matching:[/] {Markup.Escape(cellQuery)}");
-
-            // Show close matches
-            var candidates = allCells
-                .Where(c => (c.EditorId != null &&
-                             c.EditorId.Contains(cellQuery, StringComparison.OrdinalIgnoreCase)) ||
-                            (c.FullName != null &&
-                             c.FullName.Contains(cellQuery, StringComparison.OrdinalIgnoreCase)))
-                .Take(10)
-                .ToList();
-
-            if (candidates.Count > 0)
+            if (!PlacementQuery.TryParseOffset(offsetText, out var parsedOffset))
             {
-                AnsiConsole.MarkupLine("[dim]Did you mean:[/]");
-                foreach (var c in candidates)
+                Console.Error.WriteLine("Invalid --offset: use a nonnegative decimal or 0x hexadecimal file offset.");
+                return 2;
+            }
+            offset = parsedOffset;
+        }
+        if (string.IsNullOrWhiteSpace(cellQuery))
+        {
+            Console.Error.WriteLine("A cell FormID, EditorID or name is required.");
+            return 2;
+        }
+        try
+        {
+            if (loadOrderSpecifications is { Length: > 0 })
+            {
+                if (offset.HasValue) throw new ArgumentException("--offset selects a single-file occurrence; omit --load-order for physical occurrence inspection.");
+                var order = PluginLoadOrder.Open(LoadOrderOptions.ResolvePaths(filePath, loadOrderSpecifications), allowMissingMasters);
+                var view = await LoadOrderSelectionView.LoadAsync(order, cancellationToken, retainPhysicalPlacements: true);
+                var cells = PlacementQuery.CollectCells(view.Records);
+                var qualifier = cellQuery.IndexOf(':');
+                var qualified = qualifier > 0 && (cellQuery[..qualifier].EndsWith(".esm", StringComparison.OrdinalIgnoreCase) ||
+                    cellQuery[..qualifier].EndsWith(".esp", StringComparison.OrdinalIgnoreCase));
+                var query = qualified
+                    ? $"0x{view.Index.ResolveTarget(cellQuery, order):X8}" : cellQuery;
+                var matches = PlacementQuery.ResolveCells(cells, query);
+                if (matches.Count != 1) return Reject(matches);
+                var selectedCell = matches[0];
+                var (objects, issues) = LoadOrderPlacementQuery.InCell(view, selectedCell, includePersistent, typeFilter);
+                var winner = view.Index.Records[selectedCell.FormId].Winner;
+                return Emit(CellObjectsOutput.Create(filePath, cellQuery, selectedCell, includePersistent, typeFilter, limit, objects) with
                 {
-                    AnsiConsole.MarkupLine(
-                        $"  0x{c.FormId:X8}  {Markup.Escape(c.EditorId ?? "(no EDID)")}  " +
-                        $"Grid=[{c.GridX?.ToString() ?? "?"},{c.GridY?.ToString() ?? "?"}]");
-                }
+                    LoadOrder = order.Entries.Select(entry => entry.Path).ToArray(), MissingMasters = order.MissingMasters,
+                    SelectionIssues = issues, CellSourcePath = winner.FilePath, FileLocalCellFormId = winner.FileLocalFormId
+                });
+            }
+            if (allowMissingMasters) throw new ArgumentException("--allow-missing-masters requires --load-order.");
+            // No progress UI on stdout: it must remain a standalone JSON/CSV document.
+            using var source = await UnifiedAnalyzer.AnalyzeAsync(filePath, cancellationToken: cancellationToken);
+            var candidates = PlacementQuery.ResolveCells(PlacementQuery.ReadCells(source), cellQuery, offset);
+            if (candidates.Count != 1) return Reject(candidates);
+            var selected = candidates[0];
+            var rows = PlacementQuery.InCell(PlacementQuery.Read(source, cancellationToken: cancellationToken),
+                selected, includePersistent, typeFilter);
+            var report = CellObjectsOutput.Create(filePath, cellQuery, selected, includePersistent, typeFilter, limit, rows);
+            return Emit(report);
+
+            int Reject(IReadOnlyList<CellRecord> candidates)
+            {
+                Console.Error.WriteLine(candidates.Count == 0 ? $"No selected cell found matching: {cellQuery}" :
+                    $"Ambiguous cell lookup ({candidates.Count} occurrences). Use an exact FormID/EditorID; single-file queries also support --offset:");
+                foreach (var cell in candidates.Take(20))
+                    Console.Error.WriteLine($"  0x{cell.FormId:X8} offset=0x{cell.Offset:X} {cell.EditorId} {cell.FullName}");
+                return candidates.Count == 0 ? 1 : 2;
             }
 
-            return;
+            int Emit(CellObjectsReport report)
+            {
+                if (outputPath == null) { CellObjectsOutput.Write(Console.Out, format, report); }
+                else
+                {
+                    using var stream = new FileStream(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+                    using var writer = new StreamWriter(stream, new UTF8Encoding(false));
+                    CellObjectsOutput.Write(writer, format, report);
+                }
+                Console.Error.WriteLine($"Cell objects: {report.ReturnedCount} of {report.TotalCount} occurrences; truncated={report.Truncated}; excluded={report.ExcludedCount}.");
+                return 0;
+            }
         }
-
-        // Build category index
-        var (_, categoryIndex) = ObjectBoundsIndex.BuildCombined(records);
-
-        // Header
-        AnsiConsole.MarkupLine($"[bold cyan]Cell:[/] 0x{targetCell.FormId:X8}  " +
-                               $"EDID={Markup.Escape(targetCell.EditorId ?? "(none)")}  " +
-                               $"Name={Markup.Escape(targetCell.FullName ?? "(none)")}");
-        AnsiConsole.MarkupLine($"[bold cyan]Grid:[/] ({targetCell.GridX?.ToString() ?? "?"}, " +
-                               $"{targetCell.GridY?.ToString() ?? "?"})  " +
-                               $"Interior={targetCell.IsInterior}  " +
-                               $"Worldspace=0x{targetCell.WorldspaceFormId ?? 0:X8}");
-        AnsiConsole.WriteLine();
-
-        // Collect objects to display
-        var objects = FilterObjects(targetCell.PlacedObjects, typeFilter);
-        var directCount = objects.Count;
-
-        // Persistent overlay
-        List<PlacedReference> persistentOverlay = [];
-        if (includePersistent && targetCell.GridX.HasValue && targetCell.GridY.HasValue)
+        catch (OperationCanceledException) { return 130; }
+        catch (Exception ex)
         {
-            persistentOverlay = FindPersistentOverlay(
-                allCells, targetCell, typeFilter);
-            objects.AddRange(persistentOverlay);
-        }
-
-        AnsiConsole.MarkupLine($"[cyan]Direct objects:[/] {directCount}");
-        if (persistentOverlay.Count > 0)
-        {
-            AnsiConsole.MarkupLine(
-                $"[cyan]Persistent overlay:[/] {persistentOverlay.Count} (from worldspace persistent cell)");
-        }
-
-        AnsiConsole.MarkupLine($"[cyan]Total:[/] {objects.Count}");
-        AnsiConsole.WriteLine();
-
-        // Summary by type
-        var typeCounts = objects.GroupBy(o => o.RecordType)
-            .OrderByDescending(g => g.Count())
-            .ToList();
-        var summaryTable = new Table()
-            .Border(TableBorder.Rounded)
-            .AddColumn("Type")
-            .AddColumn(new TableColumn("Count").RightAligned());
-
-        foreach (var g in typeCounts)
-        {
-            _ = summaryTable.AddRow(g.Key, g.Count().ToString("N0", CultureInfo.InvariantCulture));
-        }
-
-        AnsiConsole.Write(summaryTable);
-        AnsiConsole.WriteLine();
-
-        // Detail table
-        var displayLimit = limit <= 0 ? objects.Count : Math.Min(limit, objects.Count);
-        var table = new Table()
-            .Border(TableBorder.Rounded)
-            .Title("[bold]Placed Objects[/]")
-            .AddColumn("Type")
-            .AddColumn(new TableColumn("FormID").RightAligned())
-            .AddColumn(new TableColumn("Base").RightAligned())
-            .AddColumn("EditorID")
-            .AddColumn("Category")
-            .AddColumn(new TableColumn("X").RightAligned())
-            .AddColumn(new TableColumn("Y").RightAligned())
-            .AddColumn(new TableColumn("Z").RightAligned())
-            .AddColumn("Flags");
-
-        for (var i = 0; i < displayLimit; i++)
-        {
-            var obj = objects[i];
-            var category = GetCategory(obj, categoryIndex);
-            var flags = BuildFlags(obj, persistentOverlay.Contains(obj));
-            var editorId = obj.BaseEditorId ?? records.FormIdToEditorId.GetValueOrDefault(obj.BaseFormId);
-
-            _ = table.AddRow(
-                ColorType(obj.RecordType),
-                $"0x{obj.FormId:X8}",
-                $"0x{obj.BaseFormId:X8}",
-                Markup.Escape(TruncateString(editorId, 28)),
-                category,
-                obj.X.ToString("F0"),
-                obj.Y.ToString("F0"),
-                obj.Z.ToString("F0"),
-                flags);
-        }
-
-        AnsiConsole.Write(table);
-
-        if (displayLimit < objects.Count)
-        {
-            AnsiConsole.MarkupLine(
-                $"[dim]...{objects.Count - displayLimit} more (use -l 0 to show all)[/]");
+            Console.Error.WriteLine($"Cell objects failed: {ex.Message}");
+            return 1;
         }
     }
 
@@ -423,7 +397,7 @@ public static class EsmCellCommand
         using (var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             var parser = new RecordParser(result.EsmRecords, result.FormIdMap, accessor, result.FileSize);
-            records = parser.ParseAll();
+            records = parser.ParseAll(cancellationToken: cancellationToken);
         }
 
         AnsiConsole.MarkupLine(
@@ -439,200 +413,7 @@ public static class EsmCellCommand
 
     #region Helpers
 
-    private static List<CellRecord> CollectAllCells(RecordCollection records)
-    {
-        // Deduplicate: worldspace cells may overlap with top-level Cells list
-        var seen = new HashSet<uint>();
-        var allCells = new List<CellRecord>();
-
-        foreach (var ws in records.Worldspaces)
-        {
-            foreach (var cell in ws.Cells)
-            {
-                if (seen.Add(cell.FormId))
-                {
-                    allCells.Add(cell);
-                }
-            }
-        }
-
-        foreach (var cell in records.Cells)
-        {
-            if (seen.Add(cell.FormId))
-            {
-                allCells.Add(cell);
-            }
-        }
-
-        return allCells;
-    }
-
-    private static CellRecord? FindCell(List<CellRecord> cells, string query)
-    {
-        // Try parsing as FormID first
-        var formId = EsmFileLoader.ParseFormId(query);
-        if (formId.HasValue)
-        {
-            var byFormId = cells.FirstOrDefault(c => c.FormId == formId.Value);
-            if (byFormId != null)
-            {
-                return byFormId;
-            }
-        }
-
-        // Try exact EDID match
-        var byEdid = cells.FirstOrDefault(c =>
-            c.EditorId != null && c.EditorId.Equals(query, StringComparison.OrdinalIgnoreCase));
-        if (byEdid != null)
-        {
-            return byEdid;
-        }
-
-        // Try substring match on EDID
-        var byEdidPartial = cells.FirstOrDefault(c =>
-            c.EditorId != null && c.EditorId.Contains(query, StringComparison.OrdinalIgnoreCase));
-        if (byEdidPartial != null)
-        {
-            return byEdidPartial;
-        }
-
-        // Try FULL name match
-        return cells.FirstOrDefault(c =>
-            c.FullName != null && c.FullName.Contains(query, StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static List<PlacedReference> FilterObjects(List<PlacedReference> objects, string? typeFilter)
-    {
-        if (string.IsNullOrEmpty(typeFilter))
-        {
-            return [..objects];
-        }
-
-        var filter = typeFilter.ToUpperInvariant();
-        return objects.Where(o => o.RecordType == filter).ToList();
-    }
-
-    private static List<PlacedReference> FindPersistentOverlay(
-        List<CellRecord> allCells,
-        CellRecord targetCell, string? typeFilter)
-    {
-        if (!targetCell.GridX.HasValue || !targetCell.GridY.HasValue ||
-            targetCell.WorldspaceFormId is null or 0)
-        {
-            return [];
-        }
-
-        var cellMinX = targetCell.GridX.Value * CellWorldSize;
-        var cellMaxX = cellMinX + CellWorldSize;
-        var cellMinY = targetCell.GridY.Value * CellWorldSize;
-        var cellMaxY = cellMinY + CellWorldSize;
-
-        var targetWs = targetCell.WorldspaceFormId.Value;
-
-        // Find persistent refs from OTHER cells in the same worldspace whose
-        // positions fall within this cell's grid bounds.  The worldspace persistent
-        // cell typically has grid (0,0) — not null — so we scan all worldspace cells
-        // and check for persistent references with matching positions.
-        var directFormIds = new HashSet<uint>(
-            targetCell.PlacedObjects.Select(o => o.FormId));
-
-        var overlay = new List<PlacedReference>();
-        foreach (var cell in allCells)
-        {
-            if (cell.FormId == targetCell.FormId ||
-                cell.WorldspaceFormId != targetWs)
-            {
-                continue;
-            }
-
-            foreach (var obj in cell.PlacedObjects)
-            {
-                if (!obj.IsPersistent)
-                {
-                    continue;
-                }
-
-                if (directFormIds.Contains(obj.FormId))
-                {
-                    continue;
-                }
-
-                if (obj.X >= cellMinX && obj.X < cellMaxX &&
-                    obj.Y >= cellMinY && obj.Y < cellMaxY &&
-                    (string.IsNullOrEmpty(typeFilter) ||
-                     obj.RecordType.Equals(typeFilter, StringComparison.OrdinalIgnoreCase)))
-                {
-                    overlay.Add(obj);
-                }
-            }
-        }
-
-        return overlay;
-    }
-
-    private static string GetCategory(PlacedReference obj,
-        Dictionary<uint, PlacedObjectCategory> categoryIndex)
-    {
-        if (obj.IsMapMarker)
-        {
-            return "MapMarker";
-        }
-
-        if (obj.RecordType == "ACHR")
-        {
-            return "[bold green]Npc[/]";
-        }
-
-        if (obj.RecordType == "ACRE")
-        {
-            return "[bold yellow]Creature[/]";
-        }
-
-        var cat = categoryIndex.GetValueOrDefault(obj.BaseFormId, PlacedObjectCategory.Unknown);
-        return cat.ToString();
-    }
-
-    private static string ColorType(string recordType)
-    {
-        return recordType switch
-        {
-            "ACHR" => "[bold green]ACHR[/]",
-            "ACRE" => "[bold yellow]ACRE[/]",
-            "REFR" => "[dim]REFR[/]",
-            _ => recordType
-        };
-    }
-
-    private static string BuildFlags(PlacedReference obj, bool isPersistentOverlay)
-    {
-        var parts = new List<string>();
-        if (obj.IsPersistent)
-        {
-            parts.Add("[cyan]P[/]");
-        }
-
-        if (obj.IsInitiallyDisabled)
-        {
-            parts.Add("[red]D[/]");
-        }
-
-        if (isPersistentOverlay)
-        {
-            parts.Add("[yellow]OVR[/]");
-        }
-
-        return parts.Count > 0 ? string.Join(" ", parts) : "[dim]-[/]";
-    }
-
-    private static string TruncateString(string? value, int maxLen)
-    {
-        if (value == null)
-        {
-            return "(none)";
-        }
-
-        return value.Length <= maxLen ? value : value[..(maxLen - 3)] + "...";
-    }
+    private static List<CellRecord> CollectAllCells(RecordCollection records) => PlacementQuery.CollectCells(records);
 
     #endregion
 }

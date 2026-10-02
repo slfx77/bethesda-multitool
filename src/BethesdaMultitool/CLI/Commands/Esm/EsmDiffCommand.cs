@@ -23,7 +23,7 @@ public static class EsmDiffCommand
         var pcOption = new Option<string?>("--pc")
             { Description = "PC reference ESM file (little-endian)" };
         var formIdOption = new Option<string?>("-f", "--formid")
-            { Description = "Specific FormID to compare (hex, e.g., 0x0017B37C)" };
+            { Description = "Specific FormID to compare (hex, with or without 0x, e.g., 0x0017B37C)" };
         var typeOption = new Option<string?>("-t", "--type")
             { Description = "Record type to filter (e.g., GMST, NPC_, CREA, DIAL)" };
         var limitOption = new Option<int>("-l", "--limit")
@@ -154,7 +154,7 @@ public static class EsmDiffCommand
         var pcOption = new Option<string>("--pc")
             { Description = "PC reference ESM file (little-endian)", Arity = ArgumentArity.ExactlyOne };
         var formIdOption = new Option<string?>("-f", "--formid")
-            { Description = "Specific FormID to compare (hex, e.g., 0x0017B37C)" };
+            { Description = "Specific FormID to compare (hex, with or without 0x, e.g., 0x0017B37C)" };
         var typeOption = new Option<string?>("-t", "--type")
             { Description = "Record type to filter (e.g., GMST, NPC_, CREA, DIAL)" };
         var limitOption = new Option<int>("-l", "--limit")

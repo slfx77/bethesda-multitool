@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class WeaponShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var weapon = records.Weapons.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, w => w.FormId, w => w.EditorId));
@@ -16,7 +16,7 @@ internal sealed class WeaponShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]    0x{weapon.FormId:X8}",
@@ -24,9 +24,9 @@ internal sealed class WeaponShowRenderer : IRecordDisplayRenderer
             $"[cyan]Name:[/]      {Markup.Escape(weapon.FullName ?? "(none)")}",
             $"[cyan]Type:[/]      {weapon.WeaponTypeName}",
             $"[cyan]Equip:[/]     {weapon.EquipmentTypeName}",
-            $"[cyan]Skill:[/]     {resolver.GetActorValueName((int)weapon.Skill) ?? $"AV#{weapon.Skill}"}",
+            $"[cyan]Skill:[/]     {ShowHelpers.Plain(resolver.GetActorValueName((int)weapon.Skill), $"AV#{weapon.Skill}")}",
             $"[cyan]Damage:[/]    {weapon.Damage}",
-            $"[cyan]Crit %:[/]    {weapon.CriticalChance:P0}",
+            $"[cyan]Crit Mult:[/] {FormattableString.Invariant($"x{weapon.CriticalChance:R}")}",
             $"[cyan]Crit Dmg:[/]  {weapon.CriticalDamage}",
             $"[cyan]Speed:[/]     {weapon.Speed:F2}",
             $"[cyan]Weight:[/]    {weapon.Weight:F1}",
@@ -51,7 +51,7 @@ internal sealed class WeaponShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]WEAP[/] {Markup.Escape(weapon.EditorId ?? "")} — {Markup.Escape(weapon.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

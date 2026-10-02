@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Models;
 
 /// <summary>
@@ -32,11 +34,29 @@ public record PerkEntry
     /// <summary>Number of entry-point condition tabs stored in DATA byte 2.</summary>
     public byte? PerkConditionTabCount { get; init; }
 
-    /// <summary>Entry point function type from EPFT.</summary>
+    /// <summary>Function parameter-data kind from EPFT, distinct from EntryPointFunction.</summary>
     public byte? FunctionType { get; init; }
 
     /// <summary>Function data value from EPFD, when it is a float payload.</summary>
     public float? EffectValue { get; init; }
+
+    /// <summary>Second numeric parameter for the TwoValue function-data class.</summary>
+    public float? EffectValue2 { get; init; }
+
+    public string? ActivationLabel { get; init; }
+    public ushort? ActivationFlags { get; init; }
+    public DialogueResultScript? ActivationScript { get; init; }
+
+    /// <summary>Captured runtime structures; these bytes are not serialized DATA/EPFD payloads.</summary>
+    public uint? RuntimeAddress { get; init; }
+    public string? RuntimeClassName { get; init; }
+    public string? RuntimeLayoutBasis { get; init; }
+    public string? RuntimeLayoutStatus { get; init; }
+    public byte[]? RuntimeRawData { get; init; }
+    public uint? RuntimeFunctionAddress { get; init; }
+    public string? RuntimeFunctionClassName { get; init; }
+    public byte[]? RuntimeFunctionData { get; init; }
+    public List<string> RecoveryIssues { get; init; } = [];
 
     /// <summary>Function data FormID from EPFD/DATA, when it is a form reference payload.</summary>
     public uint? EffectFormId { get; init; }
@@ -66,15 +86,11 @@ public record PerkEntry
     public string? FunctionTypeName => FunctionType switch
     {
         null => null,
-        0 => "Set Value",
-        1 => "Add Value",
-        2 => "Multiply Value",
-        3 => "Add Range To Value",
-        4 => "Add Actor Value Mult",
-        5 => "Absolute Value",
-        6 => "Negative Absolute Value",
-        7 => "Add Leveled List",
-        8 => "Add Activate Choice",
+        0 => "None",
+        1 => "One Value",
+        2 => "Two Values",
+        3 => "Leveled List",
+        4 => "Activate Choice",
         _ => $"Unknown ({FunctionType.Value})"
     };
 }

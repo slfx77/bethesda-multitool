@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class BaseEffectShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var mgef = records.BaseEffects.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, e => e.FormId, e => e.EditorId));
@@ -16,7 +16,7 @@ internal sealed class BaseEffectShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]      0x{mgef.FormId:X8}",
@@ -33,13 +33,13 @@ internal sealed class BaseEffectShowRenderer : IRecordDisplayRenderer
 
         if (mgef.ActorValue >= 0)
         {
-            var avName = resolver.GetActorValueName(mgef.ActorValue) ?? $"AV#{mgef.ActorValue}";
+            var avName = ShowHelpers.Plain(resolver.GetActorValueName(mgef.ActorValue), $"AV#{mgef.ActorValue}");
             lines.Add($"[cyan]Actor Value:[/] {avName}");
         }
 
         if (mgef.ResistValue >= 0)
         {
-            var resName = resolver.GetActorValueName(mgef.ResistValue) ?? $"AV#{mgef.ResistValue}";
+            var resName = ShowHelpers.Plain(resolver.GetActorValueName(mgef.ResistValue), $"AV#{mgef.ResistValue}");
             lines.Add($"[cyan]Resist:[/]      {resName}");
         }
 
@@ -50,27 +50,27 @@ internal sealed class BaseEffectShowRenderer : IRecordDisplayRenderer
 
         if (mgef.Projectile != 0)
         {
-            lines.Add($"[cyan]Projectile:[/]  {resolver.FormatWithEditorId(mgef.Projectile)}");
+            lines.Add($"[cyan]Projectile:[/]  {ShowHelpers.Ref(resolver, mgef.Projectile)}");
         }
 
         if (mgef.Explosion != 0)
         {
-            lines.Add($"[cyan]Explosion:[/]   {resolver.FormatWithEditorId(mgef.Explosion)}");
+            lines.Add($"[cyan]Explosion:[/]   {ShowHelpers.Ref(resolver, mgef.Explosion)}");
         }
 
         if (mgef.LightFormId is > 0)
         {
-            lines.Add($"[cyan]Light:[/]       {resolver.FormatWithEditorId(mgef.LightFormId.Value)}");
+            lines.Add($"[cyan]Light:[/]       {ShowHelpers.Ref(resolver, mgef.LightFormId.Value)}");
         }
 
         if (mgef.CastingSoundFormId is > 0)
         {
-            lines.Add($"[cyan]Cast Sound:[/]  {resolver.FormatWithEditorId(mgef.CastingSoundFormId.Value)}");
+            lines.Add($"[cyan]Cast Sound:[/]  {ShowHelpers.Ref(resolver, mgef.CastingSoundFormId.Value)}");
         }
 
         if (mgef.HitSoundFormId is > 0)
         {
-            lines.Add($"[cyan]Hit Sound:[/]   {resolver.FormatWithEditorId(mgef.HitSoundFormId.Value)}");
+            lines.Add($"[cyan]Hit Sound:[/]   {ShowHelpers.Ref(resolver, mgef.HitSoundFormId.Value)}");
         }
 
         if (!string.IsNullOrEmpty(mgef.Description))
@@ -86,7 +86,7 @@ internal sealed class BaseEffectShowRenderer : IRecordDisplayRenderer
             lines.Add("[bold]Counter Effects:[/]");
             foreach (var counter in mgef.CounterEffectFormIds)
             {
-                lines.Add($"  {resolver.FormatWithEditorId(counter)}");
+                lines.Add($"  {ShowHelpers.Ref(resolver, counter)}");
             }
         }
 
@@ -95,7 +95,7 @@ internal sealed class BaseEffectShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]MGEF[/] {Markup.Escape(mgef.EditorId ?? "")} — {Markup.Escape(mgef.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

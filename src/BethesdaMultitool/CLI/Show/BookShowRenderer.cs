@@ -8,7 +8,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class BookShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var book = records.Books.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, b => b.FormId, b => b.EditorId));
@@ -17,7 +17,7 @@ internal sealed class BookShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]    0x{book.FormId:X8}",
@@ -36,12 +36,12 @@ internal sealed class BookShowRenderer : IRecordDisplayRenderer
         if (book.TeachesSkill)
         {
             lines.Add(
-                $"[cyan]Teaches:[/]   {resolver.GetSkillName(book.SkillTaught) ?? $"Skill#{book.SkillTaught}"}");
+                $"[cyan]Teaches:[/]   {ShowHelpers.Plain(resolver.GetSkillName(book.SkillTaught), $"Skill#{book.SkillTaught}")}");
         }
 
         if (book.EnchantmentFormId is > 0)
         {
-            lines.Add($"[cyan]Enchantment:[/] {resolver.FormatWithEditorId(book.EnchantmentFormId.Value)}");
+            lines.Add($"[cyan]Enchantment:[/] {ShowHelpers.Ref(resolver, book.EnchantmentFormId.Value)}");
             if (book.EnchantmentAmount != 0)
             {
                 lines.Add($"[cyan]Enchant Amt:[/] {book.EnchantmentAmount}");
@@ -53,12 +53,22 @@ internal sealed class BookShowRenderer : IRecordDisplayRenderer
             lines.Add($"[cyan]Model:[/]     {Markup.Escape(book.ModelPath)}");
         }
 
+        // Under --full the text is written after the panel exactly as stored (see WriteVerbatimBlocks);
+        // by default it is cut at the cap with a marker naming the total and --full.
+        var blocks = new List<VerbatimBlock>();
         if (!string.IsNullOrEmpty(book.Text))
         {
-            var text = book.Text.Length > 2000 ? book.Text[..2000] + "\n... (truncated)" : book.Text;
             lines.Add("");
-            lines.Add("[bold]Text:[/]");
-            lines.Add(Markup.Escape(text));
+            if (context.FullText)
+            {
+                lines.Add($"[bold]Text:[/] {ShowHelpers.VerbatimPlaceholder(book.Text)}");
+                blocks.Add(new VerbatimBlock("Book text", book.Text));
+            }
+            else
+            {
+                lines.Add("[bold]Text:[/]");
+                lines.Add(Markup.Escape(ShowHelpers.TruncateForPanel(book.Text)));
+            }
         }
 
         ShowHelpers.AppendNestedPayloads(lines, records, book.FormId, resolver);
@@ -68,7 +78,8 @@ internal sealed class BookShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]BOOK[/] {Markup.Escape(book.EditorId ?? "")} — {Markup.Escape(book.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
+        ShowHelpers.WriteVerbatimBlocks(context.Console, blocks);
         return true;
     }
 }

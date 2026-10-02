@@ -109,8 +109,11 @@ public sealed class RecordParser
     /// </summary>
     public RecordCollection ParseAll(
         IProgress<(int percent, string phase)>? progress = null,
-        IReadOnlySet<uint>? residentRecoveryMasterFormIds = null)
+        IReadOnlySet<uint>? residentRecoveryMasterFormIds = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var cancellationScope = _context.UseCancellation(cancellationToken);
         var totalSw = Stopwatch.StartNew();
         var phaseSw = Stopwatch.StartNew();
 
@@ -122,6 +125,7 @@ public sealed class RecordParser
         {
             progress?.Report((0, "Parsing TES3 records..."));
             var tes3Result = new Tes3RecordParser(_context).ParseAll();
+            cancellationToken.ThrowIfCancellationRequested();
             totalSw.Stop();
             Logger.Instance.Info(
                 $"[Semantic Parse] Complete (TES3). Time: {totalSw.Elapsed}, Records: {tes3Result.TotalRecordsProcessed}");
@@ -241,6 +245,16 @@ public sealed class RecordParser
         phaseSw.Restart();
         var weapons = _weapons.ParseWeapons();
         var ammo = _consumables.ParseAmmo();
+        if (_context.MinidumpInfo == null && _context.Game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas)
+        {
+            for (var i = 0; i < ammo.Count; i++)
+            {
+                ammo[i] = ammo[i] with
+                {
+                    HasRecordLocalProjectileSnapshot = true, RecordLocalProjectileFormId = ammo[i].ProjectileFormId
+                };
+            }
+        }
         _consumables.EnrichAmmoWithProjectileModels(weapons, ammo);
         _weapons.EnrichWeaponsWithProjectileData(weapons);
         _weapons.EnrichWeaponsWithEsmProjectileData(weapons);
@@ -251,6 +265,23 @@ public sealed class RecordParser
         var containers = _items.ParseContainers();
         Logger.Instance.Debug(
             $"  [Semantic] Items: {phaseSw.Elapsed} (Weapons: {weapons.Count}, Armor: {armor.Count}, Ammo: {ammo.Count}, Consumables: {consumables.Count}, Misc: {miscItems.Count}, Keys: {keys.Count}, Containers: {containers.Count})");
+
+        // Parse ACTI/DOOR/FURN early so their Script FormIDs are available
+        // for cross-reference chain building below.
+        var activators = _miscWorldObjects.ParseActivators();
+        var doors = _miscWorldObjects.ParseDoors();
+        var furniture = _miscStaticObjects.ParseFurniture();
+
+        // === Runtime script cross-reference chains ===
+        QuestScriptEnricher.BuildRuntimeScriptMappings(
+            _context, _scripts, npcs, creatures, containers, activators, doors, furniture);
+
+        // Obscript games keep their script parse (+ decompilation via the game's command table)
+        // even on the schema-primary path — the schema decode has no script pipeline, so unlike the
+        // other typed collections these are NOT discarded by the merge.
+        var parseScripts = !typedForViewerOnly ||
+                           GameProfiles.For(_context.Game).SupportsObscriptDecompilation;
+        var scripts = parseScripts ? _scripts.ParseScripts() : new List<ScriptRecord>();
 
         // Build dialogue data, then construct the tree hierarchy
         progressReporter?.ReportPhase(30, "Parsing dialogue...");
@@ -266,6 +297,32 @@ public sealed class RecordParser
         {
             _dialogue.MergeRuntimeDialogueTopicLinks(dialogues, dialogTopics);
             _dialogue.MergeRuntimeDialogueData(dialogues);
+        }
+
+        // Preserve plugin-local attribution before cross-record enrichment. Selection can then
+        // rebuild links against winners without borrowing a removed parent's title or speaker.
+        if (_context.MinidumpInfo == null && _context.RuntimeReader == null &&
+            _context.Game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas)
+        {
+            for (var i = 0; i < dialogues.Count; i++)
+            {
+                var info = dialogues[i];
+                dialogues[i] = info with { LocalAttribution = new DialogueLocalAttribution
+                {
+                    TopicFormId = info.TopicFormId, QuestFormId = info.QuestFormId, SpeakerFormId = info.SpeakerFormId,
+                    SpeakerFactionFormId = info.SpeakerFactionFormId, SpeakerRaceFormId = info.SpeakerRaceFormId,
+                    SpeakerVoiceTypeFormId = info.SpeakerVoiceTypeFormId
+                } };
+            }
+            for (var i = 0; i < dialogTopics.Count; i++)
+            {
+                var topic = dialogTopics[i];
+                dialogTopics[i] = topic with { LocalAttribution = new DialogueLocalAttribution
+                {
+                    FullName = topic.FullName, DummyPrompt = topic.DummyPrompt,
+                    QuestFormId = topic.QuestFormId, SpeakerFormId = topic.SpeakerFormId
+                } };
+            }
         }
 
         // Preserve raw type-7 GRUP ancestry even when runtime TESTopic data is available.
@@ -310,22 +367,6 @@ public sealed class RecordParser
         var books = _text.ParseBooks();
         var terminals = _text.ParseTerminals();
 
-        // Parse ACTI/DOOR/FURN early so their Script FormIDs are available
-        // for cross-reference chain building below.
-        var activators = _miscWorldObjects.ParseActivators();
-        var doors = _miscWorldObjects.ParseDoors();
-        var furniture = _miscStaticObjects.ParseFurniture();
-
-        // === Runtime script cross-reference chains ===
-        QuestScriptEnricher.BuildRuntimeScriptMappings(
-            _context, _scripts, npcs, creatures, containers, activators, doors, furniture);
-
-        // Obscript games keep their script parse (+ decompilation via the game's command table)
-        // even on the schema-primary path — the schema decode has no script pipeline, so unlike the
-        // other typed collections these are NOT discarded by the merge.
-        var parseScripts = !typedForViewerOnly ||
-                           GameProfiles.For(_context.Game).SupportsObscriptDecompilation;
-        var scripts = parseScripts ? _scripts.ParseScripts() : new List<ScriptRecord>();
         Logger.Instance.Debug(
             $"  [Semantic] Trees/text: {phaseSw.Elapsed} (Notes: {notes.Count}, Books: {books.Count}, Terminals: {terminals.Count}, Scripts: {scripts.Count})");
 
@@ -541,7 +582,7 @@ public sealed class RecordParser
         var projectiles = _combatEffects.ParseProjectiles();
         _combatEffects.EnrichProjectilesWithRuntime(projectiles);
         var explosions = _combatEffects.ParseExplosions();
-        var messages = _text.ParseMessages();
+        var messages = _text.ParseMessages(dialogues);
         var classes = _miscBasicTypes.ParseClasses();
         var eyes = _miscBasicTypes.ParseEyes();
         var hair = _miscBasicTypes.ParseHair();
@@ -640,6 +681,8 @@ public sealed class RecordParser
         }
 
         progressReporter?.ReportPhase(95, "Building lookup tables...");
+
+        ScriptReconstructionEnricher.Enrich(_context, dialogues, terminals, packages);
 
         var result = new RecordCollection
         {
@@ -870,6 +913,7 @@ public sealed class RecordParser
         // detected game must travel on the result (it isn't otherwise carried).
         result = result with { Game = _context.Game };
 
+        cancellationToken.ThrowIfCancellationRequested();
         totalSw.Stop();
         Logger.Instance.Info(
             $"[Semantic Parse] Complete. Time: {totalSw.Elapsed}, Records: {result.TotalRecordsParsed}");
@@ -1068,7 +1112,10 @@ public sealed class RecordParser
     /// <summary>Parses all dialogue-response (INFO) records.</summary>
     public List<DialogueRecord> ParseDialogue()
     {
-        return _dialogue.ParseDialogue();
+        EnsureScriptSymbols();
+        var records = _dialogue.ParseDialogue();
+        ScriptReconstructionEnricher.Enrich(_context, records, [], []);
+        return records;
     }
 
     /// <summary>
@@ -1098,7 +1145,10 @@ public sealed class RecordParser
     /// <summary>Parses all terminal records.</summary>
     public List<TerminalRecord> ParseTerminals()
     {
-        return _text.ParseTerminals();
+        EnsureScriptSymbols();
+        var records = _text.ParseTerminals();
+        ScriptReconstructionEnricher.Enrich(_context, [], records, []);
+        return records;
     }
 
     /// <summary>Parses all message records.</summary>
@@ -1112,6 +1162,11 @@ public sealed class RecordParser
     public List<ScriptRecord> ParseScripts()
     {
         return _scripts.ParseScripts();
+    }
+
+    private void EnsureScriptSymbols()
+    {
+        if (_context.ExternalScriptVariables is null) _scripts.ParseScripts();
     }
 
     // Effects
@@ -1287,6 +1342,9 @@ public sealed class RecordParser
     /// <summary>Parses all AI-package records.</summary>
     public List<PackageRecord> ParsePackages()
     {
-        return _ai.ParsePackages();
+        EnsureScriptSymbols();
+        var records = _ai.ParsePackages();
+        ScriptReconstructionEnricher.Enrich(_context, [], [], records);
+        return records;
     }
 }

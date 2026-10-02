@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class FurnitureShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var furn = records.Furniture.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, f => f.FormId, f => f.EditorId));
@@ -16,7 +16,7 @@ internal sealed class FurnitureShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]      0x{furn.FormId:X8}",
@@ -36,7 +36,7 @@ internal sealed class FurnitureShowRenderer : IRecordDisplayRenderer
 
         if (furn.Script.HasValue)
         {
-            lines.Add($"[cyan]Script:[/]      {resolver.FormatWithEditorId(furn.Script.Value)}");
+            lines.Add($"[cyan]Script:[/]      {ShowHelpers.Ref(resolver, furn.Script.Value)}");
         }
 
         ShowHelpers.AppendNestedPayloads(lines, records, furn.FormId, resolver);
@@ -45,7 +45,7 @@ internal sealed class FurnitureShowRenderer : IRecordDisplayRenderer
         {
             Header = new PanelHeader($"[bold]FURN[/] {Markup.Escape(furn.EditorId ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

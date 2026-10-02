@@ -8,27 +8,19 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 
-/// <summary>
-///     Regression tests for the CREA encoder's ACBS flag-policy fixups, extracted into
-///     <see cref="ActorBaseAcbsBuilder" /> as part of Tier 3.1. CreaEncoder previously
-///     emitted ACBS via raw schema serialization with no flag policy — captured
-///     templated creatures (TemplateFlags != 0) were missing the UseTemplate (0x40) bit
-///     and showed up in-game with per-spawn numeric suffixes ("Speedy (12345)"), the
-///     same bug class as the Ulysses-suffix bug previously fixed on NPC placements.
-///     These tests pin the three fixups now applied uniformly to both NPC and CREA ACBS
-///     emission via the shared helper: AutoCalcStats (0x10) forced, UseTemplate (0x40)
-///     set when TemplateFlags is nonzero, and SpeedMultiplier clamped to 100 when zero.
-/// </summary>
+/// <summary>Byte-level CREA flag preservation and shared ACBS layout/default controls.</summary>
 public sealed class CreaEncoderAcbsFlagPolicyTests
 {
-    [Fact]
-    public void EncodeNew_ForcesAutoCalcStatsBit_WhenMissingFromCapturedFlags()
+    [Theory]
+    [InlineData(0u)]
+    [InlineData(0x10u)]
+    [InlineData(0x20u)]
+    [InlineData(0x40u)]
+    [InlineData(0x100u)]
+    public void EncodeNew_PreservesCreatureMovementAndUnknownFlags(uint inputFlags)
     {
-        // Captured DMP runtime often clears AutoCalc (0x10) once stats were computed.
-        // Without re-asserting it on emission, the engine reads manual stats from
-        // CalcMin/CalcMax + Level, which routinely yields 0 HP → creature spawns dead.
         var stats = new ActorBaseSubrecord(
-            0x00000000u, // No bits set, especially NOT 0x10.
+            inputFlags,
             50,
             0,
             5,
@@ -37,7 +29,7 @@ public sealed class CreaEncoderAcbsFlagPolicyTests
             100,
             0f,
             0,
-            0, // No template — only AutoCalc should be added.
+            0, // No template fields.
             0,
             false);
         var crea = MakeCrea(stats);
@@ -46,15 +38,12 @@ public sealed class CreaEncoderAcbsFlagPolicyTests
 
         var acbs = FindAcbs(encoded);
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(acbs.Bytes.AsSpan(0, 4));
-        Assert.Equal(0x00000010u, flags);
+        Assert.Equal(inputFlags, flags);
     }
 
     [Fact]
-    public void EncodeNew_SetsUseTemplateBit_WhenTemplateFlagsNonzero()
+    public void EncodeNew_TemplateFieldsDoNotAddMovementOrUnknownBits()
     {
-        // Mirror of the Ulysses fix: templated creatures must emit ACBS with the
-        // UseTemplate (0x40) bit so the engine treats them as proper templated
-        // unique actors, not per-spawn numeric-suffix instances.
         var stats = new ActorBaseSubrecord(
             0x00000002u, // Essential bit set; nothing else.
             50,
@@ -65,7 +54,7 @@ public sealed class CreaEncoderAcbsFlagPolicyTests
             100,
             0f,
             0,
-            0x0001, // Any nonzero TemplateFlags triggers UseTemplate.
+            0x0001, // Use Traits is retained independently of the Flags dword.
             0,
             false);
         var crea = MakeCrea(stats);
@@ -74,8 +63,8 @@ public sealed class CreaEncoderAcbsFlagPolicyTests
 
         var acbs = FindAcbs(encoded);
         var flags = BinaryPrimitives.ReadUInt32LittleEndian(acbs.Bytes.AsSpan(0, 4));
-        // 0x02 (Essential, preserved) | 0x10 (AutoCalc, forced) | 0x40 (UseTemplate, set because TemplateFlags=0x0001).
-        Assert.Equal(0x00000052u, flags);
+        Assert.Equal(0x00000002u, flags);
+        Assert.Equal((ushort)1, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(22, 2)));
     }
 
     [Fact]
@@ -174,8 +163,8 @@ public sealed class CreaEncoderAcbsFlagPolicyTests
 
         var acbs = FindAcbs(encoded);
         Assert.Equal(24, acbs.Bytes.Length);
-        // Flags: input (0x02) | AutoCalc (0x10) | UseTemplate (0x40, TemplateFlags=0x80) = 0x52.
-        Assert.Equal(0x00000052u, BinaryPrimitives.ReadUInt32LittleEndian(acbs.Bytes.AsSpan(0, 4)));
+        // All CREA flag bits remain exactly as captured.
+        Assert.Equal(0x00000002u, BinaryPrimitives.ReadUInt32LittleEndian(acbs.Bytes.AsSpan(0, 4)));
         Assert.Equal((ushort)75, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(4, 2)));
         Assert.Equal((ushort)250, BinaryPrimitives.ReadUInt16LittleEndian(acbs.Bytes.AsSpan(6, 2)));
         Assert.Equal((short)-3, BinaryPrimitives.ReadInt16LittleEndian(acbs.Bytes.AsSpan(8, 2)));

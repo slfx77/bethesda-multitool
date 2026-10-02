@@ -327,7 +327,7 @@ public sealed class InlineScriptAtomicSafetyTests
         // agrees with SLSD/SCVR by construction ("ExactLocal", not the stale "DifferentLocal").
         var sctx = Assert.Single(encoded.Subrecords, sub => sub.Signature == "SCTX");
         var text = Encoding.ASCII.GetString(sctx.Bytes);
-        Assert.Contains("Decompiled from captured SCDA", text, StringComparison.Ordinal);
+        Assert.Contains("Reconstruction from SCDA", text, StringComparison.Ordinal);
         Assert.Contains("ExactLocal", text, StringComparison.Ordinal);
         Assert.DoesNotContain("DifferentLocal", text, StringComparison.Ordinal);
     }
@@ -348,7 +348,7 @@ public sealed class InlineScriptAtomicSafetyTests
         // what ships is the bytecode's own rendering, which cannot contradict it.
         var sctx = Assert.Single(encoded.Subrecords, sub => sub.Signature == "SCTX");
         var text = Encoding.ASCII.GetString(sctx.Bytes);
-        Assert.Contains("Decompiled from captured SCDA", text, StringComparison.Ordinal);
+        Assert.Contains("Reconstruction from SCDA", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Set Local to 1", text, StringComparison.Ordinal);
     }
 

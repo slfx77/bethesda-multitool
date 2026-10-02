@@ -107,65 +107,31 @@ public class AssetPathAndStringTests
 
     #region ScanForRecords - EDID Validation (String Tests via Public API)
 
-    [Fact]
-    public void ScanForRecords_ValidEdid_Accepted()
+    [Theory]
+    [InlineData("TestWeapon")]
+    [InlineData("1ERaphael")] // Digit-prefixed editor IDs are valid.
+    [InlineData("Test_Item")]
+    [InlineData("VDialogueDocMitchellTopic001")]
+    public void ScanForRecords_ValidEdid_PreservesName(string editorId)
     {
-        var data = BuildEdidSubrecord("TestWeapon");
+        var data = BuildEdidSubrecord(editorId);
+
         var result = EsmRecordScanner.ScanForRecords(data);
-        Assert.Single(result.EditorIds);
-        Assert.Equal("TestWeapon", result.EditorIds[0].Name);
+
+        Assert.Equal(editorId, Assert.Single(result.EditorIds).Name);
     }
 
-    [Fact]
-    public void ScanForRecords_EdidTooShort_Rejected()
+    [Theory]
+    [InlineData("A")] // Editor IDs require at least two characters.
+    [InlineData("Test-Item")]
+    [InlineData("katSkatSkatS")] // Reject the repeated "katS" pattern.
+    public void ScanForRecords_InvalidEdid_IsRejected(string editorId)
     {
-        // Editor ID with single character (needs >= 2)
-        var data = BuildEdidSubrecord("A");
+        var data = BuildEdidSubrecord(editorId);
+
         var result = EsmRecordScanner.ScanForRecords(data);
+
         Assert.Empty(result.EditorIds);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidStartsWithDigit_Accepted()
-    {
-        // Digit-prefixed editor IDs are valid (e.g., "1ERaphael" for region-named NPCs)
-        var data = BuildEdidSubrecord("1ERaphael");
-        var result = EsmRecordScanner.ScanForRecords(data);
-        Assert.Single(result.EditorIds);
-        Assert.Equal("1ERaphael", result.EditorIds[0].Name);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidWithSpecialChars_Rejected()
-    {
-        var data = BuildEdidSubrecord("Test-Item");
-        var result = EsmRecordScanner.ScanForRecords(data);
-        Assert.Empty(result.EditorIds);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidWithUnderscore_Accepted()
-    {
-        var data = BuildEdidSubrecord("Test_Item");
-        var result = EsmRecordScanner.ScanForRecords(data);
-        Assert.Single(result.EditorIds);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidRepeatedPattern_Rejected()
-    {
-        // "katSkatSkatS" has pattern "katS" repeating 3 times
-        var data = BuildEdidSubrecord("katSkatSkatS");
-        var result = EsmRecordScanner.ScanForRecords(data);
-        Assert.Empty(result.EditorIds);
-    }
-
-    [Fact]
-    public void ScanForRecords_EdidLongValidName_Accepted()
-    {
-        var data = BuildEdidSubrecord("VDialogueDocMitchellTopic001");
-        var result = EsmRecordScanner.ScanForRecords(data);
-        Assert.Single(result.EditorIds);
     }
 
     #endregion

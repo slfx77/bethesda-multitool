@@ -31,11 +31,11 @@ public class DecompiledSourceFallbackTests
     public void SynthesizedSource_DeclaresEveryLocalFromTheSlsdTable()
     {
         var text = CapturedScriptEmissionContract.BuildDecompiledSource(
-            Decompiled, Variables, "MyTestSCRIPT");
+            Decompiled, Variables, [0x80000001], "MyTestSCRIPT");
 
         Assert.NotNull(text);
-        // A ref is the only local that can occupy member position, so bytecode usage — not the
-        // SLSD type bit, which cannot separate ref from float — decides the storage class.
+        // SCRV binds local #1 as a reference. SLSD alone cannot distinguish ref from float,
+        // and rendered source text is not independent evidence of a variable's storage class.
         Assert.Contains("ref rTarget", text, StringComparison.Ordinal);
         Assert.Contains("float fRange", text, StringComparison.Ordinal);
         Assert.Contains("short bDoOnce", text, StringComparison.Ordinal);

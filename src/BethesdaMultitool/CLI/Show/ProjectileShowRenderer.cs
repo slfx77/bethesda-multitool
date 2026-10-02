@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class ProjectileShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var proj = records.Projectiles.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, p => p.FormId, p => p.EditorId));
@@ -16,7 +16,7 @@ internal sealed class ProjectileShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]      0x{proj.FormId:X8}",
@@ -45,7 +45,7 @@ internal sealed class ProjectileShowRenderer : IRecordDisplayRenderer
 
         if (proj.Explosion != 0)
         {
-            lines.Add($"[cyan]Explosion:[/]   {resolver.FormatWithEditorId(proj.Explosion)}");
+            lines.Add($"[cyan]Explosion:[/]   {ShowHelpers.Ref(resolver, proj.Explosion)}");
             if (proj.ExplosionTimer > 0)
             {
                 lines.Add($"[cyan]Expl Timer:[/]  {proj.ExplosionTimer:F2}s");
@@ -59,17 +59,17 @@ internal sealed class ProjectileShowRenderer : IRecordDisplayRenderer
 
         if (proj.Light != 0)
         {
-            lines.Add($"[cyan]Light:[/]       {resolver.FormatWithEditorId(proj.Light)}");
+            lines.Add($"[cyan]Light:[/]       {ShowHelpers.Ref(resolver, proj.Light)}");
         }
 
         if (proj.MuzzleFlashLight != 0)
         {
-            lines.Add($"[cyan]Muzzle Flash:[/] {resolver.FormatWithEditorId(proj.MuzzleFlashLight)}");
+            lines.Add($"[cyan]Muzzle Flash:[/] {ShowHelpers.Ref(resolver, proj.MuzzleFlashLight)}");
         }
 
         if (proj.Sound != 0)
         {
-            lines.Add($"[cyan]Sound:[/]       {resolver.FormatWithEditorId(proj.Sound)}");
+            lines.Add($"[cyan]Sound:[/]       {ShowHelpers.Ref(resolver, proj.Sound)}");
         }
 
         if (!string.IsNullOrEmpty(proj.ModelPath))
@@ -84,7 +84,7 @@ internal sealed class ProjectileShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]PROJ[/] {Markup.Escape(proj.EditorId ?? "")} — {Markup.Escape(proj.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

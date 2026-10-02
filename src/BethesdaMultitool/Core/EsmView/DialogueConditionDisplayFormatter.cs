@@ -1,5 +1,3 @@
-using System.Globalization;
-using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Games;
@@ -11,6 +9,11 @@ namespace BethesdaMultitool.Core.EsmView;
 ///     Observed CIS1/CIS2 siblings take precedence over their CTDA placeholder slots. Otherwise,
 ///     function names and the numeric-vs-FormID parameter split come from the game-keyed
 ///     <see cref="ConditionFunctionTable" />.
+///     <para>
+///         This is the viewer's compact text (implicit default Run On, zero parameters omitted). CLI,
+///         report and JSON output use <see cref="ConditionDescriber" /> instead; the comparison, CIS-string
+///         and Parameter #3 helpers live there and are shared, so both keep identical wording for them.
+///     </para>
 /// </summary>
 internal static class DialogueConditionDisplayFormatter
 {
@@ -30,7 +33,7 @@ internal static class DialogueConditionDisplayFormatter
         var parameterParts = new List<string>();
         if (condition.Parameter1String is { } parameter1String)
         {
-            parameterParts.Add(FormatStringParameter(parameter1String));
+            parameterParts.Add(ConditionDescriber.FormatStringParameter(parameter1String));
         }
         else if (condition.Parameter1 != 0)
         {
@@ -39,7 +42,7 @@ internal static class DialogueConditionDisplayFormatter
 
         if (condition.Parameter2String is { } parameter2String)
         {
-            parameterParts.Add(FormatStringParameter(parameter2String));
+            parameterParts.Add(ConditionDescriber.FormatStringParameter(parameter2String));
         }
         else if (condition.Parameter2 != 0)
         {
@@ -48,7 +51,7 @@ internal static class DialogueConditionDisplayFormatter
 
         var comparison = condition.UsesGlobalComparison
             ? FormatGlobalComparison(condition.ComparisonGlobalFormId, resolveParamName)
-            : FormatComparisonValue(condition.ComparisonValue);
+            : ConditionDescriber.FormatComparisonValue(condition.ComparisonValue);
         var expression = parameterParts.Count > 0
             ? $"{functionName}({string.Join(", ", parameterParts)}) {condition.ComparisonOperator} {comparison}"
             : $"{functionName} {condition.ComparisonOperator} {comparison}";
@@ -69,15 +72,16 @@ internal static class DialogueConditionDisplayFormatter
             qualifiers.Add($"Ref: {resolveFormName(reference)} (0x{reference:X8})");
         }
 
-        if (TryFormatParameter3(condition, game, out var parameter3))
+        // Parameter #3 labels (ConditionDescriber.TryFormatParameter3). Community provenance for Starfield's
+        // signed Quest Alias/Event Data arms: xEdit commit e0e529a2d473756520f2d41f72c24dea0cf5ee0d,
+        // wbDefinitionsSF1.pas SHA-256 8736162FCE44C970CFA3DDAC945A739530169390C4FDABAFC0209B36B247A576,
+        // MPL-2.0. The retail census supports the physical signed field, not these labels.
+        if (ConditionDescriber.TryFormatParameter3(condition, game, out var parameter3))
         {
             qualifiers.Add(parameter3);
         }
 
-        if (condition.IsSubjectTargetSwapped)
-        {
-            qualifiers.Add("Swap Subject/Target");
-        }
+        qualifiers.AddRange(ConditionTypeFlags.Describe(condition.Type, game));
 
         return qualifiers.Count > 0
             ? $"{expression} [{string.Join("; ", qualifiers)}]"
@@ -126,14 +130,6 @@ internal static class DialogueConditionDisplayFormatter
             resultScript.ReferencedObjects.Select(formId => $"{resolveFormName(formId)} (0x{formId:X8})"));
     }
 
-    private static string FormatComparisonValue(float value)
-    {
-        var rounded = MathF.Round(value);
-        return MathF.Abs(value - rounded) < 0.0001f
-            ? rounded.ToString("0")
-            : value.ToString("0.###");
-    }
-
     private static string FormatGlobalComparison(uint formId, Func<uint, string> resolveName)
     {
         if (formId == 0)
@@ -143,87 +139,6 @@ internal static class DialogueConditionDisplayFormatter
 
         var resolved = resolveName(formId);
         return $"GLOB {resolved} (0x{formId:X8})";
-    }
-
-    private static string FormatStringParameter(string value)
-    {
-        var escaped = new StringBuilder(value.Length + 2);
-        escaped.Append('"');
-        foreach (var character in value)
-        {
-            switch (character)
-            {
-                case '\\':
-                    escaped.Append("\\\\");
-                    break;
-                case '"':
-                    escaped.Append("\\\"");
-                    break;
-                case '\r':
-                    escaped.Append("\\r");
-                    break;
-                case '\n':
-                    escaped.Append("\\n");
-                    break;
-                case '\t':
-                    escaped.Append("\\t");
-                    break;
-                case '\b':
-                    escaped.Append("\\b");
-                    break;
-                case '\f':
-                    escaped.Append("\\f");
-                    break;
-                case var control when char.IsControl(control):
-                    escaped.Append("\\u");
-                    escaped.Append(((int)control).ToString("X4", CultureInfo.InvariantCulture));
-                    break;
-                default:
-                    escaped.Append(character);
-                    break;
-            }
-        }
-
-        escaped.Append('"');
-        return escaped.ToString();
-    }
-
-    private static bool TryFormatParameter3(
-        DialogueCondition condition,
-        BethesdaGame game,
-        out string formatted)
-    {
-        formatted = string.Empty;
-        if (condition.Parameter3 is not { } value)
-        {
-            return false;
-        }
-
-        // Community provenance for Starfield's signed Quest Alias/Event Data arms: xEdit commit
-        // e0e529a2d473756520f2d41f72c24dea0cf5ee0d, wbDefinitionsSF1.pas SHA-256
-        // 8736162FCE44C970CFA3DDAC945A739530169390C4FDABAFC0209B36B247A576,
-        // MPL-2.0. The retail census supports the physical signed field, not these labels.
-        var modern = game is BethesdaGame.Skyrim or BethesdaGame.Fallout4 or BethesdaGame.Fallout76
-            or BethesdaGame.Starfield;
-        var semanticLabel = modern
-            ? condition.RunOn switch
-            {
-                5 => "Quest Alias",
-                7 => "Event Data",
-                _ => null
-            }
-            : null;
-
-        // -1 is the normal raw default. It is still meaningful for the two Run-On-selected modern
-        // contexts, but suppress it elsewhere so every ordinary 32-byte condition does not gain noise.
-        if (semanticLabel is null && value == -1)
-        {
-            return false;
-        }
-
-        var label = semanticLabel ?? "Parameter #3";
-        formatted = $"{label}: {value.ToString(CultureInfo.InvariantCulture)}";
-        return true;
     }
 
     private static string FormatParameter(

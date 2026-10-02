@@ -6,37 +6,14 @@ using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Plugin;
 
-/// <summary>
-///     Phase 4.3: encoder → parser round-trip smoke for CREA ACBS flag policy. Approach (b)
-///     from the plan: synthetic-only end-to-end, exercising both the writer
-///     (<see cref="CreaEncoder.EncodeNew" />) and reader
-///     (<see cref="ActorRecordHandler.ParseActorBase" />) on the same byte stream. This is a
-///     strict superset of <see cref="CreaEncoderAcbsFlagPolicyTests" /> — those pin the
-///     encoder side only; the smoke test below additionally pins the byte-level contract
-///     both sides must agree on.
-///     <para>
-///         We deliberately skip the full <c>PluginConversionPipeline</c> path: it requires a
-///         real DMP file + a real PC FalloutNV.esm master and a writable output directory, all
-///         of which would add minutes to a single test run. The encoder→parser pair captures the
-///         load-bearing failure mode (flag-policy fixup must survive serialization and re-parse
-///         in a way that a downstream consumer would see).
-///     </para>
-/// </summary>
+/// <summary>Encoder-to-parser CREA flag preservation, numeric fields and defaults.</summary>
 public sealed class CreaSmokeIntegrationTests
 {
-    private const uint FlagAutoCalcStats = 0x00000010u;
-    private const uint FlagUseTemplate = 0x00000040u;
-
     [Fact]
-    public void EncoderToParser_TemplatedCreature_RoundTripsAllThreeFlagPolicyFixups()
+    public void EncoderToParser_TemplatedCreature_PreservesFlagsAndNumericFields()
     {
-        // Build a captured-state CreatureRecord that triggers ALL three ActorBaseAcbsBuilder
-        // policy fixups in one pass:
-        //   1. AutoCalcStats (0x10) forced (not present in input Flags).
-        //   2. UseTemplate (0x40) set (TemplateFlags is nonzero).
-        //   3. SpeedMultiplier clamped to 100 (input is 0).
         var input = new ActorBaseSubrecord(
-            0x00000002u, // Essential bit only; no AutoCalc, no UseTemplate.
+            0x00000162u, // Essential, Flies, Walks and unknown bit 8.
             75,
             0,
             5,
@@ -45,7 +22,7 @@ public sealed class CreaSmokeIntegrationTests
             0, // Clamp trigger.
             0.5f,
             25,
-            0x0001, // UseTemplate trigger (Speedy/Sleepy-style templated creature).
+            0x0001, // Authored Use Traits field.
             0,
             false);
 
@@ -65,19 +42,7 @@ public sealed class CreaSmokeIntegrationTests
         var parsed = ActorRecordHandler.ParseActorBase(acbs.Bytes, 0, false);
         Assert.NotNull(parsed);
 
-        // Flag-policy fixup 1: AutoCalcStats (0x10) must be present in the parser's view.
-        Assert.True((parsed.Flags & FlagAutoCalcStats) != 0,
-            $"AutoCalcStats bit (0x10) missing from parsed Flags 0x{parsed.Flags:X8}.");
-
-        // Flag-policy fixup 2: UseTemplate (0x40) must be present — without this the engine
-        // emits "Speedy (12345)" per-spawn instead of treating it as a proper templated actor.
-        Assert.True((parsed.Flags & FlagUseTemplate) != 0,
-            $"UseTemplate bit (0x40) missing from parsed Flags 0x{parsed.Flags:X8}.");
-
-        // Source bit (Essential = 0x02) preserved alongside the two fixups.
-        Assert.Equal(0x00000052u, parsed.Flags & 0xFFu);
-
-        // Flag-policy fixup 3: SpeedMultiplier clamped to 100.
+        Assert.Equal(input.Flags, parsed.Flags);
         Assert.Equal((ushort)100, parsed.SpeedMultiplier);
 
         // Non-flag fields survive the round-trip unchanged.
@@ -92,11 +57,8 @@ public sealed class CreaSmokeIntegrationTests
     }
 
     [Fact]
-    public void EncoderToParser_NonTemplatedCreature_DoesNotSetUseTemplateBit()
+    public void EncoderToParser_NonTemplatedCreature_DoesNotAddFlagBits()
     {
-        // Negative case: a captured creature with TemplateFlags = 0 must NOT have
-        // UseTemplate (0x40) added during encoding. AutoCalcStats (0x10) still gets
-        // forced — that's an always-on fixup independent of templating.
         var input = new ActorBaseSubrecord(
             0x00000002u,
             100,
@@ -107,7 +69,7 @@ public sealed class CreaSmokeIntegrationTests
             100,
             0f,
             50,
-            0, // No templating — no UseTemplate fixup.
+            0, // No template fields.
             0,
             false);
 
@@ -124,15 +86,7 @@ public sealed class CreaSmokeIntegrationTests
         var parsed = ActorRecordHandler.ParseActorBase(acbs.Bytes, 0, false);
         Assert.NotNull(parsed);
 
-        // AutoCalcStats forced (always-on fixup).
-        Assert.True((parsed.Flags & FlagAutoCalcStats) != 0,
-            $"AutoCalcStats (0x10) should still be forced even when TemplateFlags is zero. " +
-            $"Parsed Flags = 0x{parsed.Flags:X8}.");
-
-        // UseTemplate NOT set because TemplateFlags is zero.
-        Assert.True((parsed.Flags & FlagUseTemplate) == 0,
-            $"UseTemplate (0x40) should NOT be set when TemplateFlags is zero. " +
-            $"Parsed Flags = 0x{parsed.Flags:X8}.");
+        Assert.Equal(input.Flags, parsed.Flags);
 
         Assert.Equal(0u, parsed.TemplateFlags);
     }

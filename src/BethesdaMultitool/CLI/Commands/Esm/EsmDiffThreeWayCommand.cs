@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Conversion;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Processing;
 using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Games;
 using Spectre.Console;
 using static BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers.DiffHelpers;
 
@@ -12,6 +13,9 @@ namespace BethesdaMultitool.CLI.Commands.Esm;
 /// </summary>
 internal static class EsmDiffThreeWayCommand
 {
+    /// <summary>The Xbox 360 file's label in warnings and occurrence titles.</summary>
+    private const string XboxLabel = "Xbox 360";
+
     /// <summary>
     ///     Runs a 3-way comparison between Xbox 360 original, converted output, and PC reference.
     /// </summary>
@@ -26,6 +30,19 @@ internal static class EsmDiffThreeWayCommand
         bool showBytes,
         bool showSemantic)
     {
+        // The same FormID syntax as show, semdiff and the two-way diff (one -f option serves both modes):
+        // hex, 0x optional. Checked before any file is read, so a malformed value is a clean error.
+        uint? targetFormId = null;
+        if (!string.IsNullOrEmpty(formIdStr))
+        {
+            targetFormId = CliHelpers.ParseFormId(formIdStr);
+            if (targetFormId is null)
+            {
+                AnsiConsole.MarkupLine($"[red]ERROR:[/] Invalid FormID: {Markup.Escape(formIdStr)}");
+                return 1;
+            }
+        }
+
         // Validate files
         if (!File.Exists(xboxPath))
         {
@@ -53,13 +70,19 @@ internal static class EsmDiffThreeWayCommand
         var convertedBigEndian = EsmParser.IsBigEndian(convertedData);
         var pcBigEndian = EsmParser.IsBigEndian(pcData);
 
+        // Each file's game, for naming its record-header flag bits (bit meanings are per game and signature).
+        var games = new ThreeWayGames(
+            GameDetector.DetectFromBytes(xboxData, Path.GetFileName(xboxPath)).Game,
+            GameDetector.DetectFromBytes(convertedData, Path.GetFileName(convertedPath)).Game,
+            GameDetector.DetectFromBytes(pcData, Path.GetFileName(pcPath)).Game);
+
         AnsiConsole.MarkupLine("[bold cyan]ESM Three-Way Diff[/]");
         AnsiConsole.MarkupLine(
-            $"[yellow]Xbox 360:[/]  {Path.GetFileName(xboxPath)} ({xboxData.Length:N0} bytes, {(xboxBigEndian ? "Big-endian" : "Little-endian")})");
+            $"[yellow]Xbox 360:[/]  {Markup.Escape(Path.GetFileName(xboxPath))} ({xboxData.Length:N0} bytes, {(xboxBigEndian ? "Big-endian" : "Little-endian")})");
         AnsiConsole.MarkupLine(
-            $"[green]Converted:[/] {Path.GetFileName(convertedPath)} ({convertedData.Length:N0} bytes, {(convertedBigEndian ? "Big-endian" : "Little-endian")})");
+            $"[green]Converted:[/] {Markup.Escape(Path.GetFileName(convertedPath))} ({convertedData.Length:N0} bytes, {(convertedBigEndian ? "Big-endian" : "Little-endian")})");
         AnsiConsole.MarkupLine(
-            $"[cyan]PC Ref:[/]    {Path.GetFileName(pcPath)} ({pcData.Length:N0} bytes, {(pcBigEndian ? "Big-endian" : "Little-endian")})");
+            $"[cyan]PC Ref:[/]    {Markup.Escape(Path.GetFileName(pcPath))} ({pcData.Length:N0} bytes, {(pcBigEndian ? "Big-endian" : "Little-endian")})");
         AnsiConsole.WriteLine();
 
         // Validate endianness expectations
@@ -101,15 +124,12 @@ internal static class EsmDiffThreeWayCommand
         }
 
         // Mode: specific FormID
-        if (!string.IsNullOrEmpty(formIdStr))
+        if (targetFormId is { } formId)
         {
-            var targetFormId = formIdStr.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
-                ? Convert.ToUInt32(formIdStr, 16)
-                : uint.Parse(formIdStr);
             return DiffThreeWayRecord(
                 xboxData, convertedData, pcData,
                 xboxBigEndian, convertedBigEndian, pcBigEndian,
-                targetFormId, maxBytes, showBytes, showSemantic, resolver);
+                formId, maxBytes, showBytes, showSemantic, resolver, games);
         }
 
         // Mode: specific record type
@@ -118,7 +138,7 @@ internal static class EsmDiffThreeWayCommand
             return DiffThreeWayRecordType(
                 xboxData, convertedData, pcData,
                 xboxBigEndian, convertedBigEndian, pcBigEndian,
-                recordType, limit, maxBytes, showBytes, showSemantic, resolver);
+                recordType, limit, maxBytes, showBytes, showSemantic, resolver, games);
         }
 
         AnsiConsole.MarkupLine("[yellow]Please specify either --formid or --type for 3-way diff[/]");
@@ -128,7 +148,8 @@ internal static class EsmDiffThreeWayCommand
     private static int DiffThreeWayRecord(
         byte[] xboxData, byte[] convertedData, byte[] pcData,
         bool xboxBigEndian, bool convertedBigEndian, bool pcBigEndian,
-        uint formId, int maxBytes, bool showBytes, bool showSemantic, DiffFormIdResolver? resolver)
+        uint formId, int maxBytes, bool showBytes, bool showSemantic, DiffFormIdResolver? resolver,
+        ThreeWayGames games)
     {
         var xboxRecord = FindRecordByFormId(xboxData, xboxBigEndian, formId);
         var convertedRecord = FindRecordByFormId(convertedData, convertedBigEndian, formId);
@@ -156,14 +177,15 @@ internal static class EsmDiffThreeWayCommand
             xboxData, convertedData, pcData,
             xboxBigEndian, convertedBigEndian, pcBigEndian,
             xboxRecord, convertedRecord, pcRecord,
-            maxBytes, showBytes, showSemantic, resolver);
+            maxBytes, showBytes, showSemantic, games, resolver);
         return 0;
     }
 
     private static int DiffThreeWayRecordType(
         byte[] xboxData, byte[] convertedData, byte[] pcData,
         bool xboxBigEndian, bool convertedBigEndian, bool pcBigEndian,
-        string recordType, int limit, int maxBytes, bool showBytes, bool showSemantic, DiffFormIdResolver? resolver)
+        string recordType, int limit, int maxBytes, bool showBytes, bool showSemantic, DiffFormIdResolver? resolver,
+        ThreeWayGames games)
     {
         var xboxRecords = EsmRecordParser.ScanAllRecords(xboxData, xboxBigEndian)
             .Where(r => r.Signature == recordType)
@@ -175,13 +197,19 @@ internal static class EsmDiffThreeWayCommand
             .Where(r => r.Signature == recordType)
             .ToList();
 
-        AnsiConsole.MarkupLine($"Found [yellow]{xboxRecords.Count}[/] {recordType} in Xbox 360");
-        AnsiConsole.MarkupLine($"Found [green]{convertedRecords.Count}[/] {recordType} in Converted");
-        AnsiConsole.MarkupLine($"Found [cyan]{pcRecords.Count}[/] {recordType} in PC reference");
-        AnsiConsole.WriteLine();
+        var escapedRecordType = Markup.Escape(recordType);
+        AnsiConsole.MarkupLine($"Found [yellow]{xboxRecords.Count}[/] {escapedRecordType} in Xbox 360");
+        AnsiConsole.MarkupLine($"Found [green]{convertedRecords.Count}[/] {escapedRecordType} in Converted");
+        AnsiConsole.MarkupLine($"Found [cyan]{pcRecords.Count}[/] {escapedRecordType} in PC reference");
 
-        var convertedByFormId = convertedRecords.ToDictionary(r => r.FormId, r => r);
-        var pcByFormId = pcRecords.ToDictionary(r => r.FormId, r => r);
+        // A FormID can occur more than once in one file (Xbox 360 split INFO records), so each lookup keeps
+        // the first occurrence by file offset and warns, instead of letting ToDictionary throw. Every Xbox
+        // record is still diffed against those first occurrences, and a repeated Xbox FormID is warned
+        // about too, with each of its tables titled by occurrence.
+        var xboxOccurrences = EsmDiffRecordsCommand.NumberRepeatedFormIds(xboxRecords, XboxLabel);
+        var convertedByFormId = EsmDiffRecordsCommand.IndexFirstOccurrenceByFormId(convertedRecords, "Converted");
+        var pcByFormId = EsmDiffRecordsCommand.IndexFirstOccurrenceByFormId(pcRecords, "PC reference");
+        AnsiConsole.WriteLine();
 
         var compared = 0;
         foreach (var xboxRec in xboxRecords)
@@ -194,11 +222,14 @@ internal static class EsmDiffThreeWayCommand
             if (convertedByFormId.TryGetValue(xboxRec.FormId, out var convRec) &&
                 pcByFormId.TryGetValue(xboxRec.FormId, out var pcRec))
             {
+                var occurrence = xboxOccurrences.TryGetValue(xboxRec.Offset, out var numbered)
+                    ? numbered.Describe(XboxLabel)
+                    : null;
                 DiffThreeWaySingleRecord(
                     xboxData, convertedData, pcData,
                     xboxBigEndian, convertedBigEndian, pcBigEndian,
                     xboxRec, convRec, pcRec,
-                    maxBytes, showBytes, showSemantic, resolver);
+                    maxBytes, showBytes, showSemantic, games, resolver, occurrence);
                 compared++;
             }
         }
@@ -211,14 +242,55 @@ internal static class EsmDiffThreeWayCommand
         return 0;
     }
 
+    /// <summary>
+    ///     The record type whose subrecord schemas describe all three records, or <c>null</c> when any
+    ///     two signatures differ. A FormID reused by a different record type (a prototype QUST whose
+    ///     FormID retail reassigned to a REFR) names unrelated objects, and the Xbox record's schema would
+    ///     mislabel the other files' fields, so a mismatch gets no schema hints and no semantic fields.
+    /// </summary>
+    internal static string? SharedSchemaRecordType(string xboxSignature, string convertedSignature,
+        string pcSignature)
+    {
+        return string.Equals(xboxSignature, convertedSignature, StringComparison.Ordinal) &&
+               string.Equals(convertedSignature, pcSignature, StringComparison.Ordinal)
+            ? xboxSignature
+            : null;
+    }
+
+    /// <param name="occurrence">
+    ///     Which occurrence of its FormID <paramref name="xboxRec" /> is in the Xbox 360 file (for example
+    ///     <c>Xbox 360 occurrence 2 of 2</c>), when that FormID repeats there; <c>null</c> otherwise.
+    /// </param>
     private static void DiffThreeWaySingleRecord(
         byte[] xboxData, byte[] convertedData, byte[] pcData,
         bool xboxBigEndian, bool convertedBigEndian, bool pcBigEndian,
         AnalyzerRecordInfo xboxRec, AnalyzerRecordInfo convertedRec, AnalyzerRecordInfo pcRec,
-        int maxBytes, bool showBytes, bool showSemantic,
-        DiffFormIdResolver? resolver = null)
+        int maxBytes, bool showBytes, bool showSemantic, ThreeWayGames games,
+        DiffFormIdResolver? resolver = null, string? occurrence = null)
     {
-        AnsiConsole.MarkupLine($"[bold yellow]=== {xboxRec.Signature} FormID: 0x{xboxRec.FormId:X8} ===[/]");
+        // A FormID reused by a different record type identifies unrelated objects. Say so before any
+        // table, and keep the subrecord comparison to raw bytes (see SharedSchemaRecordType).
+        var schemaRecordType = SharedSchemaRecordType(xboxRec.Signature, convertedRec.Signature, pcRec.Signature);
+        var xboxSignature = Markup.Escape(xboxRec.Signature);
+        var convertedSignature = Markup.Escape(convertedRec.Signature);
+        var pcSignature = Markup.Escape(pcRec.Signature);
+        var occurrenceSuffix = occurrence is null ? string.Empty : $" ({Markup.Escape(occurrence)})";
+        if (schemaRecordType is null)
+        {
+            AnsiConsole.MarkupLine(
+                $"[bold yellow]=== FormID: 0x{xboxRec.FormId:X8}{occurrenceSuffix}  {XboxLabel}: {xboxSignature}  " +
+                $"Converted: {convertedSignature}  PC Ref: {pcSignature} ===[/]");
+            AnsiConsole.MarkupLine(
+                $"[yellow]WARNING:[/] FormID 0x{xboxRec.FormId:X8} is not the same record type in all three " +
+                "files: the FormID was reused by a different record type, so these are different objects. " +
+                "Subrecords below are compared as raw bytes only (no schema hints, no semantic fields).");
+        }
+        else
+        {
+            AnsiConsole.MarkupLine(
+                $"[bold yellow]=== {xboxSignature} FormID: 0x{xboxRec.FormId:X8}{occurrenceSuffix} ===[/]");
+        }
+
         AnsiConsole.WriteLine();
 
         // Record header comparison
@@ -229,6 +301,18 @@ internal static class EsmDiffThreeWayCommand
             .AddColumn("[bold green]Converted[/]")
             .AddColumn("[bold cyan]PC Reference[/]")
             .AddColumn("[bold]Conv vs PC[/]");
+
+        if (schemaRecordType is null)
+        {
+            _ = headerTable.AddRow(
+                "Signature",
+                xboxSignature,
+                convertedSignature,
+                pcSignature,
+                string.Equals(convertedRec.Signature, pcRec.Signature, StringComparison.Ordinal)
+                    ? "[green]MATCH[/]"
+                    : "[red]DIFFER[/]");
+        }
 
         _ = headerTable.AddRow(
             "Offset",
@@ -246,9 +330,9 @@ internal static class EsmDiffThreeWayCommand
 
         _ = headerTable.AddRow(
             "Flags",
-            $"0x{xboxRec.Flags:X8}",
-            $"0x{convertedRec.Flags:X8}",
-            $"0x{pcRec.Flags:X8}",
+            EsmDiffRecordsCommand.FormatHeaderFlagsCell(games.Xbox, xboxRec.Signature, xboxRec.Flags),
+            EsmDiffRecordsCommand.FormatHeaderFlagsCell(games.Converted, convertedRec.Signature, convertedRec.Flags),
+            EsmDiffRecordsCommand.FormatHeaderFlagsCell(games.Pc, pcRec.Signature, pcRec.Flags),
             convertedRec.Flags == pcRec.Flags ? "[green]MATCH[/]" : "[yellow]DIFFER[/]");
 
         var xboxCompressed = (xboxRec.Flags & 0x00040000) != 0;
@@ -309,7 +393,7 @@ internal static class EsmDiffThreeWayCommand
                     var psub = i < pcList.Count ? pcList[i] : null;
 
                     var row = ThreeWayDiffHelpers.BuildThreeWaySubrecordRow(
-                        xboxRec.Signature, sig, xsub, csub, psub,
+                        schemaRecordType, sig, xsub, csub, psub,
                         xboxRec.Offset, convertedRec.Offset, pcRec.Offset,
                         maxBytes, showBytes, showSemantic,
                         resolver);
@@ -344,4 +428,7 @@ internal static class EsmDiffThreeWayCommand
             AnsiConsole.MarkupLine($"[red]Error parsing record data: {Markup.Escape(ex.Message)}[/]");
         }
     }
+
+    /// <summary>The detected game of each of the three files, used to name record-header flag bits.</summary>
+    private readonly record struct ThreeWayGames(BethesdaGame Xbox, BethesdaGame Converted, BethesdaGame Pc);
 }

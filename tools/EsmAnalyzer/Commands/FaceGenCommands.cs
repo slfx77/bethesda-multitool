@@ -74,7 +74,7 @@ public static class FaceGenCommands
         using (var accessor = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read))
         {
             var parser = new RecordParser(result.EsmRecords, result.FormIdMap, accessor, result.FileSize);
-            semanticResult = parser.ParseAll();
+            semanticResult = parser.ParseAll(cancellationToken: cancellationToken);
         }
 
         // Phase 3: Find NPC

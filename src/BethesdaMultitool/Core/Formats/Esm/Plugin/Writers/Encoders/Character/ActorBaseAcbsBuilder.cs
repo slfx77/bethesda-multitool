@@ -5,11 +5,8 @@ using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 namespace BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Character;
 
 /// <summary>
-///     Builds ACBS (24 bytes: ACTOR_BASE_DATA) subrecord bytes for NPC and CREA encoders.
-///     Both record types share the same ACBS schema and the same flag-policy fixups —
-///     consolidated here so both encoders get the same behavior. Templated creatures
-///     emitted without the UseTemplate (0x40) bit show up in-game with per-spawn
-///     numeric suffixes.
+///     Builds the FO3/FNV 24-byte ACBS payload for NPC_ and CREA encoders.
+///     Numeric layout is shared; flag policy is record-specific.
 /// </summary>
 /// <remarks>
 ///     ACBS layout (24 bytes): uint32 Flags(0) + uint16 FatigueBase(4) + uint16 BarterGold(6) +
@@ -34,31 +31,11 @@ internal static class ActorBaseAcbsBuilder
         };
 
     /// <summary>
-    ///     Serialize an <see cref="ActorBaseSubrecord" /> into the 24-byte ACBS payload,
-    ///     applying three flag-policy fixups the FNV engine requires:
+    /// Serialize FO3/FNV ACBS. NPC AutoCalc is 0x10 and UseTemplate is 0x100.
+    /// CREA 0x10/0x20/0x40 are Swims/Flies/Walks: preserve all creature flag bits,
+    /// including 0x100, whose write policy is not established by the generic SDK enum.
+    /// TemplateFlags remain a separate field. Preserve the existing zero-speed default.
     /// </summary>
-    /// <remarks>
-    ///     ACBS Flags bits (per FlagRegistry.ActorBaseFlags / fopdoc):
-    ///     0x01=Female, 0x02=Essential, 0x04=IsCharGenFacePreset, 0x08=Respawn,
-    ///     0x10=AutoCalcStats, 0x20=PCLevelMult, 0x40=UseTemplate,
-    ///     0x80=NoLowLevelProcessing, etc.
-    ///     <para>
-    ///         <c>forceAutoCalc</c> sets bit 0x10 so the engine derives HP/AP from
-    ///         Level + Class + SPECIAL instead of trusting the captured runtime Flags. DMP
-    ///         captures often clear AutoCalc once the runtime computed stats, so re-asserting
-    ///         it on emission keeps the engine path correct. DO NOT OR in 0x01 — that's
-    ///         Female (NOT Biped, despite an earlier spec misreading).
-    ///     </para>
-    ///     <para>
-    ///         <c>0x40 (UseTemplate)</c> must be set whenever TemplateFlags is nonzero —
-    ///         without it the engine treats the actor as a "templated instance" and appends
-    ///         a per-spawn numeric suffix to the display name (e.g. "Ulysses (20755)" for
-    ///         NPCs, "Speedy (20755)" for CREAs).
-    ///     </para>
-    ///     <para>
-    ///         <c>SpeedMultiplier</c> is clamped to 100 when zero — the FNV engine default.
-    ///     </para>
-    /// </remarks>
     public static byte[] Build(
         string recordType,
         ActorBaseSubrecord s,
@@ -66,14 +43,14 @@ internal static class ActorBaseAcbsBuilder
         ushort extraTemplateFlags = 0)
     {
         var flags = s.Flags;
-        if (forceAutoCalc)
+        if (recordType == "NPC_" && forceAutoCalc)
         {
             flags |= 0x00000010u;
         }
 
-        if (extraTemplateFlags != 0 || s.TemplateFlags != 0)
+        if (recordType == "NPC_" && (extraTemplateFlags != 0 || s.TemplateFlags != 0))
         {
-            flags |= 0x00000040u;
+            flags |= 0x00000100u;
         }
 
         var mutated = s with
@@ -133,16 +110,13 @@ internal static class ActorBaseAcbsBuilder
     }
 
     /// <summary>
-    ///     Build a default ACBS payload (24 bytes) for actors whose model has no parsed
-    ///     ACBS data. FNV engine defaults: SpeedMult=100, Level=1, others zero.
-    ///     <c>UseTemplate (0x40)</c> is set when <paramref name="extraTemplateFlags" /> is
-    ///     nonzero so the engine treats the record as a proper templated unique actor,
-    ///     not a per-spawn numeric-suffix instance.
+    /// Build missing-stats defaults: Level=1, SpeedMult=100. Only NPC_ receives
+    /// UseTemplate (0x100) when extra template fields are requested.
     /// </summary>
     public static byte[] BuildDefault(string recordType, ushort extraTemplateFlags = 0)
     {
         var defaults = new ActorBaseSubrecord(
-            extraTemplateFlags != 0 ? 0x00000040u : 0u,
+            recordType == "NPC_" && extraTemplateFlags != 0 ? 0x00000100u : 0u,
             0,
             0,
             1,

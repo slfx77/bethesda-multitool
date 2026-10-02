@@ -255,6 +255,16 @@ internal static class AssetPathRules
         return trimmed.ToLowerInvariant();
     }
 
+    /// <summary>Gets the final component of a game virtual path independently of host filesystem separators.</summary>
+    /// <param name="virtualPath">A game path using either slash form, rather than a physical archive path.</param>
+    /// <returns>The original final component, or an empty string for a trailing separator.</returns>
+    internal static string GetVirtualFileName(string virtualPath)
+    {
+        ArgumentNullException.ThrowIfNull(virtualPath);
+        var separator = virtualPath.AsSpan().LastIndexOfAny('\\', '/');
+        return virtualPath[(separator + 1)..];
+    }
+
     /// <summary>
     ///     True for engine-global character assets shared across all actors (any .kf under
     ///     meshes\characters\, or a skeleton*.nif under the _male/_female/_1stperson folders).
@@ -277,7 +287,7 @@ internal static class AssetPathRules
             return false;
         }
 
-        var fileName = Path.GetFileNameWithoutExtension(normalizedPath);
+        var fileName = Path.GetFileNameWithoutExtension(GetVirtualFileName(normalizedPath));
         if (!fileName.StartsWith("skeleton", StringComparison.OrdinalIgnoreCase))
         {
             return false;
@@ -343,7 +353,7 @@ internal static class AssetPathRules
     /// </summary>
     public static string ComputeLooseBasename(string fileNameWithExtension)
     {
-        var withoutExt = Path.GetFileNameWithoutExtension(fileNameWithExtension);
+        var withoutExt = Path.GetFileNameWithoutExtension(GetVirtualFileName(fileNameWithExtension));
         if (string.IsNullOrEmpty(withoutExt))
         {
             return string.Empty;

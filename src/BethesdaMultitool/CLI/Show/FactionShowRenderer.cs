@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class FactionShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var faction =
             records.Factions.FirstOrDefault(r =>
@@ -17,7 +17,7 @@ internal sealed class FactionShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]   0x{faction.FormId:X8}",
@@ -33,7 +33,7 @@ internal sealed class FactionShowRenderer : IRecordDisplayRenderer
             foreach (var rel in faction.Relations)
             {
                 lines.Add(
-                    $"  {resolver.FormatWithEditorId(rel.FactionFormId)}: {rel.Modifier} (combat: 0x{rel.CombatFlags:X})");
+                    $"  {ShowHelpers.Ref(resolver, rel.FactionFormId)}: {rel.Modifier} (combat: 0x{rel.CombatFlags:X})");
             }
         }
 
@@ -75,7 +75,8 @@ internal sealed class FactionShowRenderer : IRecordDisplayRenderer
             lines.Add($"[bold]Members ({members.Count}):[/]");
             foreach (var (type, label, rank) in members.OrderBy(m => m.type).ThenBy(m => m.label))
             {
-                lines.Add($"  [grey]{type}[/] {label} (rank {rank})");
+                // The label stays raw until here so members still sort by their plain text.
+                lines.Add($"  [grey]{type}[/] {Markup.Escape(label)} (rank {rank})");
             }
         }
 
@@ -84,7 +85,7 @@ internal sealed class FactionShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]FACT[/] {Markup.Escape(faction.EditorId ?? "")} — {Markup.Escape(faction.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

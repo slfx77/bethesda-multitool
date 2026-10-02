@@ -14,7 +14,8 @@ namespace BethesdaMultitool.CLI.Show;
 /// </summary>
 internal sealed class ProfileShowRenderer : IRecordDisplayRenderer
 {
-    public bool TryShow(RecordCollection records, FormIdResolver resolver, uint? formId, string? editorId)
+    public bool TryShow(RecordCollection records, FormIdResolver resolver, uint? formId, string? editorId,
+        ShowRenderContext context)
     {
         var record = records.GenericRecords.FirstOrDefault(r =>
             r.DecodedTree is { Count: > 0 } &&
@@ -30,7 +31,7 @@ internal sealed class ProfileShowRenderer : IRecordDisplayRenderer
 
         var model = profile.Build(
             record.FormId, record.EditorId, record.FullName, record.DecodedTree, records.Game, resolver, records);
-        SharedRecordDetailShowRenderer.Render(model);
+        SharedRecordDetailShowRenderer.Render(context.Console, model, context.FullText);
         return true;
     }
 }

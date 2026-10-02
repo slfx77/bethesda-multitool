@@ -8,7 +8,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class ExplosionShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var expl = records.Explosions.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, e => e.FormId, e => e.EditorId));
@@ -17,7 +17,7 @@ internal sealed class ExplosionShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]     0x{expl.FormId:X8}",
@@ -41,7 +41,7 @@ internal sealed class ExplosionShowRenderer : IRecordDisplayRenderer
         {
             if (fid != 0)
             {
-                lines.Add($"  [cyan]{label}:[/] {resolver.FormatWithEditorId(fid)}");
+                lines.Add($"  [cyan]{label}:[/] {ShowHelpers.Ref(resolver, fid)}");
             }
         }
 
@@ -65,7 +65,7 @@ internal sealed class ExplosionShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]EXPL[/] {Markup.Escape(expl.EditorId ?? "")} — {Markup.Escape(expl.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

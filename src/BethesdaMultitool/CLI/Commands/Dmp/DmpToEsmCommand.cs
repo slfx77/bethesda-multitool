@@ -77,6 +77,11 @@ public static class DmpToEsmCommand
                           "audio/lip requests for INFO records present in the ESM/DMP. Use with " +
                           "--pack-assets and a --secondary-data folder containing the audio."
         };
+        var includeUnboundAudioOpt = new Option<bool>("--include-unbound-audio")
+        {
+            Description = "Pack selected dialogue CSV audio without an INFO match, preserving its original voice path. " +
+                          "Use with --dialogue-audio-csv and --pack-assets."
+        };
         var overrideVanillaOpt = new Option<bool>("--override-vanilla")
         {
             Description = "When resolving assets, consult --secondary-data folders BEFORE the PC Data " +
@@ -145,6 +150,7 @@ public static class DmpToEsmCommand
         command.Options.Add(packAssetsOpt);
         command.Options.Add(writeMissingListOpt);
         command.Options.Add(dialogueAudioCsvOpt);
+        command.Options.Add(includeUnboundAudioOpt);
         command.Options.Add(overrideVanillaOpt);
         command.Options.Add(disableRefrEditorIdRemapOpt);
         command.Options.Add(replaceCellTemporariesOpt);
@@ -237,6 +243,7 @@ public static class DmpToEsmCommand
             var packAssets = parseResult.GetValue(packAssetsOpt);
             var writeMissingList = parseResult.GetValue(writeMissingListOpt);
             var dialogueAudioCsv = parseResult.GetValue(dialogueAudioCsvOpt) ?? [];
+            var includeUnboundAudio = parseResult.GetValue(includeUnboundAudioOpt);
             var overrideVanilla = parseResult.GetValue(overrideVanillaOpt);
             var disableRefrEditorIdRemap = parseResult.GetValue(disableRefrEditorIdRemapOpt);
             var replaceCellTemporaries = parseResult.GetValue(replaceCellTemporariesOpt);
@@ -259,7 +266,7 @@ public static class DmpToEsmCommand
                 parseResult.GetValue(diagnosticRetainMasterSubrecordsOpt) ?? []);
 
             await RunAsync(dmp, pcEsm, output, author, description, compress, validate, verbose, eventLogJsonl,
-                secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, overrideVanilla,
+                secondaryData, secondaryData360, packAssets, writeMissingList, dialogueAudioCsv, includeUnboundAudio, overrideVanilla,
                 disableRefrEditorIdRemap, replaceCellTemporaries, recoverGaps, emitMasterCellNavmAugmentation,
                 recoverLeveledSpawns, inferUnresolvedCells, diagSkipCellNavm, diagSkipCellNewRefs, cellAuthorityPath,
                 skipWorldspaceFormIds, skipRecordTypes, diagnosticKeepMasterFormIds,
@@ -284,6 +291,7 @@ public static class DmpToEsmCommand
         string? packAssetsBsaPath,
         bool writeMissingList,
         string[] dialogueAudioCsvPaths,
+        bool includeUnboundAudio,
         bool overrideVanilla,
         bool disableRefrEditorIdRemap,
         bool replaceCellTemporaries,
@@ -569,7 +577,7 @@ public static class DmpToEsmCommand
                 await RunAssetPackingAsync(
                     outputPath, dmpPath, pcEsmPath,
                     secondaryDataFolders, secondaryDataFolders360,
-                    packAssetsBsaPath, verbose, writeMissingList, dialogueAudioCsvPaths,
+                    packAssetsBsaPath, verbose, writeMissingList, dialogueAudioCsvPaths, includeUnboundAudio,
                     overrideVanilla, result.NewRecordSourceToAllocated,
                     result.EmittedDialogueAudioBindings, sink, ct);
             }
@@ -830,6 +838,7 @@ public static class DmpToEsmCommand
         bool verbose,
         bool writeMissingList,
         string[] dialogueAudioCsvPaths,
+        bool includeUnboundAudio,
         bool overrideVanilla,
         IReadOnlyDictionary<uint, uint> newRecordSourceToAllocatedFormIds,
         IReadOnlyList<EmittedDialogueAudioBinding> emittedDialogueAudioBindings,
@@ -869,6 +878,7 @@ public static class DmpToEsmCommand
             VerbosePerAsset = verbose,
             WriteAuditFile = writeMissingList,
             DialogueAudioCsvPaths = dialogueAudioCsvPaths,
+            IncludeUnboundDialogueAudio = includeUnboundAudio,
             OverrideVanillaBaseline = overrideVanilla,
             NewRecordSourceToAllocatedFormIds = newRecordSourceToAllocatedFormIds,
             EmittedDialogueAudioBindings = emittedDialogueAudioBindings

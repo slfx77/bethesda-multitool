@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Presentation;
 using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
 using BethesdaMultitool.Core.Games;
@@ -173,10 +174,35 @@ internal static class GeckDialogueWriter
         return sb.ToString();
     }
 
-    internal static void AppendDialogueSection(StringBuilder sb, List<DialogueRecord> dialogues,
-        FormIdResolver resolver)
+    /// <summary>
+    ///     Appends the Dialogue Responses section. Every legacy line keeps its place; after each INFO's legacy
+    ///     lines come its serialized DATA fields (<c>Data:</c>, named from the game's generated schema), its
+    ///     conditions (<c>Conditions (n):</c>, through the shared <see cref="ConditionDescriber" />) and its
+    ///     result-script slots (<c>Result Scripts:</c>, Begin/End with provenance-labeled source and the
+    ///     separately labeled BethesdaMultitool decompilation). Nothing is truncated.
+    /// </summary>
+    /// <param name="sb">The report being built.</param>
+    /// <param name="dialogues">The INFO records.</param>
+    /// <param name="resolver">EditorID/display-name source.</param>
+    /// <param name="conditions">
+    ///     Condition context (game and quest-variable names); null assumes <see cref="GameProfiles.DefaultGame" />
+    ///     and says so.
+    /// </param>
+    /// <param name="isMemoryDumpInput">True when the records came from a memory dump (see <see cref="ScriptSourceProvenance" />).</param>
+    internal static void AppendDialogueSection(
+        StringBuilder sb,
+        List<DialogueRecord> dialogues,
+        FormIdResolver resolver,
+        ConditionDisplayContext? conditions = null,
+        bool isMemoryDumpInput = false)
     {
+        conditions ??= ConditionDisplayContext.ForResolver(resolver, GameProfiles.DefaultGame, gameAssumed: true);
         GeckReportHelpers.AppendSectionHeader(sb, $"Dialogue Responses ({dialogues.Count})");
+        if (conditions.GameAssumed && dialogues.Any(d => d.Conditions.Count > 0 || d.SerializedInfoData is not null))
+        {
+            sb.AppendLine(
+                $"Conditions:     function names and DATA fields assume {conditions.Game} (not detected from the input)");
+        }
 
         // Group by quest if possible
         var grouped = dialogues
@@ -200,7 +226,7 @@ internal static class GeckDialogueWriter
 
                 if (dialogue.TopicFormId.HasValue)
                 {
-                    sb.AppendLine($"Topic:          {resolver.FormatFull(dialogue.TopicFormId.Value)}");
+                    sb.AppendLine($"Topic:          {DialogueTopicLabels.FormatReference(dialogue.TopicFormId.Value, resolver)}");
                 }
 
                 if (dialogue.QuestFormId.HasValue)
@@ -263,6 +289,8 @@ internal static class GeckDialogueWriter
                         }
                     }
                 }
+
+                AppendInfoDetail(sb, dialogue, resolver, conditions, isMemoryDumpInput);
             }
         }
     }
@@ -270,12 +298,229 @@ internal static class GeckDialogueWriter
     /// <summary>
     ///     Generate a report for Dialogue only.
     /// </summary>
-    internal static string GenerateDialogueReport(List<DialogueRecord> dialogues,
-        FormIdResolver? resolver = null)
+    internal static string GenerateDialogueReport(
+        List<DialogueRecord> dialogues,
+        FormIdResolver? resolver = null,
+        ConditionDisplayContext? conditions = null,
+        bool isMemoryDumpInput = false)
     {
         var sb = new StringBuilder();
-        AppendDialogueSection(sb, dialogues, resolver ?? FormIdResolver.Empty);
+        AppendDialogueSection(sb, dialogues, resolver ?? conditions?.Resolver ?? FormIdResolver.Empty, conditions,
+            isMemoryDumpInput);
         return sb.ToString();
+    }
+
+    /// <summary>
+    ///     The additive per-INFO lines of dialogue_report.txt: <c>Data:</c> (when a DATA subrecord was parsed),
+    ///     <c>Conditions (n):</c> with the GECK-convention grouping, and <c>Result Scripts:</c> with one entry per
+    ///     serialized slot, empty SCHR-only slots included.
+    /// </summary>
+    private static void AppendInfoDetail(
+        StringBuilder sb,
+        DialogueRecord dialogue,
+        FormIdResolver resolver,
+        ConditionDisplayContext conditions,
+        bool isMemoryDumpInput)
+    {
+        var dataLine = dialogue.SerializedInfoData is { } data
+            ? string.Join("; ", DialogueInfoDetailBuilder.DescribeSerializedInfoData(data, conditions.Game)
+                .Select(pair => $"{pair.Label}: {pair.Value}"))
+            : null;
+        var descriptions = ConditionDescriber.DescribeAll(dialogue.Conditions, conditions);
+        var slots = ResolveResultScriptSlots(dialogue);
+        var hasScripts = slots.Count > 0 || dialogue.HasResultScript;
+        if (dataLine is null && descriptions.Count == 0 && !hasScripts)
+        {
+            return;
+        }
+
+        sb.AppendLine();
+        if (dataLine is not null)
+        {
+            sb.AppendLine($"Data:           {dataLine}");
+        }
+
+        if (descriptions.Count > 0)
+        {
+            sb.AppendLine($"Conditions ({descriptions.Count}):");
+            foreach (var description in descriptions)
+            {
+                sb.AppendLine($"  {description.Index}: {ConditionTextFormatter.FormatLine(description)}");
+            }
+
+            if (ConditionTextFormatter.FormatLogicSummary(descriptions) is { } grouping)
+            {
+                sb.AppendLine($"Grouping:       {grouping}");
+            }
+        }
+
+        if (!hasScripts)
+        {
+            return;
+        }
+
+        sb.AppendLine("Result Scripts:");
+        if (slots.Count == 0)
+        {
+            sb.AppendLine(
+                $"  {DialogueInfoDetailBuilder.NoCompiledCode}: an SCHR header is present, but no block carried SCDA, " +
+                "SCTX, locals or references");
+            return;
+        }
+
+        foreach (var slot in slots)
+        {
+            GeckTextContentWriter.AppendEmbeddedScript(sb, "  ",
+                DescribeResultScriptSlot(slot, resolver, isMemoryDumpInput));
+        }
+    }
+
+    /// <summary>
+    ///     Pairs each result-script slot with its script, as the INFO <c>show</c> panel does: the parser's block
+    ///     list names every slot, empty SCHR-only ones included, when its script indices are exactly
+    ///     0..ResultScripts.Count-1; otherwise the scripts are listed alone.
+    /// </summary>
+    private static List<ResultScriptSlot> ResolveResultScriptSlots(DialogueRecord info)
+    {
+        var blocks = info.ResultScriptBlocks;
+        if (blocks.Count > 0 && BlocksDescribeScripts(blocks, info.ResultScripts.Count))
+        {
+            return blocks
+                .Select(block => new ResultScriptSlot(
+                    ResultScriptSlotLabel(block.Slot, blocks.Count, block.HasNextSeparator),
+                    block.ResultScriptIndex is { } index ? info.ResultScripts[index] : null,
+                    block))
+                .ToList();
+        }
+
+        return info.ResultScripts
+            .Select((script, index) => new ResultScriptSlot(
+                ResultScriptSlotLabel(index, info.ResultScripts.Count, script.HasNextSeparator),
+                script,
+                null))
+            .ToList();
+    }
+
+    private static bool BlocksDescribeScripts(IReadOnlyList<InfoResultScriptBlock> blocks, int scriptCount)
+    {
+        var expected = 0;
+        foreach (var block in blocks)
+        {
+            if (block.ResultScriptIndex is not { } index)
+            {
+                continue;
+            }
+
+            if (index != expected)
+            {
+                return false;
+            }
+
+            expected++;
+        }
+
+        return expected == scriptCount;
+    }
+
+    /// <summary>The slot heading: a lone block with no NEXT is "Result Script"; otherwise Begin, then End.</summary>
+    private static string ResultScriptSlotLabel(int index, int count, bool hasNextSeparator)
+    {
+        if (count == 1 && !hasNextSeparator)
+        {
+            return "Result Script";
+        }
+
+        return index switch
+        {
+            0 => "Result Script (Begin)",
+            1 => "Result Script (End)",
+            _ => $"Result Script (block {index + 1}, beyond Begin/End)"
+        };
+    }
+
+    private static GeckTextContentWriter.EmbeddedScriptText DescribeResultScriptSlot(
+        ResultScriptSlot slot,
+        FormIdResolver resolver,
+        bool isMemoryDumpInput)
+    {
+        const string NoCompiledCode = DialogueInfoDetailBuilder.NoCompiledCode;
+        if (slot.Script is not { } script)
+        {
+            var summary = slot.Block switch
+            {
+                { DeclaredCompiledSize: 0 } =>
+                    $"{NoCompiledCode} (the SCHR header declares 0 compiled bytes; the block has no SCDA, SCTX, " +
+                    "locals or references)",
+                { HasSchrHeader: true } =>
+                    $"{NoCompiledCode} (SCHR header only; the block has no SCDA, SCTX, locals or references)",
+                _ => $"{NoCompiledCode} (the block has no SCDA, SCTX, locals or references)"
+            };
+            return new GeckTextContentWriter.EmbeddedScriptText(
+                slot.Label,
+                summary,
+                ScriptSourceProvenance.Classify((string?)null, ScriptSourceTextOrigin.None, isMemoryDumpInput),
+                null,
+                null,
+                null,
+                [],
+                [],
+                null,
+                []);
+        }
+
+        var dumpInput = isMemoryDumpInput || script.IsDmpDerived;
+        var classification = ScriptSourceProvenance.Classify(script, isMemoryDumpInput);
+        var compiledLength = script.CompiledData?.Length ?? 0;
+        string scriptSummary;
+        if (compiledLength > 0)
+        {
+            scriptSummary = $"{compiledLength} bytes of compiled code (SCDA)";
+            if (slot.Block?.DeclaredCompiledSize is { } declared && declared != (uint)compiledLength)
+            {
+                scriptSummary += $"; the SCHR header declares {declared}";
+            }
+        }
+        else if (!string.IsNullOrEmpty(script.SourceText))
+        {
+            scriptSummary = $"{NoCompiledCode} (the block holds source text but no SCDA)";
+        }
+        else if (script.Variables.Count > 0 || script.ReferencedObjects.Count > 0)
+        {
+            scriptSummary = $"{NoCompiledCode} (the block holds locals or references but no SCDA or source text)";
+        }
+        else if (script.WithheldSourceReason is not null)
+        {
+            scriptSummary = $"{NoCompiledCode}; captured source was withheld by validation";
+        }
+        else
+        {
+            scriptSummary = $"{NoCompiledCode} (the block holds no SCDA or source text)";
+        }
+
+        string? bundleNote = null;
+        if (script.IsIncompleteExecutableBundle)
+        {
+            const string Disagreement =
+                "the SCHR/SCDA/local/reference bundle is structurally inconsistent or failed emission safety validation; " +
+                "this is not a validated, runnable script";
+            bundleNote = dumpInput
+                ? $"incomplete or unsafe in this capture: {Disagreement}"
+                : $"incomplete: {Disagreement}";
+        }
+
+        return new GeckTextContentWriter.EmbeddedScriptText(
+            slot.Label,
+            scriptSummary,
+            classification,
+            classification.HasSourceText ? script.SourceText : null,
+            string.IsNullOrEmpty(script.DecompiledText) ? null : script.DecompiledText,
+            compiledLength > 0 ? (script.IsBigEndianBytecode ? "Big-Endian" : "Little-Endian") : null,
+            script.Variables.OrderBy(variable => variable.Index).ToArray(),
+            script.ReferencedObjects
+                .Select(reference => GeckScriptWriter.FormatScriptReference(reference, script.Variables, resolver))
+                .ToArray(),
+            bundleNote,
+            script.ReferencedObjects);
     }
 
     /// <summary>
@@ -298,6 +543,12 @@ internal static class GeckDialogueWriter
         sb.AppendLine($"  Quests:     {totalQuests:N0}");
         sb.AppendLine($"  Topics:     {totalTopics:N0}");
         sb.AppendLine($"  Responses:  {totalInfos:N0}");
+        if (tree.Edges.Count > 0)
+        {
+            sb.AppendLine("  View: selected static records; condition outcomes and engine order are unavailable.");
+            sb.AppendLine($"  Links: {tree.Edges.Count:N0}; unresolved: {tree.Edges.Count(e => e.Status == "unresolved"):N0}");
+            sb.AppendLine($"  Ordering issues: {tree.OrderingIssues.Count:N0} (see dialogue_ordering.csv)");
+        }
         sb.AppendLine();
 
         // One visited set for the WHOLE report: each topic's full chain renders exactly once
@@ -526,33 +777,41 @@ internal static class GeckDialogueWriter
     /// <summary>
     ///     Delegates to <see cref="GeckTextContentWriter" />.
     /// </summary>
-    internal static void AppendTerminalsSection(StringBuilder sb, List<TerminalRecord> terminals)
+    internal static void AppendTerminalsSection(
+        StringBuilder sb,
+        List<TerminalRecord> terminals,
+        FormIdResolver resolver,
+        ConditionDisplayContext? conditions = null,
+        bool isMemoryDumpInput = false)
     {
-        GeckTextContentWriter.AppendTerminalsSection(sb, terminals);
+        GeckTextContentWriter.AppendTerminalsSection(sb, terminals, resolver, conditions, isMemoryDumpInput);
     }
 
     /// <summary>
     ///     Generate a report for Terminals only.
     /// </summary>
-    internal static string GenerateTerminalsReport(List<TerminalRecord> terminals,
-        Dictionary<uint, string>? lookup = null)
+    internal static string GenerateTerminalsReport(
+        List<TerminalRecord> terminals,
+        FormIdResolver? resolver = null,
+        ConditionDisplayContext? conditions = null,
+        bool isMemoryDumpInput = false)
     {
-        return GeckTextContentWriter.GenerateTerminalsReport(terminals, lookup);
+        return GeckTextContentWriter.GenerateTerminalsReport(terminals, resolver, conditions, isMemoryDumpInput);
     }
 
     /// <summary>
     ///     Delegates to <see cref="GeckTextContentWriter" />.
     /// </summary>
     internal static void AppendMessagesSection(StringBuilder sb, List<MessageRecord> messages,
-        FormIdResolver resolver)
+        FormIdResolver resolver, ConditionDisplayContext? conditions = null)
     {
-        GeckTextContentWriter.AppendMessagesSection(sb, messages, resolver);
+        GeckTextContentWriter.AppendMessagesSection(sb, messages, resolver, conditions);
     }
 
     internal static string GenerateMessagesReport(List<MessageRecord> messages,
-        FormIdResolver? resolver = null)
+        FormIdResolver? resolver = null, ConditionDisplayContext? conditions = null)
     {
-        return GeckTextContentWriter.GenerateMessagesReport(messages, resolver);
+        return GeckTextContentWriter.GenerateMessagesReport(messages, resolver, conditions);
     }
 
     /// <summary>Build a structured dialog topic report from a <see cref="DialogTopicRecord" />.</summary>
@@ -637,7 +896,16 @@ internal static class GeckDialogueWriter
     }
 
     /// <summary>Build a structured dialogue report from a <see cref="DialogueRecord" />.</summary>
-    internal static RecordReport BuildDialogueReport(DialogueRecord dialogue, FormIdResolver resolver)
+    /// <param name="dialogue">The INFO record.</param>
+    /// <param name="resolver">EditorID/display-name source.</param>
+    /// <param name="conditions">
+    ///     Condition context (game and quest-variable names). Null assumes <see cref="GameProfiles.DefaultGame" />,
+    ///     the game the cross-dump comparison (this report's caller) reads.
+    /// </param>
+    internal static RecordReport BuildDialogueReport(
+        DialogueRecord dialogue,
+        FormIdResolver resolver,
+        ConditionDisplayContext? conditions = null)
     {
         var sections = new List<ReportSection>();
 
@@ -697,23 +965,32 @@ internal static class GeckDialogueWriter
             sections.Add(new ReportSection("Flags", flagFields));
         }
 
-        // Conditions — human-readable format using the exact FNV raw condition-callback table.
+        // Conditions — the shared describer, so a condition reads the same here as in show, the reports
+        // and the package listing (function table of the context's game, Run On always stated).
         if (dialogue.Conditions.Count > 0)
         {
+            var context = conditions ??
+                          ConditionDisplayContext.ForResolver(resolver, GameProfiles.DefaultGame, gameAssumed: true);
+            var descriptions = ConditionDescriber.DescribeAll(dialogue.Conditions, context);
             var condFields = new List<ReportField>();
-            for (var i = 0; i < dialogue.Conditions.Count; i++)
+            foreach (var description in descriptions)
             {
-                var c = dialogue.Conditions[i];
-                var display = FormatConditionHumanReadable(c, resolver);
                 condFields.Add(new ReportField(
-                    $"Condition {i + 1}{(c.IsOr ? " (OR)" : "")}",
-                    ReportValue.String(display)));
+                    $"Condition {description.Index}{(description.Raw.IsOr ? " (OR)" : "")}",
+                    ReportValue.String(ConditionTextFormatter.FormatLine(description, includeConnector: false))));
+            }
+
+            if (ConditionTextFormatter.FormatLogicSummary(descriptions) is { } grouping)
+            {
+                sections.Add(new ReportSection("Condition Grouping",
+                    [new ReportField("Grouping", ReportValue.String(grouping))]));
             }
 
             sections.Add(new ReportSection("Conditions", condFields));
         }
 
-        // Result Scripts — source or decompiled text
+        // Result Scripts — source or decompiled text. A BethesdaMultitool decompilation is always labeled as
+        // one, whether it stands in for missing SCTX or is the only text there is.
         if (dialogue.ResultScripts.Count > 0)
         {
             var scriptFields = new List<ReportField>();
@@ -721,10 +998,16 @@ internal static class GeckDialogueWriter
             {
                 var script = dialogue.ResultScripts[i];
                 var label = dialogue.ResultScripts.Count > 1 ? $"Script {i + 1}" : "Result Script";
-                if (!string.IsNullOrEmpty(script.SourceText))
-                    scriptFields.Add(new ReportField(label, ReportValue.String(script.SourceText)));
+                var classification = ScriptSourceProvenance.Classify(script, false);
+                if (classification.HasSourceText)
+                    scriptFields.Add(new ReportField(
+                        classification.IsReconstructed
+                            ? $"{label} (reconstruction)"
+                            : label,
+                        ReportValue.String(script.SourceText!)));
                 else if (!string.IsNullOrEmpty(script.DecompiledText))
-                    scriptFields.Add(new ReportField($"{label} (decompiled)",
+                    scriptFields.Add(new ReportField(
+                        $"{label} (reconstruction)",
                         ReportValue.String(script.DecompiledText)));
             }
 
@@ -765,51 +1048,9 @@ internal static class GeckDialogueWriter
         return new RecordReport("Dialogue", dialogue.FormId, dialogue.EditorId, null, sections);
     }
 
-    /// <summary>
-    ///     Format an FNV-targeted GECK dialogue condition as a human-readable expression using the
-    ///     extracted FNV retail callback table for raw-index function name resolution.
-    /// </summary>
-    private static string FormatConditionHumanReadable(DialogueCondition c, FormIdResolver resolver)
-    {
-        var function = ScriptFunctionTables.For(BethesdaGame.FalloutNewVegas)
-            .GetConditionFunction(c.FunctionIndex);
-        var functionName = function?.Name ?? $"Func{c.FunctionIndex}";
-
-        var paramParts = new List<string>();
-        if (c.Parameter1 != 0)
-        {
-            // Try to resolve as FormID, fall back to numeric
-            var resolved = resolver.GetEditorId(c.Parameter1);
-            paramParts.Add(!string.IsNullOrEmpty(resolved) ? resolved : c.Parameter1.ToString());
-        }
-
-        if (c.Parameter2 != 0)
-            paramParts.Add(c.Parameter2.ToString());
-
-        var paramStr = paramParts.Count > 0 ? $"({string.Join(", ", paramParts)})" : "()";
-
-        var qualifiers = new List<string>();
-        if (DialogueConditionRunOnPolicy.ShouldDisplay(c, BethesdaGame.FalloutNewVegas))
-        {
-            qualifiers.Add($"Run On: {DialogueConditionRunOnPolicy.Format(c, BethesdaGame.FalloutNewVegas)}");
-        }
-
-        if (DialogueConditionReferencePolicy.TryGetSemanticReference(
-                c,
-                BethesdaGame.FalloutNewVegas,
-                out var reference))
-        {
-            var refName = resolver.GetEditorId(reference);
-            qualifiers.Add(!string.IsNullOrEmpty(refName)
-                ? $"Ref: {refName}"
-                : $"Ref: 0x{reference:X8}");
-        }
-
-        var qualStr = qualifiers.Count > 0 ? $" [{string.Join("; ", qualifiers)}]" : "";
-        var comparison = c.UsesGlobalComparison
-            ? $"GLOB {resolver.FormatFull(c.ComparisonGlobalFormId)}"
-            : c.ComparisonValue.ToString("G");
-
-        return $"{functionName}{paramStr} {c.ComparisonOperator} {comparison}{qualStr}";
-    }
+    /// <summary>One result-script slot: its heading, its script (null for an empty block) and its block, if known.</summary>
+    private readonly record struct ResultScriptSlot(
+        string Label,
+        DialogueResultScript? Script,
+        InfoResultScriptBlock? Block);
 }

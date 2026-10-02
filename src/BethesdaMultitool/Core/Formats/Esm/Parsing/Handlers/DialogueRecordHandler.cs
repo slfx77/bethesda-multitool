@@ -441,31 +441,18 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
             currentStageConditions = new List<DialogueCondition>();
         }
 
-        // CTDA routing: pick the active scope's condition list, or null if the
-        // condition appears in an unscoped position (inside QOBJ but before QSTA — those
-        // would attach to the objective itself, which fopdoc doesn't define).
-        List<DialogueCondition>? ActiveConditionList()
+        var conditionScope = new QuestConditionScope();
+        List<DialogueCondition>? ActiveConditionList() => conditionScope.Current switch
         {
-            if (currentTargetFormId.HasValue)
-            {
-                return currentTargetConditions;
-            }
-
-            if (currentObjectiveIndex.HasValue)
-            {
-                return null;
-            }
-
-            if (currentStageIndex.HasValue)
-            {
-                return currentStageConditions;
-            }
-
-            return conditions;
-        }
+            QuestConditionScopeKind.Target => currentTargetConditions,
+            QuestConditionScopeKind.Objective => null,
+            QuestConditionScopeKind.Stage => currentStageConditions,
+            _ => conditions
+        };
 
         foreach (var sub in EsmSubrecordUtils.IterateSubrecords(data, dataSize, record.IsBigEndian))
         {
+            conditionScope.Advance(sub.Signature, sub.DataLength);
             var subData = data.AsSpan(sub.DataOffset, sub.DataLength);
             if (conditionStrings.TryConsume(sub.Signature, subData))
             {
@@ -746,6 +733,9 @@ internal sealed class DialogueRecordHandler(RecordParserContext context) : Recor
         for (var i = 0; i < topics.Count; i++)
         {
             var topic = topics[i];
+            // GREETING is shared by unrelated actors and quests. A child prompt/response is
+            // evidence about that INFO, never a name for every greeting in the capture.
+            if (DialogueTopicLabels.IsGreeting(topic.EditorId)) { continue; }
             if (!promptsByTopic.TryGetValue(topic.FormId, out var prompt) ||
                 string.IsNullOrWhiteSpace(prompt))
             {

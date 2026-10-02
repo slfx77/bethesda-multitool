@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class PerkShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var perk = records.Perks.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, p => p.FormId, p => p.EditorId));
@@ -16,7 +16,7 @@ internal sealed class PerkShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]      0x{perk.FormId:X8}",
@@ -27,6 +27,8 @@ internal sealed class PerkShowRenderer : IRecordDisplayRenderer
             $"[cyan]Playable:[/]    {perk.IsPlayable}",
             $"[cyan]Trait:[/]       {perk.IsTrait}"
         };
+
+        foreach (var issue in perk.RuntimeRecoveryIssues) { lines.Add($"[cyan]Runtime Recovery:[/] {Markup.Escape(issue)}"); }
 
         if (!string.IsNullOrEmpty(perk.Description))
         {
@@ -39,25 +41,14 @@ internal sealed class PerkShowRenderer : IRecordDisplayRenderer
         {
             lines.Add("");
             lines.Add("[bold]Entries:[/]");
-            foreach (var entry in perk.Entries)
+            for (var entryIndex = 0; entryIndex < perk.Entries.Count; entryIndex++)
             {
-                var entryLine = $"  {Markup.Escape(entry.TypeName)}: Rank {entry.Rank}, Priority {entry.Priority}";
-                if (entry.AbilityFormId is > 0)
+                var entry = perk.Entries[entryIndex];
+                lines.Add($"  Entry [[{entryIndex}]]");
+                foreach (var field in PerkEffectProjection.Fields(entry, resolver).Concat(PerkEffectProjection.Conditions(entry)))
                 {
-                    entryLine += $" \u2192 {resolver.FormatWithEditorId(entry.AbilityFormId.Value)}";
+                    lines.Add($"    {Markup.Escape(field.Key)}: {Markup.Escape(field.Value)}");
                 }
-
-                if (entry.FunctionTypeName != null)
-                {
-                    entryLine += $", {Markup.Escape(entry.FunctionTypeName)}";
-                }
-
-                if (!string.IsNullOrEmpty(entry.EffectData))
-                {
-                    entryLine += $", Data {Markup.Escape(entry.EffectData)}";
-                }
-
-                lines.Add(entryLine);
             }
         }
 
@@ -72,7 +63,11 @@ internal sealed class PerkShowRenderer : IRecordDisplayRenderer
                                     ? resolver.FormatWithEditorId(condition.Parameter1FormId.Value)
                                     : condition.Parameter1.ToString());
                 lines.Add(
-                    $"  {Markup.Escape(condition.FunctionName)}({Markup.Escape(parameter)}) {condition.OperatorDisplay} {condition.ComparisonValue:G}");
+                    $"  {Markup.Escape(condition.FunctionName)}({Markup.Escape(parameter)}) {condition.OperatorDisplay} {PerkEffectProjection.Comparison(condition)}");
+                foreach (var field in PerkEffectProjection.ConditionFields(condition))
+                {
+                    lines.Add($"    {Markup.Escape(field.Key)}: {Markup.Escape(field.Value)}");
+                }
             }
         }
 
@@ -81,7 +76,7 @@ internal sealed class PerkShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]PERK[/] {Markup.Escape(perk.EditorId ?? "")} — {Markup.Escape(perk.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

@@ -58,6 +58,8 @@ internal static class CellWorldspaceAuthorityApplier
     ///     Applies authoritative CELL metadata to the semantic record model and rebuilds
     ///     worldspace child lists so reports and map views see the same ownership that
     ///     DMP to ESM conversion uses.
+    ///     Physical GRUP maps in the scan are preserved: partial authority/inference links must
+    ///     not make a subsequent dump parse mistake them for complete structural parentage.
     /// </summary>
     public static CellWorldspaceAuthorityApplyResult Apply(
         RecordCollection records,
@@ -95,11 +97,6 @@ internal static class CellWorldspaceAuthorityApplier
 
             matched++;
             var wsFid = metadata.IsInterior == true ? null : metadata.WorldspaceFormId;
-            if (scanResult is not null && wsFid is > 0)
-            {
-                scanResult.CellToWorldspaceMap[cell.FormId] = wsFid.Value;
-            }
-
             var flags = cell.Flags;
             if (metadata.IsInterior == true)
             {
@@ -145,18 +142,16 @@ internal static class CellWorldspaceAuthorityApplier
             records,
             refToCell,
             cellMetadata,
-            authority,
-            scanResult);
+            authority);
         var windowMove = ReattachWindowedUnresolvedReferences(
             records,
             refWindows,
             cellMetadata,
-            authority,
-            scanResult);
-        var offsetMove = ReattachOffsetClusteredUnresolvedReferences(records, scanResult);
-        var interiorMove = ReattachOffsetClusteredInteriorUnresolvedReferences(records, scanResult);
+            authority);
+        var offsetMove = ReattachOffsetClusteredUnresolvedReferences(records);
+        var interiorMove = ReattachOffsetClusteredInteriorUnresolvedReferences(records);
         var boundsMove = inferUnresolvedPlacements
-            ? ReattachUnresolvedByBoundsInference(records, scanResult)
+            ? ReattachUnresolvedByBoundsInference(records)
             : (Moved: 0, CreatedCells: 0);
 
         if (scanResult is not null &&
@@ -204,8 +199,7 @@ internal static class CellWorldspaceAuthorityApplier
     ///     </para>
     /// </summary>
     private static (int Moved, int CreatedCells) ReattachUnresolvedByBoundsInference(
-        RecordCollection records,
-        EsmRecordScanResult? scanResult)
+        RecordCollection records)
     {
         var realExteriorCells = records.Cells
             .Where(cell => !cell.IsInterior &&
@@ -316,7 +310,6 @@ internal static class CellWorldspaceAuthorityApplier
                     target.PlacedObjects.Add(placed with { AssignmentSource = SourceBoundsInference });
                 }
 
-                MoveScanResultRefLink(scanResult, source.FormId, target.FormId, placed.FormId);
                 movedFormIds.Add(placed.FormId);
                 moved++;
             }
@@ -414,8 +407,7 @@ internal static class CellWorldspaceAuthorityApplier
         RecordCollection records,
         IReadOnlyDictionary<uint, uint>? refToCell,
         IReadOnlyDictionary<uint, CellAuthorityMetadata>? cellMetadata,
-        IReadOnlyDictionary<uint, uint>? authority,
-        EsmRecordScanResult? scanResult)
+        IReadOnlyDictionary<uint, uint>? authority)
     {
         if (refToCell is not { Count: > 0 })
         {
@@ -449,7 +441,6 @@ internal static class CellWorldspaceAuthorityApplier
                         targetCellFormId,
                         cellMetadata,
                         authority,
-                        scanResult,
                         out var targetIndex,
                         out var created))
                 {
@@ -468,7 +459,6 @@ internal static class CellWorldspaceAuthorityApplier
                     target.PlacedObjects.Add(placed with { AssignmentSource = "AuthorityRefParent" });
                 }
 
-                MoveScanResultRefLink(scanResult, source.FormId, targetCellFormId, placed.FormId);
                 moved++;
                 sourceChanged = true;
             }
@@ -525,8 +515,7 @@ internal static class CellWorldspaceAuthorityApplier
             RecordCollection records,
             IReadOnlyList<CellReferenceParentWindow>? refWindows,
             IReadOnlyDictionary<uint, CellAuthorityMetadata>? cellMetadata,
-            IReadOnlyDictionary<uint, uint>? authority,
-            EsmRecordScanResult? scanResult)
+            IReadOnlyDictionary<uint, uint>? authority)
     {
         if (refWindows is not { Count: > 0 })
         {
@@ -605,7 +594,6 @@ internal static class CellWorldspaceAuthorityApplier
                             window.CellFormId,
                             cellMetadata,
                             authority,
-                            scanResult,
                             out targetIndex,
                             out var created))
                     {
@@ -627,7 +615,6 @@ internal static class CellWorldspaceAuthorityApplier
                     target.PlacedObjects.Add(placed with { AssignmentSource = SourceAuthorityRefWindow });
                 }
 
-                MoveScanResultRefLink(scanResult, source.FormId, window.CellFormId, placed.FormId);
                 moved++;
                 sourceChanged = true;
             }
@@ -702,8 +689,7 @@ internal static class CellWorldspaceAuthorityApplier
     }
 
     private static (int Moved, int CreatedCells) ReattachOffsetClusteredUnresolvedReferences(
-        RecordCollection records,
-        EsmRecordScanResult? scanResult)
+        RecordCollection records)
     {
         var offsetAnchors = records.Cells
             .Where(cell => !cell.IsInterior &&
@@ -765,7 +751,6 @@ internal static class CellWorldspaceAuthorityApplier
                         target.PlacedObjects.Add(placed with { AssignmentSource = SourceAuthorityOffsetCluster });
                     }
 
-                    MoveScanResultRefLink(scanResult, source.FormId, target.FormId, placed.FormId);
                     movedFormIds.Add(placed.FormId);
                     moved++;
                 }
@@ -804,8 +789,7 @@ internal static class CellWorldspaceAuthorityApplier
     ///     cell's refs almost certainly belongs to that interior. Attach those by offset adjacency.
     /// </summary>
     private static (int Moved, int CreatedCells) ReattachOffsetClusteredInteriorUnresolvedReferences(
-        RecordCollection records,
-        EsmRecordScanResult? scanResult)
+        RecordCollection records)
     {
         var moved = 0;
         var rounds = 0;
@@ -878,7 +862,6 @@ internal static class CellWorldspaceAuthorityApplier
                         target.PlacedObjects.Add(placed with { AssignmentSource = SourceInteriorOffsetCluster });
                     }
 
-                    MoveScanResultRefLink(scanResult, source.FormId, owner.FormId, placed.FormId);
                     movedFormIds.Add(placed.FormId);
                     movedThisRound++;
                 }
@@ -1242,7 +1225,6 @@ internal static class CellWorldspaceAuthorityApplier
         uint cellFormId,
         IReadOnlyDictionary<uint, CellAuthorityMetadata>? cellMetadata,
         IReadOnlyDictionary<uint, uint>? authority,
-        EsmRecordScanResult? scanResult,
         out int index,
         out bool created)
     {
@@ -1286,40 +1268,7 @@ internal static class CellWorldspaceAuthorityApplier
         cellIndexByFormId[cellFormId] = index;
         created = true;
 
-        if (scanResult is not null && !isInterior && worldspaceFormId is > 0)
-        {
-            scanResult.CellToWorldspaceMap[cellFormId] = worldspaceFormId.Value;
-        }
-
         return true;
-    }
-
-    private static void MoveScanResultRefLink(
-        EsmRecordScanResult? scanResult,
-        uint sourceCellFormId,
-        uint targetCellFormId,
-        uint referenceFormId)
-    {
-        if (scanResult is null || referenceFormId == 0)
-        {
-            return;
-        }
-
-        if (scanResult.CellToRefrMap.TryGetValue(sourceCellFormId, out var sourceRefs))
-        {
-            sourceRefs.Remove(referenceFormId);
-        }
-
-        if (!scanResult.CellToRefrMap.TryGetValue(targetCellFormId, out var targetRefs))
-        {
-            targetRefs = [];
-            scanResult.CellToRefrMap[targetCellFormId] = targetRefs;
-        }
-
-        if (!targetRefs.Contains(referenceFormId))
-        {
-            targetRefs.Add(referenceFormId);
-        }
     }
 
     private static int CountCellsWithTerrain(RecordCollection records)

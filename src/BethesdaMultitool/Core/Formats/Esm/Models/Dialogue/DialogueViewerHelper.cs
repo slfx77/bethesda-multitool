@@ -264,6 +264,7 @@ internal static class DialogueViewerHelper
     /// </summary>
     private static string? ResolveTopicOwnText(TopicDialogueNode topic)
     {
+        if (DialogueTopicLabels.IsGreeting(topic.Topic?.EditorId)) { return topic.Topic.EditorId; }
         if (!string.IsNullOrEmpty(topic.Topic?.FullName))
         {
             return topic.Topic.FullName;

@@ -32,6 +32,7 @@ public static class DmpCommand
         command.Subcommands.Add(ActorLedgerCommand.Create());
         command.Subcommands.Add(DmpGapInventoryCommand.Create());
         command.Subcommands.Add(DmpRecoveryProbeCommand.Create());
+        command.Subcommands.Add(DmpDialogueRecoveryCommand.Create());
         command.Subcommands.Add(DmpXclcAuditCommand.Create());
         command.Subcommands.Add(BuffersCommand.Create());
         command.Subcommands.Add(CoverageCommand.Create());

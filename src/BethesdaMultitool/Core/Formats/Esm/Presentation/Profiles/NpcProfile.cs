@@ -43,7 +43,8 @@ internal sealed class NpcProfile : IRecordProfile
                 RefEntry("Race", TopBySignature(tree, "RNAM"), resolver),
                 RefEntry("Class", TopBySignature(tree, "CNAM"), resolver),
                 RecordDetailHelpers.Scalar("Female", Female(tree)),
-                RecordDetailHelpers.Scalar("Level", Level(tree))
+                .. Level(tree, game),
+                RecordDetailHelpers.Scalar("Actor Flags", RecordDetailHelpers.ActorFlags(Flags(tree), game, "NPC_"))
             ]),
             RecordDetailHelpers.Section("Appearance",
             [
@@ -124,13 +125,25 @@ internal sealed class NpcProfile : IRecordProfile
         return ((Int(ChildByLabel(acbs, "Flags")) ?? 0) & 1) != 0 ? "Yes" : "No";
     }
 
-    // ACBS Level — the decoded union value (variant 0 = "Level"); "(unknown)" when Stats is absent.
-    private static string Level(IReadOnlyList<DecodedNode> tree)
+    // Match the typed model's complete-ACBS admission; a partial field is not a full Stats row.
+    private static uint? Flags(IReadOnlyList<DecodedNode> tree)
     {
         var acbs = TopBySignature(tree, "ACBS");
-        return HasStats(acbs) && Int(ChildByLabel(acbs, "Level")) is { } level
-            ? level.ToString()
-            : "(unknown)";
+        return Int(ChildByLabel(acbs, "Template Flags")) is not null
+               && Int(ChildByLabel(acbs, "Flags")) is { } flags && flags is >= 0 and <= uint.MaxValue
+            ? (uint)flags
+            : null;
+    }
+
+    // ACBS Level — complete ACBS only; match the typed record's stored-level presentation.
+    private static IEnumerable<RecordDetailEntry> Level(IReadOnlyList<DecodedNode> tree, BethesdaGame game)
+    {
+        var acbs = TopBySignature(tree, "ACBS");
+        var complete = Int(ChildByLabel(acbs, "Template Flags")) is not null;
+        return RecordDetailHelpers.ActorLevel(game, Flags(tree),
+            complete ? Int(ChildByLabel(acbs, "Level")) : null,
+            complete ? Int(ChildByLabel(acbs, "Calc min")) : null,
+            complete ? Int(ChildByLabel(acbs, "Calc max")) : null);
     }
 
     // HCLR is an R/G/B struct; repack to the 0x00BBGGRR uint NpcRecord.FormatHairColor expects.

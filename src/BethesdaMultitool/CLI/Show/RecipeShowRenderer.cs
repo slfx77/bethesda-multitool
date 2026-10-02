@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class RecipeShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var recipe = records.Recipes.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, rc => rc.FormId, rc => rc.EditorId));
@@ -16,7 +16,7 @@ internal sealed class RecipeShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]    0x{recipe.FormId:X8}",
@@ -26,18 +26,19 @@ internal sealed class RecipeShowRenderer : IRecordDisplayRenderer
 
         if (recipe.RequiredSkill != 0 || recipe.RequiredSkillLevel != 0)
         {
-            var skillName = resolver.GetSkillName(recipe.RequiredSkill) ?? $"Skill#{recipe.RequiredSkill}";
+            var skillName = ShowHelpers.Plain(
+                resolver.GetSkillName(recipe.RequiredSkill), $"Skill#{recipe.RequiredSkill}");
             lines.Add($"[cyan]Requires:[/]  {skillName} {recipe.RequiredSkillLevel}");
         }
 
         if (recipe.CategoryFormId != 0)
         {
-            lines.Add($"[cyan]Category:[/]  {resolver.FormatWithEditorId(recipe.CategoryFormId)}");
+            lines.Add($"[cyan]Category:[/]  {ShowHelpers.Ref(resolver, recipe.CategoryFormId)}");
         }
 
         if (recipe.SubcategoryFormId != 0)
         {
-            lines.Add($"[cyan]Subcategory:[/] {resolver.FormatWithEditorId(recipe.SubcategoryFormId)}");
+            lines.Add($"[cyan]Subcategory:[/] {ShowHelpers.Ref(resolver, recipe.SubcategoryFormId)}");
         }
 
         if (recipe.Ingredients.Count > 0)
@@ -46,7 +47,7 @@ internal sealed class RecipeShowRenderer : IRecordDisplayRenderer
             lines.Add($"[bold]Ingredients ({recipe.Ingredients.Count}):[/]");
             foreach (var ing in recipe.Ingredients)
             {
-                lines.Add($"  {resolver.FormatWithEditorId(ing.ItemFormId)} x{ing.Count}");
+                lines.Add($"  {ShowHelpers.Ref(resolver, ing.ItemFormId)} x{ing.Count}");
             }
         }
 
@@ -56,7 +57,7 @@ internal sealed class RecipeShowRenderer : IRecordDisplayRenderer
             lines.Add($"[bold]Outputs ({recipe.Outputs.Count}):[/]");
             foreach (var output in recipe.Outputs)
             {
-                lines.Add($"  {resolver.FormatWithEditorId(output.ItemFormId)} x{output.Count}");
+                lines.Add($"  {ShowHelpers.Ref(resolver, output.ItemFormId)} x{output.Count}");
             }
         }
 
@@ -65,7 +66,7 @@ internal sealed class RecipeShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]RCPE[/] {Markup.Escape(recipe.EditorId ?? "")} — {Markup.Escape(recipe.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

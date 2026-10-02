@@ -4,12 +4,82 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Records;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
+using BethesdaMultitool.Core.Formats.Esm.Subrecords;
+using BethesdaMultitool.Core.Games;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.CLI.Commands.Dmp;
 
 public class CellWorldspaceAuthorityTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Apply_PreservesPhysicalMapsAndPlacementContentAcrossSameScanReparse(bool physicalGroups)
+    {
+        const uint capturedCell = 0x1000, assignedCell = 0x2000;
+        var scan = new EsmRecordScanResult
+        {
+            Game = BethesdaGame.FalloutNewVegas,
+            RefrRecords =
+            [
+                new ExtractedRefrRecord
+                {
+                    Header = new DetectedMainRecord("REFR", 0, 0, 0x3000, 0x1010, false),
+                    BaseFormId = 0x4000, Position = new PositionSubrecord(8200.25f, 4097.5f, 30, 0.1f, 0.2f, 0.3f, 0x1020, false)
+                },
+                new ExtractedRefrRecord
+                {
+                    Header = new DetectedMainRecord("ACHR", 0, 0, 0x3001, 0x1050, false),
+                    BaseFormId = 0x4001, Position = new PositionSubrecord(90000.5f, 8193.25f, 70, 0.4f, 0.5f, 0.6f, 0x1060, false)
+                }
+            ]
+        };
+        if (physicalGroups)
+        {
+            scan.MainRecords.Add(new DetectedMainRecord("CELL", 0, 0, capturedCell, 0x1000, false));
+            scan.CellToWorldspaceMap[capturedCell] = 0x3C;
+            // Preserve the physical map's occurrences even when the semantic view deduplicates IDs.
+            scan.CellToRefrMap[capturedCell] = [0x3000, 0x3001, 0x3000];
+        }
+        var metadata = new Dictionary<uint, CellAuthorityMetadata>
+        {
+            [capturedCell] = new() { WorldspaceFormId = 0x99, IsInterior = false, GridX = 2, GridY = 1 },
+            [assignedCell] = new() { WorldspaceFormId = 0x99, IsInterior = false, GridX = 2, GridY = 1 }
+        };
+        var referenceParents = new Dictionary<uint, uint> { [0x3000] = assignedCell };
+        var first = new RecordParser(scan).ParseAll();
+        Assert.Equal(new uint[] { 0x3000, 0x3001 }, first.Cells.SelectMany(c => c.PlacedObjects)
+            .Select(p => p.FormId).Order().ToArray());
+        Apply(first);
+
+        if (physicalGroups)
+        {
+            Assert.Equal(0x3Cu, Assert.Single(scan.CellToWorldspaceMap).Value);
+            Assert.Equal(new uint[] { 0x3000, 0x3001, 0x3000 }, Assert.Single(scan.CellToRefrMap).Value);
+            Assert.Equal(0x99u, first.Cells.Single(c => c.FormId == capturedCell).WorldspaceFormId);
+        }
+        else
+        {
+            Assert.Empty(scan.CellToRefrMap);
+            Assert.Empty(scan.CellToWorldspaceMap);
+            Assert.Contains(first.Cells.Single(c => c.FormId == assignedCell).PlacedObjects, p => p.FormId == 0x3000);
+        }
+
+        var second = new RecordParser(scan).ParseAll();
+        Apply(second);
+        Assert.Equal(Placements(first), Placements(second));
+        Assert.Equal(first.Cells.Select(c => c.FormId).Order(), second.Cells.Select(c => c.FormId).Order());
+
+        void Apply(RecordCollection records) => CellWorldspaceAuthorityApplier.Apply(records, null,
+            scanResult: scan, cellMetadata: metadata, refToCell: referenceParents, inferUnresolvedPlacements: false);
+
+        static object[] Placements(RecordCollection records) => records.Cells.SelectMany(c => c.PlacedObjects.Select(p =>
+            (c.FormId, p.FormId, p.BaseFormId, p.RecordType, p.Offset, p.X, p.Y, p.Z,
+                p.RotX, p.RotY, p.RotZ))).OrderBy(p => p.Item2).Cast<object>().ToArray();
+    }
+
     [Fact]
     public void Load_ReadsCellMetadata()
     {

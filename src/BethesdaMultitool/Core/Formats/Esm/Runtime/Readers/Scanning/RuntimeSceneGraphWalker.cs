@@ -73,7 +73,8 @@ internal sealed class RuntimeSceneGraphWalker(RuntimeMemoryContext context)
                 var info = BuildSceneGraphInfo(chunk, offset, fileOffset);
                 if (info != null)
                 {
-                    results.TryAdd(mesh.SourceOffset, info);
+                    RuntimeCandidateSelection.KeepLowestOffset(
+                        results, mesh.SourceOffset, info, static value => value.NiTriShapeFileOffset);
                 }
             },
             NiTriShapeSize);
@@ -81,7 +82,7 @@ internal sealed class RuntimeSceneGraphWalker(RuntimeMemoryContext context)
         log.Info("SceneGraphWalker: resolved {0}/{1} meshes to scene graph nodes",
             results.Count, vaToMesh.Count);
 
-        return new Dictionary<long, SceneGraphInfo>(results);
+        return results.OrderBy(pair => pair.Key).ToDictionary(pair => pair.Key, pair => pair.Value);
     }
 
     /// <summary>

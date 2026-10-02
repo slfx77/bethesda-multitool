@@ -31,6 +31,10 @@ public record EsmRecordScanResult
     // Main record detections (new)
     public List<DetectedMainRecord> MainRecords { get; init; } = [];
 
+    // Retain framing metadata, not placement payloads: inspection needs physical parentage even
+    // after the semantic loader releases RefrRecords. FormID-keyed maps cannot represent copies.
+    internal IReadOnlyList<Parsing.GrupHeaderInfo> PlacementGroups { get; set; } = [];
+
     // Extended subrecord detections (new)
     public List<NameSubrecord> NameReferences { get; init; } = [];
     public List<PositionSubrecord> Positions { get; init; } = [];

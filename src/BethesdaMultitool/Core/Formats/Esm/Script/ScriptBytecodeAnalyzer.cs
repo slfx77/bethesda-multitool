@@ -14,14 +14,20 @@ public static class ScriptBytecodeAnalyzer
     ///     Walks the SCDA bytecode (without rewriting it) and reports how much of the stream
     ///     was parsed, how many multi-byte fields it found, and any decode diagnostics.
     /// </summary>
+    /// <param name="functions">
+    ///     The game's command table, which names function opcodes (and so decides
+    ///     <see cref="ScriptBytecodeAnalysis.UnknownOpcodeCount" />) and types their parameters.
+    ///     Null keeps the decompiler's FNV/FO3 default.
+    /// </param>
     public static ScriptBytecodeAnalysis Analyze(
         byte[] bytecode,
         bool isBigEndian,
         IReadOnlyList<ScriptVariableInfo>? variables = null,
         IReadOnlyList<uint>? referencedObjects = null,
-        string? scriptName = null)
+        string? scriptName = null,
+        ScriptFunctionSet? functions = null)
     {
-        var walk = Walk(bytecode, isBigEndian, variables, referencedObjects, scriptName);
+        var walk = Walk(bytecode, isBigEndian, variables, referencedObjects, scriptName, functions);
         var diagnosticLines = ExtractDiagnostics(walk.DecompiledText);
         return new ScriptBytecodeAnalysis(
             bytecode.Length,
@@ -30,7 +36,10 @@ public static class ScriptBytecodeAnalyzer
             walk.MultiByteReads.Count,
             walk.MultiByteReads.Sum(r => r.Length),
             diagnosticLines.Count > 0,
-            string.Join(" | ", diagnosticLines));
+            string.Join(" | ", diagnosticLines))
+        {
+            UnknownOpcodeCount = walk.UnknownOpcodeCount
+        };
     }
 
     internal static ScriptBytecodeWalk Walk(
@@ -38,7 +47,8 @@ public static class ScriptBytecodeAnalyzer
         bool isBigEndian,
         IReadOnlyList<ScriptVariableInfo>? variables = null,
         IReadOnlyList<uint>? referencedObjects = null,
-        string? scriptName = null)
+        string? scriptName = null,
+        ScriptFunctionSet? functions = null)
     {
         if (bytecode.Length == 0)
         {
@@ -52,7 +62,8 @@ public static class ScriptBytecodeAnalyzer
 
         var vars = new List<ScriptVariableInfo>(variables ?? []);
         var refs = new List<uint>(referencedObjects ?? []);
-        var decompiler = new ScriptDecompiler(vars, refs, _ => null, isBigEndian, scriptName);
+        var decompiler = new ScriptDecompiler(
+            vars, refs, _ => null, isBigEndian, scriptName, functions: functions);
 
         var decompiledText = decompiler.Decompile(bytecode, reader);
         var regions = reader.StopTrackingMultiByteReads();
@@ -65,7 +76,10 @@ public static class ScriptBytecodeAnalyzer
             reader.StructuralIssues.ToArray(),
             reader.Position,
             reader.HasStructuralUncertainty,
-            decompiledText);
+            decompiledText)
+        {
+            UnknownOpcodeCount = decompiler.UnknownOpcodeCount
+        };
     }
 
     /// <summary>
@@ -255,7 +269,15 @@ public sealed record ScriptBytecodeAnalysis(
     int MultiByteReadCount,
     int MultiByteByteCount,
     bool HasDiagnostics,
-    string Diagnostics);
+    string Diagnostics)
+{
+    /// <summary>
+    ///     Statement opcodes the walk could not name (see <see cref="ScriptDecompiler.UnknownOpcodeCount" />).
+    ///     A misread order can walk cleanly and still fail to name its calls, so this is what separates
+    ///     two clean walks of a short payload.
+    /// </summary>
+    public int UnknownOpcodeCount { get; init; }
+}
 
 internal sealed record ScriptBytecodeWalk(
     IReadOnlyList<(int Offset, int Length)> MultiByteReads,
@@ -264,7 +286,11 @@ internal sealed record ScriptBytecodeWalk(
     IReadOnlyList<ScriptBytecodeStructuralIssue> StructuralIssues,
     int FinalPosition,
     bool HasStructuralUncertainty,
-    string DecompiledText);
+    string DecompiledText)
+{
+    /// <summary>Statement opcodes the walk could not name (see <see cref="ScriptDecompiler.UnknownOpcodeCount" />).</summary>
+    public int UnknownOpcodeCount { get; init; }
+}
 
 internal sealed record ScriptBytecodeEmissionSafetyAnalysis(
     bool IsSafeForEmission,

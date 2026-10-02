@@ -47,6 +47,10 @@ public static class WorldCommand
             Description = "Pixels rendered per cell, 1..33 (default 8)", DefaultValueFactory = _ => 8
         };
 
+        var loadOrderOpt = LoadOrderOptions.CreateOption();
+        var allowMissingOpt = LoadOrderOptions.CreateAllowMissingMastersOption();
+        command.Options.Add(loadOrderOpt);
+        command.Options.Add(allowMissingOpt);
         command.Arguments.Add(inputArg);
         command.Options.Add(outputOpt);
         command.Options.Add(worldspaceOpt);
@@ -59,7 +63,7 @@ public static class WorldCommand
                 parseResult.GetValue(outputOpt)!,
                 parseResult.GetValue(worldspaceOpt),
                 parseResult.GetValue(cellPxOpt),
-                cancellationToken);
+                parseResult.GetValue(loadOrderOpt), parseResult.GetValue(allowMissingOpt), cancellationToken);
         });
 
         return command;
@@ -71,12 +75,16 @@ public static class WorldCommand
 
         var inputArg = new Argument<string>("input") { Description = "Path to ESM file" };
 
+        var loadOrderOpt = LoadOrderOptions.CreateOption();
+        var allowMissingOpt = LoadOrderOptions.CreateAllowMissingMastersOption();
+        command.Options.Add(loadOrderOpt);
+        command.Options.Add(allowMissingOpt);
         command.Arguments.Add(inputArg);
 
         command.SetAction(async (parseResult, cancellationToken) =>
         {
             var input = parseResult.GetValue(inputArg)!;
-            await RunMarkersAsync(input, cancellationToken);
+            await RunMarkersAsync(input, parseResult.GetValue(loadOrderOpt), parseResult.GetValue(allowMissingOpt), cancellationToken);
         });
 
         return command;
@@ -93,6 +101,10 @@ public static class WorldCommand
             Description = "Export runtime terrain mesh to glTF Binary (.glb) file"
         };
 
+        var loadOrderOpt = LoadOrderOptions.CreateOption();
+        var allowMissingOpt = LoadOrderOptions.CreateAllowMissingMastersOption();
+        command.Options.Add(loadOrderOpt);
+        command.Options.Add(allowMissingOpt);
         command.Arguments.Add(inputArg);
         command.Arguments.Add(formIdArg);
         command.Options.Add(exportGlbOpt);
@@ -102,7 +114,7 @@ public static class WorldCommand
             var input = parseResult.GetValue(inputArg)!;
             var formIdStr = parseResult.GetValue(formIdArg)!;
             var exportGlb = parseResult.GetValue(exportGlbOpt);
-            await RunCellAsync(input, formIdStr, exportGlb, cancellationToken);
+            await RunCellAsync(input, formIdStr, exportGlb, parseResult.GetValue(loadOrderOpt), parseResult.GetValue(allowMissingOpt), cancellationToken);
         });
 
         return command;
@@ -119,9 +131,10 @@ public static class WorldCommand
         return loaded?.Records;
     }
 
-    private static async Task RunMarkersAsync(string input, CancellationToken cancellationToken)
+    private static async Task RunMarkersAsync(string input, string[]? loadOrder, bool allowMissing, CancellationToken cancellationToken)
     {
-        var result = await LoadAndParseAsync(input, cancellationToken);
+        var selected = await SelectedViewCli.LoadAsync(input, loadOrder, allowMissing, cancellationToken);
+        var result = selected?.Records ?? await LoadAndParseAsync(input, cancellationToken);
         if (result == null)
         {
             return;
@@ -179,20 +192,14 @@ public static class WorldCommand
     }
 
     private static async Task RunCellAsync(
-        string input, string formIdStr, string? exportGlbPath, CancellationToken cancellationToken)
+        string input, string formIdStr, string? exportGlbPath, string[]? loadOrder, bool allowMissing, CancellationToken cancellationToken)
     {
-        var formId = CliHelpers.ParseFormId(formIdStr) ?? 0;
-        if (formId == 0)
-        {
-            AnsiConsole.MarkupLine("[red]Error:[/] Invalid FormID: {0}", formIdStr);
-            return;
-        }
-
-        var result = await LoadAndParseAsync(input, cancellationToken);
-        if (result == null)
-        {
-            return;
-        }
+        var selected = await SelectedViewCli.LoadAsync(input, loadOrder, allowMissing, cancellationToken);
+        var formId = selected != null ? selected.Index.ResolveTarget(formIdStr, selected.Order)
+            : CliHelpers.ParseFormId(formIdStr) ?? 0;
+        if (formId == 0) { throw new ArgumentException($"Invalid FormID: {formIdStr}"); }
+        var result = selected?.Records ?? await LoadAndParseAsync(input, cancellationToken);
+        if (result == null) { return; }
 
         var (cell, worldspaceName) = FindCell(result, formId);
         if (cell == null)
@@ -209,6 +216,7 @@ public static class WorldCommand
         var resolver = result.CreateResolver();
 
         RenderCellDetails(cell, worldspaceName);
+        await SelectedViewCli.WriteProvenanceAsync(selected, exportGlbPath, cancellationToken);
         HandleTerrainMeshExport(cell, exportGlbPath);
         RenderPlacedObjects(cell, resolver);
     }
@@ -228,9 +236,10 @@ public static class WorldCommand
     }
 
     private static async Task RunHeightmapAsync(
-        string input, string output, string? worldspaceSel, int cellPx, CancellationToken cancellationToken)
+        string input, string output, string? worldspaceSel, int cellPx, string[]? loadOrder, bool allowMissing, CancellationToken cancellationToken)
     {
-        var result = await LoadAndParseAsync(input, cancellationToken);
+        var selected = await SelectedViewCli.LoadAsync(input, loadOrder, allowMissing, cancellationToken);
+        var result = selected?.Records ?? await LoadAndParseAsync(input, cancellationToken);
         if (result == null)
         {
             return;
@@ -319,11 +328,13 @@ public static class WorldCommand
             Directory.CreateDirectory(dir);
         }
 
+        if (File.Exists(output)) { throw new IOException($"Output already exists: {output}"); }
+        await SelectedViewCli.WriteProvenanceAsync(selected, output, cancellationToken);
         PngWriter.SaveGrayscale(pixels, (int)width, (int)height, output);
         var label = ws.EditorId ?? ws.FullName ?? $"0x{ws.FormId:X8}";
         AnsiConsole.MarkupLine(
             "[green]Wrote[/] {0} ({1:N0}x{2:N0}) — worldspace [cyan]{3}[/], {4:N0} cells, height {5:F0}..{6:F0}",
-            output, width, height, label, cells.Count, gMin, gMax);
+            Markup.Escape(output), width, height, Markup.Escape(label), cells.Count, gMin, gMax);
     }
 
     private static WorldspaceRecord? SelectWorldspaceForHeightmap(RecordCollection result, string? sel)
@@ -357,12 +368,12 @@ public static class WorldCommand
         detailTable.AddRow("FormID", $"0x{cell.FormId:X8}");
         if (!string.IsNullOrEmpty(cell.EditorId))
         {
-            detailTable.AddRow("Editor ID", cell.EditorId);
+            detailTable.AddRow("Editor ID", Markup.Escape(cell.EditorId));
         }
 
         if (!string.IsNullOrEmpty(cell.FullName))
         {
-            detailTable.AddRow("Full Name", cell.FullName);
+            detailTable.AddRow("Full Name", Markup.Escape(cell.FullName));
         }
 
         if (cell.GridX.HasValue && cell.GridY.HasValue)
@@ -373,7 +384,7 @@ public static class WorldCommand
 
         if (worldspaceName != null)
         {
-            detailTable.AddRow("Worldspace", worldspaceName);
+            detailTable.AddRow("Worldspace", Markup.Escape(worldspaceName));
         }
 
         detailTable.AddRow("Interior", cell.IsInterior ? "Yes" : "No");
@@ -402,7 +413,7 @@ public static class WorldCommand
                 exportGlbPath);
             AnsiConsole.MarkupLine(
                 "[green]Terrain mesh exported to:[/] {0} ({1} vertices)",
-                exportGlbPath, RuntimeTerrainMesh.VertexCount);
+                Markup.Escape(exportGlbPath), RuntimeTerrainMesh.VertexCount);
         }
         else
         {
@@ -509,6 +520,10 @@ public static class WorldCommand
             Description = "Filter by record type (ACHR, ACRE, REFR)"
         };
 
+        var loadOrderOpt = LoadOrderOptions.CreateOption();
+        var allowMissingOpt = LoadOrderOptions.CreateAllowMissingMastersOption();
+        command.Options.Add(loadOrderOpt);
+        command.Options.Add(allowMissingOpt);
         command.Arguments.Add(inputArg);
         command.Options.Add(outputOpt);
         command.Options.Add(typeOpt);
@@ -518,16 +533,17 @@ public static class WorldCommand
             var input = parseResult.GetValue(inputArg)!;
             var output = parseResult.GetValue(outputOpt);
             var typeFilter = parseResult.GetValue(typeOpt);
-            await RunPersistentAsync(input, output, typeFilter, cancellationToken);
+            await RunPersistentAsync(input, output, typeFilter, parseResult.GetValue(loadOrderOpt), parseResult.GetValue(allowMissingOpt), cancellationToken);
         });
 
         return command;
     }
 
     private static async Task RunPersistentAsync(
-        string input, string? outputPath, string? typeFilter, CancellationToken cancellationToken)
+        string input, string? outputPath, string? typeFilter, string[]? loadOrder, bool allowMissing, CancellationToken cancellationToken)
     {
-        var result = await LoadAndParseAsync(input, cancellationToken);
+        var selected = await SelectedViewCli.LoadAsync(input, loadOrder, allowMissing, cancellationToken);
+        var result = selected?.Records ?? await LoadAndParseAsync(input, cancellationToken);
         if (result == null)
         {
             return;
@@ -569,13 +585,15 @@ public static class WorldCommand
         // Export to CSV if requested
         if (outputPath != null)
         {
+            if (File.Exists(outputPath)) { throw new IOException($"Output already exists: {outputPath}"); }
+            await SelectedViewCli.WriteProvenanceAsync(selected, outputPath, cancellationToken);
             var allCells = result.Cells
                 .Concat(result.Worldspaces.SelectMany(ws => ws.Cells))
                 .ToList();
             var csv = CsvSupplementalWriter.GeneratePersistentObjectsCsv(allCells, resolver);
             await File.WriteAllTextAsync(outputPath, csv, cancellationToken);
             AnsiConsole.MarkupLine(
-                $"[green]Exported {persistent.Count:N0} persistent objects to:[/] {outputPath}");
+                $"[green]Exported {persistent.Count:N0} persistent objects to:[/] {Markup.Escape(outputPath)}");
             return;
         }
 

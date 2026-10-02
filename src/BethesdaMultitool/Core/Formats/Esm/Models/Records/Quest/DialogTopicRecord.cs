@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
+
 namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 
 /// <summary>
@@ -8,6 +10,9 @@ public record DialogTopicRecord
 {
     /// <summary>FormID of the dialog topic record.</summary>
     public uint FormId { get; init; }
+
+    /// <summary>Plugin fields before cross-record prompt and quest enrichment.</summary>
+    public DialogueLocalAttribution? LocalAttribution { get; init; }
 
     /// <summary>Editor ID.</summary>
     public string? EditorId { get; init; }

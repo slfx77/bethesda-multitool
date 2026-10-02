@@ -11,4 +11,19 @@ public record DialogueTreeResult
 
     /// <summary>Topics with no identified quest parent.</summary>
     public List<TopicDialogueNode> OrphanTopics { get; init; } = [];
+
+    /// <summary>Structural evidence, including unresolved links; these do not evaluate dialogue conditions.</summary>
+    public IReadOnlyList<DialogueGraphEdge> Edges { get; init; } = [];
+
+    /// <summary>Limits of the displayed predecessor-compatible ordering.</summary>
+    public IReadOnlyList<DialogueOrderingIssue> OrderingIssues { get; init; } = [];
 }
+
+public sealed record DialogueGraphEdge(uint SourceInfoFormId, uint TargetFormId, string Kind,
+    string Evidence, string Status)
+{
+    /// <summary>Other INFO owners supplying this inferred edge, in selected-record order.</summary>
+    public IReadOnlyList<uint> EvidenceInfoFormIds { get; init; } = [];
+}
+
+public sealed record DialogueOrderingIssue(uint TopicFormId, string Code, IReadOnlyList<uint> InfoFormIds);

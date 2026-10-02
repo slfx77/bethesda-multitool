@@ -969,6 +969,69 @@ public sealed class RuntimeParityParserTests : IDisposable
         Assert.Equal(8192, worldspace.Offset);
     }
 
+    [Theory]
+    [InlineData(false, false, 2048L, false)]
+    [InlineData(true, false, 2048L, true)]
+    [InlineData(false, true, 2048L, false)]
+    [InlineData(true, true, 2048L, true)]
+    [InlineData(false, true, 0L, true)]
+    [InlineData(true, true, 0L, true)]
+    public void EnsureWorldspacesForCells_EnrichmentKeepsByteOrderWithSelectedPhysicalOffset(
+        bool primaryBigEndian, bool hasRuntimeMap, long primaryOffset, bool expectedBigEndian)
+    {
+        const uint worldspaceFormId = 0x00130050;
+        var context = new RecordParserContext(new EsmRecordScanResult());
+        if (hasRuntimeMap)
+        {
+            context.RuntimeWorldspaceCellMaps = new Dictionary<uint, RuntimeWorldspaceData>
+            {
+                [worldspaceFormId] = new()
+                {
+                    FormId = worldspaceFormId,
+                    EditorId = "RuntimeFallback",
+                    DefaultWaterHeight = 64f,
+                    Offset = 8192
+                }
+            };
+        }
+
+        var cells = new List<CellRecord>
+        {
+            new()
+            {
+                FormId = 0x00130051,
+                WorldspaceFormId = worldspaceFormId,
+                GridX = 3,
+                GridY = -2,
+                Offset = 4096,
+                IsBigEndian = primaryBigEndian
+            }
+        };
+        var worldspaces = new List<WorldspaceRecord>
+        {
+            new()
+            {
+                FormId = worldspaceFormId,
+                EditorId = "StoredWorld",
+                Offset = primaryOffset,
+                IsBigEndian = primaryBigEndian
+            }
+        };
+
+        WorldRecordHandler.EnsureWorldspacesForCells(cells, worldspaces, context);
+
+        var worldspace = Assert.Single(worldspaces);
+        Assert.Equal("StoredWorld", worldspace.EditorId);
+        Assert.Equal(primaryOffset != 0 ? primaryOffset : 8192L, worldspace.Offset);
+        Assert.Equal(expectedBigEndian, worldspace.IsBigEndian);
+        Assert.Equal((short)3, worldspace.MapNWCellX);
+        Assert.Equal((short)-2, worldspace.MapNWCellY);
+        Assert.Equal(3 * 4096f, worldspace.BoundsMinX);
+        Assert.Equal(-1 * 4096f, worldspace.BoundsMaxY);
+        if (hasRuntimeMap) Assert.Equal(64f, worldspace.DefaultWaterHeight);
+        else Assert.Null(worldspace.DefaultWaterHeight);
+    }
+
     [Fact]
     public void ParseAll_RuntimeCellMembershipOverridesProximityFallback()
     {

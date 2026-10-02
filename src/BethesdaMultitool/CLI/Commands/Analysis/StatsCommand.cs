@@ -35,7 +35,7 @@ public static class StatsCommand
             return 1;
         }
 
-        AnsiConsole.MarkupLine($"[bold]Stats:[/] [cyan]{CliHelpers.InputLabel(filePath)}[/] ({fileType})");
+        AnsiConsole.MarkupLine($"[bold]Stats:[/] [cyan]{Markup.Escape(CliHelpers.InputLabel(filePath))}[/] ({fileType})");
         AnsiConsole.WriteLine();
 
         try
@@ -50,7 +50,7 @@ public static class StatsCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
             return 1;
         }
     }

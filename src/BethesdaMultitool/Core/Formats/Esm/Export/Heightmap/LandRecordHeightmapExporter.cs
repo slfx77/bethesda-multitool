@@ -42,6 +42,7 @@ internal static class LandRecordHeightmapExporter
             }
         }
 
+        var reservedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var tasks = landsWithHeightmaps
             .Select((land, index) => ExportLandRecordAsync(
                 land,
@@ -52,7 +53,8 @@ internal static class LandRecordHeightmapExporter
                 grayscaleScalesByWorldspace != null &&
                 grayscaleScalesByWorldspace.TryGetValue(land.WorldspaceFormId ?? 0u, out var scale)
                     ? scale
-                    : null));
+                    : null,
+                reservedPaths));
 
         await Task.WhenAll(tasks);
     }
@@ -66,7 +68,8 @@ internal static class LandRecordHeightmapExporter
         string outputDir,
         bool useColorGradient = true,
         IReadOnlyDictionary<uint, string>? worldspaceNames = null,
-        HeightmapGrayscaleScale? grayscaleScale = null)
+        HeightmapGrayscaleScale? grayscaleScale = null,
+        HashSet<string>? reservedPaths = null)
     {
         if (land.Heightmap == null)
         {
@@ -101,6 +104,11 @@ internal static class LandRecordHeightmapExporter
             HeightmapExportPathBuilder.BuildWorldspaceDirName(land.WorldspaceFormId ?? 0u, worldspaceNames));
         Directory.CreateDirectory(targetDir);
         var path = Path.Combine(targetDir, filename);
+        if (reservedPaths != null)
+        {
+            // This runs during the sequential enumeration, before starting any asynchronous write.
+            path = HeightmapExportPathBuilder.ReserveArtifactPath(reservedPaths, path, land.Header.Offset);
+        }
 
         await Task.Run(() =>
         {

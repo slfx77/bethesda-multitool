@@ -330,45 +330,7 @@ internal static class CsvMiscWriter
     /// <summary>Builds a CSV of Perks.</summary>
     public static string GeneratePerksCsv(List<PerkRecord> perks, FormIdResolver resolver)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Description,Ranks,MinLevel,IsPlayable,IsTrait,IconPath,Endianness,Offset,EntryRank,EntryPriority,EntryType,EntryTypeName,EntryAbilityFormID,EntryAbilityName,EntryAbilityDisplayName");
-
-        foreach (var p in perks.OrderBy(p => p.EditorId ?? ""))
-        {
-            sb.AppendLine(string.Join(",",
-                "PERK",
-                Fmt.FId(p.FormId),
-                Fmt.CsvEscape(p.EditorId),
-                Fmt.CsvEscape(p.FullName),
-                Fmt.CsvEscape(p.Description),
-                p.Ranks.ToString(),
-                p.MinLevel.ToString(),
-                p.IsPlayable.ToString(),
-                p.IsTrait.ToString(),
-                Fmt.CsvEscape(p.IconPath),
-                Fmt.Endian(p.IsBigEndian),
-                p.Offset.ToString(),
-                "", "", "", "", "", "", ""));
-
-            foreach (var entry in p.Entries)
-            {
-                sb.AppendLine(string.Join(",",
-                    "ENTRY",
-                    Fmt.FId(p.FormId),
-                    "", "", "", "", "", "", "", "",
-                    "", "",
-                    entry.Rank.ToString(),
-                    entry.Priority.ToString(),
-                    entry.Type.ToString(),
-                    Fmt.CsvEscape(entry.TypeName),
-                    Fmt.FIdN(entry.AbilityFormId),
-                    resolver.ResolveCsv(entry.AbilityFormId ?? 0),
-                    resolver.ResolveDisplayNameCsv(entry.AbilityFormId ?? 0)));
-            }
-        }
-
-        return sb.ToString();
+        return PerkCsvWriter.Write(perks, resolver);
     }
 
     /// <summary>Builds a CSV of Spells.</summary>

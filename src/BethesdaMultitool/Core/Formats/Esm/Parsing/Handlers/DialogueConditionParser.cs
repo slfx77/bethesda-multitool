@@ -129,6 +129,12 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                         best = best with { Difficulty = other.Difficulty };
                     }
 
+                    // DATA lives in one half of a split Xbox 360 INFO; the first half that carried it wins.
+                    if (best.SerializedInfoData is null && other.SerializedInfoData is not null)
+                    {
+                        best = best with { SerializedInfoData = other.SerializedInfoData };
+                    }
+
                     if (string.IsNullOrEmpty(best.EditorId) && !string.IsNullOrEmpty(other.EditorId))
                     {
                         best = best with { EditorId = other.EditorId };
@@ -213,12 +219,97 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                         : runtimeStructOffset,
                     TesFileOffset = best.TesFileOffset != 0
                         ? best.TesFileOffset
-                        : tesFileOffset
+                        : tesFileOffset,
+                    ResultScriptBlocks = ChooseResultScriptBlocks(g.ToList(), best.ResultScripts.Count)
                 };
 
                 return best;
             })
             .ToList();
+    }
+
+    /// <summary>
+    ///     Picks the result-script block list that still describes the merged <see cref="DialogueRecord.ResultScripts" />.
+    ///     When exactly one half carried result scripts, the merged list IS that half's list, so its blocks apply.
+    ///     When two halves both did, the scripts were merged by position and no half's slot map can be proven
+    ///     to describe the result, so none is kept (presenters fall back to the scripts alone). When no half
+    ///     carried scripts, the first non-empty list (all empty SCHR blocks) applies unchanged.
+    /// </summary>
+    private static List<InfoResultScriptBlock> ChooseResultScriptBlocks(
+        List<DialogueRecord> halves,
+        int mergedResultScriptCount)
+    {
+        var contributors = halves.Where(dialogue => dialogue.ResultScripts.Count > 0).ToList();
+        if (contributors.Count > 1)
+        {
+            return [];
+        }
+
+        var source = contributors.Count == 1
+            ? contributors[0]
+            : halves.FirstOrDefault(dialogue => dialogue.ResultScriptBlocks.Count > 0);
+        if (source is null || source.ResultScriptBlocks.Count == 0)
+        {
+            return [];
+        }
+
+        var mapped = source.ResultScriptBlocks.Count(block => block.ResultScriptIndex is not null);
+        return mapped == mergedResultScriptCount ? source.ResultScriptBlocks : [];
+    }
+
+    /// <summary>
+    ///     Describes every serialized result-script block in record order, including the SCHR-only blocks
+    ///     <see cref="DialogueResultScriptParser.BuildResultScripts" /> drops, and maps each block that carries
+    ///     content to its index in the built list. The mapping mirrors the builder's own content test; if the
+    ///     two ever disagree on the count, no mapping is recorded rather than a guessed one.
+    /// </summary>
+    private static List<InfoResultScriptBlock> DescribeResultScriptBlocks(
+        List<DialogueResultScriptParser.DialogueResultScriptBuilder> blocks,
+        int resultScriptCount)
+    {
+        if (blocks.Count == 0)
+        {
+            return [];
+        }
+
+        var summaries = new List<InfoResultScriptBlock>(blocks.Count);
+        var nextIndex = 0;
+        for (var slot = 0; slot < blocks.Count; slot++)
+        {
+            var block = blocks[slot];
+            int? resultScriptIndex = BlockCarriesContent(block) ? nextIndex++ : null;
+            summaries.Add(new InfoResultScriptBlock
+            {
+                Slot = slot,
+                HasSchrHeader = block.HasSerializedHeader || block.HasMalformedSerializedHeader,
+                DeclaredCompiledSize = block.HasSerializedHeader ? block.ExpectedCompiledSize : null,
+                DeclaredReferenceCount = block.HasSerializedHeader ? block.ExpectedReferenceCount : null,
+                DeclaredVariableCount = block.HasSerializedHeader ? block.ExpectedVariableCount : null,
+                HasNextSeparator = block.HasNextSeparator,
+                ResultScriptIndex = resultScriptIndex
+            });
+        }
+
+        return nextIndex == resultScriptCount ? summaries : [];
+    }
+
+    /// <summary>
+    ///     Whether <see cref="DialogueResultScriptParser.BuildResultScripts" /> keeps this block: it keeps a block
+    ///     with source, bytecode, locals or references, and one it marks as an incomplete executable bundle
+    ///     (an ambiguous or malformed component, or an SCHR that declares content the block does not hold).
+    /// </summary>
+    private static bool BlockCarriesContent(DialogueResultScriptParser.DialogueResultScriptBuilder block)
+    {
+        return !string.IsNullOrEmpty(block.SourceText)
+               || block.CompiledData is { Length: > 0 }
+               || block.Variables.Count > 0
+               || block.ReferencedObjects.Count > 0
+               || block.IsAmbiguous
+               || block.HasMalformedSerializedHeader
+               || block.SerializedLocals.IsMalformed
+               || block.ExpectedCompiledSize != 0
+               || block.ExpectedVariableCount != 0
+               || block.ExpectedReferenceCount != 0;
     }
 
     private DialogueRecord? ParseDialogueFromScanResult(DetectedMainRecord record)
@@ -269,6 +360,7 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
         var addTopics = new List<uint>();
         var followUpInfos = new List<uint>();
         string? promptText = null;
+        InfoSerializedData? serializedInfoData = null;
 
         // CTDA condition-based speaker tracking
         uint? conditionSpeaker = null;
@@ -345,6 +437,11 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
                     break;
                 case "QSTI" when sub.DataLength == 4:
                     questFormId = RecordParserContext.ReadFormId(subData, record.IsBigEndian);
+                    break;
+                case "DATA" when serializedInfoData is null:
+                    // Four u8 fields (type, next speaker, Flags 1, Flags 2): no byte order to apply.
+                    // Presentation-only; InfoFlags/InfoFlagsExt stay as they were.
+                    serializedInfoData = InfoSerializedData.TryRead(subData);
                     break;
                 case "NAM1":
                     FlushCurrentResponse();
@@ -520,11 +617,14 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             editorId ?? Context.GetEditorId(record.FormId),
             record.FormId,
             Context.ResolveFormName,
-            Context.MinidumpInfo is not null);
+            Context.MinidumpInfo is not null,
+            Context.ExternalScriptVariables);
         if (resultScripts.Count > 0)
         {
             hasResultScript = true;
         }
+
+        var resultScriptBlockSummaries = DescribeResultScriptBlocks(resultScriptBlocks, resultScripts.Count);
 
         return new DialogueRecord
         {
@@ -549,6 +649,8 @@ internal sealed class DialogueConditionParser(RecordParserContext context) : Rec
             FollowUpInfos = followUpInfos,
             HasResultScript = hasResultScript,
             ResultScripts = resultScripts,
+            ResultScriptBlocks = resultScriptBlockSummaries,
+            SerializedInfoData = serializedInfoData,
             Offset = record.Offset,
             RawRecordOffset = record.Offset,
             IsBigEndian = record.IsBigEndian

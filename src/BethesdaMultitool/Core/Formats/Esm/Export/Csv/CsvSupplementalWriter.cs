@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
@@ -10,6 +11,8 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.RuntimeBuffer;
 using BethesdaMultitool.Core.Strings;
 
@@ -17,16 +20,6 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export.Csv;
 
 internal static class CsvSupplementalWriter
 {
-    /// <summary>Builds a set of named CSVs describing which runtime structures own each detected runtime string.</summary>
-    /// <summary>
-    ///     Rows written per unreferenced/unknown-owner CSV. Since the 2026-09-03 change that feeds
-    ///     ALL strings through ownership analysis (not just shape-classified ones), these two sets
-    ///     run to hundreds of thousands of rows on a real dump — 550k <c>Other</c> strings on
-    ///     xex44 alone. The counts in the summary report stay exact; only the row dumps are capped,
-    ///     and each capped file says so on its last line.
-    /// </summary>
-    private const int MaxUnattributedCsvRows = 20_000;
-
     /// <summary>Builds a CSV of Globals.</summary>
     public static string GenerateGlobalsCsv(List<GlobalRecord> globals)
     {
@@ -189,7 +182,7 @@ internal static class CsvSupplementalWriter
     {
         var sb = new StringBuilder();
         sb.AppendLine(
-            "RowType,FormID,EditorID,Title,Description,IsMessageBox,IsAutoDisplay,QuestFormID,QuestName,DisplayTime,ButtonCount,Icon,Endianness,Offset");
+            "RowType,FormID,EditorID,Title,Description,IsMessageBox,IsAutoDisplay,QuestFormID,QuestName,DisplayTime,ButtonCount,Icon,Endianness,Offset,RuntimeDescriptionFileOffset,RuntimeDescriptionStatus,RuntimeButtonListStatus,ButtonIndex,ButtonText,ButtonConditions,ButtonTextStatus,ButtonConditionStatus,ButtonItemVA,ButtonTextVA,RuntimeDescriptionMappings,DescriptionSource,ButtonSource,ButtonSourceOffset,RuntimeObjectOffset,StoredButtonCount");
 
         foreach (var m in messages.OrderBy(m => m.EditorId ?? ""))
         {
@@ -207,7 +200,54 @@ internal static class CsvSupplementalWriter
                 m.Buttons.Count.ToString(),
                 Fmt.CsvEscape(m.Icon),
                 Fmt.Endian(m.IsBigEndian),
-                m.Offset.ToString()));
+                m.Offset.ToString(),
+                m.RuntimeEvidence?.DescriptionFileOffset is { } descriptionOffset ? $"0x{descriptionOffset:X8}" : "",
+                Fmt.CsvEscape(m.RuntimeEvidence?.DescriptionStatus),
+                Fmt.CsvEscape(m.RuntimeEvidence?.ButtonListStatus), "", "", "", "", "", "", "",
+                Fmt.CsvEscape(string.Join("\n", RuntimeMessageEvidenceFormatter.FormatDescriptionMappings(m.RuntimeEvidence))),
+                RuntimeMessageEvidenceFormatter.SourceToken(m.DescriptionSource),
+                RuntimeMessageEvidenceFormatter.SourceToken(m.ButtonSource),
+                (m.ButtonSource == MessageFieldSource.RuntimeObject ? m.RuntimeButtons?.ObjectFileOffset ?? m.Offset : m.Offset)
+                    .ToString(CultureInfo.InvariantCulture),
+                m.RuntimeButtons?.ObjectFileOffset.ToString(CultureInfo.InvariantCulture) ?? "",
+                m.StoredButtonCount?.ToString(CultureInfo.InvariantCulture) ?? ""));
+
+            var conditionContext = ConditionDisplayContext.ForResolver(resolver, GameProfiles.DefaultGame, gameAssumed: true);
+            for (var index = 0; index < m.Buttons.Count; index++)
+            {
+                var evidence = m.ButtonSource == MessageFieldSource.RuntimeObject
+                    ? m.RuntimeEvidence?.Buttons.ElementAtOrDefault(index) : null;
+                AppendButton("BUTTON", index, m.Buttons[index], m.GetButtonConditions(index), evidence,
+                    m.ButtonSource, m.ButtonSource == MessageFieldSource.RuntimeObject
+                        ? m.RuntimeButtons?.ObjectFileOffset ?? m.Offset : m.Offset,
+                    m.ButtonSource == MessageFieldSource.RuntimeObject ? m.RuntimeButtons?.ObjectFileOffset ?? m.Offset : null);
+            }
+
+            foreach (var runtime in RuntimeMessageEvidenceFormatter.Alternatives(m))
+                for (var index = 0; index < runtime.Buttons.Count; index++)
+                    AppendButton("RUNTIME_BUTTON", index, runtime.Buttons[index], runtime.GetConditions(index),
+                        runtime.Evidence?.Buttons.ElementAtOrDefault(index), MessageFieldSource.RuntimeObject,
+                        runtime.ObjectFileOffset, runtime.ObjectFileOffset);
+
+            void AppendButton(string rowType, int index, string text, IReadOnlyList<DialogueCondition> conditions,
+                RuntimeMessageButtonEvidence? evidence, MessageFieldSource source, long sourceOffset, long? runtimeOffset)
+            {
+                var row = new string?[30];
+                row[0] = rowType;
+                row[1] = Fmt.FId(m.FormId);
+                row[2] = m.EditorId;
+                row[17] = index.ToString(CultureInfo.InvariantCulture);
+                row[18] = text;
+                row[19] = string.Join("\n", MessageConditionFormatter.Format(conditions, conditionContext));
+                row[20] = evidence?.TextStatus;
+                row[21] = evidence?.ConditionStatus;
+                row[22] = evidence is null ? null : $"0x{evidence.ItemVirtualAddress:X8}";
+                row[23] = evidence?.TextVirtualAddress is { } textVa ? $"0x{textVa:X8}" : null;
+                row[26] = RuntimeMessageEvidenceFormatter.SourceToken(source);
+                row[27] = sourceOffset.ToString(CultureInfo.InvariantCulture);
+                row[28] = runtimeOffset?.ToString(CultureInfo.InvariantCulture);
+                sb.AppendLine(string.Join(",", row.Select(Fmt.CsvEscape)));
+            }
         }
 
         return sb.ToString();
@@ -315,21 +355,7 @@ internal static class CsvSupplementalWriter
         return sb.ToString();
     }
 
-    /// <summary>
-    ///     Say so in the file when rows were dropped, so a reader never mistakes a capped dump for
-    ///     the whole set — the summary report carries the exact totals.
-    /// </summary>
-    private static void AppendTruncationNote(StringBuilder sb, int totalRows)
-    {
-        if (totalRows > MaxUnattributedCsvRows)
-        {
-            sb.AppendLine(
-                Fmt.CsvEscape(
-                    $"-- truncated: showing {MaxUnattributedCsvRows:N0} of {totalRows:N0} rows; "
-                    + "see the ownership summary report for exact totals --"));
-        }
-    }
-
+    /// <summary>Exports every string row with a consistent CSV schema; presentation reports may abbreviate.</summary>
     public static Dictionary<string, string> GenerateStringOwnershipCsvs(RuntimeStringOwnershipAnalysis analysis)
     {
         var files = new Dictionary<string, string>();
@@ -340,14 +366,12 @@ internal static class CsvSupplementalWriter
             sb.AppendLine(
                 "Text,Category,Length,StringFileOffset,StringVA,InboundPointerCount,FirstReferrerFileOffset,FirstReferrerVA,FirstReferrerContext");
 
-            // Most-referenced first: an unnamed string that many pointers reach is the best lead
-            // for naming a whole class of text, and it is what survives the row cap.
+            // Most-referenced first for inspection; machine-readable exports retain every hit.
             foreach (var hit in analysis.ReferencedOwnerUnknownHits
                          .OrderByDescending(h => h.InboundPointerCount)
                          .ThenBy(h => h.Category.ToString(), StringComparer.Ordinal)
                          .ThenBy(h => h.Text, StringComparer.Ordinal)
-                         .ThenBy(h => h.FileOffset)
-                         .Take(MaxUnattributedCsvRows))
+                         .ThenBy(h => h.FileOffset))
             {
                 sb.AppendLine(string.Join(",",
                     Fmt.CsvEscape(hit.Text),
@@ -361,7 +385,6 @@ internal static class CsvSupplementalWriter
                     Fmt.CsvEscape(hit.OwnerResolution?.ReferrerContext)));
             }
 
-            AppendTruncationNote(sb, analysis.ReferencedOwnerUnknownHits.Count);
             files["string_unknown_owners.csv"] = sb.ToString();
         }
 
@@ -373,8 +396,7 @@ internal static class CsvSupplementalWriter
             foreach (var hit in analysis.UnreferencedHits
                          .OrderBy(h => h.Category.ToString(), StringComparer.Ordinal)
                          .ThenBy(h => h.Text, StringComparer.Ordinal)
-                         .ThenBy(h => h.FileOffset)
-                         .Take(MaxUnattributedCsvRows))
+                         .ThenBy(h => h.FileOffset))
             {
                 sb.AppendLine(string.Join(",",
                     Fmt.CsvEscape(hit.Text),
@@ -383,8 +405,6 @@ internal static class CsvSupplementalWriter
                     FormatOffset(hit.FileOffset),
                     FormatOffset(hit.VirtualAddress)));
             }
-
-            AppendTruncationNote(sb, analysis.UnreferencedHits.Count);
 
             files["string_unreferenced.csv"] = sb.ToString();
         }
@@ -416,10 +436,7 @@ internal static class CsvSupplementalWriter
             sb.AppendLine(
                 "Text,Length,OwnerKind,OwnerName,OwnerFormID,OwnerRecordType,OwnerField,ClaimSource,Confidence,InboundPointerCount,StringFileOffset,StringVA");
 
-            // Capped like the unattributed dumps. These used to be uncapped, which was tolerable
-            // while the four classified categories were the only ones written; adding Other would
-            // otherwise turn a few-MB export into a hundred-MB one.
-            foreach (var hit in categoryHits.Take(MaxUnattributedCsvRows))
+            foreach (var hit in categoryHits)
             {
                 var r = hit.OwnerResolution;
                 sb.AppendLine(string.Join(",",
@@ -437,8 +454,6 @@ internal static class CsvSupplementalWriter
                     FormatOffset(hit.VirtualAddress)));
             }
 
-            AppendTruncationNote(sb, categoryHits.Count);
-
             var fileName = category switch
             {
                 StringCategory.DialogueLine => "string_owned_dialogue.csv",
@@ -452,6 +467,22 @@ internal static class CsvSupplementalWriter
             files[fileName] = sb.ToString();
         }
 
+        // Candidate rows preserve competing owners and the pointer that actually supports each
+        // attribution. Unknown/ambiguous hits must not disappear into the owned-only exports.
+        var candidatesCsv = new StringBuilder();
+        candidatesCsv.AppendLine("Text,StringFileOffset,StringVA,AmbiguousOwners,OwnerFormID,OwnerRecordType,OwnerField,ClaimSource,Confidence,OwnerFileOffset,ReferrerVA,ReferrerFileOffset,Validation,EstablishesOwnership");
+        foreach (var hit in analysis.AllHits.OrderBy(h => h.FileOffset))
+        foreach (var candidate in hit.OwnerResolution?.Candidates ?? [])
+        {
+            candidatesCsv.AppendLine(string.Join(",", Fmt.CsvEscape(hit.Text), FormatOffset(hit.FileOffset),
+                FormatOffset(hit.VirtualAddress), hit.OwnerResolution!.HasAmbiguousOwners ? "Yes" : "No",
+                candidate.OwnerFormId is { } formId ? $"0x{formId:X8}" : "",
+                Fmt.CsvEscape(candidate.OwnerRecordType), Fmt.CsvEscape(candidate.OwnerFieldOrSubrecord),
+                candidate.ClaimSource.ToString(), candidate.Confidence.ToString(), FormatOffset(candidate.OwnerFileOffset),
+                FormatOffset(candidate.ReferrerVa), FormatOffset(candidate.ReferrerFileOffset),
+                Fmt.CsvEscape(candidate.Validation), candidate.EstablishesOwnership ? "Yes" : "No"));
+        }
+        files["string_ownership_candidates.csv"] = candidatesCsv.ToString();
         return files;
 
         static string FormatOffset(long? value)
@@ -460,12 +491,48 @@ internal static class CsvSupplementalWriter
         }
     }
 
-    /// <summary>Builds a CSV of Terminals.</summary>
-    public static string GenerateTerminalsCsv(List<TerminalRecord> terminals, FormIdResolver _resolver)
+    /// <summary>
+    ///     The twelve legacy terminals.csv columns, in their historical positions. Column 11,
+    ///     <c>MenuItemResultText</c>, holds the RNAM result text (it once held the always-empty legacy
+    ///     <see cref="Models.TerminalMenuItem.ResultScript" /> FormID under this same header).
+    /// </summary>
+    internal const string TerminalsCsvLegacyHeader =
+        "RowType,FormID,EditorID,Name,Difficulty,DifficultyName,HeaderText,Endianness,Offset,MenuItemText,MenuItemResultText,MenuItemSubTerminalFormID";
+
+    /// <summary>
+    ///     The columns appended after the legacy twelve, filled on MENUITEM rows and empty on TERMINAL rows.
+    ///     <c>(FormID, MenuItemIndex, MenuItemSubTerminalFormID)</c> is the terminal's sub-menu edge list.
+    /// </summary>
+    internal const string TerminalsCsvAppendedHeader =
+        "MenuItemIndex,MenuItemFlags,MenuItemFlagNames,MenuItemDisplayNoteFormID,MenuItemSubTerminalEditorID,MenuItemConditionCount,MenuItemConditions,MenuItemScriptSourceKind,MenuItemScriptSource,MenuItemScriptDecompiled,MenuItemScriptReferences,MenuItemScriptIncomplete";
+
+    /// <summary>
+    ///     Builds a CSV of Terminals: one TERMINAL row per record and one MENUITEM row per menu item, in record
+    ///     order. The twelve legacy columns keep their positions; twelve more are appended (see
+    ///     <see cref="TerminalsCsvAppendedHeader" />), built from the same <see cref="TerminalMenuItemDescriber" />
+    ///     as terminal_report.txt and <c>show</c>. Conditions are the shared describer's lines joined by line
+    ///     breaks; script source and decompiled text are written in full (quoted, CRLF intact), and
+    ///     <c>MenuItemScriptSourceKind</c> is the <see cref="Script.ScriptSourceProvenance" /> token.
+    /// </summary>
+    /// <param name="terminals">The TERM records.</param>
+    /// <param name="resolver">EditorID source.</param>
+    /// <param name="conditions">
+    ///     Condition context (game and quest-variable names); null assumes the default game.
+    /// </param>
+    /// <param name="isMemoryDumpInput">True when the records came from a memory dump.</param>
+    public static string GenerateTerminalsCsv(
+        List<TerminalRecord> terminals,
+        FormIdResolver resolver,
+        ConditionDisplayContext? conditions = null,
+        bool isMemoryDumpInput = false)
     {
+        ArgumentNullException.ThrowIfNull(resolver);
+        conditions ??= ConditionDisplayContext.ForResolver(resolver, GameProfiles.DefaultGame, gameAssumed: true);
+        // One empty cell, each preceded by its comma, per appended column.
+        var noAppendedValues = new string(',', TerminalsCsvAppendedHeader.Split(',').Length);
+
         var sb = new StringBuilder();
-        sb.AppendLine(
-            "RowType,FormID,EditorID,Name,Difficulty,DifficultyName,HeaderText,Endianness,Offset,MenuItemText,MenuItemResultText,MenuItemSubTerminalFormID");
+        sb.AppendLine($"{TerminalsCsvLegacyHeader},{TerminalsCsvAppendedHeader}");
 
         foreach (var t in terminals.OrderBy(t => t.EditorId ?? ""))
         {
@@ -479,18 +546,31 @@ internal static class CsvSupplementalWriter
                 Fmt.CsvEscape(t.HeaderText),
                 Fmt.Endian(t.IsBigEndian),
                 t.Offset.ToString(),
-                "", "", ""));
+                "", "", "") + noAppendedValues);
 
-            foreach (var mi in t.MenuItems)
+            foreach (var item in TerminalMenuItemDescriber.Describe(t, conditions, isMemoryDumpInput))
             {
+                var script = item.Script;
                 sb.AppendLine(string.Join(",",
                     "MENUITEM",
                     Fmt.FId(t.FormId),
                     "", "", "", "", "",
                     "", "",
-                    Fmt.CsvEscape(mi.Text),
-                    Fmt.FIdN(mi.ResultScript),
-                    Fmt.FIdN(mi.SubTerminal)));
+                    Fmt.CsvEscape(item.Text),
+                    Fmt.CsvEscape(item.ResultText),
+                    Fmt.FIdN(item.SubTerminalFormId),
+                    item.Index.ToString(CultureInfo.InvariantCulture),
+                    item.FlagsRaw is { } flags ? $"0x{flags:X2}" : "",
+                    Fmt.CsvEscape(item.FlagNames),
+                    Fmt.FIdN(item.DisplayNoteFormId),
+                    Fmt.CsvEscape(item.SubTerminalEditorId),
+                    item.ConditionLines.Count.ToString(CultureInfo.InvariantCulture),
+                    Fmt.CsvEscape(string.Join("\n", item.ConditionLines)),
+                    script.Classification.Token,
+                    Fmt.CsvEscape(script.SourceText),
+                    Fmt.CsvEscape(script.DecompiledText),
+                    Fmt.CsvEscape(string.Join("; ", script.References.Select(reference => reference.Display))),
+                    script.IsIncompleteExecutableBundle ? "Yes" : "No"));
             }
         }
 

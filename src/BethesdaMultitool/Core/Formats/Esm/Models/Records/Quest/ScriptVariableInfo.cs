@@ -9,7 +9,10 @@ namespace BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 /// <param name="Type">Variable type byte from SLSD offset 16 (0 = float, non-zero = integer).</param>
 public record ScriptVariableInfo(uint Index, string? Name, byte Type)
 {
-    /// <summary>Human-readable type name.</summary>
+    /// <summary>
+    ///     Storage type from SLSD alone. Reference locals also use non-integer storage;
+    ///     presentation must consult the owning script's SCRV table through ScriptVariableTypeResolver.
+    /// </summary>
     public string TypeName => Type == 0 ? "float" : "int";
 }
 

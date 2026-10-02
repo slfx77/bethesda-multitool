@@ -36,8 +36,8 @@ public record ImageSpaceModifierRecord
     public uint? OutroSoundFormId { get; init; }
 
     /// <summary>
-    ///     Ordered raw subrecords, including unknown signatures and malformed/trailing bytes. This is
-    ///     the lossless authority when a format variant is not represented by a semantic projection.
+    ///     Parsed subrecords in source order, including unknown signatures. Full stored or decoded
+    ///     payload bytes are available through the raw record exporter.
     /// </summary>
     public IReadOnlyList<ImageSpaceModifierRawSubrecord> OrderedSubrecords { get; init; } = [];
 

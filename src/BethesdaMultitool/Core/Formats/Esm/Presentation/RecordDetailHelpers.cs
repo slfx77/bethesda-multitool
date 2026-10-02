@@ -1,7 +1,11 @@
+using System.Globalization;
+using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Plugin.Reference;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Presentation;
 
@@ -10,6 +14,12 @@ namespace BethesdaMultitool.Core.Formats.Esm.Presentation;
 /// </summary>
 internal static class RecordDetailHelpers
 {
+    /// <summary>The PLDT/PLD2 type whose union is an object-type enum value (xEdit FNV "Object Type").</summary>
+    private const byte PackageLocationObjectTypeArm = 5;
+
+    /// <summary>The PTDT/PTD2 type whose union is an object-type enum value (xEdit FNV "Object Type").</summary>
+    private const byte PackageTargetObjectTypeArm = 2;
+
     internal static RecordDetailModel Model(
         string signature,
         uint formId,
@@ -67,6 +77,44 @@ internal static class RecordDetailHelpers
             Label = label,
             Value = value
         };
+    }
+
+    // This row is scoped to the verified FO3/FNV schemas. Unknown-game captures retain only
+    // their stored bits; other games keep their existing curated detail output.
+    internal static string? ActorFlags(uint? flags, BethesdaGame game, string recordType)
+    {
+        if (flags is null || game is not (BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas or BethesdaGame.Unknown))
+        {
+            return null;
+        }
+
+        var definitions = FlagRegistry.GetActorBaseFlags(game, recordType);
+        return definitions.Length == 0
+            ? $"0x{flags.Value:X8}"
+            : FlagRegistry.DecodeFlagNamesWithHex(flags.Value, definitions);
+    }
+
+    // Authored FO3/FNV ACBS encoding, not an effective runtime level. The schema decoder
+    // exposes the union as U16; recover the same signed storage used by the typed parser.
+    internal static IEnumerable<RecordDetailEntry> ActorLevel(
+        BethesdaGame game, uint? flags, long? level, long? minimum, long? maximum)
+    {
+        if (game is not (BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas)
+            || flags is null || (flags.Value & 0x80) == 0)
+        {
+            return [Scalar("Level", level?.ToString() ?? "(unknown)")];
+        }
+
+        short? encoded = level is >= short.MinValue and <= ushort.MaxValue
+            ? unchecked((short)level.Value)
+            : null;
+        return
+        [
+            Scalar("Level Multiplier (stored)", (encoded / 1000m)?.ToString(CultureInfo.InvariantCulture) ?? "(unknown)"),
+            Scalar("Level (encoded)", encoded?.ToString(CultureInfo.InvariantCulture) ?? "(unknown)"),
+            Scalar("Minimum Level", minimum?.ToString(CultureInfo.InvariantCulture) ?? "(unknown)"),
+            Scalar("Maximum Level", maximum?.ToString(CultureInfo.InvariantCulture) ?? "(unknown)")
+        ];
     }
 
     internal static RecordDetailEntry Link(string label, uint? formId, FormIdResolver resolver)
@@ -140,6 +188,13 @@ internal static class RecordDetailHelpers
         return $"({bounds.X1}, {bounds.Y1}, {bounds.Z1}) -> ({bounds.X2}, {bounds.Y2}, {bounds.Z2})";
     }
 
+    /// <summary>
+    ///     Formats a PLDT/PLD2 location as <c>Type N, value, radius R</c>. Only the arms
+    ///     <see cref="PackageReferenceIntegrity.LocationTypeIsFormId" /> accepts (reference, cell, object ID)
+    ///     are resolved as FormIDs, and their text is unchanged. The object-type arm prints its enum value
+    ///     and every other arm its raw union, so an enum or unused value is never shown as whichever record
+    ///     happens to own that low FormID.
+    /// </summary>
     internal static string? FormatPackageLocation(PackageLocation? location, FormIdResolver resolver)
     {
         if (location == null)
@@ -147,12 +202,17 @@ internal static class RecordDetailHelpers
             return null;
         }
 
-        var union = location.Union != 0
-            ? resolver.GetBestNameWithRefChain(location.Union) ?? $"0x{location.Union:X8}"
-            : "(none)";
+        var union = DescribePackageLocationUnion(location, resolver);
         return $"Type {location.Type}, {union}, radius {location.Radius}";
     }
 
+    /// <summary>
+    ///     Formats a PTDT/PTD2 target as <c>TypeName: value, count C, radius R</c>. Only the arms
+    ///     <see cref="PackageReferenceIntegrity.TargetTypeIsFormId" /> accepts (specific reference, object ID)
+    ///     are resolved as FormIDs, and their text is unchanged. The object-type arm prints its enum value
+    ///     (<c>Object Type: 18</c>, which was once shown as HorseMarker, the record at FormID 0x12) and every
+    ///     other arm its raw union.
+    /// </summary>
     internal static string? FormatPackageTarget(PackageTarget? target, FormIdResolver resolver)
     {
         if (target == null)
@@ -160,10 +220,48 @@ internal static class RecordDetailHelpers
             return null;
         }
 
-        var targetValue = target.FormIdOrType != 0
-            ? resolver.GetBestNameWithRefChain(target.FormIdOrType) ?? $"0x{target.FormIdOrType:X8}"
-            : "(none)";
+        var targetValue = DescribePackageTargetUnion(target, resolver);
         return $"{target.TypeName}: {targetValue}, count {target.CountDistance}, radius {target.AcquireRadius:F1}";
+    }
+
+    private static string DescribePackageLocationUnion(PackageLocation location, FormIdResolver resolver)
+    {
+        if (PackageReferenceIntegrity.LocationTypeIsFormId(location.Type))
+        {
+            return FormatPackageFormIdArm(location.Union, resolver);
+        }
+
+        return location.Type == PackageLocationObjectTypeArm
+            ? $"object type {location.Union}"
+            : FormatPackageRawArm(location.Union);
+    }
+
+    private static string DescribePackageTargetUnion(PackageTarget target, FormIdResolver resolver)
+    {
+        if (PackageReferenceIntegrity.TargetTypeIsFormId(target.Type))
+        {
+            return FormatPackageFormIdArm(target.FormIdOrType, resolver);
+        }
+
+        return target.Type == PackageTargetObjectTypeArm
+            ? $"{target.FormIdOrType}"
+            : FormatPackageRawArm(target.FormIdOrType);
+    }
+
+    private static string FormatPackageFormIdArm(uint formId, FormIdResolver resolver)
+    {
+        return formId != 0
+            ? resolver.GetBestNameWithRefChain(formId) ?? $"0x{formId:X8}"
+            : "(none)";
+    }
+
+    /// <summary>
+    ///     A union arm that carries no FormID (unused in the on-disk schema, or a type this build does not
+    ///     know): zero stays <c>(none)</c>, anything else prints raw and is never resolved.
+    /// </summary>
+    private static string FormatPackageRawArm(uint value)
+    {
+        return value != 0 ? $"raw 0x{value:X8}" : "(none)";
     }
 
     internal static string? FormatVolley(PackageUseWeaponData? useWeaponData)

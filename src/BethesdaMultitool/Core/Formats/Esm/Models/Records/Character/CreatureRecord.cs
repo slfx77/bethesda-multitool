@@ -38,6 +38,12 @@ public record CreatureRecord
     /// <summary>Attack damage.</summary>
     public short AttackDamage { get; init; }
 
+    /// <summary>Authored DATA health; null means the field was not present or recovered.</summary>
+    public int? Health { get; init; }
+
+    /// <summary>Seven authored DATA SPECIAL bytes in Strength-through-Luck order.</summary>
+    public byte[]? Attributes { get; init; }
+
     /// <summary>Script FormID.</summary>
     public uint? Script { get; init; }
 

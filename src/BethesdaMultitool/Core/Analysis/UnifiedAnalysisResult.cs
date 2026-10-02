@@ -2,6 +2,7 @@ using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Land;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Analysis;
 
@@ -30,8 +31,12 @@ public sealed class UnifiedAnalysisResult : IDisposable
 
     internal MemoryMappedViewAccessor? Accessor { get; private set; }
 
+    /// <summary>Optional forensic context, borrowed only until source disposal or ownership transfer.</summary>
+    internal RecordParserContext? ParserContext { get; set; }
+
     public void Dispose()
     {
+        ParserContext = null;
         Accessor?.Dispose();
         _mmf?.Dispose();
         _terrainInjection?.Dispose();
@@ -75,6 +80,7 @@ public sealed class UnifiedAnalysisResult : IDisposable
         var terrain = _terrainInjection;
         _mmf = null;
         Accessor = null;
+        ParserContext = null;
         _terrainInjection = null;
         return (mappedFile, accessor, terrain);
     }

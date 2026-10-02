@@ -2,12 +2,67 @@ using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using ImageMagick;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Export;
 
 public class HeightmapPngExporterVisualTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExportLandArtifacts_PreservesDuplicateRecordsAndAlphaLayers(bool repeatSourceOffsets)
+    {
+        var outputDir = Path.Combine(Path.GetTempPath(), $"terrain-duplicate-evidence-{Guid.NewGuid():N}");
+        try
+        {
+            var records = new List<ExtractedLandRecord>();
+            for (var index = 0; index < 3; index++)
+            {
+                var land = CreateLand(0x1000, 0, 0);
+                var visualData = land.VisualData!;
+                var layer = visualData.TextureLayers.Single(item => item.Kind == LandTextureLayerKind.Alpha);
+                records.Add(land with
+                {
+                    Header = land.Header with { Offset = repeatSourceOffsets ? 0x100 : 0x100 * (index + 1) },
+                    Heightmap = CreateLandHeightmap(index * 80f, 0),
+                    VisualData = visualData with
+                    {
+                        VertexColors = Enumerable.Repeat((byte)(40 + index * 40), 33 * 33 * 3).ToArray(),
+                        TextureLayers =
+                        [
+                            layer with { Offset = 0x120, BlendEntries = [new LandTextureBlendEntry(0, 0, 0, 0f)] },
+                            layer with { Offset = 0x120, BlendEntries = [new LandTextureBlendEntry(0, 0, 0, 1f)] }
+                        ]
+                    }
+                });
+            }
+
+            await HeightmapPngExporter.ExportLandVisualsAsync(records, outputDir);
+            await HeightmapPngExporter.ExportLandRecordsAsync(records, outputDir, useColorGradient: false);
+
+            var visualDir = Path.Combine(outputDir, "land_visuals", "worldspaces", "ws_unknown");
+            var colors = Directory.GetFiles(Path.Combine(visualDir, "vclr"), "*.png");
+            var masks = Directory.GetFiles(Path.Combine(visualDir, "texture_masks"), "*.png");
+            var heights = Directory.GetFiles(Path.Combine(outputDir, "worldspaces", "ws_unknown"), "*.png");
+            Assert.Equal(3, colors.Length);
+            Assert.Equal(6, masks.Length);
+            Assert.Equal(3, heights.Length);
+            Assert.Equal(new byte[] { 40, 80, 120 }, colors.Select(path => ReadPngRed(path, 0, 0)).Order().ToArray());
+            Assert.Equal(new byte[] { 0, 0, 0, 255, 255, 255 },
+                masks.Select(path => ReadPngRed(path, 16, 16)).Order().ToArray());
+            Assert.Equal(3, heights.Select(path => ReadPngRed(path, 0, 0)).Distinct().Count());
+        }
+        finally
+        {
+            if (Directory.Exists(outputDir))
+            {
+                Directory.Delete(outputDir, true);
+            }
+        }
+    }
+
     [Fact]
     public async Task ExportLandVisualsAsync_WritesVclrMasksAndTextureComposite()
     {
@@ -510,5 +565,13 @@ public class HeightmapPngExporterVisualTests
         return (
             (int)BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(16, 4)),
             (int)BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(20, 4)));
+    }
+
+    private static byte ReadPngRed(string path, int x, int y)
+    {
+        using var image = new MagickImage(path);
+        using var pixels = image.GetPixels();
+        var rgba = Assert.IsType<byte[]>(pixels.ToByteArray(PixelMapping.RGBA));
+        return rgba[(y * (int)image.Width + x) * 4];
     }
 }

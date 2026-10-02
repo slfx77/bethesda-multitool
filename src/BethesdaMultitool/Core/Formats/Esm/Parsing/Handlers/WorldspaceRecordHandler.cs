@@ -595,7 +595,11 @@ internal sealed class WorldspaceRecordHandler(RecordParserContext context) : Rec
             MapOffsetZ = esm.MapOffsetZ ?? runtime.MapOffsetZ,
             Cells = esm.Cells.Count > 0 ? esm.Cells : runtime.Cells,
             Offset = esm.Offset != 0 ? esm.Offset : runtime.Offset,
-            IsBigEndian = esm.IsBigEndian || runtime.IsBigEndian
+            // Byte order describes the retained physical source, not enrichment fields.
+            // A cell-backed stub has no source offset and must not relabel a PC WRLD.
+            IsBigEndian = esm.Offset != 0 || runtime.Offset == 0
+                ? esm.IsBigEndian
+                : runtime.IsBigEndian
         };
     }
 }

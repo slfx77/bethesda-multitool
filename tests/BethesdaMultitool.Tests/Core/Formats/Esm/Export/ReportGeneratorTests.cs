@@ -1,15 +1,20 @@
 using System.Globalization;
+using BethesdaMultitool.CLI.Shared;
+using BethesdaMultitool.CLI.Show;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export.Csv;
 using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 using BethesdaMultitool.Core.Formats.Esm.Export.Report;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
+using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Subrecords;
 using BethesdaMultitool.Core.RuntimeBuffer;
 using BethesdaMultitool.Core.Strings;
+using EsmAnalyzer.Commands.Dmp;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Export;
@@ -17,6 +22,8 @@ namespace BethesdaMultitool.Tests.Core.Formats.Esm.Export;
 /// <summary>
 ///     Smoke tests for GeckReportGenerator, CsvActorWriter, and CsvItemWriter.
 ///     These tests anchor behavior before the partial class elimination refactoring.
+///     The "Script source labels" region pins how script text is labelled by provenance in the GECK script
+///     report, <c>GeckScriptWriter.BuildScriptReport</c>, show QUST and EsmAnalyzer <c>dmp scripts</c>.
 /// </summary>
 public class ReportGeneratorTests
 {
@@ -340,6 +347,279 @@ public class ReportGeneratorTests
         Assert.Contains("weapons", report);
         Assert.Contains("pistol.nif", report);
         Assert.Contains("helmet.dds", report);
+    }
+
+    #endregion
+
+    #region Script source labels (GECK script report, BuildScriptReport, show QUST, EsmAnalyzer dmp scripts)
+
+    // One rule, pinned across every presenter this group owns: "With Source (SCTX)" and the "Source (SCTX)"
+    // heading mean text a script author wrote (plugin SCTX, or SCTX recovered from a memory dump). A memory-dump
+    // SCTX that is a BethesdaMultitool decompilation of the record's own SCDA is labelled a reconstruction.
+    // Before this, the Feb 2010 dump's script_report.txt said "With Source (SCTX): 1,311" and headed all 1,311
+    // reconstructions "Source (SCTX):"; only an in-text banner revealed them.
+
+    private const string AbsenceWordingLiteral =
+        "not present in this capture; absence from a partial memory dump is not evidence of absence from the build";
+
+    private const string ReconstructionLabelLiteral =
+        "Reconstruction (SCDA)";
+
+    /// <summary>
+    ///     A memory-dump pair: one SCTX recovered from a dump fragment (accepted by the same-dump correspondence
+    ///     gate) and one SCTX that the emission contract synthesized from SCDA because no proven source survived.
+    /// </summary>
+    private static List<ScriptRecord> DumpScripts()
+    {
+        return
+        [
+            new ScriptRecord
+            {
+                FormId = 0x00AB1001,
+                EditorId = "AlphaCapturedSCRIPT",
+                SourceText = "scn AlphaCapturedSCRIPT\r\nBegin GameMode\r\nEnd",
+                SourceTextOrigin = ScriptSourceTextOrigin.DmpFragment,
+                SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
+                DecompiledText = "ScriptName AlphaCapturedSCRIPT\nBegin GameMode\nEnd\n",
+                CompiledData = [0x1D, 0x00, 0x00, 0x00],
+                CompiledSize = 4,
+                IsCompiled = true
+            },
+            new ScriptRecord
+            {
+                FormId = 0x00AB1002,
+                EditorId = "BravoReconstructedSCRIPT",
+                SourceText =
+                    "; === Decompiled from captured SCDA — no proven source text in the dump. ===\r\n" +
+                    "ScriptName BravoReconstructedSCRIPT\r\nBegin GameMode\r\nEnd\r\n",
+                SourceTextOrigin = ScriptSourceTextOrigin.DecompiledFromBytecode,
+                SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted,
+                DecompiledText = "ScriptName BravoReconstructedSCRIPT\nBegin GameMode\nEnd\n",
+                CompiledData = [0x1D, 0x00, 0x00, 0x00],
+                CompiledSize = 4,
+                IsCompiled = true
+            }
+        ];
+    }
+
+    private static string[] ReportLines(string report)
+    {
+        return report.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+    }
+
+    private static int CountLines(string[] lines, string line)
+    {
+        return lines.Count(candidate => string.Equals(candidate, line, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Script_report_labels_decompiled_substitute_as_reconstructed()
+    {
+        var files = GeckReportGenerator.GenerateAllReports(
+            new ReportDataSources(new RecordCollection { Scripts = DumpScripts() }));
+
+        var lines = ReportLines(files["script_report.txt"]);
+
+        // Counts: only the captured text is source; the reconstruction is counted on its own line.
+        Assert.Contains("  With Source (SCTX): 1", lines);
+        Assert.Contains("  With Reconstruction: 1", lines);
+        Assert.Contains("  With Bytecode (SCDA): 2", lines);
+
+        // Headings: the captured body keeps "Source (SCTX):"; the reconstruction never gets it.
+        Assert.Equal(1, CountLines(lines, "Source (SCTX):"));
+        Assert.Equal(1, CountLines(lines, "Reconstruction (SCDA):"));
+        var bravo = Array.IndexOf(lines, "Editor ID:      BravoReconstructedSCRIPT");
+        Assert.True(bravo > 0);
+        Assert.Equal(-1, Array.IndexOf(lines, "Source (SCTX):", bravo));
+        Assert.True(Array.IndexOf(lines, "Reconstruction (SCDA):", bravo)
+                    > bravo);
+
+        // Each dump script says what its text is, right after the "Source:" line.
+        var alphaOrigin = Array.IndexOf(lines,
+            "Source Origin:  dmp-fragment (captured SCTX; correspondence: accepted)");
+        Assert.True(alphaOrigin > 0);
+        Assert.Equal("Source:         ESM Record", lines[alphaOrigin - 1]);
+        var bravoOrigin = Array.IndexOf(lines,
+            "Source Origin:  decompiled-from-bytecode " +
+            "(reconstruction)");
+        Assert.True(bravoOrigin > bravo);
+
+        // The existing lines stay verbatim, and "Bytecode Order:" still follows "Endianness:" directly.
+        Assert.Equal(2, CountLines(lines, "Is Compiled:    True"));
+        var endianness = Array.IndexOf(lines, "Endianness:     Little-Endian (PC)", bravo);
+        Assert.True(endianness > bravoOrigin);
+        Assert.StartsWith("Bytecode Order: ", lines[endianness + 1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Script_report_for_plugin_scripts_keeps_its_existing_lines()
+    {
+        var plugin = new ScriptRecord
+        {
+            FormId = 0x00168CFC,
+            EditorId = "VERShadows01QuestScript",
+            SourceText = "scn VERShadows01QuestScript\r\nBegin GameMode\r\nEnd"
+        };
+
+        var report = GeckScriptWriter.GenerateScriptsReport([plugin]);
+        var lines = ReportLines(report);
+
+        Assert.Contains("  With Source (SCTX): 1", lines);
+        Assert.Equal(1, CountLines(lines, "Source (SCTX):"));
+        Assert.DoesNotContain("With Reconstructed Source", report, StringComparison.Ordinal);
+        Assert.DoesNotContain("Source Origin:", report, StringComparison.Ordinal);
+        var sourceLine = Array.IndexOf(lines, "Source:         ESM Record");
+        Assert.True(sourceLine > 0);
+        Assert.Equal("Endianness:     Little-Endian (PC)", lines[sourceLine + 1]);
+    }
+
+    [Fact]
+    public void Script_report_for_dump_input_names_unattributed_and_absent_source()
+    {
+        var unattributed = new ScriptRecord
+        {
+            FormId = 0x00AB1003,
+            EditorId = "CharlieUnattributedSCRIPT",
+            SourceText = "scn CharlieUnattributedSCRIPT"
+        };
+        var absent = new ScriptRecord
+        {
+            FormId = 0x00AB1004,
+            EditorId = "DeltaNoSourceSCRIPT",
+            CompiledData = [0x1D, 0x00, 0x00, 0x00],
+            CompiledSize = 4
+        };
+
+        var lines = ReportLines(
+            GeckScriptWriter.GenerateScriptsReport([unattributed, absent], null, isMemoryDumpInput: true));
+
+        Assert.Contains("  With Source (SCTX): 1", lines);
+        Assert.Contains("Source Origin:  unattributed-same-dump (captured SCTX; correspondence: unverified)", lines);
+        Assert.Contains($"Source Origin:  none ({AbsenceWordingLiteral})", lines);
+    }
+
+    [Fact]
+    public void BuildScriptReport_adds_source_origin_only_for_dump_derived_scripts()
+    {
+        var plugin = GeckScriptWriter.BuildScriptReport(
+            new ScriptRecord
+            {
+                FormId = 0x00168CFC,
+                EditorId = "VERShadows01QuestScript",
+                SourceText = "scn VERShadows01QuestScript"
+            },
+            FormIdResolver.Empty);
+        var pluginIdentity = Assert.Single(plugin.Sections, section => section.Name == "Identity");
+        Assert.Equal(new[] { "Type", "Is Compiled" }, pluginIdentity.Fields.Select(field => field.Key).ToArray());
+
+        var reconstructed = GeckScriptWriter.BuildScriptReport(DumpScripts()[1], FormIdResolver.Empty);
+        var identity = Assert.Single(reconstructed.Sections, section => section.Name == "Identity");
+        var origin = Assert.IsType<ReportValue.StringVal>(
+            identity.Fields.Single(field => field.Key == "Source Origin").Value);
+        Assert.Equal(
+            "decompiled-from-bytecode (reconstruction)",
+            origin.Raw);
+        // The body keeps the section name "Source" so comparisons still align.
+        Assert.Single(reconstructed.Sections, section => section.Name == "Source");
+
+        var absent = GeckScriptWriter.BuildScriptReport(
+            new ScriptRecord { FormId = 0x00AB1004, EditorId = "DeltaNoSourceSCRIPT" },
+            FormIdResolver.Empty,
+            isMemoryDumpInput: true);
+        var absentIdentity = Assert.Single(absent.Sections, section => section.Name == "Identity");
+        Assert.Equal($"none ({AbsenceWordingLiteral})",
+            absentIdentity.Fields.Single(field => field.Key == "Source Origin").Value.Display);
+    }
+
+    [Theory]
+    [InlineData(ScriptSourceTextOrigin.DecompiledFromBytecode, true, ReconstructionLabelLiteral)]
+    [InlineData(ScriptSourceTextOrigin.RuntimeSameObject, true,
+        "Recovered source (runtime object)")]
+    [InlineData(ScriptSourceTextOrigin.None, false, "Source (SCTX)")]
+    public void Quest_show_labels_its_script_text_by_provenance(ScriptSourceTextOrigin origin, bool dumpInput,
+        string expectedLabel)
+    {
+        const uint questFormId = 0x00AB2001;
+        const uint scriptFormId = 0x00AB2002;
+        var records = new RecordCollection
+        {
+            Quests = [new QuestRecord { FormId = questFormId, EditorId = "LabelProbeQuest", Script = scriptFormId }],
+            Scripts =
+            [
+                new ScriptRecord
+                {
+                    FormId = scriptFormId,
+                    EditorId = "LabelProbeQuestSCRIPT",
+                    SourceText = "scn LabelProbeQuestSCRIPT\r\nBegin GameMode\r\nEnd",
+                    SourceTextOrigin = origin,
+                    SourceTextCorrespondenceStatus = ScriptSourceCorrespondenceStatus.Accepted
+                }
+            ]
+        };
+
+        var rendered = false;
+        var output = CliHelpers.CaptureSpectreOutput(console =>
+        {
+            console.Profile.Width = 400;
+            rendered = new QuestShowRenderer().TryShow(records, FormIdResolver.Empty, questFormId, null,
+                new ShowRenderContext(console, false, dumpInput));
+        });
+
+        Assert.True(rendered);
+        Assert.Contains($"{expectedLabel}:", output, StringComparison.Ordinal);
+        if (dumpInput)
+        {
+            Assert.DoesNotContain("Source (SCTX):", output, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void Dmp_scripts_list_counts_reconstructions_apart_from_captured_source_and_escapes_editor_ids()
+    {
+        var scripts = DumpScripts();
+        scripts.Add(new ScriptRecord
+        {
+            FormId = 0x00AB1005,
+            EditorId = "Odd[Name]SCRIPT",
+            CompiledData = [0x1D, 0x00, 0x00, 0x00],
+            CompiledSize = 4
+        });
+
+        var output = CliHelpers.CaptureSpectreOutput(console =>
+        {
+            console.Profile.Width = 400;
+            DmpScriptCommands.RenderScriptList(console, scripts);
+        });
+
+        Assert.Contains("With source (SCTX): 1", output, StringComparison.Ordinal);
+        Assert.Contains("With reconstructed source (decompiled from SCDA): 1", output, StringComparison.Ordinal);
+        Assert.Contains($"Without source text: 1 ({AbsenceWordingLiteral})", output, StringComparison.Ordinal);
+        // Only the captured text is comparable with its decompilation; the reconstruction IS the decompilation.
+        Assert.Contains("With both (comparable): 1", output, StringComparison.Ordinal);
+        Assert.Contains("With bytecode (SCDA): 3", output, StringComparison.Ordinal);
+        Assert.Contains("Odd[Name]SCRIPT", output, StringComparison.Ordinal);
+        Assert.Contains("decompiled-from-bytecode", output, StringComparison.Ordinal);
+        Assert.Contains("dmp-fragment", output, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Dmp_scripts_show_heads_a_reconstruction_as_one()
+    {
+        var output = CliHelpers.CaptureSpectreOutput(console =>
+        {
+            console.Profile.Width = 400;
+            DmpScriptCommands.RenderScriptDetail(console, DumpScripts()[1]);
+        });
+
+        Assert.Contains($"--- {ReconstructionLabelLiteral} ---", output, StringComparison.Ordinal);
+        Assert.Contains(
+            "Source Origin: decompiled-from-bytecode " +
+            "(reconstruction)",
+            output, StringComparison.Ordinal);
+        Assert.Contains(
+            "--- Reconstruction (SCDA) ---",
+            output, StringComparison.Ordinal);
+        Assert.DoesNotContain("--- Source (SCTX) ---", output, StringComparison.Ordinal);
     }
 
     #endregion

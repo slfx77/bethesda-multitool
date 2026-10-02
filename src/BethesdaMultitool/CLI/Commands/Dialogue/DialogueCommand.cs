@@ -25,6 +25,9 @@ public static class DialogueCommand
         command.Subcommands.Add(DialogueTreeCommand.CreateNpcCommand());
         command.Subcommands.Add(DialoguePlayerLinesCommand.CreatePlayerLinesCommand());
         command.Subcommands.Add(DialogueProvenanceCommand.CreateProvenanceCommand());
+        command.Subcommands.Add(DialogueViewsCommand.Create());
+        command.Subcommands.Add(DialogueAudioCommand.Create());
+        command.Subcommands.Add(DialogueAudioCatalogCommand.Create());
 
         return command;
     }

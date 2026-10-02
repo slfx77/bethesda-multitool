@@ -287,6 +287,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
         byte? currentPerkConditionTabCount = null;
         byte? currentFunctionType = null;
         float? currentEffectValue = null;
+        float? currentEffectValue2 = null;
         uint? currentEffectFormId = null;
         string? currentEffectData = null;
         byte[]? currentRawEntryData = null;
@@ -315,6 +316,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                 PerkConditionTabCount = currentPerkConditionTabCount,
                 FunctionType = currentFunctionType,
                 EffectValue = currentEffectValue,
+                EffectValue2 = currentEffectValue2,
                 EffectFormId = currentEffectFormId,
                 EffectData = currentEffectData,
                 RawEntryData = currentRawEntryData,
@@ -330,6 +332,7 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
             currentPerkConditionTabCount = null;
             currentFunctionType = null;
             currentEffectValue = null;
+            currentEffectValue2 = null;
             currentEffectFormId = null;
             currentEffectData = null;
             currentRawEntryData = null;
@@ -427,7 +430,9 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
                     ParsePerkEntryFunctionData(
                         subData,
                         record.IsBigEndian,
+                        currentFunctionType,
                         ref currentEffectValue,
+                        ref currentEffectValue2,
                         ref currentEffectFormId,
                         ref currentEffectData);
                     break;
@@ -507,27 +512,32 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
     private static void ParsePerkEntryFunctionData(
         ReadOnlySpan<byte> subData,
         bool isBigEndian,
+        byte? functionType,
         ref float? effectValue,
+        ref float? effectValue2,
         ref uint? effectFormId,
         ref string? effectData)
     {
-        if (subData.Length == 4)
+        if (functionType is 1 or 2 && subData.Length == (functionType == 1 ? 4 : 8))
         {
-            var raw = RecordParserContext.ReadFormId(subData, isBigEndian);
             var floatValue = BinaryUtils.ReadFloat(subData, 0, isBigEndian);
-            if (float.IsFinite(floatValue) && MathF.Abs(floatValue) < 100000f)
+            if (float.IsFinite(floatValue))
             {
                 effectValue = floatValue;
                 effectData = floatValue.ToString("G");
-                return;
             }
-
-            if (LooksLikeFormId(raw))
+            if (functionType == 2)
             {
-                effectFormId = raw;
-                effectData = $"0x{raw:X8}";
-                return;
+                var second = BinaryUtils.ReadFloat(subData, 4, isBigEndian);
+                if (float.IsFinite(second)) { effectValue2 = second; }
             }
+            return;
+        }
+        if (functionType == 3 && subData.Length == 4)
+        {
+            effectFormId = RecordParserContext.ReadFormId(subData, isBigEndian);
+            effectData = $"0x{effectFormId:X8}";
+            return;
         }
 
         effectData = FormatRawBytes(subData);
@@ -576,13 +586,12 @@ internal sealed class EffectRecordHandler(RecordParserContext context) : RecordH
             Parameter2Display = param2.Display,
             Parameter2FormId = param2.FormId,
             ComparisonOperator = comparisonOperator,
-            ComparisonValue = comparisonValue
+            ComparisonValue = comparisonValue,
+            Flags = type,
+            RunOn = subData.Length >= 24 ? RecordParserContext.ReadFormId(subData[20..], isBigEndian) : null,
+            ReferenceFormId = subData.Length >= 28 ? RecordParserContext.ReadFormId(subData[24..], isBigEndian) : null,
+            ComparisonGlobalFormId = (type & 4) != 0 ? RecordParserContext.ReadFormId(subData[4..], isBigEndian) : null
         };
-    }
-
-    private static bool LooksLikeFormId(uint raw)
-    {
-        return raw is > 0 and < 0xFF000000;
     }
 
     private static string FormatRawBytes(ReadOnlySpan<byte> data)

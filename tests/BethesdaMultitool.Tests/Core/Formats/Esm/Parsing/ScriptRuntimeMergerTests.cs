@@ -4,12 +4,20 @@ using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.Writers.Encoders.Quest;
+using BethesdaMultitool.Core.Formats.Esm.Script;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Esm.Parsing;
 
 public sealed class ScriptRuntimeMergerTests
 {
+    // July 2010 X360 prototype SCPT 0x00132163 NVCCBunkerLogBookSCRIPT (ScriptName / Begin OnAdd /
+    // End). Its serialized SCDA is little-endian inside the big-endian record; the big-endian form
+    // is the same statements as an engine-swapped runtime Script object holds them.
+    private const uint LogBookFormId = 0x00132163;
+    private const string LogBookScdaLittleEndian = "1D00000010000800030004000000000011000000";
+    private const string LogBookScdaBigEndian = "001D0000001000080003000000040000" + "00110000";
+
     [Fact]
     public void SelectConsistentRuntimeData_DeduplicatesEquivalentSnapshots()
     {
@@ -585,7 +593,11 @@ public sealed class ScriptRuntimeMergerTests
         Assert.Equal(ScriptSourceTextOrigin.RuntimeSameObject, enriched.SourceTextOrigin);
         Assert.Equal(runtime.CompiledData, enriched.CompiledData);
         Assert.Equal(8u, enriched.CompiledSize);
-        Assert.True(enriched.IsBigEndian);
+        // The adopted SCDA is the runtime object's (big-endian); the container flag is the
+        // fragment's and does not move with it.
+        Assert.True(enriched.IsBigEndianBytecode);
+        Assert.False(enriched.IsBigEndian);
+        Assert.Equal(ScriptBytecodeByteOrderEvidence.RuntimeScriptObject, enriched.BytecodeByteOrderEvidence);
         Assert.True(enriched.FromRuntime);
     }
 
@@ -919,8 +931,159 @@ public sealed class ScriptRuntimeMergerTests
         Assert.Equal(0x000ABCDEu, enriched.OwnerQuestFormId);
         Assert.Equal(2, enriched.QuestScriptDelay);
         Assert.False(enriched.IsBigEndian);
+        Assert.False(enriched.IsBigEndianBytecode);
         Assert.Equal(existing.CompiledData, enriched.CompiledData);
         Assert.True(enriched.FromRuntime);
+    }
+
+    [Fact]
+    public void ScptEncoder_BigEndianContainerLittleEndianBytecode_EmitsScdaVerbatim()
+    {
+        // July 2010 X360 prototype SCPT 0x00132163: a big-endian record whose serialized SCDA is
+        // little-endian. It must reach the PC plugin byte for byte; swapping it "back" writes
+        // 00 1D 00 00, which the PC engine reads as opcode 0x1D00.
+        var script = new ScriptRecord
+        {
+            FormId = LogBookFormId,
+            EditorId = "NVCCBunkerLogBookSCRIPT",
+            CompiledData = Convert.FromHexString(LogBookScdaLittleEndian),
+            CompiledSize = 20,
+            IsCompiled = true,
+            HasSerializedHeader = true,
+            IsBigEndian = true,
+            IsBigEndianBytecode = false,
+            BytecodeByteOrderEvidence = ScriptBytecodeByteOrderEvidence.ScriptNameAnchor
+        };
+
+        var encoded = ScptEncoder.EncodeNew(script);
+
+        var scda = Assert.Single(encoded.Subrecords, static subrecord => subrecord.Signature == "SCDA");
+        Assert.Equal(Convert.FromHexString(LogBookScdaLittleEndian), scda.Bytes);
+    }
+
+    [Fact]
+    public void ScptEncoder_BigEndianBytecode_IsStillSwappedToLittleEndian()
+    {
+        // Control: a record whose bytecode really is big-endian (a runtime Script object, or any
+        // construction that sets only the container flag) is still converted for the PC engine.
+        var script = new ScriptRecord
+        {
+            FormId = LogBookFormId,
+            EditorId = "NVCCBunkerLogBookSCRIPT",
+            CompiledData = Convert.FromHexString(LogBookScdaBigEndian),
+            CompiledSize = 20,
+            IsCompiled = true,
+            IsBigEndian = true
+        };
+
+        var encoded = ScptEncoder.EncodeNew(script);
+
+        Assert.True(script.IsBigEndianBytecode);
+        var scda = Assert.Single(encoded.Subrecords, static subrecord => subrecord.Signature == "SCDA");
+        Assert.Equal(Convert.FromHexString(LogBookScdaLittleEndian), scda.Bytes);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void EvaluateStandalone_DmpFragmentLittleEndianBytecode_IsSafe(
+        bool bytecodeBigEndian,
+        bool expectedSafe)
+    {
+        // A big-endian fragment carrying the July little-endian SCDA. Walked in its own order the
+        // bundle is safe; walked in the container's order (the second row, the old behaviour) it
+        // reads opcode 0x1D00 and then a 2,048-byte payload that is not there.
+        var script = new ScriptRecord
+        {
+            FormId = LogBookFormId,
+            EditorId = "NVCCBunkerLogBookSCRIPT",
+            CompiledData = Convert.FromHexString(LogBookScdaLittleEndian),
+            CompiledSize = 20,
+            IsCompiled = true,
+            HasSerializedHeader = true,
+            IsBigEndian = true,
+            IsBigEndianBytecode = bytecodeBigEndian,
+            BytecodeByteOrderEvidence = ScriptBytecodeByteOrderEvidence.ScriptNameAnchor
+        };
+
+        var decision = CapturedScriptEmissionContract.EvaluateStandalone(script);
+
+        if (expectedSafe)
+        {
+            Assert.Null(decision.BundleIssue);
+            Assert.False(decision.Script.IsIncompleteExecutableBundle);
+            Assert.Equal(Convert.FromHexString(LogBookScdaLittleEndian), decision.Script.CompiledData);
+        }
+        else
+        {
+            Assert.NotNull(decision.BundleIssue);
+            Assert.StartsWith("unsafe SCDA bundle", decision.BundleIssue, StringComparison.Ordinal);
+            Assert.True(decision.Script.IsIncompleteExecutableBundle);
+        }
+    }
+
+    [Fact]
+    public void RuntimeAdoption_SetsBytecodeOrderExplicitly()
+    {
+        // The fragment was parsed from a big-endian container with little-endian SCDA; the
+        // same-dump runtime Script object carries the engine-swapped (big-endian) bytes.
+        var existing = new ScriptRecord
+        {
+            FormId = LogBookFormId,
+            EditorId = "NVCCBunkerLogBookSCRIPT",
+            CompiledData = Convert.FromHexString(LogBookScdaLittleEndian),
+            CompiledSize = 20,
+            IsCompiled = true,
+            HasSerializedHeader = true,
+            IsBigEndian = true,
+            IsBigEndianBytecode = false,
+            BytecodeByteOrderEvidence = ScriptBytecodeByteOrderEvidence.ScriptNameAnchor
+        };
+        var runtime = new RuntimeScriptData
+        {
+            FormId = LogBookFormId,
+            EditorId = "NVCCBunkerLogBookSCRIPT",
+            CompiledData = Convert.FromHexString(LogBookScdaBigEndian),
+            DataSize = 20,
+            IsCompiled = true,
+            VariablesComplete = true,
+            ReferencedObjectsComplete = true
+        };
+
+        var enriched = ScriptRuntimeMerger.EnrichScriptWithRuntimeData(existing, runtime);
+
+        Assert.Equal(Convert.FromHexString(LogBookScdaBigEndian), enriched.CompiledData);
+        Assert.True(enriched.ExecutableBundleFromRuntime);
+        Assert.True(enriched.IsBigEndianBytecode);
+        Assert.Equal(ScriptBytecodeByteOrderEvidence.RuntimeScriptObject, enriched.BytecodeByteOrderEvidence);
+        Assert.True(enriched.IsBigEndian);
+    }
+
+    [Fact]
+    public void CreateScriptFromRuntimeData_SetsContainerAndBytecodeOrderIndependently()
+    {
+        var runtime = new RuntimeScriptData
+        {
+            FormId = LogBookFormId,
+            EditorId = "NVCCBunkerLogBookSCRIPT",
+            CompiledData = Convert.FromHexString(LogBookScdaBigEndian),
+            DataSize = 20,
+            IsCompiled = true,
+            VariablesComplete = true,
+            ReferencedObjectsComplete = true
+        };
+
+        var script = ScriptRuntimeMerger.CreateScriptFromRuntimeData(runtime);
+
+        Assert.NotNull(script);
+        Assert.True(script.IsBigEndian);
+        Assert.True(script.IsBigEndianBytecode);
+        Assert.Equal(ScriptBytecodeByteOrderEvidence.RuntimeScriptObject, script.BytecodeByteOrderEvidence);
+
+        // Set explicitly, the bytecode order survives a copy that relabels the container; a
+        // fallback to the container flag would flip it here.
+        var relabelled = script with { IsBigEndian = false };
+        Assert.True(relabelled.IsBigEndianBytecode);
     }
 
     private static byte[] BuildBigEndianLocalSet(ushort variableIndex, bool integer)

@@ -39,6 +39,9 @@ public sealed record AssetPackingOptions
     /// </summary>
     public IReadOnlyList<string> DialogueAudioCsvPaths { get; init; } = [];
 
+    /// <summary>Include selected CSV audio without an INFO match, preserving its original voice path.</summary>
+    public bool IncludeUnboundDialogueAudio { get; init; }
+
     /// <summary>
     ///     The user's primary FNV PC Data folder. Anything already resolvable here is
     ///     considered "already available to the runtime" and skipped — only assets the
@@ -70,7 +73,9 @@ public sealed record AssetPackingOptions
     /// <summary>
     ///     If true, write a human-reviewable per-asset audit text file at
     ///     <c>&lt;OutputBsaPath&gt;.missing.txt</c> with sections for missing, fuzzy-matched,
-    ///     and conversion-failed paths. Defaults to false — opt-in so the CLI/GUI can offer
+    ///     and conversion-failed paths, plus a versioned <c>&lt;OutputBsaPath&gt;.requests.json</c>
+    ///     containing all collected reasons and observed lookup/packing outcomes. Defaults to false
+    ///     so the CLI/GUI can offer
     ///     it as a deliberate choice.
     /// </summary>
     public bool WriteAuditFile { get; init; }

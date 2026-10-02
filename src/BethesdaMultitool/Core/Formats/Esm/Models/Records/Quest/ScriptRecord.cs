@@ -31,6 +31,8 @@ public enum ScriptSourceTextOrigin
 /// </summary>
 public record ScriptRecord
 {
+    private readonly bool? _isBigEndianBytecode;
+
     // Identity
     /// <summary>FormID of the script record.</summary>
     public uint FormId { get; init; }
@@ -112,6 +114,8 @@ public record ScriptRecord
     /// <summary>Decompiled bytecode text (generated from SCDA data).</summary>
     public string? DecompiledText { get; init; }
 
+    public List<ScriptExternalVariableBinding> ExternalVariableBindings { get; init; } = [];
+
     // From SLSD + SCVR pairs (variable definitions)
     /// <summary>Script local variables from SLSD+SCVR subrecord pairs.</summary>
     public List<ScriptVariableInfo> Variables { get; init; } = [];
@@ -131,8 +135,30 @@ public record ScriptRecord
     /// <summary>Offset in the dump where this record was found.</summary>
     public long Offset { get; init; }
 
-    /// <summary>Whether the record was detected as big-endian (Xbox 360).</summary>
+    /// <summary>
+    ///     Byte order of the record CONTAINER this script was read from: true for an Xbox 360
+    ///     big-endian record, whose subrecord headers and SCHR/SLSD/SCRO/SCRV integers are
+    ///     big-endian. It is NOT the byte order of <see cref="CompiledData" /> — serialized SCDA is
+    ///     little-endian inside an Xbox 360 ESM as well. Bytecode consumers read
+    ///     <see cref="IsBigEndianBytecode" />.
+    /// </summary>
     public bool IsBigEndian { get; init; }
+
+    /// <summary>
+    ///     Byte order of <see cref="CompiledData" />, chosen from the payload itself (see
+    ///     <see cref="BytecodeByteOrderEvidence" />). Parsers and runtime adoption set it explicitly.
+    ///     A construction that never sets it falls back to <see cref="IsBigEndian" />, which is right
+    ///     for a runtime Script object from an Xbox 360 dump (the engine has already swapped its
+    ///     bytecode to big-endian) and for synthetic records whose bytecode follows the container.
+    /// </summary>
+    public bool IsBigEndianBytecode
+    {
+        get => _isBigEndianBytecode ?? IsBigEndian;
+        init => _isBigEndianBytecode = value;
+    }
+
+    /// <summary>Which rule chose <see cref="IsBigEndianBytecode" />.</summary>
+    public ScriptBytecodeByteOrderEvidence BytecodeByteOrderEvidence { get; init; }
 
     /// <summary>Whether this script was found via runtime struct reading (not ESM fragments).</summary>
     public bool FromRuntime { get; init; }

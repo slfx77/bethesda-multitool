@@ -23,6 +23,11 @@ public record DialogueRecord
     /// <summary>FormID of the INFO record.</summary>
     public uint FormId { get; init; }
 
+    /// <summary>Plugin attribution before cross-record enrichment; null for captures/older callers.</summary>
+    public DialogueLocalAttribution? LocalAttribution { get; init; }
+    public string? QuestAttributionSource { get; init; }
+    public string? SpeakerAttributionSource { get; init; }
+
     /// <summary>Editor ID of the INFO record.</summary>
     public string? EditorId { get; init; }
 
@@ -132,6 +137,14 @@ public record DialogueRecord
     /// <summary>Extended info flags: SayOnceADay(0x01), AlwaysDarkened(0x02).</summary>
     public byte InfoFlagsExt { get; init; }
 
+    /// <summary>
+    ///     The INFO DATA subrecord as serialized in a Fallout 3 / New Vegas plugin (type, next speaker,
+    ///     Flags 1, Flags 2), or null when the record carried none (or was not read from plugin bytes).
+    ///     Presentation-only: it is never copied into <see cref="InfoFlags" /> / <see cref="InfoFlagsExt" />,
+    ///     which drive conversion. A split Xbox 360 INFO keeps the first non-null value across its halves.
+    /// </summary>
+    public InfoSerializedData? SerializedInfoData { get; init; }
+
     /// <summary>Speech challenge difficulty (0=None, 1=VeryEasy, ..., 5=VeryHard).</summary>
     public uint Difficulty { get; init; }
 
@@ -202,6 +215,19 @@ public record DialogueRecord
     /// <summary>Parsed result-script blocks from SCHR/SCDA/SCTX/SCRO/NEXT subrecords.</summary>
     public List<DialogueResultScript> ResultScripts { get; init; } = [];
 
+    /// <summary>
+    ///     Every serialized result-script block of the record in order (Begin, then End), INCLUDING the
+    ///     blocks that carry nothing but an SCHR header. <see cref="ResultScripts" /> drops those, so it
+    ///     cannot say which slot a script occupies or that an empty slot exists; this list can. Each entry
+    ///     points at its <see cref="ResultScripts" /> element, or at none when the block was empty.
+    ///     <para>
+    ///         Empty when the blocks were not read from plugin bytes (runtime or fragment recovery), or when
+    ///         the slot-to-script mapping could not be proven (for example after two split-INFO halves both
+    ///         carried result scripts). Consumers then fall back to <see cref="ResultScripts" /> alone.
+    ///     </para>
+    /// </summary>
+    public List<InfoResultScriptBlock> ResultScriptBlocks { get; init; } = [];
+
     /// <summary>Whether this INFO was already said by the player (runtime bSaidOnce — DMP only).</summary>
     public bool SaidOnce { get; init; }
 
@@ -255,4 +281,36 @@ public record DialogueRecord
         5 => "Very Hard",
         _ => $"Unknown ({Difficulty})"
     };
+}
+
+/// <summary>
+///     One serialized result-script block of an INFO record (<c>SCHR</c> ... up to <c>NEXT</c> or the next
+///     block), in record order. Kept beside <see cref="DialogueRecord.ResultScripts" /> so a presenter can name
+///     the Begin/End slot of every block, including one that holds no compiled code.
+/// </summary>
+public sealed record InfoResultScriptBlock
+{
+    /// <summary>0-based position among the record's result-script blocks (0 = Begin, 1 = End).</summary>
+    public required int Slot { get; init; }
+
+    /// <summary>Whether the block opened with an SCHR subrecord (well-formed or short).</summary>
+    public required bool HasSchrHeader { get; init; }
+
+    /// <summary>Compiled size the SCHR header declares, or null when there is no complete (20-byte) header.</summary>
+    public uint? DeclaredCompiledSize { get; init; }
+
+    /// <summary>Reference count (SCRO + SCRV) the SCHR header declares, or null without a complete header.</summary>
+    public uint? DeclaredReferenceCount { get; init; }
+
+    /// <summary>Local-variable count the SCHR header declares, or null without a complete header.</summary>
+    public uint? DeclaredVariableCount { get; init; }
+
+    /// <summary>Whether a NEXT separator closed the block.</summary>
+    public required bool HasNextSeparator { get; init; }
+
+    /// <summary>
+    ///     Index of this block's script in <see cref="DialogueRecord.ResultScripts" />, or null when the block
+    ///     carried no source, bytecode, locals or references (and so has no entry there).
+    /// </summary>
+    public int? ResultScriptIndex { get; init; }
 }

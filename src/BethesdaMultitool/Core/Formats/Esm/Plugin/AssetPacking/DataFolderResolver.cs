@@ -21,6 +21,8 @@ internal sealed record DataFolderResolution
 
     /// <summary>For fuzzy matches, how many path tokens matched from the right.</summary>
     public int FuzzySuffixTokens { get; init; }
+    public string? UnresolvedReason { get; init; }
+    public IReadOnlyList<AssetUnverifiedCandidate> UnverifiedCandidates { get; init; } = [];
 }
 
 /// <summary>
@@ -91,6 +93,15 @@ internal sealed class DataFolderResolver
             return head;
         }
 
+        // Morph indices belong to an exact mesh identity. Similar names/directories
+        // provide no vertex-domain compatibility evidence.
+        if (IsMorphPath(normalizedPath))
+            return Miss(normalizedPath) with
+            {
+                UnresolvedReason = "morph-exact-path-unavailable",
+                UnverifiedCandidates = FindMorphAlternatives(normalizedPath)
+            };
+
         // Exact + extension-swap resolution above is always applied; the renamed-asset fuzzy
         // cascade below is opt-in (see the constructor's enableFuzzy parameter).
         if (!_enableFuzzy)
@@ -99,7 +110,7 @@ internal sealed class DataFolderResolver
         }
 
         // Fuzzy fallback: collect all basename-equal candidates across every secondary.
-        var basename = Path.GetFileName(normalizedPath);
+        var basename = AssetPathRules.GetVirtualFileName(normalizedPath);
         if (string.IsNullOrEmpty(basename))
         {
             return Miss(normalizedPath);
@@ -399,7 +410,7 @@ internal sealed class DataFolderResolver
         const int MinStemLength = 6;
         const int MaxLengthDelta = 6;
 
-        var basename = Path.GetFileName(normalizedPath);
+        var basename = AssetPathRules.GetVirtualFileName(normalizedPath);
         var requestedStem = AssetPathRules.ComputeLooseBasename(basename);
         if (requestedStem.Length < MinStemLength)
         {
@@ -436,7 +447,7 @@ internal sealed class DataFolderResolver
                 }
 
                 var candidateStem = AssetPathRules.ComputeLooseBasename(
-                    Path.GetFileName(candidate.NormalizedPath));
+                    AssetPathRules.GetVirtualFileName(candidate.NormalizedPath));
                 if (candidateStem.Length < MinStemLength)
                 {
                     continue;
@@ -514,7 +525,7 @@ internal sealed class DataFolderResolver
     {
         const int MinContainmentStem = 6;
 
-        var basename = Path.GetFileName(normalizedPath);
+        var basename = AssetPathRules.GetVirtualFileName(normalizedPath);
         var requestedStem = AssetPathRules.ComputeLooseBasename(basename);
         if (requestedStem.Length < MinContainmentStem)
         {
@@ -550,7 +561,7 @@ internal sealed class DataFolderResolver
                 }
 
                 var candidateStem = AssetPathRules.ComputeLooseBasename(
-                    Path.GetFileName(candidate.NormalizedPath));
+                    AssetPathRules.GetVirtualFileName(candidate.NormalizedPath));
                 if (candidateStem.Length < MinContainmentStem)
                 {
                     continue;
@@ -597,12 +608,42 @@ internal sealed class DataFolderResolver
         };
     }
 
+    internal static bool IsMorphPath(string path) => Path.GetExtension(path).ToLowerInvariant() is ".egm" or ".egt" or ".tri";
+
+    private IReadOnlyList<AssetUnverifiedCandidate> FindMorphAlternatives(string path)
+    {
+        var separator = path.LastIndexOf('\\');
+        if (separator < 0) return [];
+        var directory = path[..separator];
+        var lastDirectory = directory[(directory.LastIndexOf('\\') + 1)..];
+        var extension = Path.GetExtension(path);
+        var candidates = new List<AssetUnverifiedCandidate>();
+        Add(_baseline, -1);
+        for (var i = 0; i < _secondaries.Count; i++) Add(_secondaries[i], i);
+        return Array.AsReadOnly(candidates.Distinct().OrderBy(c => c.SourceFolderIndex)
+            .ThenBy(c => c.Path, StringComparer.OrdinalIgnoreCase).ToArray());
+
+        void Add(DataFolderIndex index, int folder)
+        {
+            foreach (var candidate in index.EnumerateByLastDirectory(lastDirectory))
+            {
+                var name = candidate.NormalizedPath;
+                var split = name.LastIndexOf('\\');
+                if (split >= 0 &&
+                    name[..split].Equals(directory, StringComparison.OrdinalIgnoreCase) &&
+                    Path.GetExtension(name).Equals(extension, StringComparison.OrdinalIgnoreCase))
+                    candidates.Add(new AssetUnverifiedCandidate(name, folder, "unverified-morph-identity"));
+            }
+        }
+    }
+
     private static DataFolderResolution Miss(string normalizedPath)
     {
         return new DataFolderResolution
         {
             Kind = AssetResolutionKind.Missing,
-            ResolvedPath = normalizedPath
+            ResolvedPath = normalizedPath,
+            UnresolvedReason = "source-not-found"
         };
     }
 

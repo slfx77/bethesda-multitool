@@ -11,6 +11,34 @@ namespace BethesdaMultitool.Core.Formats.Esm.Conversion.Schema;
 /// </summary>
 public static class SubrecordSchemaReader
 {
+    /// <summary>Only explicit FormID fields, including every instance of repeating schemas.</summary>
+    internal static IReadOnlyList<(string Field, int Offset, uint FormId)> EnumerateFormIdFields(
+        string signature, byte[] data, string recordType, bool bigEndian)
+    {
+        var result = new List<(string, int, uint)>();
+        var schema = SubrecordSchemaRegistry.GetSchema(signature, recordType, data.Length);
+        if (schema == null || schema.Fields.Length == 0) { return result; }
+        var stride = schema.Fields.Sum(field => field.EffectiveSize);
+        if (stride <= 0) { return result; }
+        var repeats = schema.ExpectedSize <= 0 ? data.Length / stride : 1;
+        for (var i = 0; i < repeats; i++)
+        {
+            var offset = i * stride;
+            foreach (var field in schema.Fields)
+            {
+                var size = field.EffectiveSize;
+                if (size <= 0 || offset + size > data.Length) { break; }
+                if (field.Type is SubrecordFieldType.FormId or SubrecordFieldType.FormIdLittleEndian && size == 4 &&
+                    ReadField(data.AsSpan(offset, size), field.Type, bigEndian) is uint id && id != 0)
+                {
+                    result.Add((field.Name, offset, id));
+                }
+                offset += size;
+            }
+        }
+        return result;
+    }
+
     /// <summary>
     ///     Reads all fields from a subrecord using its schema.
     ///     Returns a dictionary of field name → value.

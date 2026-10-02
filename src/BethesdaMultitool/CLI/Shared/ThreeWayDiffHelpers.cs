@@ -13,8 +13,13 @@ namespace BethesdaMultitool.CLI.Shared;
 /// </summary>
 internal static class ThreeWayDiffHelpers
 {
+    /// <param name="recordType">
+    ///     The record type shared by all three records, for schema hints and the semantic field
+    ///     comparison, or <c>null</c> when their signatures differ (a FormID reused by a different record
+    ///     type): then no single schema describes all three, and the row compares raw bytes only.
+    /// </param>
     internal static ThreeWaySubrecordRow BuildThreeWaySubrecordRow(
-        string recordType,
+        string? recordType,
         string sig,
         AnalyzerSubrecordInfo? xbox,
         AnalyzerSubrecordInfo? converted,
@@ -161,7 +166,7 @@ internal static class ThreeWayDiffHelpers
         if (showDetails)
         {
             var firstDiff = FindFirstDifferenceOffset(converted.Data, pc.Data);
-            var schemaHint = firstDiff >= 0
+            var schemaHint = firstDiff >= 0 && recordType != null
                 ? DescribeSchemaAtOffset(sig, recordType, converted.Data.Length, firstDiff)
                 : null;
 
@@ -191,8 +196,8 @@ internal static class ThreeWayDiffHelpers
                 parts.Add($"[cyan]PC Ref[/]    +0x{ctxStart:X}: {pcLine}");
             }
 
-            // Add semantic field breakdown if schema exists
-            if (showSemantic)
+            // Add semantic field breakdown if schema exists (never across differing record types)
+            if (showSemantic && recordType != null)
             {
                 var schema = SubrecordSchemaRegistry.GetSchema(sig, recordType, converted.Data.Length);
                 if (schema != null)

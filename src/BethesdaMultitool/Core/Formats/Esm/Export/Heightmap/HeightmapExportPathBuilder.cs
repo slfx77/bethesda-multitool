@@ -5,6 +5,38 @@ namespace BethesdaMultitool.Core.Formats.Esm.Export.Heightmap;
 
 internal static class HeightmapExportPathBuilder
 {
+    /// <summary>
+    ///     Reserves a path before its writer is scheduled. Repeated LAND captures and ATXT keys
+    ///     are separate evidence: retain every occurrence instead of racing or overwriting it.
+    /// </summary>
+    internal static string ReserveArtifactPath(
+        HashSet<string> reservedPaths,
+        string path,
+        long recordOffset,
+        long? subrecordOffset = null)
+    {
+        if (reservedPaths.Add(path))
+        {
+            return path;
+        }
+
+        var extension = Path.GetExtension(path);
+        var stem = Path.Combine(Path.GetDirectoryName(path)!, Path.GetFileNameWithoutExtension(path));
+        var sourceSuffix = $"_record{recordOffset:X}";
+        if (subrecordOffset.HasValue)
+        {
+            sourceSuffix += $"_sub{subrecordOffset.Value:X}";
+        }
+
+        var candidate = $"{stem}{sourceSuffix}{extension}";
+        for (var occurrence = 2; !reservedPaths.Add(candidate); occurrence++)
+        {
+            candidate = $"{stem}{sourceSuffix}_{occurrence}{extension}";
+        }
+
+        return candidate;
+    }
+
     /// <summary>Builds an output file name for a LAND artifact, encoding its FormID, worldspace, and cell grid.</summary>
     public static string BuildCellArtifactName(
         ExtractedLandRecord land,

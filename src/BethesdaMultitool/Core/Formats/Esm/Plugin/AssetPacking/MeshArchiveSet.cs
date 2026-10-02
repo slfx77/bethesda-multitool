@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Formats.Bsa.Ba2;
 using BethesdaMultitool.Core.Vfs;
 
@@ -43,13 +44,20 @@ internal sealed class MeshArchiveSet : IDisposable
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly DataFolderResolver _resolver;
+    private readonly AssetSelectionSession _selection;
 
     private MeshArchiveSet(
         IReadOnlyList<string> archivePaths, bool enableFuzzy, bool includeLooseFiles,
-        IReadOnlyDictionary<string, string>? pathRenames = null)
+        IReadOnlyDictionary<string, string>? pathRenames = null, AssetSourcePlan? plan = null)
     {
+        RequiresActualReadReceipt = plan is not null;
         _pathRenames = pathRenames is { Count: > 0 } ? pathRenames : null;
         ArchivePaths = archivePaths;
+        plan ??= new AssetSourcePlan(
+            (includeLooseFiles ? archivePaths.Select(Path.GetDirectoryName).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(p => new AssetMount(p, AssetMountKind.LooseDirectory, "explicit-loose")) : [])
+            .Concat(archivePaths.Select(p => new AssetMount(p, AssetMountKind.Archive, "explicit"))));
+        _selection = new AssetSelectionSession(plan);
         _emptyBaseline = DataFolderIndex.FromArchivePaths([]);
         // Shared handles: the 3D viewer, NPC browser, and headless profiler open overlapping
         // archive sets in one process — the registry dedups the parse + memory map per archive.
@@ -75,14 +83,22 @@ internal sealed class MeshArchiveSet : IDisposable
         ArchiveSetIdentity = string.Join("|", idParts);
     }
 
-    public string PrimaryPath => ArchivePaths[0];
+    public string PrimaryPath => ArchivePaths.FirstOrDefault() ?? _selection.Plan.Mounts.FirstOrDefault()?.Path ?? string.Empty;
 
     public IReadOnlyList<string> ArchivePaths { get; }
 
     internal string ArchiveSetIdentity { get; }
+    internal AssetSelectionSession Selection => _selection;
+    internal bool RequiresActualReadReceipt { get; }
+
+    internal static MeshArchiveSet Open(AssetSourcePlan plan, bool enableFuzzy = false,
+        IReadOnlyDictionary<string, string>? pathRenames = null) => new(
+        plan.Mounts.Where(m => m.Kind == AssetMountKind.Archive).Select(m => m.Path).ToArray(),
+        enableFuzzy, plan.Mounts.Any(m => m.Kind == AssetMountKind.LooseDirectory), pathRenames, plan);
 
     public void Dispose()
     {
+        _selection.Dispose();
         _index.Dispose();
         _emptyBaseline.Dispose();
     }
@@ -122,6 +138,71 @@ internal sealed class MeshArchiveSet : IDisposable
         return new MeshArchiveSet(paths, enableFuzzy, includeLooseFiles, pathRenames);
     }
 
+    /// <summary>Uses the existing source-resolution order while bounding stored and decoded reads for optional proof inputs.</summary>
+    /// <param name="virtualPath">The requested virtual path, including any configured fallback policy.</param>
+    /// <param name="maximumBytes">Maximum encoded and decoded bytes accepted before allocation.</param>
+    /// <param name="data">Owned decoded source bytes on success.</param>
+    /// <param name="archivePath">The actual backing archive or loose-file path.</param>
+    /// <param name="resolvedPath">The actual resolved virtual path.</param>
+    /// <returns>False when the existing resolver finds no source.</returns>
+    internal bool TryExtractFileBounded(string virtualPath, int maximumBytes, out byte[] data,
+        out string archivePath, out string resolvedPath)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(maximumBytes);
+        var normalized = Normalize(virtualPath);
+        var resolution = Resolve(normalized);
+        if (resolution.Source is null)
+        {
+            data = [];
+            archivePath = string.Empty;
+            resolvedPath = string.Empty;
+            return false;
+        }
+        data = ReadSourceBounded(resolution.Source, maximumBytes);
+        archivePath = ArchivePathOf(resolution.Source);
+        resolvedPath = resolution.ResolvedPath ?? normalized;
+        return true;
+    }
+
+    /// <summary>Reuses bounded BSA extraction and checks BA2 or loose-file lengths before their data allocations.</summary>
+    private static byte[] ReadSourceBounded(AssetSource source, int maximumBytes)
+    {
+        byte[] data;
+        switch (source)
+        {
+            case BsaAssetSource bsa:
+                data = bsa.Extractor.ExtractFileBounded(bsa.Record, maximumBytes);
+                break;
+            case Ba2AssetSource ba2 when ba2.Record.Kind == Ba2HeaderType.General &&
+                                        ba2.Record.RealSize <= maximumBytes &&
+                                        ba2.Record.PackedSize <= maximumBytes:
+                data = ba2.Extractor.ExtractFile(ba2.Record);
+                break;
+            case LooseFileAssetSource loose:
+                using (var stream = new FileStream(loose.AbsolutePath, FileMode.Open, FileAccess.Read, FileShare.Read))
+                {
+                    if (stream.Length > maximumBytes)
+                    {
+                        throw new InvalidDataException("Loose head proof source exceeds its byte limit.");
+                    }
+                    data = new byte[checked((int)stream.Length)];
+                    stream.ReadExactly(data);
+                    if (stream.ReadByte() != -1)
+                    {
+                        throw new IOException("Loose head proof source changed length during its read.");
+                    }
+                }
+                break;
+            default:
+                throw new NotSupportedException("Head proof source lacks a bounded general-file read.");
+        }
+        if (data.Length > maximumBytes)
+        {
+            throw new InvalidDataException("Head proof source exceeds its decoded byte limit.");
+        }
+        return data;
+    }
+
     public bool TryExtractFile(string virtualPath, out byte[] data, out string archivePath)
     {
         return TryExtractFile(virtualPath, out data, out archivePath, out _);
@@ -135,8 +216,9 @@ internal sealed class MeshArchiveSet : IDisposable
     public bool TryExtractFile(string virtualPath, out byte[] data, out string archivePath, out string resolvedPath)
     {
         var normalized = Normalize(virtualPath);
-        var resolution = Resolve(normalized);
-        if (resolution.Source is null)
+        var path = ResolveSelectedPath(normalized);
+        var read = _selection.Read(path);
+        if (read.Value is null || read.Receipt.Selected is not { } selected)
         {
             data = [];
             archivePath = string.Empty;
@@ -144,9 +226,9 @@ internal sealed class MeshArchiveSet : IDisposable
             return false;
         }
 
-        data = resolution.Source.Read();
-        archivePath = ArchivePathOf(resolution.Source);
-        resolvedPath = resolution.ResolvedPath ?? normalized;
+        data = read.Value;
+        archivePath = selected.SourcePath;
+        resolvedPath = path;
         return true;
     }
 
@@ -158,51 +240,51 @@ internal sealed class MeshArchiveSet : IDisposable
     public bool TryResolvePath(string virtualPath, out string archivePath, out string resolvedPath)
     {
         var normalized = Normalize(virtualPath);
-        var resolution = Resolve(normalized);
-        if (resolution.Source is null)
+        var path = ResolveSelectedPath(normalized);
+        if (_selection.Probe(path).Selected is not { } selected)
         {
             archivePath = string.Empty;
             resolvedPath = string.Empty;
             return false;
         }
 
-        archivePath = ArchivePathOf(resolution.Source);
-        resolvedPath = resolution.ResolvedPath ?? normalized;
+        archivePath = selected.SourcePath;
+        resolvedPath = path;
         return true;
     }
 
     internal MeshArchiveLookupMetadata GetLookupMetadata(string virtualPath)
     {
         var normalized = Normalize(virtualPath);
-        var resolution = Resolve(normalized);
-        if (resolution.Source is null)
+        var selectedPath = ResolveSelectedPath(normalized);
+        var lastRead = _selection.LastReceipt(selectedPath);
+        var selected = lastRead is not null && _selection.IsCurrent(lastRead)
+            ? lastRead.Selected : lastRead is not null ? null : _selection.Probe(selectedPath).Selected;
+        if (selected is not null)
         {
-            return new MeshArchiveLookupMetadata(
-                normalized,
-                false,
-                ArchiveSetIdentity,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null);
+            return new(selectedPath, true, ArchiveSetIdentity + "|" + _selection.Plan.Identity,
+                selected.SourcePath, selected.SourceLength, selected.SourceWriteTicks, selected.NameHash, selected.RawSize,
+                selected.Size <= uint.MaxValue ? (uint)selected.Size : null,
+                selected.Offset is >= 0 and <= uint.MaxValue ? (uint)selected.Offset.Value : null);
         }
+        return new MeshArchiveLookupMetadata(normalized, false, ArchiveSetIdentity,
+            null, null, null, null, null, null, null);
+    }
 
-        var (archivePath, archiveLength, archiveTicks) = ArchiveStatsOf(resolution.Source);
-        var meta = GetSourceMetadata(resolution.Source);
-        return new MeshArchiveLookupMetadata(
-            resolution.ResolvedPath ?? normalized,
-            true,
-            ArchiveSetIdentity,
-            archivePath,
-            archiveLength,
-            archiveTicks,
-            meta?.NameHash,
-            meta?.RawSize,
-            meta?.Size,
-            meta?.Offset);
+    internal string GetCacheIdentity(string path)
+    {
+        var resolved = ResolveSelectedPath(Normalize(path));
+        return AssetCacheIdentity.Qualify(_selection, path, resolved);
+    }
+
+    private string ResolveSelectedPath(string path)
+    {
+        // Explicit rename-map and fuzzy policies remain in the conversion resolver. Physical
+        // candidate selection and reads are always adjudicated by the shared source plan.
+        if (_pathRenames is not null && _pathRenames.ContainsKey(path))
+            return Resolve(path).ResolvedPath ?? path;
+        if (_selection.Probe(path).Status != AssetSelectionStatus.Missing) return path;
+        return Resolve(path).ResolvedPath ?? path;
     }
 
     private DataFolderResolution Resolve(string normalizedPath)

@@ -5,4 +5,4 @@ internal sealed record BsaOutputPlan(
     AssetPackBucket Bucket,
     string BucketLabel,
     int ChunkIndex,
-    IReadOnlyList<(string Path, byte[] Data)> Files);
+    IReadOnlyList<PackedAsset> Files);

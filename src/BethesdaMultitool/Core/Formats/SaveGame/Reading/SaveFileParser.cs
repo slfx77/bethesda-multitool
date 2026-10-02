@@ -197,19 +197,22 @@ public static class SaveFileParser
                 $"header region starts at 0x{headerStart:X} but payload is only {data.Length} bytes.");
         }
 
-        // Parse pipe-terminated fields within the header
-        var version = ReadUInt32T(data, ref position, "version");
-        var screenshotWidth = ReadUInt32T(data, ref position, "screenshotWidth");
-        var screenshotHeight = ReadUInt32T(data, ref position, "screenshotHeight");
-        var saveNumber = ReadUInt32T(data, ref position, "saveNumber");
-        var playerName = ReadLenStringT(data, ref position, "playerName");
-        var playerStatus = ReadLenStringT(data, ref position, "playerStatus");
-        var playerLevel = ReadUInt32T(data, ref position, "playerLevel");
-        var playerCell = ReadLenStringT(data, ref position, "playerCell");
-        var saveDuration = ReadLenStringT(data, ref position, "saveDuration");
+        var headerEnd = headerStart + (int)headerSize;
+        var headerData = data[..headerEnd];
+        var version = ReadUInt32T(headerData, ref position, "version");
+        // xEdit's FNV Header includes a 64-byte language string plus '|'.
+        // Earlier captured saves omit it, so require its full padded field shape.
+        var language = ReadOptionalLanguage(headerData, ref position);
+        var screenshotWidth = ReadUInt32T(headerData, ref position, "screenshotWidth");
+        var screenshotHeight = ReadUInt32T(headerData, ref position, "screenshotHeight");
+        var saveNumber = ReadUInt32T(headerData, ref position, "saveNumber");
+        var playerName = ReadLenStringT(headerData, ref position, "playerName");
+        var playerStatus = ReadLenStringT(headerData, ref position, "playerStatus");
+        var playerLevel = ReadUInt32T(headerData, ref position, "playerLevel");
+        var playerCell = ReadLenStringT(headerData, ref position, "playerCell");
+        var saveDuration = ReadLenStringT(headerData, ref position, "saveDuration");
 
         // Skip to end of header
-        var headerEnd = headerStart + (int)headerSize;
         if (position < headerEnd)
         {
             position = headerEnd;
@@ -217,7 +220,10 @@ public static class SaveFileParser
 
         // Screenshot data - try standard 3bpp first, then search for formVersion marker
         var screenshotDataOffset = position;
-        var screenshotDataSize = (int)(screenshotWidth * screenshotHeight * 3);
+        var pixels = (ulong)screenshotWidth * screenshotHeight;
+        if (pixels > (ulong)(data.Length - headerEnd) / 3)
+            throw new InvalidDataException($"Save screenshot {screenshotWidth}x{screenshotHeight} exceeds the remaining payload at 0x{headerEnd:X}.");
+        var screenshotDataSize = (int)(pixels * 3);
         byte formVersion = 0;
         uint pluginInfoSize = 0;
 
@@ -230,13 +236,15 @@ public static class SaveFileParser
         var found = false;
         foreach (var bpp in new[] { 3, 4 })
         {
-            var trySize = (int)(screenshotWidth * screenshotHeight * bpp);
+            var candidateSize = pixels * (uint)bpp;
+            if (candidateSize > (ulong)Math.Max(0, maxSearchEnd - headerEnd - 5)) continue;
+            var trySize = (int)candidateSize;
             var fvPos = headerEnd + trySize;
             if (fvPos + 5 < maxSearchEnd)
             {
                 var fv = data[fvPos];
                 var piSize = BinaryUtils.ReadUInt32LE(data, fvPos + 1);
-                if (fv is >= 19 and <= 22 && piSize < 1000 &&
+                if ((fv is >= 19 and <= 22 or 27) && piSize < 1000 &&
                     ValidateFormVersionCandidate(data, fvPos + 5 + (int)piSize, maxSearchEnd))
                 {
                     screenshotDataSize = trySize;
@@ -252,11 +260,11 @@ public static class SaveFileParser
         // Fallback: search for formVersion marker validated by plugin structure (.esm/.esp) AND FLT
         if (!found)
         {
-            var searchEnd = Math.Min(headerEnd + (int)(screenshotWidth * screenshotHeight * 8), maxSearchEnd - 5);
+            var searchEnd = (int)Math.Min((long)headerEnd + (long)pixels * 8, maxSearchEnd - 5L);
             for (var i = headerEnd; i < searchEnd; i++)
             {
                 var fvCandidate = data[i];
-                if (fvCandidate is < 19 or > 22)
+                if (fvCandidate is not (>= 19 and <= 22 or 27))
                 {
                     continue;
                 }
@@ -352,6 +360,7 @@ public static class SaveFileParser
         {
             HeaderSize = headerSize,
             Version = version,
+            Language = language,
             ScreenshotWidth = screenshotWidth,
             ScreenshotHeight = screenshotHeight,
             SaveNumber = saveNumber,
@@ -501,6 +510,20 @@ public static class SaveFileParser
     }
 
     #region Pipe-terminated field readers
+
+    private static string? ReadOptionalLanguage(ReadOnlySpan<byte> data, ref int position)
+    {
+        const int length = 64;
+        if (data.Length - position < length + 1 || data[position + length] != PipeTerminator) return null;
+        var field = data.Slice(position, length);
+        var textLength = field.IndexOf((byte)0);
+        if (textLength <= 0 || field[textLength..].IndexOfAnyExcept((byte)0) >= 0) return null;
+        foreach (var character in field[..textLength])
+            if (character is not (>= (byte)'A' and <= (byte)'Z' or >= (byte)'a' and <= (byte)'z' or (byte)'_' or (byte)'-'))
+                return null;
+        position += length + 1;
+        return Encoding.ASCII.GetString(field[..textLength]);
+    }
 
     /// <summary>Read a uint32 followed by a pipe terminator (0x7C).</summary>
     private static uint ReadUInt32T(ReadOnlySpan<byte> data, ref int position, string field)

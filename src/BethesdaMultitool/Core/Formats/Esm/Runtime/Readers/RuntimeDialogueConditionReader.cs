@@ -182,7 +182,7 @@ internal sealed class RuntimeDialogueConditionReader
             ref results.SpeakerVoiceTypeFormId);
     }
 
-    private DialogueCondition? ReadCondition(uint conditionItemVa)
+    internal DialogueCondition? ReadCondition(uint conditionItemVa)
     {
         if (!_context.IsValidPointer(conditionItemVa))
         {

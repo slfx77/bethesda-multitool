@@ -53,7 +53,7 @@ internal static class DialogueResultScriptDuplicateMerger
             var template = complete[0];
             if (complete.Skip(1).Any(script => !ExecutableBundlesEqual(template, script)))
             {
-                return IncompleteSentinel(hasNextSeparator);
+                return IncompleteSentinel(hasNextSeparator, observations);
             }
 
             var sourceText = SelectUnambiguousText(
@@ -70,6 +70,8 @@ internal static class DialogueResultScriptDuplicateMerger
             return template with
             {
                 SourceText = sourceText,
+                WithheldSourceReason = sourceText is null
+                    ? SelectCanonicalText(complete.Select(static script => script.WithheldSourceReason)) : null,
                 SourceTextOrigin = sourceOwner?.SourceTextOrigin
                                    ?? ScriptSourceTextOrigin.None,
                 IsDmpDerived = complete.Any(static script => script.IsDmpDerived),
@@ -81,7 +83,7 @@ internal static class DialogueResultScriptDuplicateMerger
 
         if (observations.Any(static script => Classify(script) == BundleQuality.Incomplete))
         {
-            return IncompleteSentinel(hasNextSeparator);
+            return IncompleteSentinel(hasNextSeparator, observations);
         }
 
         // Neither observation declares executable state. Preserve one source
@@ -93,6 +95,8 @@ internal static class DialogueResultScriptDuplicateMerger
         return new DialogueResultScript
         {
             SourceText = sourceOnly.SourceText,
+            WithheldSourceReason = string.IsNullOrWhiteSpace(sourceOnly.SourceText)
+                ? SelectCanonicalText(observations.Select(static script => script.WithheldSourceReason)) : null,
             SourceTextOrigin = sourceOnly.SourceTextOrigin,
             IsDmpDerived = observations.Any(static script => script.IsDmpDerived),
             DecompiledText = SelectCanonicalText(
@@ -128,11 +132,14 @@ internal static class DialogueResultScriptDuplicateMerger
                && left.IsBigEndianBytecode == right.IsBigEndianBytecode;
     }
 
-    private static DialogueResultScript IncompleteSentinel(bool hasNextSeparator)
+    private static DialogueResultScript IncompleteSentinel(bool hasNextSeparator,
+        IReadOnlyList<DialogueResultScript> observations)
     {
         return new DialogueResultScript
         {
             HasNextSeparator = hasNextSeparator,
+            IsDmpDerived = observations.Any(static script => script.IsDmpDerived),
+            WithheldSourceReason = SelectCanonicalText(observations.Select(static script => script.WithheldSourceReason)),
             IsIncompleteExecutableBundle = true
         };
     }

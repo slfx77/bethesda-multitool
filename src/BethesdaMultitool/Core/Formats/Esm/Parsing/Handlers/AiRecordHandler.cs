@@ -388,8 +388,16 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
     }
 
     /// <summary>
-    ///     Parse PTDT/PTD2 subrecord (16 bytes).
+    ///     Parse PTDT/PTD2 subrecord (12 or 16 bytes).
     ///     [0]=Type, [1-3]=pad, [4-7]=FormID/Union, [8-11]=CountDistance, [12-15]=AcquireRadius.
+    ///     <para>
+    ///         Only the first twelve bytes are required: xEdit declares the struct with a required-element
+    ///         count of 3 (Type, Target, Count / Distance), so the trailing float is optional and reads as 0
+    ///         when the subrecord stops before it. The type is one byte plus three pad bytes that Xbox 360
+    ///         stores unswapped, so it is <c>data[0]</c> in both byte orders; the union and the numbers follow
+    ///         the subrecord's byte order. Whether the union is a FormID depends on the type — see
+    ///         <c>PackageReferenceIntegrity.TargetTypeIsFormId</c>.
+    ///     </para>
     /// </summary>
     internal static PackageTarget ParsePackageTarget(ReadOnlySpan<byte> data, bool isBigEndian)
     {
@@ -403,9 +411,9 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
             ? BinaryPrimitives.ReadInt32BigEndian(data[8..])
             : BinaryPrimitives.ReadInt32LittleEndian(data[8..]);
 
-        var acquireRadius = isBigEndian
-            ? BinaryPrimitives.ReadSingleBigEndian(data[12..])
-            : BinaryPrimitives.ReadSingleLittleEndian(data[12..]);
+        var acquireRadius = data.Length >= 16
+            ? ReadSingle(data[12..], isBigEndian)
+            : 0f;
 
         return new PackageTarget
         {
@@ -508,7 +516,17 @@ internal sealed class AiRecordHandler(RecordParserContext context) : RecordHandl
         };
     }
 
-    private static PackageLocation ParsePackageLocation(ReadOnlySpan<byte> data, bool isBigEndian)
+    /// <summary>
+    ///     Parse PLDT/PLD2 subrecord (12 bytes). [0]=Type, [1-3]=pad, [4-7]=Union, [8-11]=Radius.
+    ///     <para>
+    ///         The type is one byte plus three pad bytes that Xbox 360 stores unswapped, so it is
+    ///         <c>data[0]</c> in both byte orders; the union and the radius follow the subrecord's byte order.
+    ///         Whether the union is a FormID depends on the type — see
+    ///         <c>PackageReferenceIntegrity.LocationTypeIsFormId</c>. Requires at least 12 bytes; callers
+    ///         gate on the length.
+    ///     </para>
+    /// </summary>
+    internal static PackageLocation ParsePackageLocation(ReadOnlySpan<byte> data, bool isBigEndian)
     {
         var type = data[0];
         var union = isBigEndian

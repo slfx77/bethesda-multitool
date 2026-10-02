@@ -656,7 +656,7 @@ internal static partial class CorpusSuppressionReportCommand
             result.EsmRecords,
             result.FormIdMap,
             accessor,
-            result.FileSize).ParseAll();
+            result.FileSize).ParseAll(cancellationToken: cancellationToken);
     }
 
     private static Dictionary<(string CsvPath, int RowOrder), CsvMetadata> LoadCsvMetadata(

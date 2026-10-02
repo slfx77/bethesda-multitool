@@ -26,6 +26,7 @@ internal static class LandVisualPreviewRenderer
 
         var vclrCellsByWorldspace = new Dictionary<uint, Dictionary<(int x, int y), byte[]>>();
         var tasks = new List<Task>();
+        var reservedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var land in positioned)
         {
             var cellKey = (land.BestCellX!.Value, land.BestCellY!.Value);
@@ -48,6 +49,7 @@ internal static class LandVisualPreviewRenderer
                     .TryAdd(cellKey, pixels);
                 var path = Path.Combine(vclrDir,
                     HeightmapExportPathBuilder.BuildCellArtifactName(land, "vclr", ".png", worldspaceNames));
+                path = HeightmapExportPathBuilder.ReserveArtifactPath(reservedPaths, path, land.Header.Offset);
                 tasks.Add(Task.Run(() => HeightmapColorRenderer.SaveRgb(pixels, 33, 33, path)));
             }
 
@@ -66,6 +68,8 @@ internal static class LandVisualPreviewRenderer
                             $"atxt_q{layer.Quadrant}_layer{layer.Layer}_tex{layer.TextureFormId:X8}",
                             ".png",
                             worldspaceNames));
+                    path = HeightmapExportPathBuilder.ReserveArtifactPath(
+                        reservedPaths, path, land.Header.Offset, layer.Offset);
                     tasks.Add(Task.Run(() => HeightmapColorRenderer.SaveGrayscale(mask, 33, 33, path)));
                 }
             }

@@ -7,15 +7,17 @@ namespace BethesdaMultitool.CLI.Show;
 
 internal sealed class SharedRecordDetailShowRenderer : IRecordDisplayRenderer
 {
-    public bool TryShow(RecordCollection records, FormIdResolver resolver, uint? formId, string? editorId)
+    public bool TryShow(RecordCollection records, FormIdResolver resolver, uint? formId, string? editorId,
+        ShowRenderContext context)
     {
-        if (!RecordDetailPresenter.TryBuildForLookup(records, resolver, formId, editorId, out var model) ||
+        if (!RecordDetailPresenter.TryBuildForLookup(records, resolver, formId, editorId, out var model,
+                context.IsMemoryDumpInput) ||
             model == null)
         {
             return false;
         }
 
-        Render(model);
+        Render(context.Console, model, context.FullText);
         return true;
     }
 
@@ -23,10 +25,22 @@ internal sealed class SharedRecordDetailShowRenderer : IRecordDisplayRenderer
     ///     Renders a <see cref="RecordDetailModel" /> to a Spectre panel. Shared so the profile-driven
     ///     renderer (<see cref="ProfileShowRenderer" />) presents schema-decoded records identically to the
     ///     typed ones.
+    ///     <para>
+    ///         With <paramref name="fullText" /> (<c>show --full</c>), any value that spans lines or is
+    ///         longer than <see cref="ShowHelpers.DefaultTextCap" /> — script source, decompiled text,
+    ///         dialogue and terminal text — is replaced in the panel by its length and written after the
+    ///         panel as a verbatim block titled by its section and label, so it is neither folded at the
+    ///         console width nor stripped of its TABs and CRLF. Short values stay in the panel. Without it
+    ///         the output is unchanged.
+    ///     </para>
     /// </summary>
-    internal static void Render(RecordDetailModel model)
+    internal static void Render(IAnsiConsole console, RecordDetailModel model, bool fullText = false)
     {
+        ArgumentNullException.ThrowIfNull(console);
+        ArgumentNullException.ThrowIfNull(model);
+
         var lines = new List<string>();
+        var blocks = new List<VerbatimBlock>();
         foreach (var section in model.Sections)
         {
             if (lines.Count > 0)
@@ -40,7 +54,8 @@ internal sealed class SharedRecordDetailShowRenderer : IRecordDisplayRenderer
                 switch (entry.Kind)
                 {
                     case RecordDetailEntryKind.List:
-                        if (!string.Equals(entry.Label, section.Title, StringComparison.Ordinal))
+                        var listLabelShown = !string.Equals(entry.Label, section.Title, StringComparison.Ordinal);
+                        if (listLabelShown)
                         {
                             lines.Add($"[cyan]{Markup.Escape(entry.Label)}:[/]");
                         }
@@ -49,6 +64,16 @@ internal sealed class SharedRecordDetailShowRenderer : IRecordDisplayRenderer
                         {
                             foreach (var item in entry.Items)
                             {
+                                if (fullText && ShowHelpers.NeedsVerbatimBlock(item.Value))
+                                {
+                                    lines.Add(
+                                        $"  {Markup.Escape(item.Label)}: {ShowHelpers.VerbatimPlaceholder(item.Value)}");
+                                    blocks.Add(new VerbatimBlock(
+                                        BlockTitle(section.Title, listLabelShown ? entry.Label : null, item.Label),
+                                        item.Value));
+                                    continue;
+                                }
+
                                 var value = string.IsNullOrEmpty(item.Value) ? "" : $": {Markup.Escape(item.Value)}";
                                 lines.Add($"  {Markup.Escape(item.Label)}{value}");
                             }
@@ -57,19 +82,46 @@ internal sealed class SharedRecordDetailShowRenderer : IRecordDisplayRenderer
                         break;
 
                     default:
-                        lines.Add($"[cyan]{Markup.Escape(entry.Label)}:[/] {Markup.Escape(entry.Value ?? "(none)")}");
+                        var text = entry.Value ?? "(none)";
+                        if (fullText && ShowHelpers.NeedsVerbatimBlock(text))
+                        {
+                            lines.Add($"[cyan]{Markup.Escape(entry.Label)}:[/] {ShowHelpers.VerbatimPlaceholder(text)}");
+                            blocks.Add(new VerbatimBlock(BlockTitle(section.Title, null, entry.Label), text));
+                            break;
+                        }
+
+                        lines.Add($"[cyan]{Markup.Escape(entry.Label)}:[/] {Markup.Escape(text)}");
                         break;
                 }
             }
         }
 
-        AnsiConsole.WriteLine();
+        console.WriteLine();
         var panel = new Panel(string.Join("\n", lines))
         {
             Header = new PanelHeader(
                 $"[bold]{Markup.Escape(model.RecordSignature)}[/] {Markup.Escape(model.EditorId ?? "")} — " +
                 $"{Markup.Escape(model.DisplayName ?? $"0x{model.FormId:X8}")}")
         };
-        AnsiConsole.Write(panel);
+        console.Write(panel);
+        ShowHelpers.WriteVerbatimBlocks(console, blocks);
+    }
+
+    /// <summary>
+    ///     "Section / list / label" for a verbatim block, dropping a part that repeats the one before it,
+    ///     so each block names where its placeholder sits in the panel.
+    /// </summary>
+    private static string BlockTitle(string sectionTitle, string? listLabel, string label)
+    {
+        var parts = new List<string> { sectionTitle };
+        foreach (var part in new[] { listLabel, label })
+        {
+            if (!string.IsNullOrEmpty(part) && !string.Equals(part, parts[^1], StringComparison.Ordinal))
+            {
+                parts.Add(part);
+            }
+        }
+
+        return string.Join(" / ", parts);
     }
 }

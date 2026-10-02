@@ -1,4 +1,5 @@
 using System.CommandLine;
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Helpers;
 using BethesdaMultitool.Core.Formats.Esm.Conversion.Models;
@@ -22,17 +23,34 @@ public static class EsmDumpCommand
         var limitOption = new Option<int>("-l", "--limit")
             { Description = "Maximum number of records to dump (0 = unlimited)", DefaultValueFactory = _ => 0 };
         var hexOption = new Option<bool>("-x", "--hex") { Description = "Show hex dump of record data" };
+        var hexLimitOption = new Option<int>("--hex-limit")
+            { Description = "Decoded payload bytes to display (0 = all)", DefaultValueFactory = _ => 256 };
+        var formIdOption = new Option<string?>("--formid") { Description = "Select hexadecimal FormID" };
+        var offsetOption = new Option<string?>("--offset") { Description = "Select hexadecimal record offset" };
+        var outputOption = new Option<string?>("--output", "-o") { Description = "Write one payload and .json metadata" };
+        var payloadOption = new Option<string>("--payload")
+            { Description = "Binary payload representation: stored or decoded", DefaultValueFactory = _ => "decoded" };
 
         command.Arguments.Add(fileArg);
         command.Arguments.Add(typeArg);
         command.Options.Add(limitOption);
         command.Options.Add(hexOption);
+        command.Options.Add(hexLimitOption);
+        command.Options.Add(formIdOption);
+        command.Options.Add(offsetOption);
+        command.Options.Add(outputOption);
+        command.Options.Add(payloadOption);
 
         command.SetAction(parseResult => Dump(
             parseResult.GetValue(fileArg)!,
             parseResult.GetValue(typeArg)!,
             parseResult.GetValue(limitOption),
-            parseResult.GetValue(hexOption)));
+            parseResult.GetValue(hexOption),
+            parseResult.GetValue(hexLimitOption),
+            parseResult.GetValue(formIdOption),
+            parseResult.GetValue(offsetOption),
+            parseResult.GetValue(outputOption),
+            parseResult.GetValue(payloadOption)!));
 
         return command;
     }
@@ -65,8 +83,15 @@ public static class EsmDumpCommand
         return command;
     }
 
-    private static int Dump(string filePath, string type, int limit, bool showHex)
+    private static int Dump(string filePath, string type, int limit, bool showHex, int hexLimit,
+        string? formIdText, string? offsetText, string? output, string payload)
     {
+        if (limit < 0 || hexLimit < 0 || payload is not ("stored" or "decoded") ||
+            !TryHex(formIdText, out var formId) || !TryHex(offsetText, out var offset))
+        {
+            Console.Error.WriteLine("Invalid limit, identifier, offset or payload representation.");
+            return 1;
+        }
         var esm = EsmFileLoader.Load(filePath);
         if (esm == null)
         {
@@ -83,8 +108,29 @@ public static class EsmDumpCommand
             .Start("Scanning records...", ctx =>
             {
                 var allOfType = EsmRecordParser.ScanForRecordType(esm.Data, esm.IsBigEndian, type.ToUpperInvariant());
-                filtered = limit > 0 ? allOfType.Take(limit).ToList() : allOfType;
+                filtered = allOfType.Where(record => (!formId.HasValue || record.FormId == formId) &&
+                    (!offset.HasValue || record.Offset == offset)).ToList();
             });
+
+        if (output is not null)
+        {
+            if (filtered.Count != 1)
+            {
+                Console.Error.WriteLine($"Payload export requires one occurrence; matched {filtered.Count}. Use --formid and --offset.");
+                return 1;
+            }
+            try
+            {
+                RecordPayloadExport.Write(filePath, esm.Data, filtered[0], esm.IsBigEndian, payload == "decoded", output);
+                return 0;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                Console.Error.WriteLine(exception.Message);
+                return 1;
+            }
+        }
+        if (limit > 0) { filtered = filtered.Take(limit).ToList(); }
 
         AnsiConsole.MarkupLine(
             $"Found [cyan]{filtered.Count}[/] {type} records{(limit > 0 ? $" (showing up to {limit})" : "")}");
@@ -92,10 +138,20 @@ public static class EsmDumpCommand
 
         foreach (var rec in filtered)
         {
-            EsmDisplayHelpers.DisplayRecord(rec, esm.Data, esm.IsBigEndian, showHex);
+            EsmDisplayHelpers.DisplayRecord(rec, esm.Data, esm.IsBigEndian, showHex, hexLimit: hexLimit);
         }
 
-        return 0;
+        return filtered.Count > 0 ? 0 : 1;
+    }
+
+    private static bool TryHex(string? text, out uint? result)
+    {
+        result = null;
+        if (text is null) { return true; }
+        var digits = text.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? text[2..] : text;
+        if (!uint.TryParse(digits, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var value)) { return false; }
+        result = value;
+        return true;
     }
 
     private static int Trace(string filePath, string? offsetStr, string? stopStr, int? filterDepth, int limit)

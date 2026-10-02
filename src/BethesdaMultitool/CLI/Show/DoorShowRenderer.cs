@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class DoorShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var door = records.Doors.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, d => d.FormId, d => d.EditorId));
@@ -16,7 +16,7 @@ internal sealed class DoorShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]      0x{door.FormId:X8}",
@@ -36,22 +36,22 @@ internal sealed class DoorShowRenderer : IRecordDisplayRenderer
 
         if (door.OpenSoundFormId.HasValue)
         {
-            lines.Add($"[cyan]Open Sound:[/]  {resolver.FormatWithEditorId(door.OpenSoundFormId.Value)}");
+            lines.Add($"[cyan]Open Sound:[/]  {ShowHelpers.Ref(resolver, door.OpenSoundFormId.Value)}");
         }
 
         if (door.CloseSoundFormId.HasValue)
         {
-            lines.Add($"[cyan]Close Sound:[/] {resolver.FormatWithEditorId(door.CloseSoundFormId.Value)}");
+            lines.Add($"[cyan]Close Sound:[/] {ShowHelpers.Ref(resolver, door.CloseSoundFormId.Value)}");
         }
 
         if (door.LoopSoundFormId.HasValue)
         {
-            lines.Add($"[cyan]Loop Sound:[/]  {resolver.FormatWithEditorId(door.LoopSoundFormId.Value)}");
+            lines.Add($"[cyan]Loop Sound:[/]  {ShowHelpers.Ref(resolver, door.LoopSoundFormId.Value)}");
         }
 
         if (door.Script.HasValue)
         {
-            lines.Add($"[cyan]Script:[/]      {resolver.FormatWithEditorId(door.Script.Value)}");
+            lines.Add($"[cyan]Script:[/]      {ShowHelpers.Ref(resolver, door.Script.Value)}");
         }
 
         ShowHelpers.AppendNestedPayloads(lines, records, door.FormId, resolver);
@@ -60,7 +60,7 @@ internal sealed class DoorShowRenderer : IRecordDisplayRenderer
         {
             Header = new PanelHeader($"[bold]DOOR[/] {Markup.Escape(door.EditorId ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

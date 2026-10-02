@@ -1,7 +1,9 @@
 using System.CommandLine;
 using System.Globalization;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Formats.Esm.Export.Geck;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Script;
 using BethesdaMultitool.Core.Minidump;
 using Spectre.Console;
 
@@ -112,7 +114,7 @@ public static class DmpScriptCommands
     {
         if (!File.Exists(path))
         {
-            AnsiConsole.MarkupLine($"[red]Error: File not found: {path}[/]");
+            AnsiConsole.MarkupLine($"[red]Error: File not found: {Markup.Escape(path)}[/]");
             return null;
         }
 
@@ -163,6 +165,21 @@ public static class DmpScriptCommands
         }
 
         var (_, scripts) = result.Value;
+        RenderScriptList(AnsiConsole.Console, scripts);
+    }
+
+    /// <summary>
+    ///     The <c>dmp scripts list</c> table and totals. Source text is classified by
+    ///     <see cref="ScriptSourceProvenance" /> as dump input: the Source column prints the provenance token,
+    ///     "With source (SCTX)" counts only captured text, and a BethesdaMultitool decompilation that stands in
+    ///     for missing SCTX is counted as reconstructed, never as source. EditorIDs are escaped.
+    /// </summary>
+    internal static void RenderScriptList(IAnsiConsole console, IReadOnlyList<ScriptRecord> scripts)
+    {
+        ArgumentNullException.ThrowIfNull(console);
+        ArgumentNullException.ThrowIfNull(scripts);
+
+        var sources = scripts.Select(s => ScriptSourceProvenance.Classify(s, true)).ToList();
 
         var table = new Table();
         table.AddColumn(new TableColumn("#").RightAligned());
@@ -170,7 +187,7 @@ public static class DmpScriptCommands
         table.AddColumn("FormId");
         table.AddColumn(new TableColumn("Vars").RightAligned());
         table.AddColumn(new TableColumn("Refs").RightAligned());
-        table.AddColumn("SCTX");
+        table.AddColumn("Source");
         table.AddColumn("SCDA");
         table.AddColumn("Decompiled");
         table.AddColumn("Runtime");
@@ -179,32 +196,59 @@ public static class DmpScriptCommands
         {
             var s = scripts[i];
             table.AddRow(
-                (i + 1).ToString(),
-                s.EditorId ?? "[dim]?[/]",
+                (i + 1).ToString(CultureInfo.InvariantCulture),
+                s.EditorId != null ? Markup.Escape(s.EditorId) : "[dim]?[/]",
                 $"0x{s.FormId:X8}",
-                s.Variables.Count.ToString(),
-                s.ReferencedObjects.Count.ToString(),
-                s.HasSource ? "[green]Yes[/]" : "[dim]No[/]",
+                s.Variables.Count.ToString(CultureInfo.InvariantCulture),
+                s.ReferencedObjects.Count.ToString(CultureInfo.InvariantCulture),
+                FormatSourceCell(sources[i]),
                 s.CompiledData is { Length: > 0 } ? "[green]Yes[/]" : "[dim]No[/]",
                 !string.IsNullOrEmpty(s.DecompiledText) ? "[green]Yes[/]" : "[dim]No[/]",
                 s.FromRuntime ? "[cyan]RT[/]" : "[dim]ESM[/]");
         }
 
-        AnsiConsole.Write(table);
+        console.Write(table);
 
-        var withSource = scripts.Count(s => s.HasSource);
+        var withSource = sources.Count(source => source.IsAuthorWrittenText);
+        var withReconstructed = sources.Count(source => source.IsReconstructed);
+        var withoutSource = sources.Count(source => !source.HasSourceText);
         var withBytecode = scripts.Count(s => s.CompiledData is { Length: > 0 });
         var withDecompiled = scripts.Count(s => !string.IsNullOrEmpty(s.DecompiledText));
-        var withBoth = scripts.Count(s => s.HasSource && !string.IsNullOrEmpty(s.DecompiledText));
+        // Comparable = captured source beside a decompilation. A reconstruction compared with the
+        // decompilation it was rendered from would only compare the decompiler with itself.
+        var withBoth = 0;
+        for (var i = 0; i < scripts.Count; i++)
+        {
+            if (sources[i].IsAuthorWrittenText && !string.IsNullOrEmpty(scripts[i].DecompiledText))
+            {
+                withBoth++;
+            }
+        }
+
         var fromRuntime = scripts.Count(s => s.FromRuntime);
 
-        AnsiConsole.WriteLine();
-        AnsiConsole.MarkupLine($"[cyan]Total scripts:[/] {scripts.Count}");
-        AnsiConsole.MarkupLine($"[cyan]With source (SCTX):[/] {withSource}");
-        AnsiConsole.MarkupLine($"[cyan]With bytecode (SCDA):[/] {withBytecode}");
-        AnsiConsole.MarkupLine($"[cyan]With decompiled text:[/] {withDecompiled}");
-        AnsiConsole.MarkupLine($"[cyan]With both (comparable):[/] {withBoth}");
-        AnsiConsole.MarkupLine($"[cyan]From runtime structs:[/] {fromRuntime}");
+        console.WriteLine();
+        console.MarkupLine($"[cyan]Total scripts:[/] {scripts.Count}");
+        console.MarkupLine($"[cyan]With source (SCTX):[/] {withSource}");
+        console.MarkupLine($"[cyan]With reconstructed source (decompiled from SCDA):[/] {withReconstructed}");
+        console.MarkupLine(
+            $"[cyan]Without source text:[/] {withoutSource} ({Markup.Escape(ScriptSourceProvenance.PartialDumpAbsenceWording)})");
+        console.MarkupLine($"[cyan]With bytecode (SCDA):[/] {withBytecode}");
+        console.MarkupLine($"[cyan]With decompiled text:[/] {withDecompiled}");
+        console.MarkupLine($"[cyan]With both (comparable):[/] {withBoth}");
+        console.MarkupLine($"[cyan]From runtime structs:[/] {fromRuntime}");
+    }
+
+    /// <summary>The Source cell: the provenance token, green for captured text, yellow for a reconstruction.</summary>
+    private static string FormatSourceCell(ScriptSourceClassification source)
+    {
+        var token = Markup.Escape(source.Token);
+        if (source.IsAuthorWrittenText)
+        {
+            return $"[green]{token}[/]";
+        }
+
+        return source.IsReconstructed ? $"[yellow]{token}[/]" : $"[dim]{token}[/]";
     }
 
     #endregion
@@ -225,49 +269,72 @@ public static class DmpScriptCommands
         var script = FindScript(scripts, scriptName);
         if (script == null)
         {
-            AnsiConsole.MarkupLine($"[red]Script not found: {scriptName}[/]");
+            AnsiConsole.MarkupLine($"[red]Script not found: {Markup.Escape(scriptName)}[/]");
             return;
         }
 
+        RenderScriptDetail(AnsiConsole.Console, script);
+    }
+
+    /// <summary>
+    ///     The <c>dmp scripts show</c> body. The source body is headed by its
+    ///     <see cref="ScriptSourceProvenance" /> label (dump input), so a reconstruction decompiled from SCDA
+    ///     is never presented as captured SCTX, and a missing body says that absence from a partial capture is
+    ///     not evidence of absence from the build. EditorIDs are escaped.
+    /// </summary>
+    internal static void RenderScriptDetail(IAnsiConsole console, ScriptRecord script)
+    {
+        ArgumentNullException.ThrowIfNull(console);
+        ArgumentNullException.ThrowIfNull(script);
+
+        var source = ScriptSourceProvenance.Classify(script, true);
+
         // Header
-        AnsiConsole.MarkupLine($"[cyan]Script:[/] {script.EditorId ?? "(no editor ID)"}");
-        AnsiConsole.MarkupLine($"[cyan]FormId:[/] 0x{script.FormId:X8}");
-        AnsiConsole.MarkupLine($"[cyan]Variables:[/] {script.Variables.Count}");
-        AnsiConsole.MarkupLine($"[cyan]Referenced Objects:[/] {script.ReferencedObjects.Count}");
-        AnsiConsole.MarkupLine($"[cyan]Quest Script:[/] {script.IsQuestScript}");
-        AnsiConsole.MarkupLine($"[cyan]Runtime:[/] {script.FromRuntime}");
+        console.MarkupLine($"[cyan]Script:[/] {Markup.Escape(script.EditorId ?? "(no editor ID)")}");
+        console.MarkupLine($"[cyan]FormId:[/] 0x{script.FormId:X8}");
+        console.MarkupLine($"[cyan]Variables:[/] {script.Variables.Count}");
+        console.MarkupLine($"[cyan]Referenced Objects:[/] {script.ReferencedObjects.Count}");
+        console.MarkupLine($"[cyan]Quest Script:[/] {script.IsQuestScript}");
+        console.MarkupLine($"[cyan]Runtime:[/] {script.FromRuntime}");
+        console.MarkupLine(
+            $"[cyan]Source Origin:[/] {Markup.Escape(GeckScriptWriter.FormatSourceOrigin(source))}");
 
         if (script.OwnerQuestFormId.HasValue)
         {
-            AnsiConsole.MarkupLine($"[cyan]Owner Quest:[/] 0x{script.OwnerQuestFormId.Value:X8}");
+            console.MarkupLine($"[cyan]Owner Quest:[/] 0x{script.OwnerQuestFormId.Value:X8}");
         }
 
         // Variables
         if (script.Variables.Count > 0)
         {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[yellow]--- Variables ---[/]");
+            console.WriteLine();
+            console.MarkupLine("[yellow]--- Variables ---[/]");
             foreach (var v in script.Variables)
             {
                 var typeName = v.Type == 1 ? "int" : "float";
-                AnsiConsole.WriteLine($"  [{v.Index,3}] {typeName,-5} {v.Name ?? "(unnamed)"}");
+                console.WriteLine($"  [{v.Index,3}] {typeName,-5} {v.Name ?? "(unnamed)"}");
             }
         }
 
-        // Source text
-        if (script.HasSource)
+        // Source text, headed by what it is
+        console.WriteLine();
+        if (source.HasSourceText)
         {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[yellow]--- Source (SCTX) ---[/]");
-            AnsiConsole.WriteLine(script.SourceText!);
+            console.MarkupLine($"[yellow]--- {Markup.Escape(source.Label)} ---[/]");
+            console.WriteLine(script.SourceText!);
+        }
+        else
+        {
+            console.MarkupLine($"[grey]{Markup.Escape(source.Label)}[/]");
         }
 
         // Decompiled text
         if (!string.IsNullOrEmpty(script.DecompiledText))
         {
-            AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[yellow]--- Decompiled (SCDA) ---[/]");
-            AnsiConsole.WriteLine(script.DecompiledText);
+            console.WriteLine();
+            console.MarkupLine(
+                $"[yellow]--- {Markup.Escape(ScriptSourceProvenance.DecompiledTextLabel)} ---[/]");
+            console.WriteLine(script.DecompiledText);
         }
     }
 

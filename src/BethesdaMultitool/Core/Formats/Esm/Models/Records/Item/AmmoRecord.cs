@@ -32,6 +32,10 @@ public record AmmoRecord
     /// <summary>Projectile FormID (from DAT2 subrecord).</summary>
     public uint? ProjectileFormId { get; init; }
 
+    /// <summary>Original typed projectile link before weapon-derived enrichment; used by static selection.</summary>
+    public uint? RecordLocalProjectileFormId { get; init; }
+    public bool HasRecordLocalProjectileSnapshot { get; init; }
+
     /// <summary>All projectile FormIDs inferred from direct AMMO data and weapon reverse references.</summary>
     public List<uint> ProjectileFormIds { get; init; } = [];
 

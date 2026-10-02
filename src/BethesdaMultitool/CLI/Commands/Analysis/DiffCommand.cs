@@ -64,13 +64,13 @@ public static class DiffCommand
     {
         if (!File.Exists(fileA))
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {fileA}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {Markup.Escape(fileA)}");
             return 1;
         }
 
         if (!File.Exists(fileB))
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {fileB}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] File not found: {Markup.Escape(fileB)}");
             return 1;
         }
 
@@ -86,7 +86,7 @@ public static class DiffCommand
         var fileTypeB = FileTypeDetector.Detect(fileB);
 
         AnsiConsole.MarkupLine(
-            $"[bold]Diff:[/] [cyan]{Path.GetFileName(fileA)}[/] ({fileTypeA}) vs [cyan]{Path.GetFileName(fileB)}[/] ({fileTypeB})");
+            $"[bold]Diff:[/] [cyan]{Markup.Escape(Path.GetFileName(fileA))}[/] ({fileTypeA}) vs [cyan]{Markup.Escape(Path.GetFileName(fileB))}[/] ({fileTypeB})");
 
         try
         {
@@ -206,14 +206,14 @@ public static class DiffCommand
                 if (onlyInA.Count > 0)
                 {
                     AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine($"[yellow bold]Only in {Path.GetFileName(fileA)}:[/]");
+                    AnsiConsole.MarkupLine($"[yellow bold]Only in {Markup.Escape(Path.GetFileName(fileA))}:[/]");
                     CliTableBuilder.WriteRecordTable(onlyInA, limit);
                 }
 
                 if (onlyInB.Count > 0)
                 {
                     AnsiConsole.WriteLine();
-                    AnsiConsole.MarkupLine($"[cyan bold]Only in {Path.GetFileName(fileB)}:[/]");
+                    AnsiConsole.MarkupLine($"[cyan bold]Only in {Markup.Escape(Path.GetFileName(fileB))}:[/]");
                     CliTableBuilder.WriteRecordTable(onlyInB, limit);
                 }
 
@@ -299,7 +299,7 @@ public static class DiffCommand
         }
         catch (Exception ex)
         {
-            AnsiConsole.MarkupLine($"[red]Error:[/] {ex.Message}");
+            AnsiConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(ex.Message)}");
             return 1;
         }
     }

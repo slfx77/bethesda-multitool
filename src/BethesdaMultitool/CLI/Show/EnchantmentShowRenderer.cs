@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class EnchantmentShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var ench = records.Enchantments.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, e => e.FormId, e => e.EditorId));
@@ -16,7 +16,7 @@ internal sealed class EnchantmentShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var lines = new List<string>
         {
             $"[cyan]FormID:[/]      0x{ench.FormId:X8}",
@@ -53,7 +53,7 @@ internal sealed class EnchantmentShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]ENCH[/] {Markup.Escape(ench.EditorId ?? "")} — {Markup.Escape(ench.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

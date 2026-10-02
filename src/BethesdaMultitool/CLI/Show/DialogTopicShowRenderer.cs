@@ -7,7 +7,7 @@ namespace BethesdaMultitool.CLI.Show;
 internal sealed class DialogTopicShowRenderer : IRecordDisplayRenderer
 {
     public bool TryShow(RecordCollection records, FormIdResolver resolver,
-        uint? formId, string? editorId)
+        uint? formId, string? editorId, ShowRenderContext context)
     {
         var topic = records.DialogTopics.FirstOrDefault(r =>
             ShowHelpers.Matches(r, formId, editorId, t => t.FormId, t => t.EditorId));
@@ -16,9 +16,9 @@ internal sealed class DialogTopicShowRenderer : IRecordDisplayRenderer
             return false;
         }
 
-        AnsiConsole.WriteLine();
+        context.Console.WriteLine();
         var questStr = topic.QuestFormId.HasValue
-            ? resolver.FormatWithEditorId(topic.QuestFormId.Value)
+            ? ShowHelpers.Ref(resolver, topic.QuestFormId.Value)
             : "(none)";
         var lines = new List<string>
         {
@@ -70,7 +70,7 @@ internal sealed class DialogTopicShowRenderer : IRecordDisplayRenderer
             Header = new PanelHeader(
                 $"[bold]DIAL[/] {Markup.Escape(topic.EditorId ?? "")} — {Markup.Escape(topic.FullName ?? "")}")
         };
-        AnsiConsole.Write(panel);
+        context.Console.Write(panel);
         return true;
     }
 }

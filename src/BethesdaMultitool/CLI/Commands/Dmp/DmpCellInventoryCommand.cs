@@ -466,7 +466,7 @@ internal static class DmpCellInventoryCommand
             using var loaded = SemanticFileLoader.LoadFromAnalysisResult(
                 pcEsmPath,
                 analysis,
-                AnalysisFileType.EsmFile);
+                AnalysisFileType.EsmFile, cancellationToken: cancellationToken);
             var metadata = BuildCellMetadata(loaded.Records.Cells, esmRecords.CellToWorldspaceMap);
             return new PcEsmCellAuthority(esmRecords.CellToWorldspaceMap, refToCell, analysis.FormIdMap, metadata);
         }

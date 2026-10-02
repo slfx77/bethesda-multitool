@@ -10,7 +10,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Parsing.Handlers;
 
 internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordHandlerBase(context)
 {
-    private Dictionary<uint, uint>? _runtimeObjectToScript;
+    private List<ScriptOwnerLink>? _runtimeObjectToScript;
 
     internal List<RuntimeScriptData> RuntimeScripts { get; private set; } = [];
 
@@ -18,7 +18,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
     ///     Provide pre-built object→script mappings from runtime struct data (NPC_, CREA, CONT, ACTI).
     ///     Used for DMP files where ESM records are not available for BuildCrossReferenceChains.
     /// </summary>
-    internal void SetRuntimeObjectScriptMappings(Dictionary<uint, uint> objectToScript)
+    internal void SetRuntimeObjectScriptMappings(List<ScriptOwnerLink> objectToScript)
     {
         _runtimeObjectToScript = objectToScript;
     }
@@ -46,6 +46,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
                 });
             }
 
+            Context.ExternalScriptVariables = new ExternalScriptVariableResolver(scripts, []);
             return scripts;
         }
 
@@ -74,155 +75,11 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
             RuntimeScripts = MergeRuntimeScriptData(scripts);
         }
 
-        // Build cross-script variable database: FormID -> variable list
-        // This enables resolving ref.varN to ref.actualVarName during decompilation
-        var variableDb = new Dictionary<uint, List<ScriptVariableInfo>>();
-        foreach (var script in scripts)
-        {
-            if (script.Variables.Count > 0)
-            {
-                variableDb.TryAdd(script.FormId, script.Variables);
-            }
-
-            // Also map quest FormIDs to their script's variable lists.
-            // When a script references vSomeQuest.fTimer, the SCRO points to the quest FormID,
-            // not the quest's script FormID. OwnerQuestFormId links scripts to their owning quest.
-            if (script.OwnerQuestFormId.HasValue && script.Variables.Count > 0)
-            {
-                variableDb.TryAdd(script.OwnerQuestFormId.Value, script.Variables);
-            }
-        }
-
-        // Quest fallback: for quest scripts with no OwnerQuestFormId, scan SCRO list
-        // for QUST FormIDs and map those to the script's variables.
-        // RuntimeEditorIds is only populated for DMP files (runtime hash table walk).
-        var questFormIds = Context.ScanResult.RuntimeEditorIds
-            .Where(e => e.FormType is 0x47)
-            .Select(e => e.FormId)
-            .ToHashSet();
-        var questFallbackCount = 0;
-
-        if (questFormIds.Count > 0)
-        {
-            foreach (var script in scripts)
-            {
-                if (!script.IsQuestScript || script.OwnerQuestFormId.HasValue
-                                          || script.Variables.Count == 0)
-                {
-                    continue;
-                }
-
-                foreach (var scroFormId in script.ReferencedObjects)
-                {
-                    if ((scroFormId & 0x80000000) != 0)
-                    {
-                        continue; // skip SCRV entries
-                    }
-
-                    if (variableDb.ContainsKey(scroFormId))
-                    {
-                        continue;
-                    }
-
-                    if (!questFormIds.Contains(scroFormId))
-                    {
-                        continue;
-                    }
-
-                    variableDb.TryAdd(scroFormId, script.Variables);
-                    questFallbackCount++;
-                }
-            }
-        }
-
-        // Build object→script mappings for multi-level variable resolution.
-        // When resolving ref.varN, the SCRO FormID may point to a placed reference (REFR/ACHR)
-        // or a base object (NPC_/CREA) rather than a script. These mappings enable the chain:
-        // placed ref → base object → script → variables
-        var objectToScript = new Dictionary<uint, uint>();
-        if (Context.Accessor != null)
-        {
-            BuildObjectToScriptMap(objectToScript);
-        }
-
-        // Merge runtime object→script mappings (from NPC_/CREA/CONT/ACTI runtime struct reads).
-        // For DMP files, ESM records are freed at load time so BuildCrossReferenceChains finds nothing.
-        // Runtime struct readers extract Script FormIDs from C++ object pointers instead.
-        if (_runtimeObjectToScript != null)
-        {
-            foreach (var (objectFormId, scriptFormId) in _runtimeObjectToScript)
-            {
-                objectToScript.TryAdd(objectFormId, scriptFormId);
-            }
-        }
-
-        var dbSizeBefore = variableDb.Count;
-
-        // Extend variableDb with indirect object→script→variables mappings
-        foreach (var (objectFormId, scriptFormId) in objectToScript)
-        {
-            if (variableDb.TryGetValue(scriptFormId, out var vars))
-            {
-                variableDb.TryAdd(objectFormId, vars);
-            }
-        }
-
-        // Extend variableDb with ref→base→variables mappings
-        foreach (var (refFormId, baseFormId) in Context.RefToBase)
-        {
-            if (variableDb.TryGetValue(baseFormId, out var vars))
-            {
-                variableDb.TryAdd(refFormId, vars);
-            }
-        }
-
-        // EditorID-based REF→base heuristic for placed references.
-        // Many placed refs have EditorIDs like "CraigBooneREF" — strip "REF" to find
-        // the base form "CraigBoone" and chain to its script's variables.
-        // Note: Build a fresh reverse lookup from FormIdToEditorId (which is mutable and includes
-        // parse-added entries) rather than using the stale EditorIdToFormId dictionary.
-        var editorIdToFormId = Context.FormIdToEditorId
-            .GroupBy(kv => kv.Value, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First().Key, StringComparer.OrdinalIgnoreCase);
-        var refHeuristicCount = 0;
-
-        foreach (var script in scripts)
-        {
-            foreach (var refFormId in script.ReferencedObjects)
-            {
-                if (variableDb.ContainsKey(refFormId))
-                {
-                    continue;
-                }
-
-                var editorId = Context.ResolveFormName(refFormId);
-                if (editorId == null || !editorId.EndsWith("REF", StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
-                var baseName = editorId[..^3];
-                if (editorIdToFormId.TryGetValue(baseName, out var baseFormId))
-                {
-                    if (variableDb.TryGetValue(baseFormId, out var vars))
-                    {
-                        variableDb.TryAdd(refFormId, vars);
-                        refHeuristicCount++;
-                    }
-                    else if (objectToScript.TryGetValue(baseFormId, out var scriptFid)
-                             && variableDb.TryGetValue(scriptFid, out var scriptVars))
-                    {
-                        variableDb.TryAdd(refFormId, scriptVars);
-                        refHeuristicCount++;
-                    }
-                }
-            }
-        }
-
-        Logger.Instance.Debug(
-            $"  [Semantic] Cross-ref chains: {objectToScript.Count} obj→script, " +
-            $"{Context.RefToBase.Count} ref→base, {refHeuristicCount} REF→base, " +
-            $"{questFallbackCount} quest→script, variableDb {dbSizeBefore}→{variableDb.Count}");
+        var links = new List<ScriptOwnerLink>();
+        ScriptRuntimeMerger.BuildObjectToScriptLinks(Context, links);
+        if (_runtimeObjectToScript is not null) links.AddRange(_runtimeObjectToScript);
+        var variableResolver = new ExternalScriptVariableResolver(scripts, links);
+        Context.ExternalScriptVariables = variableResolver;
 
         // PASS 2: Decompile all scripts with the full cross-script variable database
         var resolvedCount = 0;
@@ -231,7 +88,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
             var script = scripts[i];
             if (script.CompiledData is { Length: > 0 })
             {
-                var (decompiled, crossRefResolved) = DecompileScript(script, variableDb);
+                var (decompiled, crossRefResolved) = DecompileScript(script, variableResolver);
                 script = decompiled;
                 resolvedCount += crossRefResolved;
             }
@@ -260,45 +117,30 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
     /// </summary>
     private (ScriptRecord Script, int CrossRefsResolved) DecompileScript(
         ScriptRecord script,
-        Dictionary<uint, List<ScriptVariableInfo>> variableDb)
+        ExternalScriptVariableResolver variableResolver)
     {
         if (script.CompiledData is not { Length: > 0 })
         {
             return (script, 0);
         }
 
-        var crossRefsResolved = 0;
-
-        string? ResolveExternalVariable(uint formId, ushort varIndex)
-        {
-            if (!variableDb.TryGetValue(formId, out var vars))
-            {
-                return null;
-            }
-
-            var variable = vars.FirstOrDefault(v => v.Index == varIndex);
-            if (variable?.Name != null)
-            {
-                crossRefsResolved++;
-                return variable.Name;
-            }
-
-            return null;
-        }
+        var bindings = new List<ScriptExternalVariableBinding>();
 
         string? decompiledText;
         try
         {
-            // Endianness belongs to the accepted SCDA payload, not to the record as a whole.
-            // A script can be enriched with runtime source/owner metadata while retaining a
-            // little-endian ESM fragment. ScriptRuntimeMerger updates IsBigEndian only when
-            // it atomically adopts runtime bytecode and its ordered metadata tables.
-            var isBigEndian = script.IsBigEndian;
+            // Decode in the BYTECODE's order, never the container's: an Xbox 360 ESM is a
+            // big-endian container around little-endian SCDA. ParseScriptFromAccessor records the
+            // order ScriptBytecodeByteOrderSelector chose; a script enriched with runtime
+            // source/owner metadata keeps it, and ScriptRuntimeMerger replaces it only when it
+            // atomically adopts a runtime Script object's (already swapped) bytecode together with
+            // its ordered metadata tables.
+            var isBigEndian = script.IsBigEndianBytecode;
             var decompiler = new ScriptDecompiler(
                 script.Variables, script.ReferencedObjects, Context.ResolveFormName,
                 isBigEndian,
                 script.EditorId,
-                ResolveExternalVariable,
+                variableResolver.Track(bindings),
                 ScriptFunctionTables.For(Context.Game));
             decompiledText = decompiler.Decompile(script.CompiledData);
         }
@@ -307,7 +149,8 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
             decompiledText = $"; Decompilation failed: {ex.Message}";
         }
 
-        return (script with { DecompiledText = decompiledText }, crossRefsResolved);
+        return (script with { DecompiledText = decompiledText, ExternalVariableBindings = bindings },
+            bindings.Count(b => b.Status == "resolved"));
     }
 
     /// <summary>
@@ -327,14 +170,14 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
             script.DecompiledText,
             script.Variables,
             script.ReferencedObjects,
-            script.IsBigEndian,
+            script.IsBigEndianBytecode,
             ScriptRecordEmissionPolicy.ResolveEditorId(script));
         if (decision.BundleIssue is not null)
         {
             var safety = script.CompiledData is { Length: > 0 }
                 ? ScriptBytecodeAnalyzer.AnalyzeEmissionSafety(
                     script.CompiledData,
-                    script.IsBigEndian,
+                    script.IsBigEndianBytecode,
                     script.Variables,
                     script.ReferencedObjects)
                 : null;
@@ -412,13 +255,7 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
         return evaluated with { SourceTextCorrespondenceStatus = status };
     }
 
-    /// <summary>
-    ///     Delegates to <see cref="ScriptRuntimeMerger.BuildObjectToScriptMap" />.
-    /// </summary>
-    private void BuildObjectToScriptMap(Dictionary<uint, uint> objectToScript)
-    {
-        ScriptRuntimeMerger.BuildObjectToScriptMap(Context, objectToScript);
-    }
+
 
     /// <summary>
     ///     Delegates runtime script merging to <see cref="ScriptRuntimeMerger" />.
@@ -494,32 +331,28 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
 
                     // Canonical ESM SCHR layout per fopdoc (Records/Subrecords/SCHR.md):
                     //   offset 0..3:   Unused (4 bytes)
-                    //   offset 4..7:   RefCount (uint32)
-                    //   offset 8..11:  CompiledSize (uint32)
-                    //   offset 12..15: VariableCount (uint32)
-                    //   offset 16..17: Type (uint16; 0=Object, 1=Quest, 0x100=Effect)
-                    //   offset 18..19: Flags (uint16; 0x0001=Enabled)
+                    //   offset 4..7:   RefCount (uint32, container byte order)
+                    //   offset 8..11:  CompiledSize (uint32, container byte order)
+                    //   offset 12..15: VariableCount (uint32, container byte order)
+                    //   offset 16..17: Type (uint16, little-endian on every platform;
+                    //                  0=Object, 1=Quest, 0x100=Effect)
+                    //   offset 18..19: Flags (uint16, little-endian on every platform; 0x0001=Enabled)
+                    // Bytes 16..19 are byte-sized flags the Xbox 360 never swaps: the engine's
+                    // SCRIPT_HEADER holds bool bIsQuestScript@16, bIsMagicEffectScript@17 and
+                    // bIsCompiled@18 (docs/PDB_Script_Bytecode_Format.md), which is fopdoc's
+                    // little-endian u16 Type/Flags, and the converter schema passes them through
+                    // unswapped (SubrecordDialogueSchemas SCHR: UInt16LittleEndian). Measured on the
+                    // July 2010 X360 prototype: of the SCPT that PC retail types Quest or Effect, the
+                    // little-endian reading agrees on 444 of 444 and a container-order reading on 0
+                    // (it swaps Quest with Effect and turns Flags 0x0001 into 0x0100).
                     // The runtime SCRIPT_HEADER struct has VariableCount at offset 0 and
                     // uiLastID at offset 12 — different layout. This parser is for the
                     // serialized ESM/ESP record, not the runtime struct.
-                    ushort scriptType;
-                    ushort scriptFlags;
-                    if (record.IsBigEndian)
-                    {
-                        refObjectCount = BinaryPrimitives.ReadUInt32BigEndian(subData[4..]);
-                        compiledSize = BinaryPrimitives.ReadUInt32BigEndian(subData[8..]);
-                        variableCount = BinaryPrimitives.ReadUInt32BigEndian(subData[12..]);
-                        scriptType = BinaryPrimitives.ReadUInt16BigEndian(subData[16..]);
-                        scriptFlags = BinaryPrimitives.ReadUInt16BigEndian(subData[18..]);
-                    }
-                    else
-                    {
-                        refObjectCount = BinaryPrimitives.ReadUInt32LittleEndian(subData[4..]);
-                        compiledSize = BinaryPrimitives.ReadUInt32LittleEndian(subData[8..]);
-                        variableCount = BinaryPrimitives.ReadUInt32LittleEndian(subData[12..]);
-                        scriptType = BinaryPrimitives.ReadUInt16LittleEndian(subData[16..]);
-                        scriptFlags = BinaryPrimitives.ReadUInt16LittleEndian(subData[18..]);
-                    }
+                    refObjectCount = ReadContainerUInt32(subData[4..], record.IsBigEndian);
+                    compiledSize = ReadContainerUInt32(subData[8..], record.IsBigEndian);
+                    variableCount = ReadContainerUInt32(subData[12..], record.IsBigEndian);
+                    var scriptType = BinaryPrimitives.ReadUInt16LittleEndian(subData[16..]);
+                    var scriptFlags = BinaryPrimitives.ReadUInt16LittleEndian(subData[18..]);
 
                     isQuestScript = scriptType == 1;
                     isMagicEffectScript = scriptType == 0x100;
@@ -548,7 +381,9 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
                     }
 
                     seenScda = true;
-                    // Raw bytecode — no endian conversion (platform-native)
+                    // Stored verbatim. Its byte order belongs to the payload, not the container
+                    // (serialized SCDA is little-endian inside an Xbox 360 ESM too), and is
+                    // selected once the whole record has been read.
                     compiledData = subData.ToArray();
                     break;
 
@@ -590,6 +425,30 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
         serializedLocals.Complete();
         hasMalformedSerializedTable |= serializedLocals.IsMalformed;
 
+        // Every measured on-disk SCDA is little-endian whatever the container (all 2,487 SCPT of
+        // the July 2010 X360 prototype and all 2,546 of the X360 final open with 1D 00 00 00), so
+        // an on-disk payload the selector cannot decide defaults to little-endian. A DMP fragment
+        // keeps the container order instead: dump fragments were not measured, and that is what
+        // this parser has always assumed for them.
+        var isDmpDerived = Context.MinidumpInfo is not null;
+        var bytecodeOrder = ScriptBytecodeByteOrderSelector.Select(
+            compiledData,
+            variables,
+            referencedObjects,
+            isDmpDerived && record.IsBigEndian,
+            isDmpDerived
+                ? ScriptBytecodeByteOrderEvidence.AmbiguousContainerFallback
+                : ScriptBytecodeByteOrderEvidence.AmbiguousSerializedDefault,
+            Context.Game);
+        if (bytecodeOrder.Evidence is ScriptBytecodeByteOrderEvidence.AmbiguousSerializedDefault
+            or ScriptBytecodeByteOrderEvidence.AmbiguousContainerFallback)
+        {
+            Logger.Instance.Debug(
+                $"  [Semantic] SCPT 0x{record.FormId:X8}: SCDA byte order not decided by the payload; "
+                + $"read it {(bytecodeOrder.IsBigEndian ? "big" : "little")}-endian "
+                + $"({bytecodeOrder.Evidence}; {bytecodeOrder.Detail}).");
+        }
+
         // Decompilation is deferred to pass 2 in ParseScripts()
         return new ScriptRecord
         {
@@ -615,8 +474,17 @@ internal sealed class ScriptRecordHandler(RecordParserContext context) : RecordH
             Variables = variables,
             ReferencedObjects = referencedObjects,
             Offset = record.Offset,
-            IsBigEndian = record.IsBigEndian
+            IsBigEndian = record.IsBigEndian,
+            IsBigEndianBytecode = bytecodeOrder.IsBigEndian,
+            BytecodeByteOrderEvidence = bytecodeOrder.Evidence
         };
+    }
+
+    private static uint ReadContainerUInt32(ReadOnlySpan<byte> data, bool isBigEndian)
+    {
+        return isBigEndian
+            ? BinaryPrimitives.ReadUInt32BigEndian(data)
+            : BinaryPrimitives.ReadUInt32LittleEndian(data);
     }
 
     private static void WarnRepeatedScriptBundleComponent(uint formId, string signature)

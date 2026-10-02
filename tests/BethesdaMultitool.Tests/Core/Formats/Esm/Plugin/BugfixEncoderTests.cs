@@ -156,7 +156,7 @@ public class BugfixEncoderTests
     }
 
     [Fact]
-    public void NpcEncoder_EncodeNew_WithZeroBaseHealth_FallsBackToSynthesis()
+    public void NpcEncoder_EncodeNew_WithZeroBaseHealth_PreservesStoredZero()
     {
         var npc = new NpcRecord
         {
@@ -164,13 +164,13 @@ public class BugfixEncoderTests
             EditorId = "Npc",
             Stats = MakeMinimalAcbs(),
             SpecialStats = [5, 6, 7, 8, 9, 4, 3],
-            BaseHealth = 0 // Treated as "unknown" — synthesize.
+            BaseHealth = 0
         };
 
         var encoded = NpcEncoder.EncodeNew(npc);
 
         var data = Assert.Single(encoded.Subrecords, s => s.Signature == "DATA");
-        Assert.Equal(95, BinaryPrimitives.ReadInt32LittleEndian(data.Bytes.AsSpan(0, 4)));
+        Assert.Equal(0, BinaryPrimitives.ReadInt32LittleEndian(data.Bytes.AsSpan(0, 4)));
     }
 
     [Fact]

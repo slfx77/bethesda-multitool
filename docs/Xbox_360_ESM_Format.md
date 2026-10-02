@@ -323,7 +323,7 @@ class TESFile {
 
 ### PDB-Verified Subrecord Layouts
 
-The following subrecord schemas have been cross-referenced against the Fallout New Vegas PDB debug symbols (`Sample/DebugSymbols/Fallout - New Vegas (X360)/Proto/Fallout_Debug/types_full.txt`). These are authoritative — they come from the actual game engine source, not community reverse-engineering.
+The following subrecord schemas have been cross-referenced against the Fallout New Vegas PDB debug symbols (`Sample/DebugSymbols/Fallout - New Vegas (X360)/2010-8-22 Fallout_Debug/types_full.txt`). These are authoritative — they come from the actual game engine source, not community reverse-engineering.
 
 #### ACTOR_BASE_DATA (ACBS - 24 bytes)
 
@@ -397,3 +397,32 @@ PDB struct `BGSProjectileData` (type 0x867895). Confirms `iFlags` at offset 0 is
 | EXPL DATA | BGSExplosionData      | 52   | Perfect match                                     |
 | RACE DATA | RACE_DATA             | 36   | SkillBoost[7] = 7×(char,char)                     |
 | CLAS DATA | CLASS_DATA            | 28   | cClassFlags is 1 byte + 3 pad (swapped as UInt32) |
+
+#### Script bytecode (SCHR / SCDA) - the bytecode is NOT in the container's byte order
+
+Measured 2026-09-28 on the July 2010 X360 prototype and the X360 final `FalloutNV.esm` (a read-only
+header walk of every SCPT, INFO, QUST, PACK and TERM script block; no record is compressed):
+
+| Offset | Field                         | Byte order                     | Evidence                                                                                             |
+| ------ | ----------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| SCHR 0 | unused                        | -                              | not a count                                                                                          |
+| SCHR 4 | RefCount (uint32)             | container (big-endian on X360) | equals the SCRO+SCRV count                                                                           |
+| SCHR 8 | CompiledSize (uint32)         | container                      | equals the SCDA length read BE on 2,487/2,487 July SCPT (2,546/2,546 X360 final), read LE on 0       |
+| SCHR 12| VariableCount (uint32)        | container                      | NOT always the SLSD count: 494 of the 2,487 July SCPT differ                                         |
+| SCHR 16| Type (bytes 16-17)            | **never swapped** (byte flags) | PDB `SCRIPT_HEADER` bools `bIsQuestScript`@16, `bIsMagicEffectScript`@17, `bIsCompiled`@18          |
+| SCHR 18| Flags (bytes 18-19)           | **never swapped** (byte flags) | read LE they agree with PC retail on 444/444 July Quest/Effect scripts (464/464 X360 final); BE on 0 |
+| SCDA   | compiled bytecode             | **little-endian on every platform** | all 2,487 July SCPT and all 2,546 X360-final SCPT open with `1D 00 00 00` (ScriptName)           |
+| SLSD/SCRO/SCRV | index / FormID / local ID | container                  | SCRO `00 0B 16 D0` = 0x000B16D0 in July SCPT 0x0011EB4D                                              |
+
+July SCPT census (LE byte-flag reading): 2,487 scripts = Object 2,042 (`00 00 01 00`), Quest 300
+(`01 00 01 00`), Effect 145 (`00 01 01 00`), every one compiled. Reading Type/Flags as container-order
+u16s swaps Quest and Effect and clears the compiled bit; reading SCDA big-endian decodes the first
+opcode as 0x1D00. 1,741 of the 2,441 July scripts that share a FormID with PC retail carry
+byte-identical SCDA. The converter schema already encodes this layout (SCHR Type/Flags
+`UInt16LittleEndian`, SCDA passthrough), so `esm convert` never swapped SCDA.
+
+A runtime Script object read from an Xbox 360 memory dump is different: the engine swaps SCDA when it
+loads the script, so dump-resident bytecode is big-endian. The parser therefore records two orders
+per script - `ScriptRecord.IsBigEndian` (the container) and `ScriptRecord.IsBigEndianBytecode` (the
+payload, chosen by `ScriptBytecodeByteOrderSelector` from the ScriptName anchor or a two-order walk,
+with `BytecodeByteOrderEvidence` naming the rule) - and every bytecode consumer reads the latter.

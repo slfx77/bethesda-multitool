@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
@@ -6,6 +7,8 @@ using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Item;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Script.Conditions;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.Formats.Esm.Presentation;
 
@@ -14,7 +17,7 @@ namespace BethesdaMultitool.Core.Formats.Esm.Presentation;
 /// </summary>
 internal static class RecordDetailBuilders
 {
-    internal static RecordDetailModel BuildNpc(NpcRecord npc, FormIdResolver resolver)
+    internal static RecordDetailModel BuildNpc(NpcRecord npc, FormIdResolver resolver, BethesdaGame game)
     {
         var sections = new List<RecordDetailSection>
         {
@@ -26,7 +29,9 @@ internal static class RecordDetailBuilders
                 RecordDetailHelpers.Link("Race", npc.Race, resolver),
                 RecordDetailHelpers.Link("Class", npc.Class, resolver),
                 RecordDetailHelpers.Scalar("Female", ((npc.Stats?.Flags ?? 0) & 1) != 0 ? "Yes" : "No"),
-                RecordDetailHelpers.Scalar("Level", npc.Stats?.Level.ToString() ?? "(unknown)")
+                .. RecordDetailHelpers.ActorLevel(game, npc.Stats?.Flags, npc.Stats?.Level,
+                    npc.Stats?.CalcMin, npc.Stats?.CalcMax),
+                RecordDetailHelpers.Scalar("Actor Flags", RecordDetailHelpers.ActorFlags(npc.Stats?.Flags, game, "NPC_"))
             ]),
             RecordDetailHelpers.Section("Appearance",
             [
@@ -72,7 +77,7 @@ internal static class RecordDetailBuilders
         return RecordDetailHelpers.Model("NPC_", npc.FormId, npc.EditorId, npc.FullName, sections);
     }
 
-    internal static RecordDetailModel BuildCreature(CreatureRecord creature, FormIdResolver resolver)
+    internal static RecordDetailModel BuildCreature(CreatureRecord creature, FormIdResolver resolver, BethesdaGame game)
     {
         var sections = new List<RecordDetailSection>
         {
@@ -82,7 +87,9 @@ internal static class RecordDetailBuilders
                 RecordDetailHelpers.Scalar("Editor ID", creature.EditorId ?? "(none)"),
                 RecordDetailHelpers.Scalar("Name", creature.FullName ?? "(none)"),
                 RecordDetailHelpers.Scalar("Type", creature.CreatureTypeName),
-                RecordDetailHelpers.Scalar("Level", creature.Stats?.Level.ToString() ?? "(unknown)")
+                .. RecordDetailHelpers.ActorLevel(game, creature.Stats?.Flags, creature.Stats?.Level,
+                    creature.Stats?.CalcMin, creature.Stats?.CalcMax),
+                RecordDetailHelpers.Scalar("Actor Flags", RecordDetailHelpers.ActorFlags(creature.Stats?.Flags, game, "CREA"))
             ]),
             RecordDetailHelpers.Section("Combat",
             [
@@ -134,7 +141,7 @@ internal static class RecordDetailBuilders
             RecordDetailHelpers.Section("Combat",
             [
                 RecordDetailHelpers.Scalar("Damage", weapon.Damage.ToString()),
-                RecordDetailHelpers.Scalar("Critical Chance", weapon.CriticalChance.ToString("P0")),
+                RecordDetailHelpers.Scalar("Critical Chance Multiplier", FormattableString.Invariant($"x{weapon.CriticalChance:R}")),
                 RecordDetailHelpers.Scalar("Critical Damage", weapon.CriticalDamage.ToString()),
                 RecordDetailHelpers.Scalar("Attack Speed", weapon.Speed.ToString("F2")),
                 RecordDetailHelpers.Scalar("Shots / Sec", weapon.ShotsPerSec.ToString("F2")),
@@ -222,8 +229,9 @@ internal static class RecordDetailBuilders
         return RecordDetailHelpers.Model("ARMO", armor.FormId, armor.EditorId, armor.FullName, sections);
     }
 
-    internal static RecordDetailModel BuildQuest(QuestRecord quest, FormIdResolver resolver)
+    internal static RecordDetailModel BuildQuest(QuestRecord quest, FormIdResolver resolver, RecordCollection? records = null)
     {
+        var references = records?.Scripts.FirstOrDefault(script => script.FormId == quest.Script)?.ReferencedObjects ?? [];
         var sections = new List<RecordDetailSection>
         {
             RecordDetailHelpers.Section("Identity",
@@ -252,10 +260,16 @@ internal static class RecordDetailBuilders
                     Value = $"Flags 0x{stage.Flags:X2}"
                 })
                 .ToList()),
-            RecordDetailHelpers.ListSection("Variables", quest.Variables.Select(variable => new RecordDetailListItem
+            RecordDetailHelpers.ListSection("Variables", quest.Variables.Select(variable =>
             {
-                Label = variable.Name ?? $"var_{variable.Index}",
-                Value = $"{variable.TypeName}, idx {variable.Index}"
+                var type = ScriptVariableTypeResolver.Resolve(variable, references);
+                return new RecordDetailListItem
+                {
+                    Label = variable.Name ?? $"var_{variable.Index}",
+                    Value = $"{type.Name}, idx {variable.Index}" + (type.Name == "ref"
+                        ? $" (storage type byte {variable.Type}; {type.Evidence})"
+                        : "")
+                };
             }).ToList()),
             RecordDetailHelpers.ListSection("Related NPCs",
                 quest.RelatedNpcFormIds.Select(id => RecordDetailHelpers.ListLinkItem(id, resolver)).ToList())
@@ -264,7 +278,20 @@ internal static class RecordDetailBuilders
         return RecordDetailHelpers.Model("QUST", quest.FormId, quest.EditorId, quest.FullName, sections);
     }
 
-    internal static RecordDetailModel BuildPackage(PackageRecord package, FormIdResolver resolver)
+    /// <summary>
+    ///     Builds the PACK detail model. The Conditions section lists the package's CTDA conditions in stored
+    ///     order through the shared condition describer; a package without conditions shows no section.
+    /// </summary>
+    /// <param name="package">The package.</param>
+    /// <param name="resolver">EditorID/display-name source.</param>
+    /// <param name="conditions">
+    ///     The condition context (game and quest-variable names). Null uses the default game with no quest
+    ///     variables and says the game was assumed.
+    /// </param>
+    internal static RecordDetailModel BuildPackage(
+        PackageRecord package,
+        FormIdResolver resolver,
+        ConditionDisplayContext? conditions = null)
     {
         var sections = new List<RecordDetailSection>
         {
@@ -313,7 +340,68 @@ internal static class RecordDetailBuilders
             ])
         };
 
+        if (package.Conditions.Count > 0)
+        {
+            sections.Add(BuildConditionsSection(
+                package.Conditions,
+                conditions ?? ConditionDisplayContext.ForResolver(
+                    resolver, GameProfiles.DefaultGame, gameAssumed: true)));
+        }
+
         return RecordDetailHelpers.Model("PACK", package.FormId, package.EditorId, package.TypeName, sections);
+    }
+
+    /// <summary>
+    ///     A "Conditions" section: one list item per CTDA condition in stored order, labelled by its 1-based
+    ///     position and valued with <see cref="ConditionTextFormatter.FormatLine(ConditionDescription)" /> (function, operands,
+    ///     comparison, Run On, and the connector to the next condition). A "Grouping" line follows when there is
+    ///     anything to group, labelled as the GECK convention it is; a "Game" line says when the game was
+    ///     assumed rather than detected. Shared by every record type that shows conditions.
+    /// </summary>
+    internal static RecordDetailSection BuildConditionsSection(
+        IReadOnlyList<DialogueCondition> conditions,
+        ConditionDisplayContext context,
+        string title = "Conditions")
+    {
+        ArgumentNullException.ThrowIfNull(conditions);
+        ArgumentNullException.ThrowIfNull(context);
+
+        var descriptions = ConditionDescriber.DescribeAll(conditions, context);
+        var items = descriptions
+            .Select(description => new RecordDetailListItem
+            {
+                Label = description.Index.ToString(CultureInfo.InvariantCulture),
+                Value = ConditionTextFormatter.FormatLine(description),
+                LinkedFormId = FirstResolvedFormId(description)
+            })
+            .ToList();
+        var section = RecordDetailHelpers.ListSection(title, items);
+
+        var notes = new List<RecordDetailEntry>(2);
+        if (ConditionTextFormatter.FormatLogicSummary(descriptions) is { } grouping)
+        {
+            notes.Add(RecordDetailHelpers.Scalar("Grouping", grouping));
+        }
+
+        if (context.GameAssumed && descriptions.Count > 0)
+        {
+            notes.Add(RecordDetailHelpers.Scalar("Game",
+                $"{context.Game} assumed (not detected from the input); function names and parameter kinds " +
+                "come from that game's condition table"));
+        }
+
+        return notes.Count == 0 ? section : section with { Entries = [.. section.Entries, .. notes] };
+    }
+
+    /// <summary>The first operand FormID the resolver named, as a navigation target for the GUI.</summary>
+    private static uint? FirstResolvedFormId(ConditionDescription description)
+    {
+        if (description.Parameter1 is { Resolved: true, FormId: { } first })
+        {
+            return first;
+        }
+
+        return description.Parameter2 is { Resolved: true, FormId: { } second } ? second : null;
     }
 
     internal static RecordDetailModel BuildDialogTopic(
@@ -343,7 +431,6 @@ internal static class RecordDetailBuilders
         {
             var infos = records.Dialogues
                 .Where(dialogue => dialogue.TopicFormId == topic.FormId)
-                .Take(20)
                 .Select(dialogue => new RecordDetailListItem
                 {
                     Label = $"0x{dialogue.FormId:X8}",

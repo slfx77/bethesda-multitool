@@ -71,13 +71,9 @@ public sealed class NpcEncoder : IRecordEncoder
 
         if (npc.Stats is not null)
         {
-            // Force AutoCalcStats on override ACBS too. The override path replaces the
-            // master's ACBS Flags wholesale, which would clear master's AutoCalcStats bit if
-            // the captured runtime Flags doesn't include it (we routinely see captured
-            // Flags = 0x01 / Biped-only). Without AutoCalc the engine reads manual stats
-            // from captured CalcMin/Max + Level, which for prototype runtime values often
-            // produces 0 HP and the NPC spawns dead. Forcing AutoCalc makes the engine
-            // recompute HP from Class + Level + SPECIAL so the NPC stays alive.
+            // Retain the writer's explicit NPC AutoCalc reconstruction policy.
+            // This does not establish the captured or effective engine flag value;
+            // planned master overrides restore the master's identity flags later.
             subs.Add(new EncodedSubrecord("ACBS", BuildAcbsSubrecord(npc.Stats, true)));
         }
         else
@@ -479,11 +475,7 @@ public sealed class NpcEncoder : IRecordEncoder
         }
         else
         {
-            // Force AutoCalcStats (bit 0x10) on new NPCs so the engine derives HP / AP
-            // from Level + Class + SPECIAL instead of trusting the captured runtime Flags.
-            // Without AutoCalc, prototype NPCs (e.g. Ulysses) spawn dead because the
-            // captured Flags is just 0x01 (Biped only) and the manual stats path computes
-            // 0 health when class derived-attributes don't match the captured level.
+            // Explicit NPC reconstruction policy, not an observed runtime flag.
             subs.Add(new EncodedSubrecord("ACBS",
                 BuildAcbsSubrecord(npc.Stats, true, extraTemplateFlags)));
         }
@@ -539,13 +531,12 @@ public sealed class NpcEncoder : IRecordEncoder
 
     /// <summary>
     ///     Resolve the BaseHealth int32 to emit in the NPC_ DATA subrecord (bytes 0-3).
-    ///     Priority: model-captured value (on-disk DATA or runtime iHealth at PDB +196) →
-    ///     synthesized from SPECIAL Endurance + Stats Level using the same formula as
-    ///     CsvActorWriter (Endurance × 5 + 50 + Level × 10).
+    ///     Preserve the captured value, including zero. Absent values use the legacy
+    ///     reconstruction fallback for generated plugins.
     /// </summary>
     private static int ResolveBaseHealth(NpcRecord npc, byte[] special)
     {
-        if (npc.BaseHealth is > 0)
+        if (npc.BaseHealth.HasValue)
         {
             return npc.BaseHealth.Value;
         }

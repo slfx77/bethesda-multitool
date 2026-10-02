@@ -408,6 +408,76 @@ public sealed class QuestVariableBytecodeRemapperTests
         Assert.Equal(7, records.Dialogues[0].ResultScripts[0].CompiledData![12]);
     }
 
+    /// <summary>
+    ///     A DMP SCPT fragment in an Xbox 360 (big-endian) record can carry little-endian SCDA: the
+    ///     byte-order selector reads the order off the payload (a serialized buffer opens
+    ///     <c>1D 00 00 00</c>), so the container order (IsBigEndian) and the bytecode order
+    ///     (IsBigEndianBytecode) disagree. Both the producer scan and the rewrite must walk the
+    ///     bytecode's order; walked in the container's, the little-endian SCDA reads as opcode 0x1D00
+    ///     followed by a truncated statement. IsBigEndianBytecode is set explicitly because, left
+    ///     unset, it falls back to IsBigEndian and the rows could not tell the two apart. The
+    ///     big-endian row is the control.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Scpt_producer_scan_and_rewrite_walk_the_bytecode_order_not_the_container_order(
+        bool bytecodeBigEndian)
+    {
+        const uint scriptFormId = 0x01000020;
+        const string scriptPath = "ProducerScript";
+        var mapping = Mapping(Quest, Quest, 7, 70);
+        RecordCollection BuildRecords() => new()
+        {
+            Scripts =
+            [
+                new ScriptRecord
+                {
+                    FormId = scriptFormId,
+                    EditorId = scriptPath,
+                    CompiledData = BuildExternalSet(bytecodeBigEndian, Quest, 7, true),
+                    ReferencedObjects = [Quest],
+                    IsBigEndian = true,
+                    IsBigEndianBytecode = bytecodeBigEndian
+                }
+            ]
+        };
+
+        var evidence = QuestVariableBytecodeRemapper.FindEmissionEligibleProducerWrites(
+            BuildRecords(),
+            [mapping],
+            new Dictionary<uint, ParsedMainRecord>(),
+            null,
+            new HashSet<string>(StringComparer.Ordinal));
+
+        Assert.Equal(
+            new QuestVariableProducerEvidence(
+                mapping,
+                new QuestVariableProducerOwner("SCPT", scriptFormId, scriptPath)),
+            Assert.Single(evidence));
+
+        var records = BuildRecords();
+        var expected = (byte[])records.Scripts[0].CompiledData!.Clone();
+        // The u16 variable operands sit at 12 and 21; the low byte comes second big-endian.
+        var lowByte = bytecodeBigEndian ? 1 : 0;
+        expected[12 + lowByte] = 70;
+        expected[21 + lowByte] = 70;
+
+        var result = QuestVariableBytecodeRemapper.Apply(
+            records,
+            [mapping],
+            new Dictionary<uint, ParsedMainRecord>(),
+            null,
+            new HashSet<string>(StringComparer.Ordinal));
+
+        Assert.Equal(1, result.ScriptsPatched);
+        Assert.Equal(1, result.WriteOperandsPatched);
+        Assert.Equal(1, result.ReadOperandsPatched);
+        Assert.Equal(expected, records.Scripts[0].CompiledData);
+        Assert.True(records.Scripts[0].IsBigEndian);
+        Assert.Equal(bytecodeBigEndian, records.Scripts[0].IsBigEndianBytecode);
+    }
+
     private static void AssertPatched(byte[] compiledData)
     {
         Assert.Equal(70, compiledData[12]);

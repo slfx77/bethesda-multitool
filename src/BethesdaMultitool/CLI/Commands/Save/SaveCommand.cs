@@ -124,6 +124,7 @@ public static class SaveCommand
             headerTable.AddColumn("Field");
             headerTable.AddColumn("Value");
             headerTable.AddRow("Version", $"0x{h.Version:X}");
+            if (h.Language != null) headerTable.AddRow("Language", Markup.Escape(h.Language));
             headerTable.AddRow("Save Number", h.SaveNumber.ToString());
             headerTable.AddRow("Player Name",
                 string.IsNullOrEmpty(h.PlayerName) ? "[grey](empty)[/]" : Markup.Escape(h.PlayerName));
