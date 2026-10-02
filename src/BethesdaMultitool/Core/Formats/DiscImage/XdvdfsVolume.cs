@@ -1,14 +1,13 @@
-// Ported from NeversoftMultitool — https://github.com/slfx77/NeversoftMultitool (the spelling
-// THIRD_PARTY_LICENSES uses; the local checkout's git remote is slfx77/neversoft-multitool), this
-// repository's own author's other project (slfx77), MIT License per its LICENSE.md — from the
-// SampleGenerator corpus tool under tools/corpus/SampleGenerator/, reshaped onto this
-// repository's disc-image seam. See THIRD_PARTY_LICENSES. TWO source files, because the facts
-// are in two places there and an imprecise credit is a bad credit:
-//   • tools/corpus/SampleGenerator/SampleGeneratorXboxIsoOperations.cs — the descriptor offset
+// The XDVDFS constants below were taken from this author's own NeversoftMultitool — its
+// SampleGenerator, retired on 2026-09-21 when corpus generation moved to the sibling CorpusTool
+// repository — and reshaped onto this repository's disc-image seam. Recorded because these values
+// are not derived here, so a reader knows where to check them; both projects are the same author's,
+// so this is a note, not a third-party credit. The facts came from two files there:
+//   • SampleGeneratorXboxIsoOperations.cs — the descriptor offset
 //     (XisoHeaderOffset 0x10000), the 14-byte directory-entry layout (XisoEntryHeaderSize), the
 //     0xFFFF subtree sentinel (XisoSubtreeSentinel), the 0xFF pad byte (XisoPaddingByte) and the
 //     magic itself (XisoMagic).
-//   • tools/corpus/SampleGenerator/SampleGeneratorDiscOperations.cs — the redump game-partition
+//   • SampleGeneratorDiscOperations.cs — the redump game-partition
 //     bases (Xbox360GamePartitionBases). ⚠ That reference carries FOUR of them and this reader
 //     now carries all four; an earlier revision took only two and would have silently DECLINED a
 //     dump laid out at either of the others. See PartitionOffsetCandidates for which are
@@ -210,7 +209,9 @@ internal sealed class XdvdfsVolume
     {
         ArgumentNullException.ThrowIfNull(path);
         var extension = Path.GetExtension(path);
-        if (!extension.Equals(".iso", StringComparison.OrdinalIgnoreCase) &&
+        var isChd = extension.Equals(".chd", StringComparison.OrdinalIgnoreCase);
+        if (!isChd &&
+            !extension.Equals(".iso", StringComparison.OrdinalIgnoreCase) &&
             !extension.Equals(".xiso", StringComparison.OrdinalIgnoreCase))
         {
             return false;
@@ -218,10 +219,29 @@ internal sealed class XdvdfsVolume
 
         try
         {
+            if (isChd)
+            {
+                // The corpus stores its XGD images as DVD-shaped CHDs; the descriptor is probed
+                // through the decoded stream, so the same offsets and the same gate apply.
+                if (!Chd.ChdFile.IsChd(path))
+                {
+                    return false;
+                }
+
+                using var chd = Chd.ChdFile.Open(path);
+                if (chd.IsCdShaped)
+                {
+                    return false;
+                }
+
+                using var chdStream = new Chd.ChdStream(chd, ownsFile: false);
+                return TryReadDescriptor(chdStream, out _, out _, out _, out _);
+            }
+
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
             return TryReadDescriptor(stream, out _, out _, out _, out _);
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or NotSupportedException or InvalidDataException)
         {
             return false;
         }

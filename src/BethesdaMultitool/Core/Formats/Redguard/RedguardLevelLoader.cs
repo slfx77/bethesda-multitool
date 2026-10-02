@@ -65,8 +65,22 @@ internal sealed class RedguardLevelAssembly : IDisposable
     /// <summary>Segments in the mesh archive.</summary>
     public int MeshArchiveCount => _meshes.Count;
 
-    /// <summary>Meshes that would not parse.</summary>
+    /// <summary>Meshes that would not parse, an empty placeholder's loose file included.</summary>
     public IReadOnlyDictionary<string, string> MeshFailures => _meshes.Failures;
+
+    /// <summary>
+    ///     Where each resolved mesh came from, keyed by ROB segment name: the archive's own inline mesh,
+    ///     or the loose <c>.3DC</c> an empty ROB placeholder stands for, drawn in its keyframe pose
+    ///     (see <see cref="RedguardMeshLibrary" />).
+    /// </summary>
+    public IReadOnlyDictionary<string, RedguardMeshOrigin> MeshOrigins => _meshes.Origins;
+
+    /// <summary>
+    ///     One line stating the approximations behind <see cref="MeshOrigins" />' loose meshes, or null when
+    ///     every mesh is inline (see <see cref="RedguardMeshLibrary.DescribeLooseKeyframes" />). The CLI prints it
+    ///     and the GUI's 3D level pane shows it, so an approximated mesh is never drawn silently.
+    /// </summary>
+    public string? LooseKeyframeNote => RedguardMeshLibrary.DescribeLooseKeyframes(MeshOrigins);
 
     public void Dispose()
     {
@@ -76,7 +90,8 @@ internal sealed class RedguardLevelAssembly : IDisposable
 
 /// <summary>
 ///     Turns one <c>maps\*.RGM</c> into a placed scene by finding everything the map needs in its
-///     install: the mesh archive <c>3dart\&lt;MAP&gt;.ROB</c>, the world's palette and terrain from
+///     install: the mesh archive <c>3dart\&lt;MAP&gt;.ROB</c> (and, for each of its empty placeholders,
+///     the loose <c>3dart\&lt;NAME&gt;.3DC</c> it stands for), the world's palette and terrain from
 ///     <c>WORLD.INI</c>, the software art under <c>3dart</c> and — when the install is Disc 1's
 ///     tree — the 3dfx art under <c>fxart</c>. Shared by <c>classic level info|export</c> and the GUI's
 ///     3D level pane so both place geometry identically.
@@ -93,7 +108,6 @@ internal static class RedguardLevelLoader
     /// <summary>The registry every install carries at its data root.</summary>
     public const string RegistryFileName = RedguardWorldIni.FileName;
 
-    private const string ArtDirectoryName = "3dart";
     private const string FxArtDirectoryName = "fxart";
     private const string MapsDirectoryName = "maps";
     private const string DefaultPaletteName = "art_pal.col";
@@ -159,17 +173,18 @@ internal static class RedguardLevelLoader
 
         var robPath = RedguardMeshLibrary.FindArchive(dataRoot, stem)
                       ?? throw new FileNotFoundException(
-                          $"No {ArtDirectoryName}\\{stem}.ROB under '{dataRoot}' — every mesh a map places lives in its own archive.",
-                          Path.Combine(dataRoot, ArtDirectoryName, stem + ".ROB"));
+                          $"No {RedguardMeshLibrary.ArtDirectoryName}\\{stem}.ROB under '{dataRoot}': a map's own archive names every mesh it places.",
+                          Path.Combine(dataRoot, RedguardMeshLibrary.ArtDirectoryName, stem + ".ROB"));
 
-        var meshes = RedguardMeshLibrary.Open(robPath);
+        var meshes = RedguardMeshLibrary.Open(robPath, dataRoot);
         try
         {
             var world = RegisteringWorld(dataRoot, stem);
             var palettePath = ResolvePalette(dataRoot, stem, world);
             var palette = Palette.LoadDaggerfallCol(File.ReadAllBytes(palettePath));
             var fxArt = fxArtDirectory ?? Path.Combine(dataRoot, FxArtDirectoryName);
-            var textures = new RedguardTextureResolver(Path.Combine(dataRoot, ArtDirectoryName), palette,
+            var textures = new RedguardTextureResolver(
+                Path.Combine(dataRoot, RedguardMeshLibrary.ArtDirectoryName), palette,
                 Directory.Exists(fxArt) ? fxArt : null);
 
             var scene = RedguardSceneAssembler.Assemble(map, meshes.Resolve);
@@ -238,11 +253,11 @@ internal static class RedguardLevelLoader
             return declaredPath;
         }
 
-        var art = Path.Combine(dataRoot, ArtDirectoryName);
+        var art = Path.Combine(dataRoot, RedguardMeshLibrary.ArtDirectoryName);
         return FindFile(art, stem + ".COL")
                ?? FindFile(art, DefaultPaletteName)
                ?? throw new FileNotFoundException(
-                   $"No palette for {stem}: neither WORLD.INI names one nor does {ArtDirectoryName} hold {stem}.COL or {DefaultPaletteName}.",
+                   $"No palette for {stem}: neither WORLD.INI names one nor does {RedguardMeshLibrary.ArtDirectoryName} hold {stem}.COL or {DefaultPaletteName}.",
                    Path.Combine(art, DefaultPaletteName));
     }
 

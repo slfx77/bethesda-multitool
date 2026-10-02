@@ -35,11 +35,10 @@ public sealed class OblivionPspResourceRetailTests
     private static string[] RequireBuilds()
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        var root = RealAssetPaths.Travels.OblivionPspBuildsRoot();
-        Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP (cancelled betas)"));
+        var builds = RealAssetPaths.Travels.OblivionPspBuilds();
+        Assert.SkipWhen(builds.Count == 0, RealAssetPaths.SkipMessage("Oblivion PSP (cancelled betas)"));
 
-        var packs = Directory
-            .EnumerateFiles(root, "GR.ARC", SearchOption.AllDirectories)
+        var packs = builds.SelectMany(build => Directory.EnumerateFiles(build, "GR.ARC", SearchOption.AllDirectories))
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         Assert.SkipWhen(packs.Length == 0, "No GR.ARC packs are staged.");
@@ -99,8 +98,11 @@ public sealed class OblivionPspResourceRetailTests
             }
         }
 
-        Assert.True(total > 8_000, $"Only {total} named resources were found across the builds.");
-        Assert.True(streams > 2_000, $"Only {streams} payloads resolved to a RenderWare stream.");
+        // 7,707 across the six dated betas (measured 2026-09-09; see above for the old floor).
+        Assert.True(total > 7_500, $"Only {total} named resources were found across the builds.");
+        // 1,995 across the six dated betas (measured 2026-09-09; the floor was 2,000 while the
+        // corpus also held the community repack).
+        Assert.True(streams > 1_900, $"Only {streams} payloads resolved to a RenderWare stream.");
 
         // Forward: nothing outside the three types ever resolves.
         Assert.Equal(RenderWareTypes.OrderBy(t => t, StringComparer.Ordinal),
@@ -163,7 +165,9 @@ public sealed class OblivionPspResourceRetailTests
             }
         }
 
-        Assert.True(checkedAny > 2_000, $"Only {checkedAny} payloads were checked.");
+        // 1,995 across the six dated betas (measured 2026-09-09; the floor was 2,000 while the
+        // corpus also held the community repack of the February 2007 pack).
+        Assert.True(checkedAny > 1_900, $"Only {checkedAny} payloads were checked.");
     }
 
     /// <summary>

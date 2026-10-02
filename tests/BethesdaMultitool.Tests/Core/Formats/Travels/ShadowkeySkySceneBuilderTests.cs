@@ -159,12 +159,14 @@ public sealed class ShadowkeySkySceneBuilderTests
     }
 
     /// <summary>
-    ///     Source x and z are the horizontal axes and reach the scene unchanged in orientation;
-    ///     only the vertical axis moves. Checked on the ring vertex whose source z is non-zero, so
-    ///     a swap of the two horizontal axes cannot pass.
+    ///     Source x and z are the horizontal axes; the shell reaches the z-up scene through the
+    ///     proper map <c>(x, y, z)</c> to <c>(x, -z, y)</c> the placed meshes use (cut-2 decision
+    ///     D13), so source +z lands on scene -y. Checked on the ring vertex whose source z is
+    ///     non-zero, so a swap of the two horizontal axes cannot pass. Control: the old reflection
+    ///     <c>(x, z, y)</c> would put it on scene +y, a mirror image of the placements.
     /// </summary>
     [Fact]
-    public void SourceXAndZStayHorizontal()
+    public void SourceXAndZStayHorizontal_ThroughTheProperMap()
     {
         var submesh = ShadowkeySkySceneBuilder.BuildSubmesh(Shell(), "sky", 100, 100);
         var scale = ShadowkeySkySceneBuilder.EnclosureScale(Shell(), 100, 100);
@@ -172,8 +174,9 @@ public sealed class ShadowkeySkySceneBuilderTests
         // Corner 2 of face 0 is vertex 2, source (0, -50, 200): purely +z horizontally.
         var point = Vertex(submesh.Positions, 2);
         Assert.Equal(50f, point.X, 3); // centred: 100/2 + 0
-        Assert.Equal(50f + 200 * scale, point.Y, 3); // source z became scene y
+        Assert.Equal(50f - 200 * scale, point.Y, 3); // source +z became scene -y
         Assert.Equal(0f, point.Z, 3); // on the horizon plane
+        Assert.NotEqual(50f + 200 * scale, point.Y, 3); // the reflected (x, z, y) reading
     }
 
     // ---------------------------------------------------------------- sizing

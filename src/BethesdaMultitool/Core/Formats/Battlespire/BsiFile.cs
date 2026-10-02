@@ -5,6 +5,7 @@
 
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Formats.Xngine;
 using BethesdaMultitool.Core.Imaging;
 
 namespace BethesdaMultitool.Core.Formats.Battlespire;
@@ -89,6 +90,12 @@ internal sealed class BsiImage
 ///         (15). Seven archive entries are not images at all (a batch file, DOS listings, an
 ///         executable), so a caller must tolerate a rejected entry, and one entry (BIP.BSI) is an
 ///         authored-empty file holding nothing but an END chunk.
+///     </para>
+///     <para>
+///         Two ways in. <see cref="Parse" /> decodes every image, as the legacy sprite and texture
+///         paths need. <see cref="ReadHeaders" /> walks the same chunk grammar and reads only the
+///         <c>BHDR</c> fields and each chunk's byte range, never a <c>DATA</c> payload or a palette
+///         entry: the cut-1c inspection path (plan D9).
 ///     </para>
 /// </summary>
 internal sealed class BsiFile
@@ -213,6 +220,146 @@ internal sealed class BsiFile
 
         // An authored-empty file is legal: retail's BIP.BSI is eight bytes holding only END.
         return new BsiFile(name, images);
+    }
+
+    /// <summary>
+    ///     Walks the chunk stream the way <see cref="Parse" /> does, with the same tags, the same
+    ///     structural rejections and the same <c>BHDR</c> checks, but reads nothing beyond the chunk
+    ///     headers and the 26 <c>BHDR</c> bytes: no <c>DATA</c> byte, no line table, no palette entry.
+    ///     Each image reports its declared geometry and where every chunk of it lies, so a caller can
+    ///     slice the original bytes or judge a raw image's payload length without decoding.
+    ///     <para>
+    ///         Measured 2026-09-28 over the 2,592 parsable retail BSI.BSA entries (2,621 images): the
+    ///         dominant chunk order is <c>IFHD, [NAME,] BHDR, [HICL,] [HTBL,] CMAP, DATA</c>, on 2,616 of
+    ///         the 2,621 images (2,255 + 228 with a NAME + 98 without HTBL + 1 without HICL or HTBL, plus
+    ///         the 34 images of the 4 multi-image entries, 6 to 11 each, which follow a leading BSIF).
+    ///         Five images deviate: four entries read <c>BSIF, IFHD, BHDR, CMAP, HICL, DATA</c> (CMAP
+    ///         before HICL) and one reads <c>BSIF, BHDR, HICL, CMAP, DATA</c> (no IFHD at all). Per chunk:
+    ///         2,621 carry a CMAP, 2,620 an HICL, 2,517 an HTBL, 228 a NAME (always before BHDR), every
+    ///         BHDR is 26 bytes, and no entry has bytes after END. An image is therefore anchored at its
+    ///         first chunk after the previous image's DATA (or after a leading BSIF), never at an IFHD,
+    ///         which is why its chunk range is right on the five deviating images as well.
+    ///     </para>
+    /// </summary>
+    /// <exception cref="InvalidDataException">The bytes are not a BSI chunk stream, or a chunk or BHDR is malformed.</exception>
+    public static BsiFileHeaders ReadHeaders(byte[] bytes, string name)
+    {
+        ArgumentNullException.ThrowIfNull(bytes);
+        ArgumentNullException.ThrowIfNull(name);
+
+        var images = new List<BsiImageHeader>();
+        string? pendingName = null;
+        BsiHeader? header = null;
+        var headerOffset = -1;
+        var imageStart = -1;
+        ByteArea? colorMap = null;
+        ByteArea? highColor = null;
+        ByteArea? highColorTable = null;
+
+        var position = 0;
+        var sawChunk = false;
+        int? endOffset = null;
+        while (position + ChunkHeaderLength <= bytes.Length)
+        {
+            var tag = Encoding.ASCII.GetString(bytes, position, 4);
+            var length = BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(position + 4));
+
+            if (tag == "BSIF")
+            {
+                position += ChunkHeaderLength;
+                sawChunk = true;
+                continue;
+            }
+
+            if (tag == "END ")
+            {
+                sawChunk = true;
+                endOffset = position;
+                break;
+            }
+
+            if (!IsKnownTag(tag))
+            {
+                if (!sawChunk)
+                {
+                    throw new InvalidDataException($"{name} does not open with a BSI chunk (saw '{Printable(tag)}').");
+                }
+
+                throw new InvalidDataException($"{name}: unknown chunk '{Printable(tag)}' at {position}.");
+            }
+
+            sawChunk = true;
+            if (position + ChunkHeaderLength + length > (uint)bytes.Length)
+            {
+                throw new InvalidDataException(
+                    $"{name}: chunk '{tag}' at {position} declares {length} bytes, past the {bytes.Length}-byte file.");
+            }
+
+            if (imageStart < 0)
+            {
+                imageStart = position;
+            }
+
+            var payloadStart = position + ChunkHeaderLength;
+            var payloadLength = (int)length;
+            position = payloadStart + payloadLength;
+
+            switch (tag)
+            {
+                case "NAME":
+                    pendingName = ReadCString(bytes.AsSpan(payloadStart, payloadLength));
+                    break;
+                case "BHDR":
+                    header = BsiHeader.Read(bytes.AsSpan(payloadStart, payloadLength), name);
+                    headerOffset = payloadStart;
+                    break;
+                case "HICL":
+                    highColor = payloadLength == HighColorLength
+                        ? new ByteArea("HICL", payloadStart, payloadStart + payloadLength)
+                        : null;
+                    break;
+                case "HTBL":
+                    highColorTable = new ByteArea("HTBL", payloadStart, payloadStart + payloadLength);
+                    break;
+                case "CMAP":
+                    colorMap = payloadLength == ColorMapLength
+                        ? new ByteArea("CMAP", payloadStart, payloadStart + payloadLength)
+                        : null;
+                    break;
+                case "DATA":
+                    if (header is null)
+                    {
+                        throw new InvalidDataException($"{name}: a DATA chunk arrived before any BHDR.");
+                    }
+
+                    images.Add(new BsiImageHeader(
+                        images.Count,
+                        pendingName,
+                        header.XOffset,
+                        header.YOffset,
+                        header.Width,
+                        header.Height,
+                        header.FrameCount,
+                        header.Compression,
+                        new ByteArea($"image:{images.Count}", imageStart, position),
+                        headerOffset,
+                        new ByteArea("DATA", payloadStart, position),
+                        colorMap,
+                        highColor,
+                        highColorTable));
+                    header = null;
+                    pendingName = null;
+                    imageStart = -1;
+                    break;
+            }
+        }
+
+        if (!sawChunk)
+        {
+            throw new InvalidDataException($"{name} holds no BSI chunks.");
+        }
+
+        return new BsiFileHeaders(name, bytes.Length, endOffset, images);
     }
 
     private static bool IsKnownTag(string tag)
@@ -416,3 +563,56 @@ internal sealed class BsiFile
         }
     }
 }
+
+/// <summary>
+///     The header-only view of one image in a <c>.BSI</c>: its <c>BHDR</c> fields and where its chunks
+///     lie, read by <see cref="BsiFile.ReadHeaders" /> without touching the pixel data or a palette
+///     entry. Palette chunk ranges carry forward across images the way <see cref="BsiFile.Parse" />
+///     carries the decoded palettes (a later image without its own <c>CMAP</c> reports the previous
+///     one's); a <c>CMAP</c> or <c>HICL</c> of the wrong length is reported as absent, as
+///     <see cref="BsiFile.Parse" /> decodes it to null.
+/// </summary>
+/// <param name="Index">Position among the file's images.</param>
+/// <param name="Name">The <c>NAME</c> chunk value that preceded the image, or null.</param>
+/// <param name="XOffset">BHDR +0.</param>
+/// <param name="YOffset">BHDR +2.</param>
+/// <param name="Width">BHDR +4.</param>
+/// <param name="Height">BHDR +6.</param>
+/// <param name="FrameCount">BHDR +14.</param>
+/// <param name="Compression">BHDR +24: 0 raw, 4 and 6 line-table compressed.</param>
+/// <param name="Chunks">
+///     The image's whole chunk range, <c>image:{index}</c>: from its first chunk after the previous
+///     image's <c>DATA</c> (the file's first non-<c>BSIF</c> chunk for image 0) to the end of its own
+///     <c>DATA</c> chunk.
+/// </param>
+/// <param name="HeaderOffset">Where the 26-byte <c>BHDR</c> payload starts.</param>
+/// <param name="Data">The <c>DATA</c> payload range: the raw indices when <paramref name="Compression" /> is 0, else the line table and its lines.</param>
+/// <param name="ColorMap">The 768-byte <c>CMAP</c> payload range in force for this image, or null.</param>
+/// <param name="HighColor">The 256-byte <c>HICL</c> payload range in force for this image, or null.</param>
+/// <param name="HighColorTable">The <c>HTBL</c> payload range in force for this image, or null.</param>
+internal sealed record BsiImageHeader(
+    int Index,
+    string? Name,
+    int XOffset,
+    int YOffset,
+    int Width,
+    int Height,
+    int FrameCount,
+    int Compression,
+    ByteArea Chunks,
+    int HeaderOffset,
+    ByteArea Data,
+    ByteArea? ColorMap,
+    ByteArea? HighColor,
+    ByteArea? HighColorTable)
+{
+    /// <summary>The pixel bytes the header declares: <c>Width x Height x FrameCount</c>, what a raw <c>DATA</c> payload must hold.</summary>
+    public long DeclaredPixelBytes => (long)Width * Height * FrameCount;
+}
+
+/// <summary>A <c>.BSI</c> file read by <see cref="BsiFile.ReadHeaders" />: every image's headers, nothing decoded.</summary>
+/// <param name="Name">Logical file name.</param>
+/// <param name="Length">The file's length in bytes.</param>
+/// <param name="EndOffset">Where the <c>END </c> chunk starts, or null when the stream ended without one.</param>
+/// <param name="Images">Every image's headers, in file order.</param>
+internal sealed record BsiFileHeaders(string Name, int Length, int? EndOffset, IReadOnlyList<BsiImageHeader> Images);

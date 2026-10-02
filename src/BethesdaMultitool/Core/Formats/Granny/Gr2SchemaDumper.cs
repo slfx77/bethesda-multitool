@@ -1,4 +1,4 @@
-// Original to this repository: AweMultitool (slfx77, MIT) ships no schema dumper; this walks the
+// Original to this repository: AweMultitool (slfx77) ships no schema dumper; this walks the
 // Gr2TypeTree the ported reader produces.
 
 using System.Globalization;

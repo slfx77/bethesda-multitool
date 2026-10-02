@@ -27,7 +27,7 @@ public record BsaFileRecord
     public bool CompressionToggle => (RawSize & 0x40000000) != 0;
 
     /// <summary>Full path (folder + filename).</summary>
-    public string FullPath => Folder?.Name is not null && Name is not null
+    public string FullPath => !string.IsNullOrEmpty(Folder?.Name) && Name is not null
         ? $"{Folder.Name}\\{Name}"
         : Name ?? $"unknown_{NameHash:X16}";
 }

@@ -53,25 +53,44 @@ internal sealed record RedguardFlatAssembly(
 ///         </item>
 ///         <item>
 ///             <b>Axis assignment and order.</b> The same routine builds the object's 4.28 matrix
-///             from an identity by three row-updates: about Y (columns 0/2, <c>FUN_000b7ac0</c>)
-///             with component 1, then about X (columns 1/2, <c>FUN_000b7bd0</c>) with component 0,
-///             then about Z (columns 0/1, <c>FUN_000b7ce0</c>) with component 2 — each angle
-///             NEGATED first. So component 1 is the yaw (993 of the 1,042 rotated retail
-///             placements use it), component 0 the pitch, component 2 the roll.
+///             (row-major, <c>M[r][c]</c> at byte <c>4(3r + c)</c>) from an identity with three
+///             helpers: about Y (<c>FUN_000b7ac0</c>) with component 1, then about X
+///             (<c>FUN_000b7bd0</c>) with component 0, then about Z (<c>FUN_000b7ce0</c>) with
+///             component 2, each angle NEGATED and masked first. So component 1 is the yaw (993 of
+///             the 1,042 rotated retail placements use it), component 0 the pitch, component 2 the
+///             roll.
 ///         </item>
 ///         <item>
-///             <b>Sign and vector convention</b> — the one thing the code alone leaves open, since
-///             a negated matrix may be an inverse. Control (<c>census6.py</c>): the 742 retail
-///             placements whose yaw is NOT a multiple of 512 (a cardinal yaw on a symmetric mesh
-///             cannot separate the signs), scored by how many of their 16,061 transformed vertices
-///             lie within 6 units of a static face and how many of their edges pierce one. The
-///             engine's matrix applied to COLUMN vectors scores 0.190 near-surface / 305 pierces;
-///             the same matrix un-negated 0.180 / 492; applied to row vectors 0.193 / 332 and
-///             0.177 / 547. The winner is what the code literally builds, applied
-///             <c>world = M · p</c> — the same convention the statics settle below — and it is also
-///             the closest rival's near-twin (they differ only on the 266 multi-axis placements).
-///             On the cardinal population the split is the same (461 vs 554 pierces), because a
-///             pitch of 1,536 and an off-origin mesh are sign-sensitive too.
+///             <b>Signs, read from the helpers' instructions</b> (2026-09-28: two independent reads
+///             of <c>RG.EXE</c> that agree on every instruction, and
+///             <c>tools/scripts/redguard/placement_rotation.py</c>, which ports the helpers and checks
+///             the port against the executable's own sine table). With <c>c</c> and <c>s</c> the
+///             cosine and sine of the angle, each helper rewrites one pair of columns in every row r:
+///             Y sets <c>M[r][0] = c M[r][0] - s M[r][2]</c> and <c>M[r][2] = c M[r][2] + s M[r][0]</c>;
+///             X sets <c>M[r][1] = c M[r][1] + s M[r][2]</c> and <c>M[r][2] = c M[r][2] - s M[r][1]</c>;
+///             Z sets <c>M[r][0] = c M[r][0] + s M[r][1]</c> and <c>M[r][1] = c M[r][1] - s M[r][0]</c>.
+///             Rewriting columns is a right multiply, <c>M = M · R(a)</c>, and all three are the
+///             standard right-handed rotation by +a: <c>Ry = [[c,0,s],[0,1,0],[-s,0,c]]</c>,
+///             <c>Rx = [[1,0,0],[0,c,-s],[0,s,c]]</c>, <c>Rz = [[c,-s,0],[s,c,0],[0,0,1]]</c>. Y only
+///             looks reversed in index order, because a positive turn about Y carries z onto x. So the
+///             engine's matrix is <c>M = Ry(-y) · Rx(-x) · Rz(-z)</c>, and the object transform
+///             (<c>0x34E686</c>, 52 of the 54 call sites that pass an object's matrix) applies it as
+///             <c>world = M · p</c>, the same convention the statics settle below. ⚠ Until
+///             2026-09-28 this class read the X and Z layouts transposed and built
+///             <c>Ry(-y) · Rx(+x) · Rz(+z)</c>: the yaw was right, the pitch and roll were flipped.
+///         </item>
+///         <item>
+///             <b>Controls on the retail placements</b>, each scored by how many transformed mesh
+///             points lie within 6 units of a static face and how many mesh edges pierce one
+///             (<c>tools/scripts/redguard/multiaxis_control.py</c>, float64 and float32). The 302
+///             placements with a pitch or a roll score 753 near and 140 to 141 pierces under the
+///             engine's matrix, 647 and 290 to 291 under the reading it replaced. The engine's is the
+///             only one of the 48 axis orders and sign patterns to meet both thresholds
+///             <c>RedguardSceneRetailTests</c> pins, and it pierces less than the replaced reading on 9
+///             of the 16 maps holding such placements and more on none. The 713 yaw-only placements
+///             on maps with statics score 3,354 near and 274 pierces, against 2,975 to 2,976 and 973
+///             for the flipped yaw (on those, also the transpose, the row-vector reading); the
+///             catacomb control pins the same split on one map.
 ///         </item>
 ///         <item>
 ///             <b>Static matrices.</b> <c>MPSO</c> stores nine 4.28 fixed-point ints, row-major,
@@ -114,7 +133,9 @@ internal static class RedguardSceneAssembler
     ///     The rotation part of an <c>MPOB</c> placement, in the meshes' own Y-down space, built
     ///     exactly as <c>FUN_00082fc2</c> builds the object's matrix: each component masked to 11
     ///     bits and negated, applied about Y (component 1) first, then X (component 0), then Z
-    ///     (component 2), and used as <c>world = M · p</c>.
+    ///     (component 2), and used as <c>world = M · p</c>. That is
+    ///     <c>M = Ry(-y) · Rx(-x) · Rz(-z)</c> in the standard right-handed rotations the three
+    ///     helpers apply (their layouts are in the class summary).
     /// </summary>
     public static Matrix4x4 PlacementRotation(RedguardRgmVector rotation)
     {
@@ -123,13 +144,14 @@ internal static class RedguardSceneAssembler
         var y = (rotation.Y & AngleMask) * scale;
         var z = (rotation.Z & AngleMask) * scale;
 
-        // Engine (row-major, row-update, world = M·p): M = Ry(-y) · Rx(-x) · Rz(-z) with
-        //   Ry(t) = [[c,0,s],[0,1,0],[-s,0,c]], Rx(t) = [[1,0,0],[0,c,s],[0,-s,c]], Rz(t) = [[c,s,0],[-s,c,0],[0,0,1]].
-        // Row-vector form is the transpose, Rz(-z)ᵀ · Rx(-x)ᵀ · Ry(-y)ᵀ, and against System.Numerics'
-        // own layouts Ryᵀ(t) = CreateRotationY(t) while Rxᵀ(t) = CreateRotationX(-t) and
-        // Rzᵀ(t) = CreateRotationZ(-t) — Y's sign is laid out the other way round from X and Z.
-        return Matrix4x4.CreateRotationZ(z)
-               * Matrix4x4.CreateRotationX(x)
+        // Engine (row-major, right-multiplied helpers, world = M·p): M = Ry(-y) · Rx(-x) · Rz(-z) with
+        //   Ry(t) = [[c,0,s],[0,1,0],[-s,0,c]], Rx(t) = [[1,0,0],[0,c,-s],[0,s,c]], Rz(t) = [[c,-s,0],[s,c,0],[0,0,1]].
+        // Row-vector form is the transpose, Rz(-z)ᵀ · Rx(-x)ᵀ · Ry(-y)ᵀ. System.Numerics lays its
+        // rotations out as exactly those transposes, on every axis alike (R(t)ᵀ = CreateRotationA(t)), so
+        // each angle keeps its negation. Y looks reversed against X and Z in index order, in the engine
+        // and in System.Numerics both, and the two cancel.
+        return Matrix4x4.CreateRotationZ(-z)
+               * Matrix4x4.CreateRotationX(-x)
                * Matrix4x4.CreateRotationY(-y);
     }
 

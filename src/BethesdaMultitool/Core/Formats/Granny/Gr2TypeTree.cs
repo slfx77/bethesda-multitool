@@ -1,4 +1,4 @@
-// Ported from AweMultitool (slfx77), MIT, https://github.com/slfx77/JimmyPCTool
+// Ported from AweMultitool (slfx77)
 // (src/AweMultitool/Core/Formats/Granny/Gr2TypeTree.cs), adapted to this repository's house style.
 
 using System.Collections;

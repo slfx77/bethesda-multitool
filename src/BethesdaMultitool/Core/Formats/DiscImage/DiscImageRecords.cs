@@ -1,6 +1,5 @@
-// Ported from NeversoftMultitool (MIT License), src/NeversoftMultitool/Core/Formats/DiscImage/
+// Ported from NeversoftMultitool, src/NeversoftMultitool/Core/Formats/DiscImage/
 // CueTrack.cs, DiscTrackRegion.cs and DiscFileEntry.cs at commit 314bc9e0 (2026-08-14).
-// See THIRD_PARTY_LICENSES.
 
 namespace BethesdaMultitool.Core.Formats.DiscImage;
 

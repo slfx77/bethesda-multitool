@@ -27,6 +27,39 @@ internal enum XnGineMeshLayout
     Battlespire
 }
 
+/// <summary>
+///     How <see cref="XnGineMesh.Parse" /> treats the stored int16 u and v of a plane's first three
+///     corners.
+///     <list type="bullet">
+///         <item>
+///             <see cref="Reference" /> applies the reference's packed-UV unfold
+///             (<see cref="XnGineMesh.UnpackUv" />) to a Daggerfall-layout record whose object id is
+///             below <see cref="XnGineMesh.PackedUvObjectIdLimit" />. It is the default, so every
+///             legacy caller (the decomposer, the GLB exporter, the viewer, the <c>.3DC</c> keyframe)
+///             reads exactly what it read before the mode existed.
+///         </item>
+///         <item>
+///             <see cref="Stored" /> keeps every value exactly as the record stores it, 14336 and above
+///             included: no unfold on any corner, before any accumulation (the decomposer's, not the
+///             parser's). This is the cut-1c <c>xngine.uv16</c> stream (plan D1).
+///         </item>
+///     </list>
+///     Corners three and up, every corner of a Battlespire-layout record and every corner of a record
+///     with id 905 or above read identically under both modes, because the unfold never touched them.
+/// </summary>
+internal enum XnGineUvHandling
+{
+    /// <summary>
+    ///     The legacy reading: the packed-UV unfold (<see cref="XnGineMesh.UnpackUv" />) on the first three
+    ///     corners of a Daggerfall-layout record whose object id is below
+    ///     <see cref="XnGineMesh.PackedUvObjectIdLimit" />; every other value as stored.
+    /// </summary>
+    Reference,
+
+    /// <summary>Every UV value exactly as the record stores it, on every corner and every id: no unfold anywhere.</summary>
+    Stored
+}
+
 /// <summary>A point or normal in native units (1/256 of a world unit).</summary>
 internal readonly record struct XnGineMeshPoint(int X, int Y, int Z);
 
@@ -133,6 +166,20 @@ internal sealed class XnGineMesh
     /// <summary>Which game's plane-list layout the record was read with.</summary>
     public required XnGineMeshLayout Layout { get; init; }
 
+    /// <summary>How the first three corners' stored UV values were read (see <see cref="XnGineUvHandling" />).</summary>
+    public required XnGineUvHandling UvHandling { get; init; }
+
+    /// <summary>
+    ///     How many stored u or v values the packed-UV unfold changed while parsing: always 0 under
+    ///     <see cref="XnGineUvHandling.Stored" />, and under <see cref="XnGineUvHandling.Reference" /> the
+    ///     number of first-three-corner values outside <c>(-14336, 14336)</c> or equal to <c>-7168</c> on
+    ///     a Daggerfall-layout record with id below <see cref="PackedUvObjectIdLimit" /> (every such value
+    ///     is moved by a non-zero multiple of 8192). Measured 2026-09-28: 539 over the 520 ARCH3D records
+    ///     below id 905, 0 over the rest (whose 320 fold-range values the gate leaves alone), and 113,017
+    ///     over the 147 Redguard <c>.3DC</c> keyframes, which reach the unfold through their id of 0.
+    /// </summary>
+    public required int UnfoldedUvValueCount { get; init; }
+
     /// <summary>Parsed version.</summary>
     public required XnGineMeshVersion Version { get; init; }
 
@@ -169,6 +216,15 @@ internal sealed class XnGineMesh
     /// <summary>Header offset of the plane list.</summary>
     public required int PlaneListOffset { get; init; }
 
+    /// <summary>
+    ///     One past the last byte of the plane list: where the walk of <see cref="Planes" /> stopped.
+    ///     The header does not store it, so this is the only place the <c>planes</c> area's end exists.
+    /// </summary>
+    public required int PlaneListEnd { get; init; }
+
+    /// <summary>The length in bytes of the record that was parsed.</summary>
+    public required int RecordLength { get; init; }
+
     /// <summary>All points in the point list.</summary>
     public required IReadOnlyList<XnGineMeshPoint> Points { get; init; }
 
@@ -199,13 +255,19 @@ internal sealed class XnGineMesh
     ///         it stores no per-plane normal list a <c>.3D</c> reader could use. Everything else —
     ///         the header, the plane walk and the UV handling — is identical, so it stays shared.
     ///     </para>
+    ///     <para>
+    ///         <paramref name="uvHandling" /> selects whether the first three corners' UVs take the
+    ///         reference's packed-UV unfold (the default, unchanged legacy reading) or stay exactly as
+    ///         stored (<see cref="XnGineUvHandling.Stored" />, the cut-1c <c>xngine.uv16</c> stream).
+    ///     </para>
     /// </summary>
     public static XnGineMesh Parse(
         ReadOnlyMemory<byte> bytes,
         uint objectId,
         XnGineMeshLayout layout = XnGineMeshLayout.Daggerfall,
         IReadOnlyList<XnGineMeshPoint>? suppliedPoints = null,
-        IReadOnlyList<XnGineMeshPoint>? suppliedNormals = null)
+        IReadOnlyList<XnGineMeshPoint>? suppliedNormals = null,
+        XnGineUvHandling uvHandling = XnGineUvHandling.Reference)
     {
         var planeHeaderLength = layout == XnGineMeshLayout.Battlespire
             ? BattlespirePlaneHeaderLength
@@ -279,7 +341,7 @@ internal sealed class XnGineMesh
         }
 
         var context = new PlaneContext(bytes, objectId, layout, version, planeHeaderLength, pointCount,
-            planeDataOffset, normalListOffset, suppliedNormals);
+            planeDataOffset, normalListOffset, suppliedNormals, uvHandling, new UnfoldTally());
         var planes = new XnGinePlane[planeCount];
         var textures = new List<(int Archive, int Record)>();
         var position = planeListOffset;
@@ -298,6 +360,8 @@ internal sealed class XnGineMesh
         {
             ObjectId = objectId,
             Layout = layout,
+            UvHandling = uvHandling,
+            UnfoldedUvValueCount = context.Tally.Changed,
             Version = version,
             VersionTag = tag,
             Radius = radius,
@@ -309,12 +373,54 @@ internal sealed class XnGineMesh
             PointListOffset = pointListOffset,
             NormalListOffset = normalListOffset,
             PlaneListOffset = planeListOffset,
+            PlaneListEnd = position,
+            RecordLength = span.Length,
             Points = points,
             Planes = planes,
             UniqueTextures = textures,
             Min = min,
             Max = max
         };
+    }
+
+    /// <summary>
+    ///     The byte areas the header and the plane walk declare, for <see cref="ByteAreaTiling" />:
+    ///     <c>header</c>, <c>points</c>, <c>normals</c>, <c>planes</c> (ending at
+    ///     <see cref="PlaneListEnd" />) and <c>plane-data</c> when its offset is positive and
+    ///     <c>plane count x 24</c> bytes fit inside the record. This is the gate-1c oracle's M-T rule; the
+    ///     residue of tiling <see cref="RecordLength" /> with these areas is what defines the
+    ///     <c>unclaimed:*</c> coverage elements (plan section 3.3), never the object-data offset, whose
+    ///     area has no stated length (the gap starts there on 19,689 of the 19,722 gapped retail meshes and
+    ///     elsewhere on 33).
+    ///     <para>
+    ///         ⚠ For a record parsed with supplied points and normals (a <c>.3DC</c> keyframe) the header's
+    ///         point and normal offsets are frame 1's, so this list describes that frame's blocks, not the
+    ///         mesh's; tile a <c>.3DC</c> through <c>Redguard3DcFile.DeclaredAreas</c> instead.
+    ///     </para>
+    /// </summary>
+    public IReadOnlyList<ByteArea> DeclaredAreas()
+    {
+        var areas = new List<ByteArea>
+        {
+            new("header", 0, HeaderLength),
+            new("points", PointListOffset, PointListOffset + Points.Count * PointLength),
+            new("normals", NormalListOffset, NormalListOffset + Planes.Count * PointLength),
+            new("planes", PlaneListOffset, PlaneListEnd)
+        };
+
+        var planeDataLength = (long)Planes.Count * PlaneDataLength;
+        if (PlaneDataOffset > 0 && PlaneDataOffset + planeDataLength <= RecordLength)
+        {
+            areas.Add(new ByteArea("plane-data", PlaneDataOffset, PlaneDataOffset + (int)planeDataLength));
+        }
+
+        return areas;
+    }
+
+    /// <summary>Tiles the record with <see cref="DeclaredAreas" />; the gaps are the <c>unclaimed:*</c> ranges.</summary>
+    public ByteAreaTiling Tiling()
+    {
+        return ByteAreaTiling.Compute(RecordLength, DeclaredAreas());
     }
 
     /// <summary>Reads one plane's header and points, advancing <paramref name="position" />.</summary>
@@ -371,11 +477,16 @@ internal sealed class XnGineMesh
                     $"Mesh {context.ObjectId}: plane {index} point {q} offset {offset} does not address one of the {context.PointCount} points.");
             }
 
-            // The packed-UV encoding is Daggerfall's, and only on its low object ids.
-            if (context.Layout == XnGineMeshLayout.Daggerfall && q < 3 && context.ObjectId < PackedUvObjectIdLimit)
+            // The packed-UV encoding is Daggerfall's, and only on its low object ids. Stored mode
+            // skips it, keeping the record's own values (the cut-1c xngine.uv16 stream).
+            if (context.Layout == XnGineMeshLayout.Daggerfall && q < 3 && context.ObjectId < PackedUvObjectIdLimit
+                && context.UvHandling == XnGineUvHandling.Reference)
             {
-                u = UnpackUv(u);
-                v = UnpackUv(v);
+                var unpackedU = UnpackUv(u);
+                var unpackedV = UnpackUv(v);
+                context.Tally.Changed += (unpackedU != u ? 1 : 0) + (unpackedV != v ? 1 : 0);
+                u = unpackedU;
+                v = unpackedV;
             }
 
             planePoints[q] = new XnGinePlanePoint((int)(byteOffset / PointLength), u, v);
@@ -456,6 +567,13 @@ internal sealed class XnGineMesh
         return (new XnGineMeshPoint(minX, minY, minZ), new XnGineMeshPoint(maxX, maxY, maxZ));
     }
 
+    /// <summary>Counts the stored UV values the packed-UV unfold changed during one parse.</summary>
+    private sealed class UnfoldTally
+    {
+        /// <summary>Values changed so far.</summary>
+        public int Changed { get; set; }
+    }
+
     /// <summary>Everything <see cref="ReadPlane" /> needs that does not change between planes.</summary>
     private readonly record struct PlaneContext(
         ReadOnlyMemory<byte> Bytes,
@@ -466,5 +584,7 @@ internal sealed class XnGineMesh
         int PointCount,
         int PlaneDataOffset,
         int NormalListOffset,
-        IReadOnlyList<XnGineMeshPoint>? SuppliedNormals);
+        IReadOnlyList<XnGineMeshPoint>? SuppliedNormals,
+        XnGineUvHandling UvHandling,
+        UnfoldTally Tally);
 }

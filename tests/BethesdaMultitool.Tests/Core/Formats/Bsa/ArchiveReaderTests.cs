@@ -89,7 +89,8 @@ public class ArchiveReaderTests
 
             Assert.True(await reader.ExtractToDiskAsync(entry, outDir));
 
-            var written = Path.Combine(outDir, "meshes\\clutter\\bottle.nif");
+            // The entry is written under its engine path re-spelled for the host (the same bytes on Windows).
+            var written = Path.Combine(outDir, "meshes", "clutter", "bottle.nif");
             Assert.True(File.Exists(written));
             Assert.Equal(NifPayload, await File.ReadAllBytesAsync(written, TestContext.Current.CancellationToken));
         }

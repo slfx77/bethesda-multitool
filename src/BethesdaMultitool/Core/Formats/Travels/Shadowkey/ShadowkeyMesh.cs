@@ -122,6 +122,15 @@ internal sealed record ShadowkeyMeshTriangles(Vector3[] Positions, Vector2[] Tex
 ///         nibble of a texel is not validated here so a caller can inspect the raw
 ///         <see cref="ShadowkeyTextureSet.Skins" /> words itself.
 ///     </para>
+///     <para>
+///         ⚑ The <c>.zsk</c> sky payload IS a mesh record (measured 2026-09-28, cut-2 plan decision D8): the
+///         12 outdoor payloads walk with the counted texture header <c>(1, 256, 256)</c> and the 9 interior
+///         ones with an uncounted <c>(256, 256)</c> and one implied skin, both ending on a one-row sequence
+///         table; so the sky image is a 256x256 0x0RGB skin, not 512x256 palette indices. One decode path
+///         serves both: <see cref="Parse" /> takes the <see cref="ShadowkeyTextureHeader" /> variant (Counted
+///         by default, which is every pack record) and <see cref="DetectTextureHeader" /> chooses it for a
+///         sky payload from the length alone. <see cref="Sections" /> records the walk, section by section.
+///     </para>
 /// </summary>
 internal sealed class ShadowkeyMesh
 {
@@ -153,7 +162,9 @@ internal sealed class ShadowkeyMesh
         IReadOnlyList<ShadowkeyUv> uvs,
         IReadOnlyList<ShadowkeyFace> faces,
         ShadowkeyTextureSet textures,
-        IReadOnlyList<ShadowkeySequence> sequences)
+        IReadOnlyList<ShadowkeySequence> sequences,
+        ShadowkeyTextureHeader textureHeader,
+        IReadOnlyList<ShadowkeyMeshSection> sections)
     {
         Name = name;
         FrameCount = frameCount;
@@ -163,6 +174,8 @@ internal sealed class ShadowkeyMesh
         Faces = faces;
         Textures = textures;
         Sequences = sequences;
+        TextureHeader = textureHeader;
+        Sections = sections;
     }
 
     /// <summary>Source name, for messages.</summary>
@@ -189,8 +202,88 @@ internal sealed class ShadowkeyMesh
     /// <summary>The animation ranges.</summary>
     public IReadOnlyList<ShadowkeySequence> Sequences { get; }
 
-    /// <summary>Parses one mesh record, throwing <see cref="InvalidDataException" /> when it does not walk.</summary>
-    public static ShadowkeyMesh Parse(ReadOnlySpan<byte> bytes, string name)
+    /// <summary>The texture-header layout the record was walked with.</summary>
+    public ShadowkeyTextureHeader TextureHeader { get; }
+
+    /// <summary>
+    ///     The walk, section by section in stream order (<see cref="ShadowkeyMeshSection" />): header,
+    ///     positions, uvs, faces, texture-header, texels, sequence-count, sequences. They tile the record.
+    /// </summary>
+    public IReadOnlyList<ShadowkeyMeshSection> Sections { get; }
+
+    /// <summary>The section with the given name (one of the eight <see cref="Sections" /> names).</summary>
+    /// <exception cref="ArgumentException">No section has that name.</exception>
+    public ShadowkeyMeshSection Section(string sectionName)
+    {
+        foreach (var section in Sections)
+        {
+            if (string.Equals(section.Name, sectionName, StringComparison.Ordinal))
+            {
+                return section;
+            }
+        }
+
+        throw new ArgumentException($"'{Name}': the record has no section named '{sectionName}'.", nameof(sectionName));
+    }
+
+    /// <summary>The byte offset and length of one skin's stored texel block inside the record.</summary>
+    public (int Offset, int Length) SkinTexelBlock(int skin)
+    {
+        if (skin < 0 || skin >= Textures.Skins.Count)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(skin), skin, $"'{Name}': the record has {Textures.Skins.Count} skins.");
+        }
+
+        var length = Textures.Width * Textures.Height * 2;
+        return (Section("texels").Offset + skin * length, length);
+    }
+
+    /// <summary>
+    ///     Chooses the texture-header layout of a payload by walking it both ways: <see cref="ShadowkeyTextureHeader.Counted" />
+    ///     when the counted walk (skin count, width, height, the texels, the sequence table) ends exactly at the payload's
+    ///     last byte, otherwise <see cref="ShadowkeyTextureHeader.Uncounted" /> when the uncounted walk (width, height,
+    ///     one skin) does. On the retail tree this picks Counted for the 226 pack records and the 12 outdoor skies and
+    ///     Uncounted for the 9 interior skies; the length is the only discriminator the bytes offer.
+    /// </summary>
+    /// <exception cref="InvalidDataException">The header does not walk, or neither layout tiles the payload.</exception>
+    public static ShadowkeyTextureHeader DetectTextureHeader(ReadOnlySpan<byte> bytes, string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        if (bytes.Length < HeaderLength)
+        {
+            throw new InvalidDataException(
+                $"'{name}': the record is {bytes.Length} bytes, too short for the {HeaderLength}-byte header.");
+        }
+
+        long frames = BinaryPrimitives.ReadUInt16LittleEndian(bytes[2..]);
+        long vertices = BinaryPrimitives.ReadUInt16LittleEndian(bytes[4..]);
+        long uvs = BinaryPrimitives.ReadUInt16LittleEndian(bytes[6..]);
+        long faces = BinaryPrimitives.ReadUInt16LittleEndian(bytes[8..]);
+        var afterFaces = HeaderLength + 6 * frames * vertices + 4 * uvs + 12 * faces;
+        if (TilesAfterFaces(bytes, afterFaces, counted: true))
+        {
+            return ShadowkeyTextureHeader.Counted;
+        }
+
+        if (TilesAfterFaces(bytes, afterFaces, counted: false))
+        {
+            return ShadowkeyTextureHeader.Uncounted;
+        }
+
+        throw new InvalidDataException(
+            $"'{name}': neither texture-header layout tiles the {bytes.Length}-byte payload after the face table ends at byte {afterFaces}.");
+    }
+
+    /// <summary>
+    ///     Parses one mesh record, throwing <see cref="InvalidDataException" /> when it does not walk.
+    ///     <paramref name="textureHeader" /> is <see cref="ShadowkeyTextureHeader.Counted" /> for every pack
+    ///     record; a <c>.zsk</c> sky payload takes the variant <see cref="DetectTextureHeader" /> chooses.
+    /// </summary>
+    public static ShadowkeyMesh Parse(
+        ReadOnlySpan<byte> bytes,
+        string name,
+        ShadowkeyTextureHeader textureHeader = ShadowkeyTextureHeader.Counted)
     {
         ArgumentNullException.ThrowIfNull(name);
 
@@ -233,12 +326,16 @@ internal sealed class ShadowkeyMesh
         }
 
         var position = (long)HeaderLength;
+        var sections = new List<ShadowkeyMeshSection>(8) { new("header", 0, HeaderLength) };
 
         var vertices = ReadVertices(bytes, name, frameCount, vertexCount, ref position);
+        AddSection(sections, "positions", position);
         var uvs = ReadUvs(bytes, name, uvCount, ref position);
+        AddSection(sections, "uvs", position);
         var faces = ReadFaces(bytes, name, faceCount, vertexCount, uvCount, ref position);
-        var textures = ReadTextures(bytes, name, ref position);
-        var sequences = ReadSequences(bytes, name, frameCount, ref position);
+        AddSection(sections, "faces", position);
+        var textures = ReadTextures(bytes, name, textureHeader, ref position, sections);
+        var sequences = ReadSequences(bytes, name, frameCount, ref position, sections);
 
         if (position != bytes.Length)
         {
@@ -246,7 +343,42 @@ internal sealed class ShadowkeyMesh
                 $"'{name}': the record's sections end at byte {position} but the entry is {bytes.Length} bytes.");
         }
 
-        return new ShadowkeyMesh(name, frameCount, vertexCount, vertices, uvs, faces, textures, sequences);
+        return new ShadowkeyMesh(name, frameCount, vertexCount, vertices, uvs, faces, textures, sequences,
+            textureHeader, sections.AsReadOnly());
+    }
+
+    /// <summary>Appends a section that starts where the previous one ended and ends at <paramref name="end" />.</summary>
+    private static void AddSection(List<ShadowkeyMeshSection> sections, string sectionName, long end)
+    {
+        var previous = sections[^1];
+        var offset = previous.Offset + previous.Length;
+        sections.Add(new ShadowkeyMeshSection(sectionName, offset, (int)(end - offset)));
+    }
+
+    /// <summary>
+    ///     Whether the texture header, the texels and the sequence table, read with one layout from
+    ///     <paramref name="afterFaces" />, end exactly at the last byte (every count checked against the bytes first).
+    /// </summary>
+    private static bool TilesAfterFaces(ReadOnlySpan<byte> bytes, long afterFaces, bool counted)
+    {
+        var headerLength = counted ? 6 : 4;
+        if (afterFaces + headerLength > bytes.Length)
+        {
+            return false;
+        }
+
+        var at = (int)afterFaces;
+        long skins = counted ? BinaryPrimitives.ReadUInt16LittleEndian(bytes[at..]) : 1;
+        long width = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(at + (counted ? 2 : 0))..]);
+        long height = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(at + (counted ? 4 : 2))..]);
+        var sequenceCountAt = afterFaces + headerLength + 2 * skins * width * height;
+        if (sequenceCountAt + 2 > bytes.Length)
+        {
+            return false;
+        }
+
+        long sequenceCount = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(int)sequenceCountAt..]);
+        return sequenceCountAt + 2 + 6 * sequenceCount == bytes.Length;
     }
 
     /// <summary>The positions of one frame, in file order (Y up, integer mesh units).</summary>
@@ -456,16 +588,39 @@ internal sealed class ShadowkeyMesh
         return faces;
     }
 
-    private static ShadowkeyTextureSet ReadTextures(ReadOnlySpan<byte> bytes, string name, ref long position)
+    private static ShadowkeyTextureSet ReadTextures(
+        ReadOnlySpan<byte> bytes,
+        string name,
+        ShadowkeyTextureHeader textureHeader,
+        ref long position,
+        List<ShadowkeyMeshSection> sections)
     {
-        RequireRoom(bytes, name, position, 6, "the texture header");
-
         var offset = (int)position;
-        int textureCount = BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..]);
-        int width = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 2)..]);
-        int height = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 4)..]);
-        offset += 6;
+        int textureCount;
+        int width;
+        int height;
+        if (textureHeader == ShadowkeyTextureHeader.Counted)
+        {
+            RequireRoom(bytes, name, position, 6, "the texture header");
+            textureCount = BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..]);
+            width = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 2)..]);
+            height = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 4)..]);
+            offset += 6;
+        }
+        else if (textureHeader == ShadowkeyTextureHeader.Uncounted)
+        {
+            RequireRoom(bytes, name, position, 4, "the uncounted texture header");
+            textureCount = 1;
+            width = BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..]);
+            height = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 2)..]);
+            offset += 4;
+        }
+        else
+        {
+            throw new ArgumentOutOfRangeException(nameof(textureHeader), textureHeader, "Unknown texture-header layout.");
+        }
 
+        AddSection(sections, "texture-header", offset);
         var texelsPerSkin = (long)width * height;
         RequireRoom(bytes, name, offset, texelsPerSkin * textureCount * 2, "the texture block");
 
@@ -483,17 +638,19 @@ internal sealed class ShadowkeyMesh
         }
 
         position = offset;
+        AddSection(sections, "texels", position);
         return new ShadowkeyTextureSet(width, height, skins);
     }
 
     private static ShadowkeySequence[] ReadSequences(
-        ReadOnlySpan<byte> bytes, string name, int frameCount, ref long position)
+        ReadOnlySpan<byte> bytes, string name, int frameCount, ref long position, List<ShadowkeyMeshSection> sections)
     {
         RequireRoom(bytes, name, position, 2, "the sequence count");
 
         var offset = (int)position;
         int sequenceCount = BinaryPrimitives.ReadUInt16LittleEndian(bytes[offset..]);
         offset += 2;
+        AddSection(sections, "sequence-count", offset);
 
         RequireRoom(bytes, name, offset, (long)sequenceCount * 6, "the sequence table");
 
@@ -516,6 +673,7 @@ internal sealed class ShadowkeyMesh
         }
 
         position = offset;
+        AddSection(sections, "sequences", position);
         return sequences;
     }
 

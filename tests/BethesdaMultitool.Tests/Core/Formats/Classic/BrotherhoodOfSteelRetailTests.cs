@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.BrotherhoodOfSteel;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
+using ArchiveEntry = BethesdaMultitool.Core.Formats.Archives.ArchiveEntry;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Classic;
 
@@ -42,7 +43,11 @@ public sealed class BrotherhoodOfSteelRetailTests
 
         var failures = new List<string>();
         var strings = 0;
-        var unresolved = 0;
+        var terminatedFiles = 0;
+        var terminatedUnresolved = 0;
+        var unterminatedFiles = 0;
+        var unterminatedUnresolved = 0;
+        var unterminatedWithSlack = 0;
         foreach (var entry in databases)
         {
             var bytes = disc.ReadFile(entry.FullPath);
@@ -55,7 +60,20 @@ public sealed class BrotherhoodOfSteelRetailTests
             }
 
             strings += database.Entries.Count;
-            unresolved += database.UnresolvedSlots;
+            if (database.Terminated)
+            {
+                terminatedFiles++;
+                terminatedUnresolved += database.UnresolvedSlots;
+            }
+            else
+            {
+                unterminatedFiles++;
+                unterminatedUnresolved += database.UnresolvedSlots;
+                if (database.UnresolvedSlots > 0)
+                {
+                    unterminatedWithSlack++;
+                }
+            }
 
             // The text is UTF-16LE; read as ASCII every string would carry NULs between letters.
             Assert.All(database.Entries, e => Assert.DoesNotContain('\0', e.Value));
@@ -63,7 +81,20 @@ public sealed class BrotherhoodOfSteelRetailTests
 
         Assert.Empty(failures);
         Assert.True(strings > 0, "no strings were read from any database");
-        Assert.Equal(0, unresolved);
+
+        // ⚠⚠ UNRESOLVED SLOTS ARE NOT ALL THE SAME THING, and a bare "expect 0" over the disc is
+        // wrong: it held for a while only because this suite skipped. Measured 2026-09-09 over all
+        // 56 databases (independently reproduced by a 7-Zip extraction plus a Python walk):
+        // the 34 that carry the explicit terminator slot resolve EVERY populated slot, and the 22
+        // that do not contribute 940 between 21 of them — a table's real length is its
+        // power-of-two slot count, which an unterminated file never states, so the walk runs into
+        // trailing bytes. Splitting the total is what makes this discriminate: a regression in the
+        // terminator handling moves the first number off zero, which no single total could show.
+        Assert.Equal(34, terminatedFiles);
+        Assert.Equal(0, terminatedUnresolved);
+        Assert.Equal(22, unterminatedFiles);
+        Assert.Equal(940, unterminatedUnresolved);
+        Assert.Equal(21, unterminatedWithSlack);
     }
 
     [Fact]
@@ -571,7 +602,7 @@ public sealed class BrotherhoodOfSteelRetailTests
     }
 
     /// <summary>The distinct record hashes in one .DDF.</summary>
-    private static HashSet<uint> ReadHashes(ArchiveReader disc, ArchiveReader.ArchiveEntry entry)
+    private static HashSet<uint> ReadHashes(ArchiveReader disc, ArchiveEntry entry)
     {
         var file = BosDataFile.Parse(disc.ReadFile(entry.FullPath)!, entry.Name);
         return [.. file.Records.Select(r => r.Hash)];

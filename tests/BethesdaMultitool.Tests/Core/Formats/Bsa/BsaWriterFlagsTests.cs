@@ -1,5 +1,4 @@
 using System.Buffers.Binary;
-using System.Reflection;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa;
 using BethesdaMultitool.Core.Formats.Bsa.Parsing;
@@ -148,15 +147,23 @@ public class BsaWriterFlagsTests
     }
 
     [Fact]
-    public void HashPath_MatchesKnownVanillaTextureEntries()
+    public void Write_EmitsKnownVanillaTextureHashes()
     {
-        var method = typeof(BsaWriter)
-            .GetMethod("HashPath", BindingFlags.NonPublic | BindingFlags.Static);
+        const string folder = "textures\\characters\\male";
+        const string path = folder + "\\upperbodymale_n.dds";
+        using var writer = BsaWriter.CreateWithAutoFlags([path]);
+        writer.AddFile(path, new byte[] { 1, 2, 3, 4 });
+        using var stream = new MemoryStream();
+        writer.Write(stream);
+        var bytes = stream.ToArray();
 
-        Assert.NotNull(method);
-
-        var folderHash = (ulong)method.Invoke(null, ["textures\\characters\\male", true])!;
-        var fileHash = (ulong)method.Invoke(null, ["upperbodymale_n.dds", false])!;
+        // BSA v104: 36-byte header, one 16-byte folder record, then the length-prefixed,
+        // null-terminated folder name and its file record. Read the emitted bytes directly
+        // so neither the private hashing implementation nor our parser supplies the oracle.
+        const int folderRecordOffset = 36;
+        var fileRecordOffset = folderRecordOffset + 16 + 1 + folder.Length + 1;
+        var folderHash = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(folderRecordOffset, 8));
+        var fileHash = BinaryPrimitives.ReadUInt64LittleEndian(bytes.AsSpan(fileRecordOffset, 8));
 
         Assert.Equal(0xE081F3D674186C65ul, folderHash);
         Assert.Equal(0x32803A61750FDFEEul, fileHash);

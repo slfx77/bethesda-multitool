@@ -56,8 +56,13 @@ internal readonly record struct ShadowkeyZonePlacementSummary(int Placed, int Un
 ///         all 21 zones — exactly one ordering fits: <b>98.13%</b> agreement against <b>58.78%</b>
 ///         for the runner-up and 11% for the worst. Per zone it is 95.09%–99.75% on every zone with
 ///         real terrain (the eleven flat crypt/dungeon zones contribute no discriminating pairs at
-///         all). The winner is <see cref="CornerOffsets" />: slot 0 is (x, y+1), slot 1 is
+///         all). The winner is <see cref="CornerOffset" />: slot 0 is (x, y+1), slot 1 is
 ///         (x+1, y+1), slot 2 is (x+1, y) and slot 3 is (x, y).
+///     </para>
+///     <para>
+///         The face rule itself (which quads an open cell emits, in which order, with which corners)
+///         lives once, in <see cref="ShadowkeyTileQuads" />, which the model reader's terrain document
+///         calls too (cut-2 plan section 1); this builder turns its quads into tile-unit geometry.
 ///     </para>
 ///     <para>
 ///         Note the ceiling corners could NOT settle it — retail ceilings are flat almost
@@ -98,38 +103,12 @@ internal static class ShadowkeyZoneSceneBuilder
     public const float MeshUnitsPerTile = 256f;
 
     /// <summary>
-    ///     One entry per wall direction: the neighbour step, this cell's two corner slots along the
-    ///     shared edge, the neighbour's two slots for the SAME two world corners, and the face kind.
-    ///     The slot pairs are the ones the adjacency measurement scored, so they are settled by the
-    ///     same evidence as <see cref="CornerOffsets" />. The two slots are ordered so that the quad
-    ///     A-bottom, B-bottom, B-top, A-top faces INTO the open cell.
+    ///     The tile-corner offset of one <c>.zcp</c> corner slot, settled by the adjacency measurement
+    ///     in the type remarks (the shared rule's <see cref="ShadowkeyTileQuads.CornerOffset" />).
     /// </summary>
-    private static readonly (int Dx, int Dy, int OurA, int OurB, int TheirA, int TheirB, ShadowkeyTileFaceKind Kind)[]
-        WallDirections =
-        [
-            (1, 0, 1, 2, 0, 3, ShadowkeyTileFaceKind.WallEast),
-            (-1, 0, 3, 0, 2, 1, ShadowkeyTileFaceKind.WallWest),
-            (0, 1, 0, 1, 3, 2, ShadowkeyTileFaceKind.WallSouth),
-            (0, -1, 2, 3, 1, 0, ShadowkeyTileFaceKind.WallNorth)
-        ];
-
-    /// <summary>
-    ///     Corner slot to tile-corner offset, settled by the adjacency measurement in the type
-    ///     remarks. Two bytes per <c>.zcp</c> corner slot — dx then dy — as offsets from the cell's
-    ///     own (x, y) in whole tiles. Read it through <see cref="CornerOffset" />.
-    /// </summary>
-    private static ReadOnlySpan<byte> CornerOffsets => [0, 1, 1, 1, 1, 0, 0, 0];
-
-    /// <summary>The tile-corner offset of one <c>.zcp</c> corner slot.</summary>
     public static (int Dx, int Dy) CornerOffset(int slot)
     {
-        if ((uint)slot >= ShadowkeyCellPrototype.CornerCount)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(slot), slot, $"A corner slot must be 0..{ShadowkeyCellPrototype.CornerCount - 1}.");
-        }
-
-        return (CornerOffsets[slot * 2], CornerOffsets[slot * 2 + 1]);
+        return ShadowkeyTileQuads.CornerOffset(slot);
     }
 
     /// <summary>
@@ -153,66 +132,21 @@ internal static class ShadowkeyZoneSceneBuilder
         prototypes.ValidateAgainst(map, prototypes.Name);
 
         var settings = options ?? new ShadowkeyZoneSceneOptions();
-        var walk = new ZoneWalk
+        var resolver = materials ?? ShadowkeyDebugTileMaterials.Instance;
+        var batches = new FaceBatches();
+        foreach (var quad in ShadowkeyTileQuads.Enumerate(
+                     map, prototypes, settings.IncludeFloors, settings.IncludeCeilings, settings.IncludeWalls))
         {
-            Map = map,
-            Prototypes = prototypes,
-            Resolver = materials ?? ShadowkeyDebugTileMaterials.Instance,
-            Batches = new FaceBatches()
-        };
-
-        var floor = walk.Floor;
-        var ceiling = walk.Ceiling;
-
-        for (var y = 0; y < map.Height; y++)
-        {
-            for (var x = 0; x < map.Width; x++)
-            {
-                var cell = map.Cell(x, y);
-                if (cell.IsBlocked)
-                {
-                    continue;
-                }
-
-                var prototype = prototypes.Records[cell.PrototypeIndex];
-                ReadHeights(prototype, floor, ceiling);
-                var batches = walk.Batches;
-                var resolver = walk.Resolver;
-
-                if (settings.IncludeFloors)
-                {
-                    // Reversed slot order: 0,1,2,3 walks the corners clockwise in the xy plane, so
-                    // 3,2,1,0 is what puts the floor's normal up.
-                    var face = new ShadowkeyTileFace(x, y, ShadowkeyTileFaceKind.Floor, cell, prototype);
-                    AddQuad(
-                        batches, resolver.Resolve(face),
-                        CornerVertex(x, y, 3, floor), CornerVertex(x, y, 2, floor),
-                        CornerVertex(x, y, 1, floor), CornerVertex(x, y, 0, floor));
-                }
-
-                if (settings.IncludeCeilings)
-                {
-                    var face = new ShadowkeyTileFace(x, y, ShadowkeyTileFaceKind.Ceiling, cell, prototype);
-                    AddQuad(
-                        batches, resolver.Resolve(face),
-                        CornerVertex(x, y, 0, ceiling), CornerVertex(x, y, 1, ceiling),
-                        CornerVertex(x, y, 2, ceiling), CornerVertex(x, y, 3, ceiling));
-                }
-
-                if (settings.IncludeWalls)
-                {
-                    AddWalls(walk, x, y, cell, prototype);
-                }
-            }
+            AddQuad(batches, resolver.Resolve(quad.Face), Tile(quad.A), Tile(quad.B), Tile(quad.C), Tile(quad.D));
         }
 
         var scene = new BethesdaViewerScene(
             map.ZoneName.Length > 0 ? map.ZoneName : map.Name,
             BethesdaViewerScenePurpose.ClassicMesh,
-            walk.Batches.Bounds,
+            batches.Bounds,
             BethesdaGame.Shadowkey);
 
-        walk.Batches.Flush(scene);
+        batches.Flush(scene);
         return scene;
     }
 
@@ -231,10 +165,14 @@ internal static class ShadowkeyZoneSceneBuilder
     ///         zone geometry is built in.
     ///     </para>
     ///     <para>
-    ///         ⚠ HYPOTHESIS: the yaw comes from <see cref="ShadowkeyEntity.Angle2" /> read as a
-    ///         binary angle, 65,536 to the turn — the reading its +/-16384 and +/-32768 clusters
-    ///         mean. Its SIGN is a display choice with no evidence behind it yet, and the two
-    ///         mostly-zero angle slots are not applied at all. Turn this off with
+    ///         ⚑ The yaw is <see cref="ShadowkeyEntity.Angle2" /> read as a binary angle, 65,536
+    ///         to the turn, with a NEGATIVE sign, and the mesh reaches the zone through the proper
+    ///         map <c>(x, y, z)</c> to <c>(x, -z, y)</c> (<see cref="ShadowkeyAxisConvention.ZUp" />):
+    ///         measured 2026-09-28 by the frame-0 vertices of all 8,258 placements that land in a
+    ///         blocked or off-grid cell, 7,687 against 21,017 for the old (x, z, y) with +yaw and
+    ///         10,236 for the degrees-x-256 reading (cut-2 plan section 0.2). The model reader's
+    ///         placement matrix is the same map (<c>ShadowkeyModelUnits.PlacementMatrix</c>). The two
+    ///         mostly-zero angle slots are not applied. Turn the yaw off with
     ///         <paramref name="applyYaw" /> to see the placements unrotated.
     ///     </para>
     /// </summary>
@@ -384,95 +322,16 @@ internal static class ShadowkeyZoneSceneBuilder
         var transform = Matrix4x4.CreateScale(placement.Scale / MeshUnitsPerTile);
         if (applyYaw && placement.Angle2 != 0)
         {
-            transform *= Matrix4x4.CreateRotationZ(placement.Angle2 * MathF.Tau / 65536f);
+            transform *= Matrix4x4.CreateRotationZ(-placement.Angle2 * MathF.Tau / 65536f);
         }
 
         return transform * Matrix4x4.CreateTranslation(placement.TileX, placement.TileY, placement.TileZ);
     }
 
-    /// <summary>Copies a prototype's heights into tile units.</summary>
-    private static void ReadHeights(ShadowkeyCellPrototype prototype, float[] floor, float[] ceiling)
+    /// <summary>One rule corner in the builder's tile units (heights are the 8.8 value over 256).</summary>
+    private static Vector3 Tile(ShadowkeyTileCorner corner)
     {
-        for (var i = 0; i < ShadowkeyCellPrototype.CornerCount; i++)
-        {
-            floor[i] = prototype.FloorCorners[i] / HeightScale;
-            ceiling[i] = prototype.CeilingCorners[i] / HeightScale;
-        }
-    }
-
-    /// <summary>The same tile corner at a different height.</summary>
-    private static Vector3 At(Vector3 corner, float z)
-    {
-        return new Vector3(corner.X, corner.Y, z);
-    }
-
-    /// <summary>One tile corner in scene space.</summary>
-    private static Vector3 CornerVertex(int x, int y, int slot, float[] heights)
-    {
-        var (dx, dy) = CornerOffset(slot);
-        return new Vector3(x + dx, y + dy, heights[slot]);
-    }
-
-    /// <summary>
-    ///     Emits this cell's walls. A blocked or off-grid neighbour gets a full-height quad; two
-    ///     open cells get a riser where the neighbour's floor is higher and a downstand where its
-    ///     ceiling is lower, which is what draws terraces and stairs.
-    /// </summary>
-    private static void AddWalls(
-        ZoneWalk walk, int x, int y, ShadowkeyMapCell cell, ShadowkeyCellPrototype prototype)
-    {
-        var map = walk.Map;
-        var batches = walk.Batches;
-        var resolver = walk.Resolver;
-        var floor = walk.Floor;
-        var ceiling = walk.Ceiling;
-        var neighbourFloor = walk.NeighbourFloor;
-        var neighbourCeiling = walk.NeighbourCeiling;
-
-        foreach (var (dx, dy, ourA, ourB, theirA, theirB, kind) in WallDirections)
-        {
-            var nx = x + dx;
-            var ny = y + dy;
-            var solid = nx < 0 || ny < 0 || nx >= map.Width || ny >= map.Height || map.Cell(nx, ny).IsBlocked;
-
-            var a = CornerVertex(x, y, ourA, floor);
-            var b = CornerVertex(x, y, ourB, floor);
-            var face = new ShadowkeyTileFace(x, y, kind, cell, prototype);
-
-            if (solid)
-            {
-                AddQuad(
-                    batches, resolver.Resolve(face),
-                    a, b,
-                    At(b, ceiling[ourB]), At(a, ceiling[ourA]));
-                continue;
-            }
-
-            var neighbour = walk.Prototypes.Records[map.Cell(nx, ny).PrototypeIndex];
-            ReadHeights(neighbour, neighbourFloor, neighbourCeiling);
-
-            // A riser: our floor up to the neighbour's, wherever theirs is higher. Clamping each
-            // corner at our own height keeps a quad that is up at one end and level at the other
-            // from folding through itself, which happens on the 1.9% of edges that disagree.
-            if (neighbourFloor[theirA] > floor[ourA] || neighbourFloor[theirB] > floor[ourB])
-            {
-                AddQuad(
-                    batches, resolver.Resolve(face),
-                    a, b,
-                    At(b, MathF.Max(floor[ourB], neighbourFloor[theirB])),
-                    At(a, MathF.Max(floor[ourA], neighbourFloor[theirA])));
-            }
-
-            if (neighbourCeiling[theirA] < ceiling[ourA] || neighbourCeiling[theirB] < ceiling[ourB])
-            {
-                AddQuad(
-                    batches, resolver.Resolve(face),
-                    At(a, MathF.Min(ceiling[ourA], neighbourCeiling[theirA])),
-                    At(b, MathF.Min(ceiling[ourB], neighbourCeiling[theirB])),
-                    At(b, ceiling[ourB]),
-                    At(a, ceiling[ourA]));
-            }
-        }
+        return new Vector3(corner.X, corner.Y, corner.Height / HeightScale);
     }
 
     /// <summary>
@@ -624,33 +483,6 @@ internal static class ShadowkeyZoneSceneBuilder
                 });
             }
         }
-    }
-
-    /// <summary>
-    ///     The state one zone walk carries: its inputs, its output batches and the four scratch
-    ///     height arrays, so the wall emitter takes a cell rather than a dozen arguments.
-    /// </summary>
-    private sealed class ZoneWalk
-    {
-        public required ShadowkeyZoneMap Map { get; init; }
-
-        public required ShadowkeyCellPrototypes Prototypes { get; init; }
-
-        public required IShadowkeyTileMaterialResolver Resolver { get; init; }
-
-        public required FaceBatches Batches { get; init; }
-
-        /// <summary>This cell's floor corners, in tiles.</summary>
-        public float[] Floor { get; } = new float[ShadowkeyCellPrototype.CornerCount];
-
-        /// <summary>This cell's ceiling corners, in tiles.</summary>
-        public float[] Ceiling { get; } = new float[ShadowkeyCellPrototype.CornerCount];
-
-        /// <summary>The neighbour's floor corners while a wall is being cut.</summary>
-        public float[] NeighbourFloor { get; } = new float[ShadowkeyCellPrototype.CornerCount];
-
-        /// <summary>The neighbour's ceiling corners while a wall is being cut.</summary>
-        public float[] NeighbourCeiling { get; } = new float[ShadowkeyCellPrototype.CornerCount];
     }
 
     /// <summary>One submesh under construction.</summary>

@@ -27,12 +27,23 @@ public sealed class ClassicGameLocatorTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    /// <summary>
+    ///     Re-spells an engine-style relative path (<c>@"ARENA2\ARCH3D.BSA"</c>) for the host — a
+    ///     no-op on Windows. The layouts below are staged as HOST trees; without this a Unix run
+    ///     writes one file literally named "ARENA2\ARCH3D.BSA" at the install root, which then
+    ///     matches (or, for the depth test, fails to be deep) for the wrong reason.
+    /// </summary>
+    private static string Host(string relativePath)
+    {
+        return relativePath.Replace('\\', Path.DirectorySeparatorChar);
+    }
+
     private string MakeInstall(string name, params string[] relativeFiles)
     {
         var install = Path.Combine(_root, name);
         foreach (var relative in relativeFiles)
         {
-            var path = Path.Combine(install, relative);
+            var path = Path.Combine(install, Host(relative));
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllBytes(path, [0x00]);
         }
@@ -137,7 +148,7 @@ public sealed class ClassicGameLocatorTests : IDisposable
         var fo1 = MakeInstall("fo1-deep", "MASTER.DAT", "CRITTER.DAT", "FALLOUTW.EXE",
             @"DATA\SOUND\MUSIC\01HUB.ACM");
 
-        var result = ClassicGameLocator.DetectRootForFile(Path.Combine(fo1, @"DATA\SOUND\MUSIC\01HUB.ACM"));
+        var result = ClassicGameLocator.DetectRootForFile(Path.Combine(fo1, Host(@"DATA\SOUND\MUSIC\01HUB.ACM")));
 
         Assert.Equal(BethesdaGame.Fallout1, result?.Profile.Game);
         Assert.Equal(fo1, result?.Root);
@@ -161,7 +172,7 @@ public sealed class ClassicGameLocatorTests : IDisposable
         var fo1 = MakeInstall("fo1-toodeep", "MASTER.DAT", "CRITTER.DAT", "FALLOUTW.EXE",
             @"a\b\c\d\e\buried.bin");
 
-        Assert.Null(ClassicGameLocator.DetectRootForFile(Path.Combine(fo1, @"a\b\c\d\e\buried.bin")));
+        Assert.Null(ClassicGameLocator.DetectRootForFile(Path.Combine(fo1, Host(@"a\b\c\d\e\buried.bin"))));
     }
 
     private string MakeJar(string name, params string[] entryNames)

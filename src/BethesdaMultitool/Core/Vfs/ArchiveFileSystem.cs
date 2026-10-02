@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
+using ArchiveEntry = BethesdaMultitool.Core.Formats.Archives.ArchiveEntry;
 
 namespace BethesdaMultitool.Core.Vfs;
 
@@ -274,7 +275,7 @@ public sealed class ArchiveFileSystem : IGameFileSystem
         }
     }
 
-    private GameFileEntry ToEntry(ArchiveReader.ArchiveEntry entry)
+    private GameFileEntry ToEntry(ArchiveEntry entry)
     {
         return new GameFileEntry(VfsPath.Normalize(entry.FullPath), entry.Size, Label);
     }

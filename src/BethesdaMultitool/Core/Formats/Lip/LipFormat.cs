@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Utils;
+using BethesdaMultitool.Core.Media.Audio.Lip;
 
 namespace BethesdaMultitool.Core.Formats.Lip;
 
@@ -8,9 +8,9 @@ namespace BethesdaMultitool.Core.Formats.Lip;
 /// <remarks>
 ///     LIP files do NOT have a "LIPS" magic header. They start with:
 ///     - Version (uint32, typically 1)
-///     - DataSize (uint32)
-///     - Unknown (uint32)
-///     - Phoneme count/data
+///     - Declared size (uint32, not compressed file length)
+///     - Flags (uint32)
+///     - A byte-compressed sample body in the verified FO3/FNV variant
 ///     The "LIPS" string appears in memory dumps only as part of asset path strings
 ///     (e.g., "sound/voice/falloutnv.esm/maleadult01/lips_....lip"), not as file headers.
 ///     Across 50+ crash dumps analyzed, 0 valid LIP files were found - they are loaded
@@ -26,7 +26,7 @@ public sealed class LipFormat : FileFormatBase
     public override FileCategory Category => FileCategory.Audio;
     public override string GroupLabel => "LIP Sync";
     public override string OutputFolder => "lipsync";
-    public override int MinSize => 20;
+    public override int MinSize => 15;
     public override int MaxSize => 5 * 1024 * 1024;
 
     // DISABLED: LIP files have no magic header. The previous "LIPS" signature was matching
@@ -39,50 +39,35 @@ public sealed class LipFormat : FileFormatBase
         // No reliable signature - LIP files don't have magic bytes
     ];
 
+    /// <summary>Validates a complete known file instead of estimating compressed length from the size field.</summary>
     public override ParseResult? Parse(ReadOnlySpan<byte> data, int offset = 0)
     {
-        // LIP files have no magic header, so we can't reliably parse them from memory dumps.
-        // This parser exists only for potential future use with known file offsets.
-        const int minHeaderSize = 12;
-        if (data.Length < offset + minHeaderSize)
+        if (offset < 0 || offset > data.Length)
         {
             return null;
         }
-
-        // LIP format (based on actual files):
-        // 0x00: Version (uint32, typically 1)
-        // 0x04: DataSize (uint32)
-        // 0x08: Unknown (uint32)
-        // 0x0C: Phoneme data...
-
-        var version = BinaryUtils.ReadUInt32LE(data, offset);
-        if (version == 0 || version > 10)
+        try
         {
-            return null;
-        }
-
-        var dataSize = BinaryUtils.ReadUInt32LE(data, offset + 4);
-        if (dataSize == 0 || dataSize > 1 * 1024 * 1024)
-        {
-            return null;
-        }
-
-        // Estimate size as header + reported data size
-        var estimatedSize = 12 + (int)dataSize;
-        if (estimatedSize > MaxSize)
-        {
-            return null;
-        }
-
-        return new ParseResult
-        {
-            Format = "LIP",
-            EstimatedSize = estimatedSize,
-            Metadata = new Dictionary<string, object>
+            var timeline = LipDecoder.Decode(data[offset..]);
+            return new ParseResult
             {
-                ["version"] = version,
-                ["dataSize"] = dataSize
-            }
-        };
+                Format = "LIP",
+                EstimatedSize = timeline.EncodedSize,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["version"] = timeline.Revision,
+                    ["declaredSize"] = timeline.DeclaredSize,
+                    ["flags"] = timeline.Flags,
+                    ["frameCount"] = timeline.FrameCount,
+                    ["startingFrame"] = timeline.StartingFrame,
+                    ["framesPerSecond"] = timeline.FramesPerSecond,
+                    ["trackCount"] = LipTimeline.Tracks.Count
+                }
+            };
+        }
+        catch (Exception exception) when (exception is InvalidDataException or NotSupportedException)
+        {
+            return null;
+        }
     }
 }

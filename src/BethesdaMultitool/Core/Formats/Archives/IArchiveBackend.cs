@@ -1,4 +1,4 @@
-using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Archives;
 
@@ -77,7 +77,9 @@ internal interface IArchiveBackend : IDisposable
             throw new InvalidOperationException($"Archive entry path is not extractable: '{entry.FullPath}'.");
         }
 
-        var target = Path.Combine(outputDir, relative);
+        // `relative` is backslash-normalized above; re-spell it for the host so a Unix extraction
+        // creates the directory tree instead of one file with backslashes in its name.
+        var target = HostPath.Combine(outputDir, relative);
         if (!overwrite && File.Exists(target))
         {
             return false;

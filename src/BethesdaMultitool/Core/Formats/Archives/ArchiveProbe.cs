@@ -161,6 +161,14 @@ internal static class ArchiveProbe
             return new ArenaInstallerBackend(installer!);
         }
 
+        // 5f. Exact arithmetic, no magic, NAME-gated: Shadowkey's global mesh pack. Only a .huge file can anchor it,
+        //     and only when the sibling .idx of the same stem tiles it contiguously to its last byte (cut-2 plan
+        //     decision D1): on the retail N-Gage tree that claims models.huge and nothing else of the 1,919 files.
+        if (ShadowkeyPackBackend.TryProbe(path))
+        {
+            return ShadowkeyPackBackend.Open(path);
+        }
+
         // 6. Strong magic plus exact arithmetic: plain PKZIP (TES Travels J2ME JARs, Fallout Tactics
         //    .bos). PK\x03\x04 at offset 0, an end record that ends exactly at EOF, and a central
         //    directory that tiles exactly between its declared offset and that record.

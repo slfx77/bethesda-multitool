@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Orchestration;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Bsa.Ba2;
 
@@ -177,7 +178,9 @@ public sealed class Ba2Extractor : IDisposable
         bool overwrite = false,
         CancellationToken cancellationToken = default)
     {
-        var outputPath = Path.Combine(outputDir, file.FullPath);
+        // The record's virtual path is backslash-spelled; re-spell it for the host, or a Unix
+        // extraction writes one file literally named "data\plain.txt" in the output directory.
+        var outputPath = HostPath.Combine(outputDir, file.FullPath);
         if (!overwrite && File.Exists(outputPath))
         {
             return true;

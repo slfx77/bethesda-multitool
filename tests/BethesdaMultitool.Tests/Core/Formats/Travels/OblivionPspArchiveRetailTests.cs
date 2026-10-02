@@ -1,4 +1,3 @@
-using System.Text;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
 using BethesdaMultitool.Tests.Helpers;
@@ -7,30 +6,30 @@ using Xunit;
 namespace BethesdaMultitool.Tests.Core.Formats.Travels;
 
 /// <summary>
-///     Opt-in checks (<c>RUN_BUCKET_B=1</c>) over the seven staged Oblivion PSP betas. The pack is a
-///     fixed set of files, so the exact per-build census is legitimate to pin — and the two
-///     anomalies it records (the untagged June revision with relative offsets, and the community
-///     repack that appended an unsorted record and truncated an entry to nothing) are precisely the
-///     cases a reader written only against the four "normal" discs would get wrong.
+///     Opt-in checks (<c>RUN_BUCKET_B=1</c>) over the six staged Oblivion PSP betas. The pack is a
+///     fixed set of files, so the exact per-build census is legitimate to pin — and the anomaly it
+///     records (the untagged June revision with relative offsets) is precisely the case a reader
+///     written only against the four "normal" discs would get wrong. ⚠ The community repack that
+///     appended an unsorted record and truncated an entry to nothing was dropped from the corpus
+///     on 2026-09-08 (a fan modification, not a Bethesda build), so its row is gone from here.
 /// </summary>
 [Collection(SequentialIntegrationGroup.Name)]
 [Trait("Category", BucketBTestGuard.Category)]
 public sealed class OblivionPspArchiveRetailTests
 {
     /// <summary>
-    ///     Every staged build: its directory, its entry count and whether the pack carries the
-    ///     <c>A2.0</c> tag. The dated discs come first and the community repack last, so a test that
-    ///     wants only Bethesda's own builds can take the prefix.
+    ///     Every staged build: its date (the corpus directory is
+    ///     <c>The Elder Scrolls Travels - Oblivion (date, PSP - Prototype)</c>), its entry count and
+    ///     whether the pack carries the <c>A2.0</c> tag.
     /// </summary>
     private static readonly (string Directory, int Entries, bool Tagged)[] AllBuilds =
     [
-        ("1june 9th 2006", 64, false),
-        ("2November 21st 2006", 126, true),
-        ("3January 11th 2007", 137, true),
-        ("4January 31st 2007", 138, true),
-        ("5Feburary 1st 2007", 138, true),
-        ("6April 27th 2007", 87, true),
-        ("Modified 5Feburary 1st 2007", 139, true)
+        ("2006-6-9", 64, false),
+        ("2006-11-21", 126, true),
+        ("2007-1-11", 137, true),
+        ("2007-1-31", 138, true),
+        ("2007-2-1", 138, true),
+        ("2007-4-27", 87, true)
     ];
 
     /// <summary>Build directory, entry count, and whether the pack carries the <c>A2.0</c> tag.</summary>
@@ -48,11 +47,9 @@ public sealed class OblivionPspArchiveRetailTests
     private static string PackPath(string build)
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        var root = RealAssetPaths.Travels.OblivionPspBuildsRoot();
-        Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP betas"));
-
-        var pack = Path.Combine(root, build, @"PSP_GAME\USRDIR\GR.ARC");
-        Assert.SkipWhen(!File.Exists(pack), RealAssetPaths.SkipMessage($"Oblivion PSP build '{build}'"));
+        var root = RealAssetPaths.Travels.OblivionPspBuild(build);
+        var pack = root is null ? null : Path.Combine(root, @"PSP_GAME\USRDIR\GR.ARC");
+        Assert.SkipWhen(pack is null || !File.Exists(pack), RealAssetPaths.SkipMessage($"Oblivion PSP build '{build}'"));
         return pack;
     }
 
@@ -113,7 +110,7 @@ public sealed class OblivionPspArchiveRetailTests
         // Its data area begins at the RAW record-table end (16 + 64 x 16 = 1,040), which is not
         // 32-aligned — the reason that build could not use absolute offsets. Reading its first
         // record absolutely would put a payload on top of the header.
-        var archive = OblivionPspArchive.Parse(PackPath("1june 9th 2006"));
+        var archive = OblivionPspArchive.Parse(PackPath("2006-6-9"));
 
         Assert.False(archive.IsTagged);
         Assert.Equal(1040, archive.DataStart);
@@ -122,47 +119,6 @@ public sealed class OblivionPspArchiveRetailTests
 
         // Only this build names entries with file extensions; the later packs use bare resource names.
         Assert.Contains(archive.Entries, e => e.Name.EndsWith(".txd", StringComparison.OrdinalIgnoreCase));
-    }
-
-    [Fact]
-    public void TheModifiedDiscIsAnUnsortedRepackThatTruncatedAnEntryAndSignedItself()
-    {
-        var original = OblivionPspArchive.Parse(PackPath("5Feburary 1st 2007"));
-        var modified = OblivionPspArchive.Parse(PackPath("Modified 5Feburary 1st 2007"));
-
-        // One entry added, none removed.
-        var originalNames = original.Entries.Select(e => e.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var modifiedNames = modified.Entries.Select(e => e.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        Assert.True(originalNames.IsSubsetOf(modifiedNames));
-        Assert.Equal(originalNames.Count + 1, modifiedNames.Count);
-
-        // Hub_5_Demo is truncated to nothing — the only zero-length record in any of the seven packs.
-        Assert.Equal(1_418_856, original.Find("Hub_5_Demo")!.Size);
-        Assert.Equal(0, modified.Find("Hub_5_Demo")!.Size);
-
-        // The repacker appended its record rather than re-sorting, so this is the one pack whose
-        // table breaks the uppercase-name ordering every Bethesda build holds to.
-        Assert.True(IsUppercaseOrdered(original), "the original February disc should be name-ordered");
-        Assert.False(IsUppercaseOrdered(modified), "the repack should break the ordering");
-
-        // And it signed itself.
-        using var reader = ArchiveReader.Open(PackPath("Modified 5Feburary 1st 2007"));
-        var credits = Encoding.ASCII.GetString(reader.ReadFile("Credits")!);
-        Assert.Equal("Hack by NexTheReal", credits);
-    }
-
-    private static bool IsUppercaseOrdered(OblivionPspArchive archive)
-    {
-        var names = archive.Entries.Select(e => e.Name.ToUpperInvariant()).ToList();
-        for (var i = 1; i < names.Count; i++)
-        {
-            if (string.CompareOrdinal(names[i - 1], names[i]) > 0)
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     [Fact]

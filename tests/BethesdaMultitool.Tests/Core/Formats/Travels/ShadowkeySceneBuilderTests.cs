@@ -151,8 +151,10 @@ public class ShadowkeySceneBuilderTests
     }
 
     /// <summary>
-    ///     Z-up swaps the last two components so the file's up axis lands on Z, which is what the
-    ///     Bethesda viewer treats as up. Corner v becomes (v * 10, -v, v).
+    ///     Z-up maps (x, y, z) to (x, -z, y), the proper rotation the cut-2 placement measurement
+    ///     selected, so the file's up axis lands on Z, which is what the Bethesda viewer treats as up.
+    ///     Corner v, stored (v * 10, v, -v), becomes (v * 10, v, v). The old (x, z, y) map, a
+    ///     reflection, would give (v * 10, -v, v) (the control).
     /// </summary>
     [Fact]
     public void BuildMeshScene_ZUpAxes_MovesTheUpAxisToZ()
@@ -161,7 +163,8 @@ public class ShadowkeySceneBuilderTests
             .BuildMeshScene(Parse(), axes: ShadowkeyAxisConvention.ZUp)
             .MeshParts[0].Submesh;
 
-        Assert.Equal(new[] { 0f, 0f, 0f, 10f, -1f, 1f, 20f, -2f, 2f }, submesh.Positions);
+        Assert.Equal(new[] { 0f, 0f, 0f, 10f, 1f, 1f, 20f, 2f, 2f }, submesh.Positions);
+        Assert.NotEqual(new[] { 0f, 0f, 0f, 10f, -1f, 1f, 20f, -2f, 2f }, submesh.Positions);
     }
 
     /// <summary>

@@ -1,0 +1,325 @@
+{
+  "schema": "bmt-psp-texture-dictionary-review/v1",
+  "createdUtc": "2026-09-21T03:11:49.597813+00:00",
+  "baseCommit": "f6290ffe6da503078242b8cc7cb4ce25de739ff3",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "appliedPatchSha256": "5fc25ff30ef4ea2f9038c91ef5626fe700725662c172d3c7596494a4dba53d21",
+  "scope": "Seven newly applied dictionary/candidate source files: all eleven explicit methods/properties and five primary record declarations. No existing decoder modification, material normalization, dispatch or Shared change. Historical receipts are retained.",
+  "status": "source_review_only_compiled_validation_pending",
+  "hashConvention": {
+    "source": "SHA-256 of UTF-8 source after CRLF/CR to LF normalization; no trimming.",
+    "declaration": "Exact Tree-sitter declaration byte span; excludes preceding XML comments and trailing whitespace.",
+    "signature": "Declaration start through block/arrow-expression/accessor-list start, with trailing whitespace removed; bodyless record retains its full declaration.",
+    "body": "Exact block, arrow-expression or accessor-list byte span."
+  },
+  "variables": {
+    "B": "Encoded complete TXD root bytes, limited explicitly by caller before copy.",
+    "C": "Total actual direct chunk headers at the root and within native occurrences; fixed structural depth.",
+    "Cd": "Actual direct root child count.",
+    "Cn": "Actual direct children of one native occurrence.",
+    "Cparent": "Actual complete child headers in the selected parent.",
+    "R": "Actual native occurrences; validated equal to low16 declaration, so R <=65535.",
+    "K": "Exact-name candidate count, K <= R.",
+    "J": "Structural children matching a required type, J <= Cparent.",
+    "U": "Opaque child diagnostics, U <= Cparent.",
+    "I": "Length of caller-supplied source identity.",
+    "L": "Length of caller-supplied lookup name.",
+    "P": "Total logical texels in selected admitted authored mip levels.",
+    "M": "Selected inferred authored mip count, 1..12.",
+    "Q": "Inherited inference limit, fixed 12."
+  },
+  "files": [
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwPspTextureDictionary.cs",
+      "sourceSha256Lf": "c244931d4010455c36f847abe25f581afdcb22693e540e26e3d6829dd6ca3752",
+      "primaryRecordDeclarations": [
+        {
+          "name": "RwPspTextureDictionary",
+          "line": 11,
+          "endLine": 26,
+          "declarationSha256Lf": "6f07fc272604fcb8c3b1d6dc08b244cbcd9c0de2f32749bf10db5ad6fc36c840",
+          "signatureSha256Lf": "d6a63c0d14c27d358e1a4672d12f04baa78a5a9fc2c6e81316a7991ca3e0c319",
+          "primaryConstructorTimeBound": "O(1)",
+          "primaryConstructorSpaceBound": "O(1) reference/value-field assignment; no payload or collection copy.",
+          "review": "Compiler-synthesized equality, printing, cloning and positional accessors are not individually reviewed or used to establish source identity; complete record declaration is hashed."
+        }
+      ],
+      "callables": [
+        {
+          "name": "RwPspTextureDictionary.FindExactName",
+          "kind": "method_declaration",
+          "line": 20,
+          "endLine": 25,
+          "declarationSha256Lf": "2259b14ca6c58da9f38bd8f316da82fe9a6ab7ca516a70202f57916c18fff9c3",
+          "signatureSha256Lf": "44a5917ae924bfde81880b0d75e1f3c523e84bcfd099db4b47783d10aa77f9fa",
+          "bodySha256Lf": "5a5e92b2df8f2aa043230834fc5af2d9f8b632303480f5b07ce1c54b32eecbc8",
+          "timeBound": "O(R * min(L,64) + R); L is query length. Ordinal string comparison first checks lengths.",
+          "spaceBound": "O(K) matching-reference array and read-only wrapper; K <= R.",
+          "review": "One exact-name scan and one unresolved-name scan. Neither collapses duplicate occurrences nor searches another dictionary. Any uninterpretable source name prevents a conclusive Missing/Unique/Ambiguous result. No hash table or collision assumption."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwPspTextureDictionaryChunk.cs",
+      "sourceSha256Lf": "7dee635fa41f8da0e627ca2ab3c1b199824e4097310c6408e98949820b80d662",
+      "primaryRecordDeclarations": [
+        {
+          "name": "RwPspTextureDictionaryChunk",
+          "line": 8,
+          "endLine": 12,
+          "declarationSha256Lf": "aace66d54e1585c10686b80bda52d5dff237924a718fb7e31365c0c8a10ddcb7",
+          "signatureSha256Lf": "178f9338dec162a572164a4dd7e9ead56e01f812556f24d7efa35824bd3f5870",
+          "primaryConstructorTimeBound": "O(1)",
+          "primaryConstructorSpaceBound": "O(1) reference/value-field assignment; no payload or collection copy.",
+          "review": "Compiler-synthesized equality, printing, cloning and positional accessors are not individually reviewed or used to establish source identity; complete record declaration is hashed."
+        }
+      ],
+      "callables": [
+        {
+          "name": "RwPspTextureDictionaryChunk.Payload",
+          "kind": "property_declaration",
+          "line": 11,
+          "endLine": 11,
+          "declarationSha256Lf": "1a738366b4b95719bd02120b65a177f978bda5cbdf91a00971aa8ecbfbbd7a9a",
+          "signatureSha256Lf": "f115ebc463cd238b06421788421a05589756b5f41ed5efc8bc7d6fe4b815c613",
+          "bodySha256Lf": "bedbcf293f254d314020dd48614b6a26ae72a136db7af7c5cbde1b2779a8ddfd",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1); ReadOnlyMemory slice, no byte copy.",
+          "review": "Reader-created Bytes always includes a complete 12-byte header. Internal record construction is not a separate arbitrary-input validator."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwPspTextureDictionaryOrigin.cs",
+      "sourceSha256Lf": "d0c83b6de1b1c0365b91bc2e466a0614baf32ce51c70e9cd79226b327352b308",
+      "primaryRecordDeclarations": [
+        {
+          "name": "RwPspTextureDictionaryOrigin",
+          "line": 12,
+          "endLine": 14,
+          "declarationSha256Lf": "958a788936c84d31823b50d24666503317a8c35c725f7433b2107b6c2c883ee1",
+          "signatureSha256Lf": "958a788936c84d31823b50d24666503317a8c35c725f7433b2107b6c2c883ee1",
+          "primaryConstructorTimeBound": "O(1)",
+          "primaryConstructorSpaceBound": "O(1) reference/value-field assignment; no payload or collection copy.",
+          "review": "Compiler-synthesized equality, printing, cloning and positional accessors are not individually reviewed or used to establish source identity; complete record declaration is hashed."
+        }
+      ],
+      "callables": []
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwPspTextureDictionaryRaster.cs",
+      "sourceSha256Lf": "6f43d737bb75295c3aba206d9874476494383546515b466c6700ef3db09d706a",
+      "primaryRecordDeclarations": [
+        {
+          "name": "RwPspTextureDictionaryRaster",
+          "line": 13,
+          "endLine": 40,
+          "declarationSha256Lf": "97dd6d6cd4b373bbe2eb063da3d59ce779ec4ee4d7dab2d5e16cf5267392e5fd",
+          "signatureSha256Lf": "a06ea8a0daad1c25218a28fa790dca931b4116ce639d4607d8d618fc9dfe4e25",
+          "primaryConstructorTimeBound": "O(1)",
+          "primaryConstructorSpaceBound": "O(1) reference/value-field assignment; no payload or collection copy.",
+          "review": "Compiler-synthesized equality, printing, cloning and positional accessors are not individually reviewed or used to establish source identity; complete record declaration is hashed."
+        }
+      ],
+      "callables": [
+        {
+          "name": "RwPspTextureDictionaryRaster.TryDecode",
+          "kind": "method_declaration",
+          "line": 26,
+          "endLine": 39,
+          "declarationSha256Lf": "e9888e26f95ecad1ad359e82605c872ef01fb85ac8ece26f06c09e54326e2e66",
+          "signatureSha256Lf": "971a8c4789da69dc4e0bfcc15bbd13b00d8cf81ec39ca0ed27c4e865c67921fe",
+          "bodySha256Lf": "2743778831845173ba036dff39e5940360e6b005b791ca85a106a0cb7047fc51",
+          "timeBound": "O(1) on admission decline; O(Q^2 + P) on existing decoder invocation, Q=12 fixed.",
+          "spaceBound": "O(4*P + M) newly owned decoded pixels/levels plus decoder overhead. Retains existing encoded source; does not copy it.",
+          "review": "Negative budget throws. Existing DecodeRestriction declines before decoder. Long multiplication 8 * body length cannot overflow for an int-length memory. For supported formats total logical RGBA bytes <= this conservative bound. Decoder validates exact inferred chain and returns all authored levels; mutable arrays are fresh per call, not claimed immutable."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwPspTextureDictionaryReader.cs",
+      "sourceSha256Lf": "8f95735ceaae024d1219b59999c5db292105a6034b618ac03df89ce6c71b2dee",
+      "primaryRecordDeclarations": [],
+      "callables": [
+        {
+          "name": "RwPspTextureDictionaryReader.TryRead",
+          "kind": "method_declaration",
+          "line": 22,
+          "endLine": 48,
+          "declarationSha256Lf": "3bd34b27ccd6ed6380661afdd1935760e2ad70cbe7866322445527a4d6efb4b3",
+          "signatureSha256Lf": "3479500ad64ff51cd14a83a046f115a129eb9493878e68c8709657822908dd79",
+          "bodySha256Lf": "4bdcc7c3af57927ae24d55d4a470982264dfb2efdfea0acd7c3ad9c8257015e5",
+          "timeBound": "O(B + C) including the source copy and structural/name review; source-limit and root checks are O(1), source identity whitespace check O(I).",
+          "spaceBound": "O(B + C) total owned root and metadata; failed post-copy validation may transiently retain the bounded copy until collection.",
+          "review": "Explicit encoded-byte budget, nonnegative origin bounds, long overflow guard and exact root type/end precede ToArray. Only InvalidDataException becomes a structural decline; resource exhaustion and programming errors propagate. Source identity/provenance is supplied by caller, not independently authenticated."
+        },
+        {
+          "name": "RwPspTextureDictionaryReader.ReadOwned",
+          "kind": "method_declaration",
+          "line": 55,
+          "endLine": 79,
+          "declarationSha256Lf": "bc8e837a1e3f8c4fa064800ce1eed49b76e72e6b41764818d101aa3ac17ae062",
+          "signatureSha256Lf": "911a832d4582c4563c6f3a4cb8321ce673996b831a95d0043808f11aaf31ab1a",
+          "bodySha256Lf": "3442d755582c1efd762d8f4031242cd76af20e5b3f1fe5a26fd0c9b468790534",
+          "timeBound": "O(Cd + sum(Cn) + R*64), equivalently O(C + R) for fixed 64-byte names.",
+          "spaceBound": "O(C + R) metadata/reference collections and diagnostics, in addition to already-owned B bytes.",
+          "review": "Complete child tiling and unique required Struct/Extension are validated; Struct body must be four bytes. Actual native children are enumerated before comparing low16 count and allocating raster array. No allocation follows an untrusted declared count. Unknown outer metadata/children preserves structure but restricts every selected decode."
+        },
+        {
+          "name": "RwPspTextureDictionaryReader.ReadRaster",
+          "kind": "method_declaration",
+          "line": 89,
+          "endLine": 109,
+          "declarationSha256Lf": "22101fa099eaaeb11e20c248a52c37f4e0f9e31b1a49502bd204288eabf60de4",
+          "signatureSha256Lf": "7cd066e4a41c1689bd09546a8bcf5a9106a3ec266a370702a111319a2ac95c88",
+          "bodySha256Lf": "8b8f2b5724fd40ef6f5ae513f9cb0e7225ea3a6b6349851e0d91b95220bf5121",
+          "timeBound": "O(Cn + 64)",
+          "spaceBound": "O(Cn + 64) retained child metadata and bounded name/diagnostics; payloads are source slices.",
+          "review": "Complete native stream and unique required children precede fixed-name slicing. Header end arithmetic is bounded by owned source. Name field is retained intact; NUL-terminated Latin-1 is bijective on represented bytes. Truncated/unterminated names stay unresolved. Unknown metadata/opaque children restrict this occurrence, never remove it."
+        },
+        {
+          "name": "RwPspTextureDictionaryReader.Children",
+          "kind": "method_declaration",
+          "line": 116,
+          "endLine": 127,
+          "declarationSha256Lf": "04b17676b1876281d3c01e611847ce229538c5e4cae7d3deb0731bca0428c56f",
+          "signatureSha256Lf": "0126fada69d78626ab746e9e7fbcd4ce5e24243191d6a67563317eaaec079f6e",
+          "bodySha256Lf": "3a8eaed3abaf40887a42e84632838eeb76c538d7f3fd8fbb1a0e823ac8094d3c",
+          "timeBound": "O(Cparent)",
+          "spaceBound": "O(Cparent) chunk records and list backing storage; byte ranges are zero-copy slices.",
+          "review": "Every successful RwChunk header advances at least 12 bytes. The loop rejects any malformed tail and cannot accept a partial list. Depth is fixed at root/native; unknown/plugin contents are opaque, not recursively expanded. Inherited 0x1300 correction remains explicit follow-up."
+        },
+        {
+          "name": "RwPspTextureDictionaryReader.Single",
+          "kind": "method_declaration",
+          "line": 133,
+          "endLine": 138,
+          "declarationSha256Lf": "b45aef83d8637b5a46f18781cab48a06ed9478ad13f89dae7c5edd0138c60336",
+          "signatureSha256Lf": "5cbb3e9f0eedae87f2bfc9d3822c0701081af270380a74cedbd186cf2002c6b1",
+          "bodySha256Lf": "5c2fe2caa37ca20a45a33447c692506a2ea76772cf93f03d8ed6ff6edb4c9e9d",
+          "timeBound": "O(Cparent)",
+          "spaceBound": "O(J) matching-reference array; J <= Cparent.",
+          "review": "Requires exactly one structural child. Repeated linear passes are a fixed number per root/native and do not create quadratic traversal. Duplicate metadata does not silently elect a winner."
+        },
+        {
+          "name": "RwPspTextureDictionaryReader.InspectOpaque",
+          "kind": "method_declaration",
+          "line": 146,
+          "endLine": 159,
+          "declarationSha256Lf": "aa656db9e6fb433ab16ce850821e741eca9d23a746558170b352ef1582e5da63",
+          "signatureSha256Lf": "933da888d6690ac6a050e5863c27a1f111b96dd6ffcadec2dc42ad76d6a0ba0d",
+          "bodySha256Lf": "afc3356e195e381fff12b107724b8ad41d0f6d5c13aabe980ae47362d90511d8",
+          "timeBound": "O(Cparent)",
+          "spaceBound": "O(U) diagnostic strings; offsets/ordinals have fixed-width integer formatting and scope is internally constructed.",
+          "review": "One scan records unknown direct chunks and nonempty extensions. Root permits native children; native scope does not. A root restriction covers all its rasters; a native restriction covers only that occurrence. Opaque body bytes are retained without interpretation or allocation proportional to their claimed contents."
+        },
+        {
+          "name": "RwPspTextureDictionaryReader.Require",
+          "kind": "method_declaration",
+          "line": 164,
+          "endLine": 167,
+          "declarationSha256Lf": "7f73edc58c93d3c34ab964222ff9255e4f09dad0a8fd65ab5ffc346e1230e89b",
+          "signatureSha256Lf": "05055588285b1a7290dba40b6b19366326d31cbdb400cd473ec8c2380fe01542",
+          "bodySha256Lf": "4a7acff239be47e20b35a5235c12cee48e20d392ac08d9ca370dabe82e7c2b36",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) on success; one exception on failure.",
+          "review": "Does not swallow resource failures or arbitrary exceptions; TryRead catches only the structural InvalidDataException."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwPspTextureCandidates.cs",
+      "sourceSha256Lf": "ddec57708fb8318b4d0851137c0cf3a3bc159e302459c7c21433ebff59acbb5c",
+      "primaryRecordDeclarations": [
+        {
+          "name": "RwPspTextureCandidates",
+          "line": 7,
+          "endLine": 18,
+          "declarationSha256Lf": "b3b77df57887a11ea093699dbdfda38e3d4edd60653ca9fb7f117f45f9430d44",
+          "signatureSha256Lf": "fc84d1a1b063df787514a5d49c4fc6e4964e8c81e5701516d52f6b286b4fee57",
+          "primaryConstructorTimeBound": "O(1)",
+          "primaryConstructorSpaceBound": "O(1) reference/value-field assignment; no payload or collection copy.",
+          "review": "Compiler-synthesized equality, printing, cloning and positional accessors are not individually reviewed or used to establish source identity; complete record declaration is hashed."
+        }
+      ],
+      "callables": [
+        {
+          "name": "RwPspTextureCandidates.Status",
+          "kind": "property_declaration",
+          "line": 10,
+          "endLine": 17,
+          "declarationSha256Lf": "4645ee2396e1e479808b67f587f9927b9c38b04ccea5b0aae65b8aae03b426dd",
+          "signatureSha256Lf": "0cf45288fc30a0b4c40471cfc5d3a27af83eaa61927a86ef4f61fa4d470db52f",
+          "bodySha256Lf": "d652a58d295e59dd5bbba6e338776395adc535417902e7b28dd9f67ee3f40efd",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "IncompleteNames takes precedence over known-candidate count. Reader constructs a read-only array-backed occurrence collection, whose Count is constant-time. Unique does not assert pixel/material support."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwPspTextureCandidateStatus.cs",
+      "sourceSha256Lf": "0ed2cc1166aa0f3c80c6e4f0137cc7a028d4e6754f827d12dc509bb07245c89b",
+      "primaryRecordDeclarations": [],
+      "callables": []
+    }
+  ],
+  "resourceBounds": {
+    "structuralInput": "One bounded owned root copy; explicit source limit and root/occurrence checks happen first. Origin strings are retained references, not copied. The reader does not perform archive I/O.",
+    "counts": "Lists and arrays grow from complete actual child headers. Native allocation occurs only after comparing actual occurrences against the 16-bit declared count. At least 12 encoded bytes back every traversed chunk record; nesting depth is fixed, with no recursive opaque-plugin expansion.",
+    "pixelAdmission": "Selected decoding only. Before allocation, 8 * Struct body length (long arithmetic) must fit caller maxDecodedBytes. For inherited supported formats, 4*P <= 8*encoded body bytes. The decoder also retains its 4096 dimension and 12-level limits.",
+    "memoryMeaning": "The RGBA limit is deliberately conservative and bounds decoded pixels, not total managed process memory, temporary list capacities, source copy or collection/diagnostic overhead.",
+    "cancellation": "No reader or selected decoder cancellation parameter is introduced. Operations are synchronous under explicit caller byte budgets; future source adapters must own lifetime/cancellation around them.",
+    "dictionaryHashing": "No hash-based dictionary is used in this slice; exact candidate and structural searches are linear. No average-case collision assumption is required."
+  },
+  "behaviorReview": [
+    "Complete structural failure declines the selected dictionary; no truncated success is returned. Unsupported semantic layouts retain exact source bytes and occurrence identity.",
+    "Unknown observed library/upper-word combinations or opaque dictionary children restrict all selected decoding in that root. Corresponding native restrictions apply only to the occurrence.",
+    "Exact Latin-1 names, case and duplicate ordinals survive. Incomplete names preserve known matches without a false Missing/Unique outcome. No cross-dictionary fallback or first/last election exists.",
+    "Caller source/opening identity and entry/resource location remain caller authority. The reader validates arithmetic containment but does not authenticate provenance against VFS or infer dependency semantics.",
+    "Fresh selected decode returns every admitted authored mip. Existing pixel arrays remain mutable; source-buffer independence is not deep immutability.",
+    "No sampler, alpha/culling, lighting, coordinate policy, material binding, normalized scene, export or viewer route is supplied."
+  ],
+  "verification": {
+    "method": "Read-only source/API and independent artifact review, Tree-sitter callable extraction/hashing, bounded original-byte fixture review. No .NET build/test or rendering was executed by this reviewer for this slice. Root coordinated compilation was running when the receipt was written.",
+    "sourceFileCount": 7,
+    "explicitCallableCount": 11,
+    "primaryRecordDeclarationCount": 5,
+    "selectedCallableParseErrors": [],
+    "syntheticTestSource": "tests/BethesdaMultitool.Tests/Core/Formats/RenderWare/RwPspTextureDictionaryTests.cs",
+    "syntheticCasesPrepared": 18,
+    "retailTestSource": "tests/BethesdaMultitool.Tests/Core/Formats/RenderWare/RwPspTextureMipRetailTests.cs",
+    "existingRetailCasesExtended": 1,
+    "expectedFocusedCasesWhenFixtureAvailable": 19,
+    "retailOracle": "Existing bounded original 2007-1-11 Hub_1 entry ordinal87, archive offset98032192, length1989324. Dictionary resource0 at entry584, length456408, 64 native occurrences, word0x00090040. ob_Rock2 ordinal21; native/Struct headers relative124652/124664. Existing eight independent RGBA hashes and raw identities are reused through selected decoding and source overwrite; no new private payload copy.",
+    "artifactIndependentReview": "Exact frozen patch5fc25ff3 independently checked for applicability, source/API correctness, origin bounds, complete child tiling, unknown semantics and candidate completeness. No compiled acceptance claimed."
+  },
+  "limits": [
+    "This source-hashed review is not performance measurement, whole-pack decoding acceptance, a Windows/portable execution receipt or release acceptance.",
+    "Synthetic and one original-raster checks do not establish PSP normalized material/render/export fidelity.",
+    "Source-copy ownership and ReadOnlyMemory exposure do not promise adversarial deep immutability of internal .NET records or decoded byte arrays."
+  ],
+  "followUps": [
+    {
+      "topic": "Inherited RwChunk 0x1300 size correction",
+      "detail": "Existing helper adjusts sizes and can clamp an undersized declaration. This new reader deliberately reuses it; raw headers retain the original size word. A stricter format policy requires separately reviewed source evidence, not a silent change here."
+    },
+    {
+      "topic": "Inherited mip inference",
+      "detail": "The existing 12-level inference limit declines a full 4096-to-1 thirteen-level square chain, and encoded-length inference does not by itself prove every repeated 1x1 level was authored. This slice retains existing decoder admission."
+    },
+    {
+      "topic": "Material/source adapter prerequisites",
+      "detail": "Prove selected source lifetime, dependency scope, coordinate convention and PSP sampler/alpha/culling/lighting semantics before material normalization or production dispatch. Names, upper word9 and observed raw0x11102 do not supply these semantics."
+    }
+  ],
+  "rootExecutionEvidence": {
+    "receipt": "docs/validation/shadowkey-native-preview-20260920.md",
+    "publishReceipt": "docs/validation/publish-20260920.md",
+    "portableTests": "152 Windows and 152 Ubuntu WSL, zero skips; Linux executes Windows-built portable assemblies. Two Windows accessibility cases pass.",
+    "windowsPublish": "Corrected publish passed, 580.279 seconds, three inherited WIN2D0001 warnings, zero application analyzer diagnostics. Seven source/PDB audits and unchanged 36-input freeze.",
+    "nativeExecution": "Earlier native fern opaque/keyed and arrow captures passed. Two actual published fern captures match accepted PNG/RGBA exactly; two repeat refusals, animated decline and explicit CLI help pass.",
+    "remaining": "Interactive GUI, native cancellation/cleanup-failure injection, Linux source build/publish, readable Shared notice sidecars and complete release acceptance remain open.",
+    "boundary": "Historical source-review status/claims above describe the reviewer at creation; this root execution evidence records later checks. Exact source and binary boundaries remain in the linked receipts."
+  }
+}

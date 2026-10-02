@@ -48,14 +48,14 @@ internal sealed class FlicFile
         string name,
         int width,
         int height,
-        double secondsPerFrame,
+        uint millisecondsPerFrame,
         int declaredFrameCount,
         IReadOnlyList<FlicFrame> frames)
     {
         Name = name;
         Width = width;
         Height = height;
-        SecondsPerFrame = secondsPerFrame;
+        MillisecondsPerFrame = millisecondsPerFrame;
         DeclaredFrameCount = declaredFrameCount;
         Frames = frames;
     }
@@ -76,7 +76,10 @@ internal sealed class FlicFile
     public int Height { get; }
 
     /// <summary>Frame duration, from the header's millisecond delay.</summary>
-    public double SecondsPerFrame { get; }
+    public double SecondsPerFrame => MillisecondsPerFrame / 1000.0;
+
+    /// <summary>The original unsigned millisecond delay, without floating-point conversion.</summary>
+    public uint MillisecondsPerFrame { get; }
 
     /// <summary>Decoded frames, each already paired with the palette in force when it was drawn.</summary>
     public IReadOnlyList<FlicFrame> Frames { get; }
@@ -97,8 +100,31 @@ internal sealed class FlicFile
     }
 
     /// <summary>Decodes every frame of a FLIC.</summary>
-    public static FlicFile Parse(ReadOnlySpan<byte> bytes, string name)
+    public static FlicFile Parse(ReadOnlySpan<byte> bytes, string name) => ParseCore(bytes, name, null, default);
+
+    /// <summary>Decodes only the explicitly supported media profile within preallocation limits.</summary>
+    /// <param name="bytes">Borrowed encoded bytes, stable until this synchronous call returns.</param>
+    /// <param name="name">Source label used in diagnostics.</param>
+    /// <param name="limits">Encoded, canvas, actual frame-block and decoded allocation admission limits.</param>
+    /// <param name="cancellationToken">Cancels frame, chunk, row and packet work before return.</param>
+    /// <returns>Detached indexed frames; no encoded input is retained.</returns>
+    internal static FlicFile ParseBounded(ReadOnlySpan<byte> bytes, string name, FlicDecodeLimits limits,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(limits);
+        limits.Validate();
+        return ParseCore(bytes, name, limits, cancellationToken);
+    }
+
+    /// <summary>Shares the existing codec while optional admission checks protect the new media adapter.</summary>
+    private static FlicFile ParseCore(ReadOnlySpan<byte> bytes, string name, FlicDecodeLimits? limits,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (limits is not null && bytes.Length > limits.MaximumEncodedBytes)
+        {
+            throw new NotSupportedException($"'{name}' exceeds its encoded FLC byte limit.");
+        }
         if (bytes.Length < HeaderLength)
         {
             throw new InvalidDataException($"'{name}' is too small to be a FLIC ({bytes.Length} bytes).");
@@ -134,6 +160,26 @@ internal sealed class FlicFile
             throw new NotSupportedException($"'{name}' is {depth}-bit; FLIC picture data is 8-bit indexed.");
         }
 
+        long admittedBytes = 0;
+        if (limits is not null)
+        {
+            if (speed == 0)
+            {
+                throw new NotSupportedException($"'{name}' has no positive FLC millisecond delay.");
+            }
+            if (declaredFrames == 0 || declaredFrames >= limits.MaximumFrameBlocks ||
+                (long)width * height > limits.MaximumCanvasPixels)
+            {
+                throw new NotSupportedException($"'{name}' exceeds its FLC frame or canvas limit.");
+            }
+            if (BinaryPrimitives.ReadUInt32LittleEndian(bytes) != bytes.Length)
+            {
+                throw new InvalidDataException($"'{name}' has a mismatched FLC encoded length.");
+            }
+            // Reserve the working index canvas and the adapter's one RGBA conversion buffer.
+            AdmitBytes(ref admittedBytes, (long)width * height * 5, limits, name);
+        }
+
         // The running frame: whole-frame chunks replace it, delta chunks patch it in place.
         var canvas = new byte[width * height];
         var frames = new List<FlicFrame>();
@@ -142,11 +188,12 @@ internal sealed class FlicFile
         var offset = HeaderLength;
         while (offset + FrameHeaderLength <= bytes.Length)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var frameSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[offset..]);
             var frameType = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 4)..]);
             var chunkCount = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(offset + 6)..]);
 
-            if (frameSize < FrameHeaderLength || offset + frameSize > bytes.Length)
+            if (frameSize < FrameHeaderLength || frameSize > bytes.Length - offset)
             {
                 throw new InvalidDataException(
                     $"'{name}' has a frame at {offset} claiming {frameSize} bytes, which does not fit the file.");
@@ -156,9 +203,22 @@ internal sealed class FlicFile
             {
                 case FrameTypeChunk:
                 {
+                    if (limits is not null)
+                    {
+                        if (frames.Count >= limits.MaximumFrameBlocks)
+                        {
+                            throw new NotSupportedException($"'{name}' exceeds its actual FLC frame-block limit.");
+                        }
+                        if (BinaryPrimitives.ReadUInt64LittleEndian(bytes[(offset + 8)..]) != 0)
+                        {
+                            throw new NotSupportedException($"'{name}' uses unsupported frame-header extension metadata.");
+                        }
+                        AdmitBytes(ref admittedBytes, canvas.Length, limits, name);
+                    }
                     var chunkOffset = offset + FrameHeaderLength;
                     for (var i = 0; i < chunkCount; i++)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         if (chunkOffset + ChunkHeaderLength > offset + frameSize)
                         {
                             throw new InvalidDataException($"'{name}' has a frame whose chunks overrun it.");
@@ -166,7 +226,8 @@ internal sealed class FlicFile
 
                         var chunkSize = (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes[chunkOffset..]);
                         var chunkType = BinaryPrimitives.ReadUInt16LittleEndian(bytes[(chunkOffset + 4)..]);
-                        if (chunkSize < ChunkHeaderLength || chunkOffset + chunkSize > bytes.Length)
+                        if (chunkSize < ChunkHeaderLength || chunkSize > bytes.Length - chunkOffset ||
+                            (limits is not null && chunkSize > offset + frameSize - chunkOffset))
                         {
                             throw new InvalidDataException(
                                 $"'{name}' has a chunk of type {chunkType} claiming {chunkSize} bytes, past end of file.");
@@ -176,13 +237,25 @@ internal sealed class FlicFile
                         switch (chunkType)
                         {
                             case ChunkColor256:
-                                palette = ReadPalette(data, name);
+                                if (limits is not null)
+                                {
+                                    AdmitBytes(ref admittedBytes, Palette.EntryCount * 4, limits, name);
+                                }
+                                palette = ReadPalette(data, name, limits is not null);
                                 break;
                             case ChunkByteRun:
-                                DecodeFullFrame(data, canvas, width, height, name);
+                                DecodeFullFrame(data, canvas, width, height, name, limits is not null, cancellationToken);
                                 break;
                             case ChunkDeltaFlc:
-                                DecodeDeltaFrame(data, canvas, width, height, name);
+                                DecodeDeltaFrame(data, canvas, width, height, name, limits is not null, cancellationToken);
+                                break;
+                            case 18: // Known non-display postage-stamp thumbnail, not a picture update.
+                                break;
+                            default:
+                                if (limits is not null)
+                                {
+                                    throw new NotSupportedException($"'{name}' has unsupported FLC picture chunk {chunkType}.");
+                                }
                                 break;
                         }
 
@@ -208,6 +281,12 @@ internal sealed class FlicFile
             offset += frameSize;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+        if (limits is not null && (offset != bytes.Length || frames.Count != declaredFrames + 1))
+        {
+            throw new InvalidDataException($"'{name}' needs its declared display blocks and one loop-back block.");
+        }
+
         if (frames.Count == 0)
         {
             throw new InvalidDataException($"'{name}' contains no picture chunks.");
@@ -219,10 +298,26 @@ internal sealed class FlicFile
         // block count is exactly header + 1 every time.
         if (frames.Count > 1)
         {
+            if (limits is not null &&
+                (!frames[0].Image.Indices.AsSpan().SequenceEqual(frames[^1].Image.Indices) ||
+                 !frames[0].Palette.Rgba.SequenceEqual(frames[^1].Palette.Rgba)))
+            {
+                throw new NotSupportedException($"'{name}' has no verified palette-and-index loop-back block.");
+            }
             frames.RemoveAt(frames.Count - 1);
         }
 
-        return new FlicFile(name, width, height, speed / 1000.0, declaredFrames, frames);
+        return new FlicFile(name, width, height, speed, declaredFrames, frames);
+    }
+
+    /// <summary>Charges actual allocations, including discarded ring frames and superseded palettes, before allocation.</summary>
+    private static void AdmitBytes(ref long admittedBytes, long bytes, FlicDecodeLimits limits, string name)
+    {
+        if (bytes > limits.MaximumDecodedBytes - admittedBytes)
+        {
+            throw new NotSupportedException($"'{name}' exceeds its decoded FLC allocation limit.");
+        }
+        admittedBytes += bytes;
     }
 
     private static FlicFrame NewFrame(byte[] canvas, int width, int height, Palette? palette, string name)
@@ -239,7 +334,7 @@ internal sealed class FlicFile
     ///     A COLOR_256 chunk: a packet count (always 1 here), then a skip count and colour count
     ///     that both go unused, then 256 full-range RGB triplets.
     /// </summary>
-    private static Palette ReadPalette(ReadOnlySpan<byte> data, string name)
+    private static Palette ReadPalette(ReadOnlySpan<byte> data, string name, bool strict)
     {
         const int packetHeader = 4;
         if (data.Length < packetHeader + Palette.RgbByteCount)
@@ -248,7 +343,7 @@ internal sealed class FlicFile
         }
 
         var packetCount = BinaryPrimitives.ReadUInt16LittleEndian(data);
-        if (packetCount != 1)
+        if (packetCount != 1 || (strict && (data[2] != 0 || data[3] != 0)))
         {
             throw new NotSupportedException(
                 $"'{name}' has a palette chunk with {packetCount} packets; only whole-palette updates are supported.");
@@ -268,11 +363,14 @@ internal sealed class FlicFile
         byte[] canvas,
         int width,
         int height,
-        string name)
+        string name,
+        bool strict,
+        CancellationToken cancellationToken)
     {
         var offset = 0;
         for (var row = 0; row < height; row++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (offset >= data.Length)
             {
                 throw new InvalidDataException($"'{name}' has a whole-frame chunk that ends at row {row}.");
@@ -284,12 +382,17 @@ internal sealed class FlicFile
             var column = 0;
             while (column < width)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (offset >= data.Length)
                 {
                     throw new InvalidDataException($"'{name}' has a whole-frame chunk that ends mid-row.");
                 }
 
                 var type = (sbyte)data[offset];
+                if (strict && Math.Abs((int)type) > width - column)
+                {
+                    throw new InvalidDataException($"'{name}' has a byte-run packet outside its row.");
+                }
                 if (type > 0)
                 {
                     if (offset + 2 > data.Length)
@@ -336,7 +439,9 @@ internal sealed class FlicFile
         byte[] canvas,
         int width,
         int height,
-        string name)
+        string name,
+        bool strict,
+        CancellationToken cancellationToken)
     {
         if (data.Length < 2)
         {
@@ -349,9 +454,17 @@ internal sealed class FlicFile
 
         for (var line = 0; line < lineCount; line++, y++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var packetCount = 0;
+            var hasPacketCount = false;
+            var lastPixelReachedEnd = false;
+            if (strict && (uint)y >= (uint)height)
+            {
+                throw new InvalidDataException($"'{name}' starts a delta row outside its canvas.");
+            }
             while (offset + 2 <= data.Length)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var packet = BinaryPrimitives.ReadInt16LittleEndian(data[offset..]);
                 offset += 2;
 
@@ -360,18 +473,32 @@ internal sealed class FlicFile
 
                 if (!bit15)
                 {
+                    if (strict && bit14)
+                    {
+                        throw new NotSupportedException($"'{name}' uses an unsupported delta control word.");
+                    }
                     packetCount = packet;
+                    hasPacketCount = true;
                     break;
                 }
 
                 if (bit14)
                 {
                     // Both high bits set: a negative row skip.
+                    if (strict && -packet >= height - y)
+                    {
+                        throw new InvalidDataException($"'{name}' has a delta row skip outside its canvas.");
+                    }
                     y += -packet;
                 }
                 else
                 {
                     // Bit 15 alone: the low byte is the row's final pixel.
+                    if (strict && (uint)y >= (uint)height)
+                    {
+                        throw new InvalidDataException($"'{name}' has a delta last-pixel write outside its canvas.");
+                    }
+                    lastPixelReachedEnd = y == height - 1;
                     if ((uint)y < (uint)height)
                     {
                         canvas[y * width + width - 1] = (byte)(packet & 0xFF);
@@ -381,9 +508,15 @@ internal sealed class FlicFile
                 }
             }
 
+            if (strict && (!hasPacketCount ||
+                ((uint)y >= (uint)height && !(y == height && packetCount == 0 && lastPixelReachedEnd))))
+            {
+                throw new InvalidDataException($"'{name}' has an incomplete or out-of-canvas delta row.");
+            }
             var x = 0;
             for (var i = 0; i < packetCount; i++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (offset + 2 > data.Length)
                 {
                     throw new InvalidDataException($"'{name}' has a truncated delta packet.");
@@ -392,6 +525,10 @@ internal sealed class FlicFile
                 x += data[offset];
                 var count = (sbyte)data[offset + 1];
                 offset += 2;
+                if (strict && (count == 0 || Math.Abs((int)count) * 2 > width - x))
+                {
+                    throw new InvalidDataException($"'{name}' has a delta packet outside its row or with zero length.");
+                }
 
                 if (count > 0)
                 {

@@ -580,7 +580,9 @@ public sealed class BsaExtractor : IDisposable
     public async Task<BsaExtractResult> ExtractFileToDiskAsync(BsaFileRecord file, string outputDir,
         bool overwrite = false)
     {
-        var outputPath = Path.Combine(outputDir, file.FullPath);
+        // The record's virtual path is backslash-spelled; re-spell it for the host, or a Unix
+        // extraction writes one file literally named "meshes\x.nif" in the output directory.
+        var outputPath = HostPath.Combine(outputDir, file.FullPath);
         var outputDirectory = Path.GetDirectoryName(outputPath)!;
         var extension = Path.GetExtension(file.Name ?? "").ToLowerInvariant();
         var wasCompressed = _defaultCompressed != file.CompressionToggle;
@@ -711,7 +713,7 @@ public sealed class BsaExtractor : IDisposable
         }
 
         // Conversion failed - save as original
-        var originalPath = Path.Combine(outputDir, file.FullPath);
+        var originalPath = HostPath.Combine(outputDir, file.FullPath);
         await File.WriteAllBytesAsync(originalPath, data);
         return new BsaExtractResult
         {

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Daggerfall;
 
@@ -50,12 +51,14 @@ internal sealed class DaggerfallQuestFile
         ArgumentNullException.ThrowIfNull(dataRoot);
         ArgumentNullException.ThrowIfNull(name);
 
-        var textPath = Path.Combine(dataRoot, name + ".QRC");
-        var compiledPath = Path.Combine(dataRoot, name + ".QBN");
+        // Retail names mix case (a lower-case .qbn beside an upper-case .QRC); resolve them as the game does,
+        // ignoring case on a case-sensitive host. A directory cannot match: both names carry an extension.
+        var textPath = HostPath.TryResolveExisting(dataRoot, name + ".QRC");
+        var compiledPath = HostPath.TryResolveExisting(dataRoot, name + ".QBN");
         return Create(
             name,
-            File.Exists(textPath) ? File.ReadAllBytes(textPath) : null,
-            File.Exists(compiledPath) ? File.ReadAllBytes(compiledPath) : null);
+            textPath is not null && File.Exists(textPath) ? File.ReadAllBytes(textPath) : null,
+            compiledPath is not null && File.Exists(compiledPath) ? File.ReadAllBytes(compiledPath) : null);
     }
 
     /// <summary>Builds a quest from the bytes of its two halves (either may be absent).</summary>

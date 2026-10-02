@@ -1,4 +1,4 @@
-// Ported from AweMultitool (slfx77), MIT, https://github.com/slfx77/JimmyPCTool
+// Ported from AweMultitool (slfx77)
 // (src/AweMultitool/Core/Formats/Granny/Gr2Oodle0Decoder.cs), adapted to this repository's house style.
 // The upstream notice below is reproduced verbatim from that file.
 

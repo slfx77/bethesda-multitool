@@ -43,11 +43,148 @@ public static class GameProfiles
     private const float StandardExteriorCellWorldSize = 4096f;
 
     /// <summary>
-    ///     The Gamebryo/Creation world unit: 1 unit = 1.42875 cm, so ~70 units span a metre. Every
-    ///     human-scale camera constant in this codebase was authored against it (a 112-unit eye is a
-    ///     1.6 m human).
+    ///     The viewer's Gamebryo/Creation camera convention, 70 units per meter: the ONE place that
+    ///     number lives. <see cref="GameProfile.ViewerUnitsPerMeter" /> defaults to it and
+    ///     <see cref="HumanScaleFactor" /> divides by it, so every human-scale camera constant (a
+    ///     112-unit eye is a 1.6 m human) stays a bit-exact no-op. It is a convention, not the measured
+    ///     unit: the executables define 128 units = 6 feet (RE-1, docs/world_scale_units_re1.md), which
+    ///     <see cref="GameProfile.Units" /> carries per game with provenance. The older doc figure
+    ///     "1 unit = 1.42875 cm" is 0.9144 / 64, the same chain.
     /// </summary>
-    private const float ClassicWorldUnitsPerMetre = 70f;
+    private const float ClassicWorldUnitsPerMeter = 70f;
+
+    /// <summary>
+    ///     Game units per meter read from the FNV and Skyrim executables (RE-1): the engine computes
+    ///     <c>bhkConvert::fHk2BSScaleSC = (128 / 6) x 3.2808399 / fHkScaleSC</c>, i.e. 128 units to
+    ///     6 feet, which is 69.99125 units per meter (0.0142875 m per unit, exactly 1.8288 m / 128).
+    /// </summary>
+    private const double FnvSkyrimUnitsPerMeter = 69.99125;
+
+    /// <summary>
+    ///     Game units per meter read from the FO3 and Oblivion executables (RE-1): the same chain with a
+    ///     four-digit feet-per-meter literal, <c>(128 / 6) x 3.2808 / 10 = 6.99904</c> units per Havok
+    ///     unit at 10 Havok units per meter, i.e. 69.9904 units per meter (0.0012% above FNV's).
+    /// </summary>
+    private const double Fo3OblivionUnitsPerMeter = 69.9904;
+
+    // The unit values are declared BEFORE UnknownProfile and Registry on purpose:
+    // C# runs static field initializers in textual order and both of those initializers read them.
+    // Moving either field below the registry would hand every profile a null Units and the first
+    // Units read would throw.
+
+    /// <summary>
+    ///     The Gamebryo convention as an assumption, for the profiles no executable read covers:
+    ///     Morrowind (no Havok; the community's 1/70 convention) and the neutral Unknown profile.
+    /// </summary>
+    private static readonly WorldUnitScale GamebryoConventionUnits = new(
+        1.0 / ClassicWorldUnitsPerMeter,
+        UnitProvenance.Assumed,
+        "Gamebryo 70 units per meter, the convention the viewer's camera constants were authored against; " +
+        "not read from this game's executable. The Havok-era games measure 69.99125 or 69.9904 " +
+        "(docs/world_scale_units_re1.md); Morrowind has no Havok and no read yet (RE-1)");
+
+    /// <summary>
+    ///     Fallout: New Vegas, read from code (RE-1 §3-4): <c>bhkConvert::fHk2BSScaleSC</c> is
+    ///     initialized as 69.99125 / <c>fHkScaleSC</c> (10.0) and the world gravity as -9.81 x 10, so
+    ///     one unit is 1 / 69.99125 m. Identical on the PC 1.4.0.525 executable, its runtime image and
+    ///     the X360 MemDebug build (PDB-named statics).
+    /// </summary>
+    private static readonly WorldUnitScale FalloutNewVegasUnits = new(
+        1.0 / FnvSkyrimUnitsPerMeter,
+        UnitProvenance.ReverseEngineered,
+        "Read from FalloutNV.exe 1.4.0.525 (sha256 3a87f92f011e5dc9...) and its runtime image (e46b43cdaa32d9b7...): " +
+        "initializer 0x00F35270 stores fHk2BSScaleSC = 69.99125671 (double at 0x010120E8) / fHkScaleSC 10.0 " +
+        "(0x01012050) = 6.9991255 units per Havok unit, fGravitySC = -9.81 x 10 (initializer 0x00F352B0); " +
+        "X360 MemDebug (ff2188b9dc168d49...) fHk2BSScaleSC 6.999125 (0x40DFF8D5 at 0x83220678), fHkScaleSC 10.0 " +
+        "(0x820D01E0), gravity (0, 0, -98.1) in TESObjectCELL::CreateWorld 0x823943E0. 128 units = 6 feet " +
+        "(docs/world_scale_units_re1.md)");
+
+    /// <summary>
+    ///     Fallout 3, read from data with code references (RE-1 §6): the folded literals 6.99904 units
+    ///     per Havok unit and its reciprocal 0.1428767, gravity (0, 0, -98.1) = -9.81 x 10; the Havok
+    ///     units-per-meter of 10 is inferred from that product.
+    /// </summary>
+    private static readonly WorldUnitScale Fallout3Units = new(
+        1.0 / Fo3OblivionUnitsPerMeter,
+        UnitProvenance.ReverseEngineered,
+        "Read from Fallout3.exe 1.7.0.4 (sha256 c3f97c2255fa041a...): fHk2BSScaleSC 6.99904 (0x40DFF823 at " +
+        "0x00F5174C, 169 code references), fBS2HkScaleSC 0.1428767 (0x3E124E47 at 0x00F410F0, 232 references), " +
+        "gravity vec4 (0, 0, -98.1, 0) at 0x00F75740 loaded by CreateWorld 0x00742703; Havok units per meter 10 " +
+        "inferred from -98.1 = -9.81 x 10. 128 units = 6 feet with a four-digit 3.2808 ft/m " +
+        "(docs/world_scale_units_re1.md)");
+
+    /// <summary>
+    ///     Oblivion, read from data with code references (RE-1 §5): the same 6.99904 / 0.1428767 pair
+    ///     as Fallout 3. Its world gravity is -73.575 = 0.75 x 9.81 x 10 Havok units/s^2, so either
+    ///     Oblivion runs at 0.75 g on this chain or, under Earth gravity, at 52.5 units per meter; the
+    ///     executable cannot discriminate and the chain (the engine's unit definition) is used, with the
+    ///     0.75 g reading recorded. A data oracle (race height, the skeleton capsule) settles it.
+    /// </summary>
+    private static readonly WorldUnitScale OblivionUnits = new(
+        1.0 / Fo3OblivionUnitsPerMeter,
+        UnitProvenance.ReverseEngineered,
+        "Read from Oblivion.exe 1.2.0416 (sha256 a8f313845c1545e9...): fHk2BSScaleSC 6.99904 (double at 0x00A372E0, " +
+        "27 references; HK2NI-shaped 0x0043F3E0), fBS2HkScaleSC 0.1428767 (0x00A39088, 88 references), gravity " +
+        "(0, 0, -73.575, 0) from 0x00A46B20 in CreateWorld = 0.75 x 98.1: the chain value is used and the " +
+        "0.75 g versus 52.5-units-per-meter ambiguity stays open until a data oracle settles it " +
+        "(docs/world_scale_units_re1.md)");
+
+    /// <summary>
+    ///     Skyrim LE and SE, read from code (RE-1 §7): LE's initializer computes 128 / 6 x 3.2808399 /
+    ///     <c>fHkScaleSC</c> (1.0) = 69.99125 (named through TESV.map) and gravity -9.81 x 1.0; SE carries
+    ///     the folded literals 69.99125 and 0.0142875 with code references.
+    /// </summary>
+    private static readonly WorldUnitScale SkyrimUnits = new(
+        1.0 / FnvSkyrimUnitsPerMeter,
+        UnitProvenance.ReverseEngineered,
+        "Read from TESV.exe 1.1.21.0 (sha256 311e71737b597ddc...) with TESV.map: ??__EfHk2BSScaleSC@bhkConvert " +
+        "0x0118FB20 computes 128 / 6 x 3.2808399 / fHkScaleSC 1.0 = 69.99125, fGravitySC = -9.81 x 1.0 " +
+        "(0x0118FB70); SkyrimSE.exe 1.7.104.0 (846efccf0c1374d7...) literals 69.99125 (0x428BFB85 at 0x1417F423C, " +
+        "118 references) and 0.0142875 (0x3C6A161E at 0x1417FDE5C), gravity (0, 0, -9.81, 0) at 0x141A7D480 " +
+        "(docs/world_scale_units_re1.md)");
+
+    /// <summary>
+    ///     Fallout 4 and 76 share Skyrim SE's Creation Engine chain by assumption: not read yet
+    ///     (Fallout4.exe and Fallout4.pdb are in Sample/DebugSymbols for the RE-1 follow-up).
+    /// </summary>
+    private static readonly WorldUnitScale CreationAssumedUnits = new(
+        1.0 / FnvSkyrimUnitsPerMeter,
+        UnitProvenance.Assumed,
+        "Same 128-units-per-6-feet chain as Skyrim SE (69.99125 units per meter) by engine lineage; not read " +
+        "from this game's executable yet (Fallout4.exe + Fallout4.pdb in Sample/DebugSymbols; RE-1 follow-up)");
+
+    /// <summary>
+    ///     Starfield's metric unit with its provenance (design §4.1 row 2). Assumed: measured from
+    ///     retail mesh bounds, not read from the executable (RE-1 covered the Havok-era executables
+    ///     and did not open Starfield's).
+    /// </summary>
+    private static readonly WorldUnitScale StarfieldUnits = new(
+        1.0,
+        UnitProvenance.Assumed,
+        "Creation Engine 2 is metric: retail mesh bounds put ChairPlastic01 at 1.02 tall, ChairUtilityB01 " +
+        "at 0.98, GenIntRmSmWallMid_DoorA00 at 2.84 and the InvisibleDoor01 marker at 2.41 x 1.60, which " +
+        "are meters; not derivable from the 100-unit cell (the cell moved 40.96x where the unit moved " +
+        "70x); executable read pending (RE-1)");
+
+    /// <summary>
+    ///     The unit a classic (pre-plugin-era) profile carries. It is the viewer's assumption, stated
+    ///     as one: the 3D level pane applies its classic-unit camera constants to the format's native
+    ///     units unchanged, so <see cref="HumanScaleFactor" /> must stay exactly 1 for these games
+    ///     (pinned by the GameProfiles tests). Where the format has its own meters-per-unit it is a
+    ///     design §4.1 row and belongs to the per-format registry the design schedules from cut 1c
+    ///     (§9 row 14); <paramref name="nativeUnit" /> names that row, its cut and its RE item, or
+    ///     says the title is 2D and has none.
+    /// </summary>
+    private static WorldUnitScale ClassicViewerUnits(string nativeUnit)
+    {
+        return new WorldUnitScale(
+            1.0 / ClassicWorldUnitsPerMeter,
+            UnitProvenance.Assumed,
+            "Not a measurement of this game: the profile keeps the classic viewer unit so HumanScaleFactor " +
+            "stays exactly 1 (the 3D level pane, where this game has one, applies its classic-unit camera " +
+            "constants to native units unchanged); the format's own unit, where it has one, belongs to the " +
+            "per-format registry the design schedules from cut 1c. " + nativeUnit);
+    }
 
     private static readonly GameProfile UnknownProfile = new()
     {
@@ -57,7 +194,8 @@ public static class GameProfiles
         GroupHeaderSize = 24,
         HasRecordVersionTrailer = true,
         DefaultLandscapeDiffuse = FalloutDiffuse,
-        DefaultLandscapeNormal = FalloutNormal
+        DefaultLandscapeNormal = FalloutNormal,
+        Units = GamebryoConventionUnits
     };
 
     private static readonly IReadOnlyDictionary<BethesdaGame, GameProfile> Registry =
@@ -72,7 +210,8 @@ public static class GameProfiles
                 HasRecordVersionTrailer = false,
                 MasterFileHints = ["Morrowind"],
                 DefaultLandscapeDiffuse = MorrowindDiffuse,
-                DefaultLandscapeNormal = string.Empty
+                DefaultLandscapeNormal = string.Empty,
+                Units = GamebryoConventionUnits
             },
             [BethesdaGame.Oblivion] = new()
             {
@@ -96,7 +235,8 @@ public static class GameProfiles
                 UsesLegacyCloudSpeedEncoding = true,
                 UsesEngineImagespaceDefaults = true,
                 DefaultLandscapeDiffuse = OblivionDiffuse,
-                DefaultLandscapeNormal = OblivionNormal
+                DefaultLandscapeNormal = OblivionNormal,
+                Units = OblivionUnits
             },
             [BethesdaGame.Fallout3] = new()
             {
@@ -116,7 +256,8 @@ public static class GameProfiles
                 UsesClassicHdrImagespace = true,
                 ImageSpaceSkinDimmerFormVersion = 14,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
-                DefaultLandscapeNormal = FalloutNormal
+                DefaultLandscapeNormal = FalloutNormal,
+                Units = Fallout3Units
             },
             [BethesdaGame.FalloutNewVegas] = new()
             {
@@ -136,7 +277,8 @@ public static class GameProfiles
                 UsesClassicHdrImagespace = true,
                 ImageSpaceSkinDimmerFormVersion = 14,
                 DefaultLandscapeDiffuse = FalloutDiffuse,
-                DefaultLandscapeNormal = FalloutNormal
+                DefaultLandscapeNormal = FalloutNormal,
+                Units = FalloutNewVegasUnits
             },
             [BethesdaGame.Skyrim] = new()
             {
@@ -154,7 +296,8 @@ public static class GameProfiles
                 ImageSpaceFamily = ImageSpaceModernFamily.Skyrim,
                 HasVerifiedModernWatrLayout = true,
                 DefaultLandscapeDiffuse = SkyrimDiffuse,
-                DefaultLandscapeNormal = SkyrimNormal
+                DefaultLandscapeNormal = SkyrimNormal,
+                Units = SkyrimUnits
             },
             [BethesdaGame.Fallout4] = new()
             {
@@ -173,7 +316,8 @@ public static class GameProfiles
                 WideTimeOfDayBandsFormVersion = 111,
                 HasVerifiedModernWatrLayout = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
-                DefaultLandscapeNormal = CommonwealthNormal
+                DefaultLandscapeNormal = CommonwealthNormal,
+                Units = CreationAssumedUnits
             },
             [BethesdaGame.Fallout76] = new()
             {
@@ -194,7 +338,8 @@ public static class GameProfiles
                 // Appalachia.btd ships loose under Data\Terrain, so no archive patterns are needed.
                 HasExternalBtdTerrain = true,
                 DefaultLandscapeDiffuse = CommonwealthDiffuse,
-                DefaultLandscapeNormal = CommonwealthNormal
+                DefaultLandscapeNormal = CommonwealthNormal,
+                Units = CreationAssumedUnits
             },
             [BethesdaGame.Starfield] = new()
             {
@@ -218,10 +363,10 @@ public static class GameProfiles
                 TerrainArchiveNamePatterns = ["*Terrain*.ba2"],
                 TerrainSearchesAllDataArchives = true,
                 ExteriorCellWorldSize = 100f,
-                // Metric: measured from retail mesh bounds — ChairPlastic01 is 1.02 tall, ChairUtilityB01
-                // 0.98, GenIntRmSmWallMid_DoorA00 2.84, the InvisibleDoor01 marker 2.41 × 1.60. Those are
-                // metres. Do NOT infer this from the 100-unit cell: that is 40.96× where this is 70×.
-                WorldUnitsPerMetre = 1f,
+                // Metric: 1 m per unit, measured from retail mesh bounds (the evidence text on the
+                // value). Do NOT infer this from the 100-unit cell: that is 40.96× where this is 70×.
+                Units = StarfieldUnits,
+                ViewerUnitsPerMeter = 1f,
                 // Starfield ships NO usable engine-default landscape texture for us to point at: its
                 // terrain diffuse is reached only through the material database, and the inherited FNV
                 // DirtWasteland01 does not exist in any Starfield archive — so every unresolved cell
@@ -247,7 +392,10 @@ public static class GameProfiles
                 // The Steam wrapper nests the DOS game at ARENA\ beside DOSBox; markers identify that
                 // inner directory. Saves (STATES.00 …) sit beside the game data in the same directory.
                 InstallMarkers = ["GLOBAL.BSA", "TEMPLATE.DAT"],
-                ClassicArchiveGlobs = ["GLOBAL.BSA"]
+                ClassicArchiveGlobs = ["GLOBAL.BSA"],
+                Units = ClassicViewerUnits(
+                    "Native unit: MIF/RMD voxel maps at 128 units per voxel, about 2 m per voxel (weak; " +
+                    "design section 4.1 row, cut 2; RE-5).")
             },
             [BethesdaGame.Daggerfall] = new()
             {
@@ -262,7 +410,10 @@ public static class GameProfiles
                 // structure, not archives.
                 InstallMarkers = [@"ARENA2\ARCH3D.BSA", @"ARENA2\MAPS.BSA"],
                 ClassicLooseRoot = "ARENA2",
-                ClassicArchiveGlobs = [@"ARENA2\*.BSA", @"ARENA2\DAGGER.SND"]
+                ClassicArchiveGlobs = [@"ARENA2\*.BSA", @"ARENA2\DAGGER.SND"],
+                Units = ClassicViewerUnits(
+                    "Native unit: about 0.025 m per world unit, ARCH3D points at 1/256 world unit " +
+                    "(design section 4.1 row, cut 1c; RE-2).")
             },
             [BethesdaGame.Battlespire] = new()
             {
@@ -276,7 +427,10 @@ public static class GameProfiles
                 // and deliberately not mounted. SPIRE.SND is a number-record BSA of RIFF WAVs.
                 InstallMarkers = [@"GAMEDATA\3D.BS6", @"GAMEDATA\BSI.BSA"],
                 ClassicLooseRoot = "GAMEDATA",
-                ClassicArchiveGlobs = [@"GAMEDATA\*.BSA", @"GAMEDATA\3D.BS6", @"GAMEDATA\SPIRE.SND"]
+                ClassicArchiveGlobs = [@"GAMEDATA\*.BSA", @"GAMEDATA\3D.BS6", @"GAMEDATA\SPIRE.SND"],
+                Units = ClassicViewerUnits(
+                    "Native unit: about 1/64 m per world unit, meshes at 1/256 world unit (weak; " +
+                    "design section 4.1 row, cut 1c; RE-4).")
             },
             [BethesdaGame.Redguard] = new()
             {
@@ -289,7 +443,11 @@ public static class GameProfiles
                 // from). Loose-file based: no general-purpose archive to mount — the per-map ROB
                 // archives are mesh-pipeline containers, and movies/music live only inside the CUE/BIN
                 // CD image beside the root.
-                InstallMarkers = ["WORLD.INI", "ENGLISH.RTX"]
+                InstallMarkers = ["WORLD.INI", "ENGLISH.RTX"],
+                Units = ClassicViewerUnits(
+                    "Native unit: 1/80 m per world unit, meshes at 1/256 world unit; .3DC actors are " +
+                    "normalized to the int16 range and need a per-actor runtime scale (design section 4.1 " +
+                    "row, cut 1c; RE-3).")
             },
             [BethesdaGame.Fallout1] = new()
             {
@@ -305,7 +463,9 @@ public static class GameProfiles
                 InstallMarkers = ["MASTER.DAT", "CRITTER.DAT", "FALLOUTW.EXE|FALLOUT.EXE|fallout.cfg"],
                 // Loose DATA\ overrides the DATs (official 1.x patches + Hi-Res patch ship loose).
                 ClassicLooseRoot = "DATA",
-                ClassicArchiveGlobs = ["CRITTER.DAT", "MASTER.DAT"]
+                ClassicArchiveGlobs = ["CRITTER.DAT", "MASTER.DAT"],
+                Units = ClassicViewerUnits(
+                    "Isometric 2D: hex tiles and sprites, no 3D world unit; no design section 4.1 row.")
             },
             [BethesdaGame.Fallout2] = new()
             {
@@ -319,7 +479,9 @@ public static class GameProfiles
                 // archives; among archives the Hi-Res f2_res.dat overlays patch*.dat overlays
                 // critter.dat overlays master.dat.
                 ClassicLooseRoot = "data",
-                ClassicArchiveGlobs = ["f2_res.dat", "patch*.dat", "critter.dat", "master.dat"]
+                ClassicArchiveGlobs = ["f2_res.dat", "patch*.dat", "critter.dat", "master.dat"],
+                Units = ClassicViewerUnits(
+                    "Isometric 2D: hex tiles and sprites, no 3D world unit; no design section 4.1 row.")
             },
             [BethesdaGame.FalloutTactics] = new()
             {
@@ -333,7 +495,9 @@ public static class GameProfiles
                 // holds the pen-and-paper PDF supplements — real data, but not game content to mount.
                 InstallMarkers = [@"core\game.pck", @"core\bos.cfg"],
                 ClassicLooseRoot = "core",
-                ClassicArchiveGlobs = [@"core\*.bos"]
+                ClassicArchiveGlobs = [@"core\*.bos"],
+                Units = ClassicViewerUnits(
+                    "Isometric 2D: .til tiles and .spr sprites, no 3D world unit; no design section 4.1 row.")
             },
 
             // ---- The Elder Scrolls Travels (mobile). The three J2ME titles ship as ONE JAR each: the
@@ -352,7 +516,8 @@ public static class GameProfiles
                 // sprites, 16 PNGs. ESGame.class is the MIDlet both Stormhold and Dawnstar share;
                 // the loose charin.dat + monsterfilenamesin.dat pair is what Dawnstar (which packs
                 // them into datfiles.lmp) never has loose.
-                InstallMarkers = ["ESGame.class", "charin.dat", "monsterfilenamesin.dat"]
+                InstallMarkers = ["ESGame.class", "charin.dat", "monsterfilenamesin.dat"],
+                Units = ClassicViewerUnits("2D J2ME title: sprites and tables, no 3D world unit; no design section 4.1 row.")
             },
             [BethesdaGame.Dawnstar] = new()
             {
@@ -366,7 +531,8 @@ public static class GameProfiles
                 // that mount as archive layers UNDER the loose files, so a reader asks the mounted
                 // install for "charin.dat" and never cares which side served it.
                 InstallMarkers = ["ESGame.class", "datfiles.lmp", "imgfiles.lmp"],
-                ClassicArchiveGlobs = ["datfiles.lmp", "imgfiles.lmp"]
+                ClassicArchiveGlobs = ["datfiles.lmp", "imgfiles.lmp"],
+                Units = ClassicViewerUnits("2D J2ME title: sprites and tables, no 3D world unit; no design section 4.1 row.")
             },
             [BethesdaGame.Shadowkey] = new()
             {
@@ -380,7 +546,11 @@ public static class GameProfiles
                 // (models.huge/idx, global.spr), the six StringTable.<lang> files and 1,533 Simkin
                 // scripts. The azra zone is the first town; every zone has a .zon. Loose-file based —
                 // the packs are mesh/sprite-pipeline containers, not general-purpose archives.
-                InstallMarkers = ["6R51.APP", "azra.zon", "StringTable.eng"]
+                InstallMarkers = ["6R51.APP", "azra.zon", "StringTable.eng"],
+                Units = ClassicViewerUnits(
+                    "Native unit: 0.5 m tiles at 256 mesh units per tile, measured against a door that fills " +
+                    "the standard 4-tile doorway (ShadowkeyZoneSceneBuilder.MeshUnitsPerTile; design section " +
+                    "4.1 row, cut 2; RE-6).")
             },
             [BethesdaGame.OblivionMobile] = new()
             {
@@ -391,7 +561,8 @@ public static class GameProfiles
                 HasRecordVersionTrailer = false,
                 // Everything is loose at the JAR root: level stems l01..l14 across .scr/.cml/.jtm,
                 // 13 lang_N.txt string tables, PNG tilesets. eso.ver carries the build ("2.424").
-                InstallMarkers = ["eso.ver", "startup.scr", "lang_0.txt"]
+                InstallMarkers = ["eso.ver", "startup.scr", "lang_0.txt"],
+                Units = ClassicViewerUnits("2D J2ME title: tile maps and sprites, no 3D world unit; no design section 4.1 row.")
             },
             [BethesdaGame.OblivionPsp] = new()
             {
@@ -419,7 +590,10 @@ public static class GameProfiles
                 // Mount the pack itself so its entries browse alongside the loose tree, instead
                 // of GR.ARC sitting there as one opaque leaf. Globs resolve against the install
                 // root, not against ClassicLooseRoot, so the path is spelled in full.
-                ClassicArchiveGlobs = [@"PSP_GAME\USRDIR\GR.ARC"]
+                ClassicArchiveGlobs = [@"PSP_GAME\USRDIR\GR.ARC"],
+                Units = ClassicViewerUnits(
+                    "Native unit: RenderWare, 1 m per unit by the RenderWare convention (weak, recalled; " +
+                    "design section 4.1 row, cut 4; RE-7).")
             },
 
             // ---- Console spin-off. The install is a PS2 or Xbox disc image. The locator matches
@@ -438,7 +612,10 @@ public static class GameProfiles
                 // The disc root IS the data root (as for Arena): leaving this empty makes an
                 // extracted disc directory address files by the same DATA\… or resx\… paths the
                 // mounted disc reports.
-                ClassicLooseRoot = ""
+                ClassicLooseRoot = "",
+                Units = ClassicViewerUnits(
+                    "Not registered as a mesh source: the Xbox position scale is an undecoded shader constant " +
+                    "(BosXboxMesh; design section 4.1: not registered; RE-8).")
             }
         };
 
@@ -478,21 +655,27 @@ public static class GameProfiles
         return size > 0f ? size : StandardExteriorCellWorldSize;
     }
 
-    /// <summary>World units per metre for <paramref name="game" />, resolving "unset" to the classic ~70.</summary>
-    public static float UnitsPerMetreOrDefault(BethesdaGame game)
+    /// <summary>
+    ///     World units per meter for <paramref name="game" />: 70 for the Gamebryo/Creation games and
+    ///     the classic profiles (the viewer assumption their <see cref="GameProfile.Units" /> states),
+    ///     1 for Starfield. Every profile carries a unit, so "default" now only means that an
+    ///     unregistered game resolves through <see cref="For" /> to the Gamebryo value. For the
+    ///     provenance behind the number read <see cref="GameProfile.Units" />.
+    /// </summary>
+    public static float UnitsPerMeterOrDefault(BethesdaGame game)
     {
-        var units = For(game).WorldUnitsPerMetre;
-        return units > 0f ? units : ClassicWorldUnitsPerMetre;
+        return For(game).ViewerUnitsPerMeter;
     }
 
     /// <summary>
     ///     Multiplier converting a classic-units human-scale constant into <paramref name="game" />'s
     ///     units. Exactly <c>1.0</c> for every game that uses the classic unit (the constant divides by
-    ///     itself), so scaling by this is a bit-exact no-op outside Starfield, where it is 1/70.
+    ///     itself: the float view of <c>1 / (1 / 70)</c> is exactly <c>70f</c>), so scaling by this is
+    ///     a bit-exact no-op outside Starfield, where it is 1/70.
     /// </summary>
     public static float HumanScaleFactor(BethesdaGame game)
     {
-        return UnitsPerMetreOrDefault(game) / ClassicWorldUnitsPerMetre;
+        return UnitsPerMeterOrDefault(game) / ClassicWorldUnitsPerMeter;
     }
 
     /// <summary>The profile for <paramref name="game" />; a neutral 24-byte default for <c>Unknown</c>.</summary>

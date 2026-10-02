@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Vfs;
 
@@ -117,8 +118,11 @@ public static class GameFileSystem
         var layers = new List<IGameFileSystem>();
         if (includeLooseFiles)
         {
+            // Profile paths are engine-spelled (PSP_GAME\USRDIR) over an install the game treats
+            // case-insensitively; HostPath re-spells them for the host and, on a case-sensitive
+            // one, finds the directory however it is cased. On Windows these are the plain joins.
             var looseRoot = profile.ClassicLooseRoot.Length > 0
-                ? Path.Combine(installRoot, profile.ClassicLooseRoot)
+                ? HostPath.ResolveDirectory(installRoot, profile.ClassicLooseRoot)
                 : installRoot;
             layers.Add(new LooseFileSystem(looseRoot));
 
@@ -126,7 +130,7 @@ public static class GameFileSystem
             // beside GAME.EXE) mount under their own name; an install without them is unaffected.
             foreach (var extra in profile.ClassicExtraLooseDirectories)
             {
-                var directory = Path.Combine(installRoot, extra);
+                var directory = HostPath.ResolveDirectory(installRoot, extra);
                 if (Directory.Exists(directory))
                 {
                     layers.Add(new PrefixedFileSystem(new LooseFileSystem(directory), extra));
@@ -136,16 +140,19 @@ public static class GameFileSystem
 
         foreach (var glob in profile.ClassicArchiveGlobs)
         {
-            var relativeDirectory = Path.GetDirectoryName(glob);
-            var pattern = Path.GetFileName(glob);
+            // Split the glob's directory off with the engine-path helper, not Path: on a Unix host
+            // Path.GetDirectoryName(@"ARENA2\*.BSA") is empty and the whole glob would reach the
+            // enumerator as a pattern.
+            var relativeDirectory = EnginePath.DirectoryName(glob);
+            var pattern = EnginePath.FileName(glob);
             if (pattern.Length == 0)
             {
                 continue;
             }
 
-            var directory = string.IsNullOrEmpty(relativeDirectory)
+            var directory = relativeDirectory.Length == 0
                 ? installRoot
-                : Path.Combine(installRoot, relativeDirectory);
+                : HostPath.ResolveDirectory(installRoot, relativeDirectory);
             AddArchives(layers, directory, pattern, registry);
         }
 
@@ -161,7 +168,9 @@ public static class GameFileSystem
             return;
         }
 
-        var ordered = Directory.EnumerateFiles(directory, pattern);
+        // Case-insensitive on every host: the plain overload ignores case only on Windows, so
+        // *.BSA would miss arch3d.bsa on Linux; the semantics are otherwise the plain overload's.
+        var ordered = HostPath.EnumerateFiles(directory, pattern);
         ordered = patchesFirst
             ? ordered
                 .OrderByDescending(p => Path.GetFileNameWithoutExtension(p)

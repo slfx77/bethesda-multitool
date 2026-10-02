@@ -35,7 +35,8 @@ public sealed class ClassicSourceProbeTests : IDisposable
         var install = Path.Combine(_root, name);
         foreach (var relative in relativeFiles)
         {
-            var path = Path.Combine(install, relative);
+            // Relative names are spelled with the engine separator; re-spell for the host (a no-op on Windows).
+            var path = Path.Combine(install, relative.Replace('\\', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             // ≥4 magic-less bytes: FileTypeDetector short-circuits sub-4-byte files to Unknown
             // before any probe runs, and real classic artifacts are never that small.
@@ -87,7 +88,7 @@ public sealed class ClassicSourceProbeTests : IDisposable
     public void TryDetect_GlobArtifactInSubdirectory_ResolvesProfileAndRoot()
     {
         var dagger = MakeInstall("dagger", @"ARENA2\ARCH3D.BSA", @"ARENA2\MAPS.BSA");
-        var hit = ClassicSourceProbe.TryDetect(Path.Combine(dagger, @"ARENA2\MAPS.BSA"));
+        var hit = ClassicSourceProbe.TryDetect(Path.Combine(dagger, "ARENA2", "MAPS.BSA"));
 
         Assert.Equal(BethesdaGame.Daggerfall, hit?.Profile.Game);
         Assert.Equal(dagger, hit?.Root);

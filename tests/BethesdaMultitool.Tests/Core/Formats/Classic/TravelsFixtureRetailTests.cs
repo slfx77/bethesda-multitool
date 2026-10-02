@@ -34,7 +34,9 @@ public sealed class TravelsFixtureRetailTests
         {
             { (int)BethesdaGame.Stormhold, 76, 13 },
             { (int)BethesdaGame.Dawnstar, 20, 13 },
-            { (int)BethesdaGame.OblivionMobile, 145, 11 }
+            // The unmodified elder_scrolls_iv_oblivion.jar (a-j + blt/Main). The modified
+            // oblivion-repaired.jar it replaced on 2026-09-21 had 145: 21 decompiled .java added.
+            { (int)BethesdaGame.OblivionMobile, 124, 11 }
         };
     }
 
@@ -132,11 +134,15 @@ public sealed class TravelsFixtureRetailTests
     }
 
     /// <summary>
-    ///     The Shadowkey release archive is the block's scale test for the PKZIP reader: 1,967
+    ///     The Shadowkey release archive is the block's scale test for the PKZIP reader: 1,975
     ///     central-directory headers of which 32 are directory placeholders, 12.4 MB, a deep
     ///     Symbian tree and a mix of stored and deflated members. Every member is extracted, which
-    ///     verifies its exact inflated length and its CRC-32 — the same 1,935 payloads were
-    ///     compared byte-for-byte against an independent unzip on 2026-09-05 and matched exactly.
+    ///     verifies its exact inflated length and its CRC-32.
+    ///     <para>
+    ///         ⚠ The fixture is the CLEAN dump (1,943 files, 19,824,058 uncompressed bytes,
+    ///         re-measured 2026-09-09). The corpus also held a cracked dump — 8 files fewer, which
+    ///         is where the old 1,935 pin came from — and that copy was dropped on 2026-09-08.
+    ///     </para>
     /// </summary>
     [Fact]
     public void ShadowkeyReleaseZipExtractsEveryMemberIntact()
@@ -145,7 +151,7 @@ public sealed class TravelsFixtureRetailTests
 
         using var reader = ArchiveReader.Open(zip);
         Assert.Equal("ZIP (PKZIP)", reader.FormatName);
-        Assert.Equal(1935, reader.TotalFiles);
+        Assert.Equal(1943, reader.TotalFiles);
 
         var entries = reader.ListFiles();
         long total = 0;
@@ -157,7 +163,9 @@ public sealed class TravelsFixtureRetailTests
             total += bytes.Length;
         }
 
-        Assert.Equal(19_817_344, total);
+        // The CLEAN dump's payload, re-measured 2026-09-09 (the cracked copy the corpus dropped on
+        // 2026-09-08 held 8 files fewer and 19,817,344 bytes).
+        Assert.Equal(19_824_058, total);
 
         // The per-zone families every Shadowkey reader depends on: 21 of each, inside the archive
         // exactly as they are on disk once unpacked.
@@ -170,8 +178,7 @@ public sealed class TravelsFixtureRetailTests
     [Fact]
     public void EveryStagedPspBetaIsClaimedAsOblivionPsp()
     {
-        var root = Require(RealAssetPaths.Travels.OblivionPspBuildsRoot(), "Oblivion PSP betas");
-        var builds = Directory.EnumerateDirectories(root)
+        var builds = RealAssetPaths.Travels.OblivionPspBuilds()
             .Where(d => File.Exists(Path.Combine(d, @"PSP_GAME\PARAM.SFO")))
             .ToList();
         Assert.SkipWhen(builds.Count == 0, "No PSP beta has been extracted under the staging directory yet.");

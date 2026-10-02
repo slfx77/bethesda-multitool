@@ -1,5 +1,5 @@
-// Ported from NeversoftMultitool (MIT License), src/NeversoftMultitool/Core/Formats/DiscImage/
-// RawSectorSource.cs at commit 314bc9e0 (2026-08-14). See THIRD_PARTY_LICENSES.
+// Ported from NeversoftMultitool, src/NeversoftMultitool/Core/Formats/DiscImage/
+// RawSectorSource.cs at commit 314bc9e0 (2026-08-14).
 
 namespace BethesdaMultitool.Core.Formats.DiscImage;
 
@@ -8,7 +8,7 @@ namespace BethesdaMultitool.Core.Formats.DiscImage;
 ///     (sync + header + data), 2336 (Mode2 without sync), or 2048; LBAs map through the track
 ///     table.
 /// </summary>
-internal sealed class RawSectorSource : IDiscSectorSource
+internal sealed class RawSectorSource : IDiscSectorSource, IRawTrackSource
 {
     public const int RawSectorSize = 2352;
     private const int Mode2TailSize = 2336;

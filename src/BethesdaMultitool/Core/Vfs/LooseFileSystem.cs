@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Utils;
+
 namespace BethesdaMultitool.Core.Vfs;
 
 /// <summary>
@@ -157,12 +159,23 @@ public sealed class LooseFileSystem : IGameFileSystem
         }
 
         // Virtual paths are backslash-normalized, but '\' is not a separator on Unix (the CLI
-        // TFM runs on Linux CI) — translate to the OS separator before combining, or a
-        // multi-segment path like "Strings\X.STRINGS" becomes one bogus filename.
-        var osRelative = Path.DirectorySeparatorChar == '\\'
-            ? normalized
-            : normalized.Replace('\\', Path.DirectorySeparatorChar);
-        var full = Path.GetFullPath(Path.Combine(_root, osRelative));
-        return full.StartsWith(_root, StringComparison.OrdinalIgnoreCase) ? full : null;
+        // TFM runs on Linux CI) — HostPath re-spells it before combining, or a multi-segment path
+        // like "Strings\X.STRINGS" becomes one bogus filename.
+        var full = Path.GetFullPath(HostPath.Combine(_root, normalized));
+        if (!full.StartsWith(_root, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        // Windows has already answered case. Elsewhere an exact miss may be a case-only miss —
+        // "videos/anchors.smk" for a file spelled ANCHORS.SMK, which the game's own convention
+        // accepts — so re-resolve segment by segment ignoring case; an absent path stays `full`,
+        // exactly what the callers' own File.Exists / FileInfo probes expect to reject.
+        if (HostPath.HostIgnoresCase || File.Exists(full))
+        {
+            return full;
+        }
+
+        return HostPath.TryResolveExisting(_root, normalized) is { } spelled ? Path.GetFullPath(spelled) : full;
     }
 }

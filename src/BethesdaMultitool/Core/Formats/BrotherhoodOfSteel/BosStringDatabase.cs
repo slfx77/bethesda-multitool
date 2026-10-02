@@ -76,12 +76,13 @@ internal sealed class BosStringDatabase
     /// </summary>
     public const uint TerminatorOffset = 3_080_568;
 
-    private BosStringDatabase(string name, IReadOnlyList<BosStringEntry> entries, int unresolved, int tableOffset)
+    private BosStringDatabase(string name, IReadOnlyList<BosStringEntry> entries, int unresolved, int tableOffset, bool terminated)
     {
         Name = name;
         Entries = entries;
         UnresolvedSlots = unresolved;
         HashTableOffset = tableOffset;
+        Terminated = terminated;
     }
 
     /// <summary>Source file name, for messages.</summary>
@@ -91,11 +92,28 @@ internal sealed class BosStringDatabase
     public IReadOnlyList<BosStringEntry> Entries { get; }
 
     /// <summary>
-    ///     Slots that are populated but whose offset does not resolve to a string. One on the
-    ///     shipped BAR.SDB; recorded rather than skipped silently so it cannot be mistaken for a
-    ///     clean read.
+    ///     Slots that are populated but whose offset does not resolve to a string. Recorded rather
+    ///     than skipped silently so it cannot be mistaken for a clean read.
+    ///     <para>
+    ///         ⚑ NON-ZERO IS NORMAL, and only for a database with no terminator: measured over the
+    ///         PS2 disc's 56 databases on 2026-09-09, the 34 that end on the terminator slot yield
+    ///         ZERO between them, while the 22 that do not yield 940 across 21 of them (BAR.SDB is
+    ///         terminated and yields 0 — an earlier version of this comment said it yielded one).
+    ///         A table's real length is its power-of-two slot count, which an unterminated file
+    ///         does not state, so the walk runs to EOF and counts trailing bytes as populated
+    ///         slots that resolve to nothing. Every string the header declares is still found:
+    ///         <see cref="TryParse" /> refuses the file otherwise. Pair any assertion about this
+    ///         with <see cref="Terminated" />; a bare "expect 0" is wrong for 22 of the 56.
+    ///     </para>
     /// </summary>
     public int UnresolvedSlots { get; }
+
+    /// <summary>
+    ///     Whether the walk stopped on the explicit terminator slot rather than running to the end
+    ///     of the file. False means the table's end is unstated, which is what makes
+    ///     <see cref="UnresolvedSlots" /> non-zero.
+    /// </summary>
+    public bool Terminated { get; }
 
     /// <summary>Where the hash table begins.</summary>
     public int HashTableOffset { get; }
@@ -142,6 +160,7 @@ internal sealed class BosStringDatabase
         var slots = (bytes.Length - tableOffset) / SlotLength;
         var entries = new List<BosStringEntry>((int)Math.Min(declared, 4096));
         var unresolved = 0;
+        var terminated = false;
 
         for (var slot = 0; slot < slots; slot++)
         {
@@ -154,6 +173,7 @@ internal sealed class BosStringDatabase
             // extra "resolvable" entry — enough to break the count check but not to look wrong.
             if (hash == TerminatorHash && offset == TerminatorOffset)
             {
+                terminated = true;
                 break;
             }
 
@@ -177,7 +197,7 @@ internal sealed class BosStringDatabase
             return false;
         }
 
-        database = new BosStringDatabase(name, entries, unresolved, tableOffset);
+        database = new BosStringDatabase(name, entries, unresolved, tableOffset, terminated);
         error = string.Empty;
         return true;
     }

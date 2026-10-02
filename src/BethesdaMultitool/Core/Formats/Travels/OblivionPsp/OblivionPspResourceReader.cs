@@ -118,7 +118,7 @@ internal static class OblivionPspResourceReader
         var resources = new List<OblivionPspResource>();
         var position = 0;
 
-        while (position + ChunkHeaderLength <= entry.Length)
+        while (position <= entry.Length - ChunkHeaderLength)
         {
             var type = BinaryPrimitives.ReadUInt32LittleEndian(entry[position..]);
             var size = ReadChunkSize(entry, position);
@@ -145,7 +145,7 @@ internal static class OblivionPspResourceReader
     /// </summary>
     public static int ReadChunkSize(ReadOnlySpan<byte> buffer, int position)
     {
-        if (position + ChunkHeaderLength > buffer.Length)
+        if (position < 0 || position > buffer.Length - ChunkHeaderLength)
         {
             return -1;
         }
@@ -170,12 +170,13 @@ internal static class OblivionPspResourceReader
         var typeName = FindTypeName(body, headerLength);
         var authoringPath = FindAuthoringPath(body, headerLength);
 
-        var payloadStart = headerLength + PayloadGap;
-        if (headerLength <= 0 || payloadStart < 0 || payloadStart + ChunkHeaderLength > body.Length)
+        // Invalid wrappers still surface a nonstream resource, but its range stays inside its body.
+        var payloadStart = (int)Math.Min((long)headerLength + PayloadGap, body.Length);
+        if (headerLength <= 0 || payloadStart > body.Length - ChunkHeaderLength)
         {
             return new OblivionPspResource(
-                typeName, authoringPath, headerLength, bodyOffset + Math.Max(0, payloadStart),
-                Math.Max(0, body.Length - Math.Max(0, payloadStart)), false, 0, 0);
+                typeName, authoringPath, headerLength, bodyOffset + payloadStart,
+                body.Length - payloadStart, false, 0, 0);
         }
 
         var root = BinaryPrimitives.ReadUInt32LittleEndian(body[payloadStart..]);

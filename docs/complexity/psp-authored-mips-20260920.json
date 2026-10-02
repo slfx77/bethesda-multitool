@@ -1,0 +1,251 @@
+{
+  "schema": "bmt-psp-authored-mips-delta-review/v1",
+  "createdUtc": "2026-09-21T01:44:10.836965+00:00",
+  "baseCommit": "fc1783a008b5473bfc20fbcf5db208a7d6538ae4",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "scope": "Authored PSP mip retention in RwPspTexture only: seven changed constructor/property/method declarations plus seven unchanged supporting decode/size helpers reviewed for bounds. Existing Name/Width/Height/Format auto-properties, production dispatch, broader PSP normalization and all other decoders are outside scope. Historical receipts are not replaced.",
+  "status": "source_review_only",
+  "hashConvention": {
+    "source": "SHA-256 of UTF-8 source after CRLF/CR to LF normalization; no trimming.",
+    "declaration": "Exact Tree-sitter declaration byte span, including body and excluding preceding XML comments and trailing whitespace.",
+    "signature": "Declaration start through block, arrow-expression or accessor-list start, with trailing whitespace removed.",
+    "body": "Exact block, arrow-expression clause or accessor-list bytes."
+  },
+  "variables": {
+    "M": "Admitted authored level count, 1..12.",
+    "Q": "Inherited maximum inferred level count, fixed at 12.",
+    "P": "Sum of logical width*height texels across admitted levels.",
+    "B": "Pixel source bytes after the complete fixed header/CLUT, including each level row padding."
+  },
+  "file": {
+    "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwPspTexture.cs",
+    "sourceSha256Lf": "6b4d0e2176b1b0c6d721ed4cd0d411ef7d686a12169aba08d2e2f5362271325e",
+    "callables": [
+      {
+        "name": "RwPspTexture.RwPspTexture",
+        "kind": "constructor_declaration",
+        "changeScope": "changed",
+        "line": 79,
+        "endLine": 88,
+        "declarationSha256Lf": "1b2117414d45b3b156e0d672b3ca4bb80779f71b7eb8bb947a7220cf8e155034",
+        "signatureSha256Lf": "b159848d5763e83916fbb184b5d307fe9df2e170b5fe7a8e17291a60478aa2a6",
+        "bodySha256Lf": "9eb8b0ee6b76118bc84e7ecbaa0b2a51d5e0b645497c80d642eccd7472ee5036",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1) texture object; retains already owned mip-list and name references.",
+        "review": "Private constructor no longer receives independently variable mipCount/base pixels; the parsed list is the single source of both counts and base data."
+      },
+      {
+        "name": "RwPspTexture.MipCount",
+        "kind": "property_declaration",
+        "changeScope": "changed",
+        "line": 103,
+        "endLine": 103,
+        "declarationSha256Lf": "beecf330ac30316e827d7f8f14e1ffa9550a26ea3b8978b3d9fc9b3c10c1c46b",
+        "signatureSha256Lf": "e7caed76379af896a08a2479d9511fae3793ee55c2d89de023ef90104aeca2a7",
+        "bodySha256Lf": "ab8aa64a1a5e09e6517641ad12df27168c1fbbcea5accf9806acae4c8b8839b6",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "review": "Reads Count on the parser-owned ReadOnlyCollection. Every returned texture has 1..12 levels."
+      },
+      {
+        "name": "RwPspTexture.MipLevels",
+        "kind": "property_declaration",
+        "changeScope": "changed",
+        "line": 106,
+        "endLine": 106,
+        "declarationSha256Lf": "139281794ff24fee6b8befe8ab0d877922e90667e7f0677840a9f8553e9c4085",
+        "signatureSha256Lf": "8e9ca5e17b504eb517ad0af031a8f6200e9749d96804bcaa28a0025966a56af0",
+        "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "review": "Returns the existing read-only list reference. Pixel arrays remain mutable by consumers, consistent with the existing Rgba API; this is source-buffer independence, not deep immutability."
+      },
+      {
+        "name": "RwPspTexture.Rgba",
+        "kind": "property_declaration",
+        "changeScope": "changed",
+        "line": 109,
+        "endLine": 109,
+        "declarationSha256Lf": "4110022919fd615dc74364e33cbc2079d96bd06ec0743b4cbaabb1749b828298",
+        "signatureSha256Lf": "c247fccf8ee70e92586a976846a154c20f0e7be04654c6b572ef74980d8236ae",
+        "bodySha256Lf": "413a814ed62ae3d94dbc014917cfac61bbc3ff8df44fb67ad12e99cfb4b3ba82",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "review": "Returns the same level-zero Pixels array; no copy, regeneration or change to RGBA channel order."
+      },
+      {
+        "name": "RwPspTexture.BitsPerPixel",
+        "kind": "method_declaration",
+        "changeScope": "unchanged_supporting_dependency",
+        "line": 112,
+        "endLine": 121,
+        "declarationSha256Lf": "d5457e59f8848e13dd177cd1403428f0cd0d69942a8a08de5a9d8ef1b9263c82",
+        "signatureSha256Lf": "e0a08a754ed64484e16053e722789029db489d86706b8220903314ff04ac5ee1",
+        "bodySha256Lf": "78d5f6ec78a593b3f359b160c6c346a9d151bd6cbd17b14d4243a6f363cef07d",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "review": "Unchanged fixed switch. TryParse excludes undefined enum values before invoking the format helpers."
+      },
+      {
+        "name": "RwPspTexture.ClutEntries",
+        "kind": "method_declaration",
+        "changeScope": "unchanged_supporting_dependency",
+        "line": 124,
+        "endLine": 132,
+        "declarationSha256Lf": "c3294fcb1091feed3b364f5e02644432a8c3a826370396aeb268d1b8b8467141",
+        "signatureSha256Lf": "e341ddd518d1acf19301eea9848b691c34101f99579c60b7ea08834f76a66fde",
+        "bodySha256Lf": "72d2e823feaec90bf1828cb2c0035481ccb99ce62a61f43582cc45bc506e9afc",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "review": "Unchanged fixed switch returns 0, 16 or 256 entries; full CLUT lies within the admitted body before slicing."
+      },
+      {
+        "name": "RwPspTexture.Pitch",
+        "kind": "method_declaration",
+        "changeScope": "changed",
+        "line": 138,
+        "endLine": 143,
+        "declarationSha256Lf": "eeaa8536770a54c5141adee2069eff00c50123a22b839fcccbf5383ef9106375",
+        "signatureSha256Lf": "bc3fda43fbf6dacdcda55311749d5343ed4c71294d90835bb0704b40b2e288e3",
+        "bodySha256Lf": "0791aa6dfcb1da6d44afa751f7c826c2dfc93397be8f400f1d783cb2b145c28e",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "review": "Ceils width*bpp to bytes before aligning to 16 bytes. Indexed4 width 33 needs 17 data bytes and pitch 32, so the final nibble no longer aliases the next row. Parser-admitted width <=4096 and bpp <=32 keep the int arithmetic bounded."
+      },
+      {
+        "name": "RwPspTexture.PixelBytes",
+        "kind": "method_declaration",
+        "changeScope": "unchanged_supporting_dependency",
+        "line": 146,
+        "endLine": 155,
+        "declarationSha256Lf": "46f4d36179edd5053fdf77cdbcdf1cbede333ba9ca795006de6450f848e7a1de",
+        "signatureSha256Lf": "5aa4d74ed55d3996a426c13600ef728547dbc3c312142b3cae332b7aea4ac133",
+        "bodySha256Lf": "34a5be14aae1671cb8f1c0badd03c0b5804c20bc5b55867c82ebdddc17733930",
+        "timeBound": "O(max(1,mipCount))",
+        "spaceBound": "O(1)",
+        "review": "Unchanged sum uses long for row-pitch times height. TryParse calls with 1..12 levels and validated dimensions; Pitch changed to include the odd-width final nibble. Public helper has no standalone arbitrary-int argument validation; the reviewed safety bound applies to TryParse admission."
+      },
+      {
+        "name": "RwPspTexture.TryParse",
+        "kind": "method_declaration",
+        "changeScope": "changed",
+        "line": 162,
+        "endLine": 221,
+        "declarationSha256Lf": "57f956e001ae273b9957ab29b170299dd75c83ac82cd6868f64827cc5c588dc6",
+        "signatureSha256Lf": "c09418e1b7b06c6629479ae17f40289bc80cb5ea28722d8a82844f80b8525e58",
+        "bodySha256Lf": "5254423d6a85a96f0c97ccfedcc0009002ba5d307087337a49f59cf4353b2862",
+        "timeBound": "O(Q^2 + P), with Q=12 fixed; at most 78 level-size terms during inference, then one visit per decoded texel.",
+        "spaceBound": "O(4*P + M) owned output plus bounded 64-byte name decode; no copy of the input body or CLUT. At most 12 level objects, one reference array and one read-only wrapper.",
+        "review": "Header length, positive dimensions <=4096, defined format and complete CLUT precede output allocation. A mip count is admitted only when PixelBytes equals all available pixel bytes exactly. Every positive level size then fits the remaining span; the cumulative int offset is within this admitted body. Each Decode creates an independent RGBA array; all levels use the same source CLUT. No downsampling or regeneration occurs."
+      },
+      {
+        "name": "RwPspTexture.Decode",
+        "kind": "method_declaration",
+        "changeScope": "unchanged_supporting_dependency",
+        "line": 224,
+        "endLine": 261,
+        "declarationSha256Lf": "b0b15663ba891adf5c04022c9a0929414e5bfc9a6f2648381208d2238674b96c",
+        "signatureSha256Lf": "041f248a794bf195961b42a138110b9dc1f5414cd069164685b0f5dfdd549f43",
+        "bodySha256Lf": "5ed8ae8c93a9242047d9baf2f9a7c62fad3eb9b302f31ff46b954cfa3aa4aa73",
+        "timeBound": "O(width*height)",
+        "spaceBound": "O(4*width*height) returned pixel array; O(1) auxiliary state.",
+        "review": "Implementation unchanged; now called once for each exact level slice. Reads only logical row texels and skips source pitch padding. Indexed4 reads low nibble first, then high; odd-width trailing high nibble is ignored. Palette index width bounds the CLUT access. 16/32-bit row reads fit Pitch; max one output allocation is 67,108,864 bytes."
+      },
+      {
+        "name": "RwPspTexture.WriteClut",
+        "kind": "method_declaration",
+        "changeScope": "unchanged_supporting_dependency",
+        "line": 263,
+        "endLine": 272,
+        "declarationSha256Lf": "4c0a3cb91616a1ce314554ffcf31968cd6fe9dd09d90583c42f6c454df59ab04",
+        "signatureSha256Lf": "4c8cdf2e99e5eed9d9a3f0292cfadfb8f810b8de122b89c32a5987da6ed830ce",
+        "bodySha256Lf": "77515911fe6a3ff7d82e9433ea0defe086d5bc41c3d441e3a14b20742c479068",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "review": "Unchanged four-byte copy with palette-span guard. Parser format and CLUT sizing guarantee all produced 4/8-bit indices fit."
+      },
+      {
+        "name": "RwPspTexture.WriteSixteenBit",
+        "kind": "method_declaration",
+        "changeScope": "unchanged_supporting_dependency",
+        "line": 274,
+        "endLine": 299,
+        "declarationSha256Lf": "a26b98a9ebc1312bf28ed87bb54cd1b2adec1776550db0b0a10f98e105b7e9ec",
+        "signatureSha256Lf": "604a9fbcf44776c8dce42d7ef585a81422765b2350abfe8019e269ee25efcdef",
+        "bodySha256Lf": "c0f0e151ed271b8b0289aacaf4a623128ba5840c6b5f8d78689b69696e58e9b0",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "review": "Unchanged fixed channel extraction/expansion preserves RGB565, RGBA5551 and RGBA4444 including alpha."
+      },
+      {
+        "name": "RwPspTexture.Expand",
+        "kind": "method_declaration",
+        "changeScope": "unchanged_supporting_dependency",
+        "line": 302,
+        "endLine": 305,
+        "declarationSha256Lf": "7a4584e1c97400deedac9684e0f36dabf1eabc2a85d32165549de448764fb670",
+        "signatureSha256Lf": "d87d5ee69031b7591fd2c0e40e7f7223961f71b554fce1523bb5b0b2ab00570b",
+        "bodySha256Lf": "601f2c4e5a5dcb9ef8657356ecaa088a690d9e7a0b0ee57f01c74994087d0f5a",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "review": "Unchanged fixed integer bit replication; called with known 5/6-bit channel values."
+      },
+      {
+        "name": "RwPspTexture.ToDecodedTexture",
+        "kind": "method_declaration",
+        "changeScope": "changed",
+        "line": 308,
+        "endLine": 311,
+        "declarationSha256Lf": "ef0dc0fbae9f96c1550fc73b701a823a86659d64b7a0e451dd3916b6fa9c1be8",
+        "signatureSha256Lf": "37e2f588dec0da83aef499302937e5fa972d759aa965c028fc426624b96ce6c3",
+        "bodySha256Lf": "fd8983e8dae3f53e17c3512147fc237cb2d4293576c4bd276d75caff97e99a37",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1) new DecodedTexture wrapper; shares the existing read-only mip list and pixel arrays.",
+        "review": "Previous FromBaseLevel(..., false) created only a one-level wrapper. Existing Pixels/Width/Height retain level-zero behavior; MipCount and GetMipLevel now expose authored levels. No color-space, format, alpha or channel conversion is added."
+      }
+    ]
+  },
+  "resourceBounds": {
+    "inputAdmission": "No source payload is copied. Complete fixed header, dimensions 1..4096, enum format, palette bytes and exact inferred chain length are checked before allocating decoded levels. Name field is fixed at 64 bytes.",
+    "outputExpansion": "4*P <= 8*B for all admitted formats; Indexed4 is the largest pixel expansion. Row padding only lowers that ratio. This is linear owned decoding, not a count-driven unbounded amplification.",
+    "maximumDecodedPixelBytes": 89478480,
+    "maximumDecodedPixelBytesDerivation": "4 * sum((4096 >> level)^2 for level in 0..11). This is 85.33332824707031 MiB of pixel arrays across all 12 levels, excluding object/list/name overhead and caller-owned input.",
+    "maximumSinglePixelArrayBytes": 67108864,
+    "allocationAndCancellation": "A valid large input can allocate the bounded decoded output and normal allocation failure can propagate. Decode has no cancellation parameter. No measured process-memory or elapsed-time acceptance is claimed."
+  },
+  "behaviorReview": [
+    "All previously admitted even-width textures retain their original base bytes and inferred mip counts; additional authored levels are now available through MipLevels and ToDecodedTexture.",
+    "Odd Indexed4 dimensions now use the ceiling byte count before 16-byte alignment. Complete level offsets sum to the body length admitted by PixelBytes; padding is excluded from decoded pixels.",
+    "Source span and CLUT are read only. Parsed arrays remain independent after the caller overwrites the original source, while Rgba/DecodedTexture intentionally share the already decoded arrays.",
+    "Current git-tracked source references contain no production RwPspTexture caller outside the class; focused tests exercise this decoder and its conversion API. This repair prepares the existing contract and does not establish new viewer/browser dispatch or a normalized PSP scene path."
+  ],
+  "verification": {
+    "method": "Read-only source/API and test review; Tree-sitter extraction; bounded Python raw-byte identity and independent low-nibble-first CLUT decoding of one original retail raster. No .NET build/test, GUI, rendering or benchmark executed by this reviewer.",
+    "changedDeclarationCount": 7,
+    "supportingDeclarationCount": 7,
+    "selectedCallableParseErrors": [],
+    "wholeFileGrammarNotes": [],
+    "syntheticTestSource": "tests/BethesdaMultitool.Tests/Core/Formats/RenderWare/RwPspTextureMipTests.cs",
+    "syntheticCasesReviewed": 8,
+    "syntheticCoverage": "Six formats with deliberately different colors at six levels and sentinel padding; width-33 Indexed4 final-nibble/row separation; incomplete final level rejection; input-byte independence. Source review only.",
+    "retailTestSource": "tests/BethesdaMultitool.Tests/Core/Formats/RenderWare/RwPspTextureMipRetailTests.cs",
+    "retailCasesReviewed": 1,
+    "retailIndependentCheck": "Bounded 1,989,324-byte Hub_1 entry from the original 2007-1-11 GR.ARC; archive length, entry, dictionary and Struct SHA256 agree with pinned test constants. Fresh independent Python decode reproduced all eight RGBA hashes for indexed4 ob_Rock2, 128x128 through 1x1, with offsets 236,8428,10476,10988,11244,11372,11436,11468 and exact end 11484. No private payload copies were written."
+  },
+  "limits": [
+    "Source review and raw-byte oracle reproduction do not replace compiled test execution, portable platform validation, native rendering or release acceptance.",
+    "No whole-pack raster acceptance, performance measurement, texture/sampler material binding or new production dispatch is claimed."
+  ],
+  "followUps": [
+    {
+      "topic": "Inherited 12-level inferred-chain bound",
+      "scope": "Unchanged admission policy.",
+      "detail": "A complete 4096-to-1 square chain has 13 levels and remains declined; a source body with extra repeated 1x1 levels can be interpreted within the existing 12-level length search. This change retains exact existing inference rather than silently broadening format admission. Revisit only with independently identified authored fixtures/header semantics."
+    },
+    {
+      "topic": "Public size-helper inputs",
+      "scope": "Existing non-parser helper behavior.",
+      "detail": "Pitch and PixelBytes do not independently validate arbitrary signed int dimensions/counts or unknown formats. The safe arithmetic/resource bounds above apply to parser-validated dimensions/formats and the bounded inference calls; do not treat them as arbitrary-input validation APIs."
+    }
+  ]
+}

@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Zip;
-using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
 
 namespace BethesdaMultitool.Core.Formats.Archives;
 

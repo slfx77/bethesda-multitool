@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Utils;
 using BethesdaMultitool.Core.Vfs;
 
 namespace BethesdaMultitool.Core.Formats.Classic;
@@ -65,8 +66,9 @@ internal static class ClassicGameAnalyzer
         }
 
         // The install root is where the markers matched; the data lives under the profile's loose
-        // root (Daggerfall's ARENA2, empty for Arena whose root IS the data directory).
-        var dataRoot = Path.Combine(root, resolvedProfile.ClassicLooseRoot);
+        // root (Daggerfall's ARENA2, empty for Arena whose root IS the data directory). The loose
+        // root is engine-spelled and the install case-insensitive, so it resolves through HostPath.
+        var dataRoot = HostPath.ResolveDirectory(root, resolvedProfile.ClassicLooseRoot);
         var records = new RecordCollection { Game = resolvedProfile.Game };
         switch (resolvedProfile.Game)
         {

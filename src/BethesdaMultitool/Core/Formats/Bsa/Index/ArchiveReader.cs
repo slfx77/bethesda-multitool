@@ -24,11 +24,13 @@ public sealed class ArchiveReader : IDisposable
     // the old `_byPath ??= BuildIndex()` let concurrent first calls each build a full private
     // index (wasted work; last assignment won).
     private readonly Lazy<Dictionary<string, ArchiveEntry>> _byPath;
+    private readonly Lazy<PhysicalEntryIndex> _physicalEntries;
 
     private ArchiveReader(IArchiveBackend backend)
     {
         Backend = backend;
         _byPath = new Lazy<Dictionary<string, ArchiveEntry>>(BuildIndex);
+        _physicalEntries = new Lazy<PhysicalEntryIndex>(BuildPhysicalIndex);
         // Texture resolvers use the format records directly so extraction stays allocation-free.
         // Keep those immutable path maps on the shared reader: CPU decode, native D3D12 upload,
         // and any other resolver leasing this handle then pay the O(entry-count) build only once.
@@ -44,7 +46,7 @@ public sealed class ArchiveReader : IDisposable
     internal IArchiveBackend Backend { get; }
 
     /// <summary>True when the underlying container is a BA2 (vs a classic BSA).</summary>
-    public bool IsBa2 => Backend is Ba2Backend;
+    public bool IsBa2 => Backend is IBa2ExtractorSource;
 
     /// <summary>Short format label for display: <c>"BSA"</c> or <c>"BA2"</c> (more as families land).</summary>
     public string FormatName => Backend.FormatName;
@@ -72,14 +74,14 @@ public sealed class ArchiveReader : IDisposable
     ///     BSA/Xbox-360 conversion path (DDX→DDS, XMA→WAV, NIF endian swap), which has no analogue in
     ///     any other family because they are already PC formats.
     /// </summary>
-    public BsaExtractor? AsBsaExtractor => (Backend as BsaBackend)?.Extractor;
+    public BsaExtractor? AsBsaExtractor => (Backend as IBsaExtractorSource)?.Extractor;
 
     /// <summary>
     ///     The underlying BA2 extractor, non-null only for a BA2. Counterpart of
     ///     <see cref="AsBsaExtractor" /> for callers that need record-typed extraction
     ///     (e.g. texture sources built over a shared <see cref="ArchiveReader" /> handle).
     /// </summary>
-    public Ba2Extractor? AsBa2Extractor => (Backend as Ba2Backend)?.Extractor;
+    public Ba2Extractor? AsBa2Extractor => (Backend as IBa2ExtractorSource)?.Extractor;
 
     public void Dispose()
     {
@@ -134,7 +136,7 @@ public sealed class ArchiveReader : IDisposable
         }
 
         byte[] data;
-        if (Backend is BsaBackend bsa && entry.Record is BsaFileRecord bsaRecord)
+        if (Backend is IBsaExtractorSource bsa && entry.Record is BsaFileRecord bsaRecord)
         {
             data = bsa.Extractor.ExtractFileBounded(bsaRecord, maximumBytes);
         }
@@ -192,14 +194,14 @@ public sealed class ArchiveReader : IDisposable
     public byte[]? ReadFile(string fullPath)
     {
         var normalized = Normalize(fullPath);
-        if (Backend is BsaBackend bsa)
+        if (Backend is IBsaExtractorSource bsa)
         {
             return GetBsaFileIndex().TryGetValue(normalized, out var record)
                 ? bsa.Extractor.ExtractFile(record)
                 : null;
         }
 
-        if (Backend is Ba2Backend ba2)
+        if (Backend is IBa2ExtractorSource ba2)
         {
             return GetBa2FileIndex().TryGetValue(normalized, out var record)
                 ? ba2.Extractor.ExtractFile(record)
@@ -217,6 +219,36 @@ public sealed class ArchiveReader : IDisposable
     {
         return _byPath.Value.TryGetValue(Normalize(fullPath), out var entry) ? entry : null;
     }
+
+    /// <summary>All physical same-path entries; no first/last-record priority is inferred.</summary>
+    internal IReadOnlyList<PhysicalArchiveEntry> FindPhysicalEntries(string path)
+    {
+        var key = Normalize(path);
+        var index = _physicalEntries.Value;
+        if (index.Duplicates.TryGetValue(key, out var multiple)) return multiple;
+        return index.First.TryGetValue(key, out var first) ? [first] : [];
+    }
+
+    private PhysicalEntryIndex BuildPhysicalIndex()
+    {
+        var first = new Dictionary<string, PhysicalArchiveEntry>(StringComparer.OrdinalIgnoreCase);
+        var duplicates = new Dictionary<string, List<PhysicalArchiveEntry>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in ListFiles())
+        {
+            var key = Normalize(entry.FullPath);
+            if (!first.TryGetValue(key, out var original)) first.Add(key, new(entry, 0));
+            else
+            {
+                if (!duplicates.TryGetValue(key, out var group)) duplicates.Add(key, group = [original]);
+                group.Add(new(entry, group.Count));
+            }
+        }
+        return new(first, duplicates);
+    }
+
+    internal sealed record PhysicalArchiveEntry(ArchiveEntry Entry, int Occurrence);
+    private sealed record PhysicalEntryIndex(Dictionary<string, PhysicalArchiveEntry> First,
+        Dictionary<string, List<PhysicalArchiveEntry>> Duplicates);
 
     /// <summary>
     ///     Shared, immutable path index over the parsed BSA records. The dictionary is built at
@@ -297,18 +329,4 @@ public sealed class ArchiveReader : IDisposable
     {
         return path.Replace('/', '\\');
     }
-
-    /// <summary>
-    ///     One archive entry. Carries the resolved, format-neutral metadata every consumer needs
-    ///     (path, size, offset, compressed state) plus the backing format record used to extract it.
-    /// </summary>
-    public sealed record ArchiveEntry(
-        string FullPath,
-        string FolderPath,
-        string Name,
-        string Extension,
-        long Size,
-        long Offset,
-        bool Compressed,
-        object Record);
 }

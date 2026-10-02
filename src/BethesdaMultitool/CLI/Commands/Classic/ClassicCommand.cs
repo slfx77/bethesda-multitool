@@ -16,6 +16,7 @@ using BethesdaMultitool.Core.Formats.VanBuren;
 using BethesdaMultitool.Core.Formats.Xngine.Mesh;
 using BethesdaMultitool.Core.Games;
 using Spectre.Console;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.CLI.Commands.Classic;
 
@@ -321,6 +322,13 @@ public static class ClassicCommand
         {
             AnsiConsole.MarkupLine("  [yellow]{0} mesh name(s) unresolved:[/] {1}",
                 scene.MissingNames.Count, Markup.Escape(string.Join(", ", scene.MissingNames.Take(12))));
+        }
+
+        // An empty ROB placeholder stands for the loose .3DC of its name, drawn in its keyframe pose with the
+        // reference UVs. Both are approximations, so say so; the GUI's 3D level pane shows the same line.
+        if (level.LooseKeyframeNote is { } looseNote)
+        {
+            AnsiConsole.MarkupLine("  {0}", Markup.Escape(looseNote));
         }
 
         if (level.Flats.MissingTextures.Count > 0)
@@ -2596,12 +2604,14 @@ public static class ClassicCommand
                 RunArena(root, source is "all" or "template", source is "all" or "inf", filter, limit, ref printed);
                 break;
             case BethesdaGame.Daggerfall:
-                RunDaggerfall(Path.Combine(root, profile.ClassicLooseRoot), source is "all" or "text",
+                RunDaggerfall(HostPath.ResolveDirectory(root, profile.ClassicLooseRoot), source is "all" or "text",
                     source is "all" or "books", source is "all" or "quests", filter, limit, ref printed);
                 break;
             case BethesdaGame.Redguard:
-                RunRedguardText(Path.Combine(root, profile.ClassicLooseRoot, RedguardRtxFile.FileName), filter, limit,
-                    ref printed);
+                RunRedguardText(
+                    HostPath.TryResolveExisting(root, profile.ClassicLooseRoot + "\\" + RedguardRtxFile.FileName)
+                    ?? HostPath.Combine(root, profile.ClassicLooseRoot + "\\" + RedguardRtxFile.FileName),
+                    filter, limit, ref printed);
                 break;
             default:
                 throw new NotSupportedException(

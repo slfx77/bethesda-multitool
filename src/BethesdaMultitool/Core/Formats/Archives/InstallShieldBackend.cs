@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.InstallShield;
 using Microsoft.Win32.SafeHandles;
-using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
 
 namespace BethesdaMultitool.Core.Formats.Archives;
 

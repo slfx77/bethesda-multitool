@@ -1,0 +1,197 @@
+{
+  "schema": "bmt-shadowkey-pack-preview-source-review/v1",
+  "baseCommit": "f6290ffe6da503078242b8cc7cb4ce25de739ff3",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "scope": "Source/API review of the newly applied application-owned catalog, exact selection and selected-record preparation. This receipt covers Core costs and ownership; UI/native lifecycle costs have a separate receipt. The integration is not yet build, test, GUI or release acceptance.",
+  "hashConvention": {
+    "sourceSha256Lf": "SHA-256 of UTF-8 source after CRLF/CR to LF normalization, without trimming.",
+    "declarationSha256Lf": "SHA-256 of the exact Tree-sitter C# method or constructor declaration span in LF-normalized source, including signature/body and excluding preceding comments/following whitespace.",
+    "artifactSha256": "SHA-256 of raw applied patch artifact bytes; artifacts remain ignored under TestOutput and are not acceptance results."
+  },
+  "variables": {
+    "H": "Ancestor count from the selected node to its fixed tree root.",
+    "S": "Pack slot count, at most 4096.",
+    "I": "Index bytes, at most 32772 (4 + 8*4096).",
+    "P": "Pack bytes, at most 33554432 (32 MiB).",
+    "N": "Optional UTF-8 names bytes, at most 1048576 (1 MiB).",
+    "L": "Combined source-ID, virtual-path and source-label character lengths used by the operation.",
+    "R": "Byte length of the selected nonempty record, at most P; the parser reads its complete frames, UVs, faces, skins and sequences.",
+    "F": "Face count of the selected record; selected geometry expands to 3F corners.",
+    "T": "Selected skin texels.",
+    "J": "Serialized exact source/provenance/options identity size.",
+    "Z": "Encoded selected-skin PNG byte length.",
+    "E_png(T)": "Cost of the inherited PNG encoder; no new performance bound or measurement is asserted."
+  },
+  "sourceBounds": {
+    "maximumSlots": 4096,
+    "maximumIndexBytes": 32772,
+    "maximumPackBytes": 33554432,
+    "maximumNamesBytes": 1048576,
+    "readOrder": [
+      "required models.idx",
+      "required real models.huge",
+      "optional models.txt"
+    ],
+    "selectedParse": "Only one index entry is parsed per Prepare call; the full bounded pack is retained detached in managed memory.",
+    "validation": "Existing parser requires exact index length and contiguous offsets tiling the complete pack; names must match the parallel slot ordinal table.",
+    "limits": "These are input bounds, not aggregate managed/native peak-memory guarantees or cancellation deadlines."
+  },
+  "callables": [
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ShadowkeyPackPreviewSource.cs",
+      "sourceSha256Lf": "4b4f11da0157984028e4faf5890f89f8bd7d1e2643053643dcb01ec601290781",
+      "callable": "ShadowkeyPackPreviewSource",
+      "declarationKind": "constructor_declaration",
+      "line": 27,
+      "endLine": 37,
+      "declarationSha256Lf": "aedbb2667ce94af612e5675dd770ee776b421775158301264c6d6c51f7953c27",
+      "incrementalTime": "O(S + L): copy S entry references into a read-only collection and normalize the real asset path. Does not clone entry objects or reparse records.",
+      "incrementalStorage": "O(S + L) new catalog references/path storage; retains the owned P-byte pack and immutable entry/name objects created by Read. Borrows BrowserSnapshot without acquiring another lease. The inherited ShadowkeyModelPack also allocates O(S) unused mesh-cache slots and parsed flags.",
+      "disposition": "Detach the exposed slot collection and preserve slot ordinals, duplicate labels and empty entries; retain the actual GameFileEntry for each read separately."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ShadowkeyPackPreviewSource.cs",
+      "sourceSha256Lf": "4b4f11da0157984028e4faf5890f89f8bd7d1e2643053643dcb01ec601290781",
+      "callable": "IsCandidate",
+      "declarationKind": "method_declaration",
+      "line": 53,
+      "endLine": 58,
+      "declarationSha256Lf": "fa303913de3f0b998ef9c3ae6f280516bbc50940d33c9ca909600e30080389ae",
+      "incrementalTime": "Constant known-name comparison for models.huge (ordinal, case-insensitive), with a folder-kind check; no tree walk or VFS access.",
+      "incrementalStorage": "O(1) additional storage; no payload allocation.",
+      "disposition": "Name matching selects the workflow only. It does not prove structural validity or create a virtual child asset."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ShadowkeyPackPreviewSource.cs",
+      "sourceSha256Lf": "4b4f11da0157984028e4faf5890f89f8bd7d1e2643053643dcb01ec601290781",
+      "callable": "OpenAsync",
+      "declarationKind": "method_declaration",
+      "line": 68,
+      "endLine": 96,
+      "declarationSha256Lf": "9e5f2354f4602210988cb1b033fe349bea3f2969cf637f0d60aff44199e0787e",
+      "incrementalTime": "O(H) ancestor reference checks plus the Read work below and one worker dispatch. Lease retirement and VFS latency are inherited and are not assigned a constant-time guarantee.",
+      "incrementalStorage": "O(1) orchestration objects beyond Read output: one linked cancellation source, task and temporary BrowserLease. The worker captures the exact snapshot, filesystem and original node until completion.",
+      "disposition": "Reject foreign-root nodes and non-Bethesda sources before reading. Link source/selection cancellation; acquire the source lease before worker execution and release it only after the worker completes. Convert the lease-acquisition retirement race to cancellation. No catalog is returned after observed retirement."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ShadowkeyPackPreviewSource.cs",
+      "sourceSha256Lf": "4b4f11da0157984028e4faf5890f89f8bd7d1e2643053643dcb01ec601290781",
+      "callable": "CreateSelection",
+      "declarationKind": "method_declaration",
+      "line": 99,
+      "endLine": 106,
+      "declarationSha256Lf": "73f6b866a69697e2b7b4a01517f20d32ce96a93e1fa5b1830708c45510797180",
+      "incrementalTime": "O(L) through the immutable selection constructor; range and cancellation checks are O(1). No payload read, decode or scene traversal.",
+      "incrementalStorage": "O(L) for the new AssetReference normalized path and bounded ordinal token, plus an O(1) immutable selection object.",
+      "disposition": "Capture exact catalog, slot, frame, skin and explicit keying choice. Validate slot now; preserve frame/skin values for the existing adapter admission checks. Display labels are never identity."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ShadowkeyPackPreviewSource.cs",
+      "sourceSha256Lf": "4b4f11da0157984028e4faf5890f89f8bd7d1e2643053643dcb01ec601290781",
+      "callable": "Prepare",
+      "declarationKind": "method_declaration",
+      "line": 111,
+      "endLine": 143,
+      "declarationSha256Lf": "b7a5b1b76e663de5e2bb1653074b35d061f1d794b05bd2bce91f47fc786e7487",
+      "incrementalTime": "O(R + F + T + J) managed parsing, unrolling, selected-skin expansion, metadata work and validation, plus the inherited PNG encoder cost E_png(T). R covers every frame/skin in the selected record, not every record in the pack. There is no repeated VFS read and no whole-pack mesh parse.",
+      "incrementalStorage": "O(R + F + T + J + Z) transient/result storage per invocation: fresh record arrays, selected geometry, image expansion, metadata and encoded PNG. The shared document may make its own ownership copies. The P-byte catalog is reused read-only; concurrent callers multiply per-invocation working storage and have no new global byte-budget admission.",
+      "disposition": "Use GetEntryBytes and a fresh ShadowkeyMesh.Parse instead of the mutable GetMesh cache. Preserve explicit empty/unsupported results; corrupt selected records throw without poisoning other slots. Return the exact selection and actual decoded frame/skin counts. Serialize source generation and actual per-file source provenance; forward unchanged animation admission and color policy."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ShadowkeyPackPreviewSource.cs",
+      "sourceSha256Lf": "4b4f11da0157984028e4faf5890f89f8bd7d1e2643053643dcb01ec601290781",
+      "callable": "Read",
+      "declarationKind": "method_declaration",
+      "line": 145,
+      "endLine": 165,
+      "declarationSha256Lf": "fe7ca33d20344b492c50fe062b1a83aea5bf83d363b7e053a9f82af0f810e823",
+      "incrementalTime": "Three bounded virtual-path reads at most, O(I + P + N + S + L) managed decoding/copy/catalog work plus inherited VFS lookup, decompression and I/O costs. Strict UTF-8 decoding and existing names/index validation walk their bounded inputs. Required index is read before the pack, but structural parsing occurs after companion reads.",
+      "incrementalStorage": "Retained O(P + S + N + L) upper bound: one owned P-byte pack, catalog/entry/cache slots, retained labels and paths. Transiently the VFS pack buffer and detached copy coexist (2P), with I/N buffers, UTF-16 text and parser allocations; this is not a 32 MiB process-memory cap.",
+      "disposition": "Resolve companions in the selected real virtual directory via VfsPath. Missing names are allowed; present unreadable, malformed or over-budget names fail. Normalize an optional UTF-8 BOM. Copy only the payload retained by the catalog; index bytes become entry values and names become immutable strings. Preserve independent readable-layer provenance rather than infer a common layer."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ShadowkeyPackPreviewSource.cs",
+      "sourceSha256Lf": "4b4f11da0157984028e4faf5890f89f8bd7d1e2643053643dcb01ec601290781",
+      "callable": "ReadFile",
+      "declarationKind": "method_declaration",
+      "line": 167,
+      "endLine": 183,
+      "declarationSha256Lf": "22b364151a97571551c59ebfe1b68b65e076cfe1efc0f3578253508b1d261de1",
+      "incrementalTime": "One TryReadAllBytesBounded call and O(L) returned-path normalization/comparison; on a null optional read, at most one Exists query distinguishes absence from unreadability. Cancellation checks surround the synchronous read. Layer probing/decompression latency is inherited.",
+      "incrementalStorage": "O(B + L) returned payload/path storage for the individual bound B; an over-budget or wrong-path result is rejected. This helper adds no second byte copy and performs no directory enumeration.",
+      "disposition": "Use the actual read result, not prior metadata-winner provenance. Check returned byte length and normalized path before publication. Required absence fails; optional absence alone is permitted. No fallback after a present names file fails to read."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ShadowkeyPackPreviewSource.cs",
+      "sourceSha256Lf": "4b4f11da0157984028e4faf5890f89f8bd7d1e2643053643dcb01ec601290781",
+      "callable": "ShadowkeyPackSelection",
+      "declarationKind": "constructor_declaration",
+      "line": 189,
+      "endLine": 202,
+      "declarationSha256Lf": "92cfb732d2a6321432110b71493d06afa4c7eefdc92568b0a3cf83f906456966",
+      "incrementalTime": "O(L) AssetReference path normalization plus constant bounded slot formatting (0 through 4095); no mesh work.",
+      "incrementalStorage": "O(L) path/occurrence storage and one immutable object borrowing its catalog; no source or native lease.",
+      "disposition": "Keep the real pack path and source ID. The occurrence token shadowkey-slot:<ordinal> identifies the original index row, independently of its optional label. Snapshot reference/generation and selection reference provide opening/attempt authority; the token is not a content hash."
+    }
+  ],
+  "ownership": [
+    "OpenAsync borrows the caller snapshot but owns one temporary BrowserLease across all worker reads and parsing; retirement cancellation cannot dispose the underlying source before the worker releases that lease.",
+    "Catalog owns its detached pack byte array and copied entry-reference collection; it retains no active VFS read or lease. GameFileEntry and entry records are immutable metadata. Borrowed snapshot identity still gates later preparation.",
+    "Prepare builds fresh parser arrays and a normalized scene per call; no mutable pack mesh cache is shared. It must be called off the UI thread and rejects another catalog selection or observed source retirement.",
+    "The UI retains and checks the exact catalog/snapshot/selection; Shared NativeScenePresenter receives that same BrowserSnapshot and acquires its own native input lease. The catalog lease does not stand in for native lifetime.",
+    "Source identity records source ID, snapshot generation, original pack path, slot occurrence and each successful companion read source. It does not assert one common layer, atomic three-file consistency, content hashes or historical file-byte stability."
+  ],
+  "verification": {
+    "status": "Source/API review only; new integration builds/tests/GUI pending.",
+    "sourceReview": "Applied Core source parsed with Tree-sitter without syntax errors; declarations and hashes extracted from current source. All three prospective artifacts were previously composed in memory and reviewed against pinned Shared APIs before application. This task ran no compiler, tests, application or GUI automation.",
+    "pendingPortableCases": 20,
+    "pendingTestClass": "BethesdaMultitool.Tests.Core.AssetBrowse.ShadowkeyPackPreviewSourceTests",
+    "testSource": "tests/BethesdaMultitool.Tests/Core/AssetBrowse/ShadowkeyPackPreviewSourceTests.cs",
+    "coveragePlanned": [
+      "Duplicate labels, exact slots and browser generation; missing optional names without fabricated VFS entries.",
+      "Missing required index; malformed/unreadable companions; wrong-path and over-budget returned reads.",
+      "Real layered VFS readable-layer provenance for independently resolved companions.",
+      "Detached payload ownership, source buffer immutability and fresh concurrent preparation.",
+      "Selected corrupt record isolation; explicit empty/animated declines; exact frame/skin/keying forwarding.",
+      "Cancellation before/during reads, source replacement while a read is blocked, and old opening/node/catalog rejection."
+    ],
+    "baselineBoundary": "The prior 54-case Windows/Linux adapter/helper batch at the base commit predates this browser/catalog integration; its results are not acceptance of the new 20 cases or native GUI."
+  },
+  "appliedArtifacts": {
+    "core": {
+      "path": "TestOutput/shadowkey-native-preview-20260920/core-preview.patch",
+      "sha256": "e6943ff5ef32778ff7632d6d142a6c4ea22fe8ba4bb98a241d344934eb4c893c"
+    },
+    "browser": {
+      "path": "TestOutput/shadowkey-native-preview-20260920/browser-native-preview.patch",
+      "sha256": "87ce6bc90022ab55cf967828d67eed5bcc30276a3a7bf7a3b9c502413167337f"
+    },
+    "owner": {
+      "path": "TestOutput/shadowkey-native-preview-20260920/window-native-owner.patch",
+      "sha256": "fcb6e55604dc780b25283c61d9e86ded8ff16d1f33baf98e446339da0f603131"
+    }
+  },
+  "related": {
+    "implementation": "docs/shadowkey-pack-native-preview.md",
+    "uiReceipt": "docs/complexity/shadowkey-native-preview-ui-20260920.json",
+    "adapterEvidence": "docs/shadowkey-neutral-fidelity.md"
+  },
+  "limits": [
+    "No full plan milestone, all-format native-viewer migration, animation, zone/entity skin selection, export workflow or release readiness is accepted.",
+    "Cancellation is cooperative around synchronous VFS reads, parser work, unrolling and PNG encoding. Existing synchronous work may finish before cancellation is observed; leases remain held through completion.",
+    "No new archive decoder, persistent cache, Shared source change, filesystem copy, staged private payload or fabricated pack-slot VFS file is introduced.",
+    "Default color policy remains opaque; magenta keying is explicit and hypothetical. Authored sequence rates retain their existing decline, even when a UI frame index is supplied.",
+    "A native adoption result is not rendered-frame proof. Exact current native request/revision, capture, replacement, inactive-pane and shutdown checks remain pending.",
+    "The UI shutdown path retains source/window/graphics prerequisites after unproven native retirement and does not silently retry a failed Shared disposal task; see the implementation note and UI receipt.",
+    "Complexity is a source-level incremental analysis, not measured throughput, allocation, peak memory or cancellation latency."
+  ],
+  "rootExecutionEvidence": {
+    "receipt": "docs/validation/shadowkey-native-preview-20260920.md",
+    "publishReceipt": "docs/validation/publish-20260920.md",
+    "portableTests": "152 Windows and 152 Ubuntu WSL, zero skips; Linux executes Windows-built portable assemblies. Two Windows accessibility cases pass.",
+    "windowsPublish": "Corrected publish passed, 580.279 seconds, three inherited WIN2D0001 warnings, zero application analyzer diagnostics. Seven source/PDB audits and unchanged 36-input freeze.",
+    "nativeExecution": "Earlier native fern opaque/keyed and arrow captures passed. Two actual published fern captures match accepted PNG/RGBA exactly; two repeat refusals, animated decline and explicit CLI help pass.",
+    "remaining": "Interactive GUI, native cancellation/cleanup-failure injection, Linux source build/publish, readable Shared notice sidecars and complete release acceptance remain open.",
+    "boundary": "Historical source-review status/claims above describe the reviewer at creation; this root execution evidence records later checks. Exact source and binary boundaries remain in the linked receipts."
+  }
+}

@@ -6,7 +6,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.DiscImage;
 
 /// <summary>
 ///     Opt-in checks (<c>RUN_BUCKET_B=1</c>) of the original redump media for Redguard and
-///     Battlespire, staged as CUE/BIN under <c>Sample/Builds/</c>. Measured 2026-09-05:
+///     Battlespire, stored as CHD under <c>../Media/</c> and read natively. Measured 2026-09-05:
 ///     Redguard's Disc 1 is an InstallShield CD — its ISO9660 tree is <c>DATA1.CAB</c> + <c>DATA.TAG</c>
 ///     + Voodoo drivers, so the game files (including the 3dfx <c>fxart</c> the Steam build omits)
 ///     sit INSIDE the cabinet, which the ISO layer cannot see; Disc 2 is eleven Smacker movies plus
@@ -16,28 +16,43 @@ namespace BethesdaMultitool.Tests.Core.Formats.DiscImage;
 [Trait("Category", BucketBTestGuard.Category)]
 public sealed class ClassicDiscImageRetailTests
 {
-    private static string RequireCue(string stagedDirectory)
+    /// <summary>
+    ///     The disc image for one pre-migration staging name: the stored <c>.chd</c> when there is
+    ///     one, else a raw <c>.cue</c>.
+    ///     <para>
+    ///         ⚠ The CHD is opened DIRECTLY, never materialised: <c>chdman extractcd</c> writes one
+    ///         <c>.bin</c> for the whole disc, and a single-file cue contributes ONE track region, so
+    ///         a redump's Redbook tracks disappear (measured 2026-09-09: 0 audio tracks instead of 6
+    ///         and 7). The CHD carries a metadata record per track, which is where they come from.
+    ///     </para>
+    /// </summary>
+    private static string RequireDisc(string stagedDirectory)
     {
         BucketBTestGuard.SkipUnlessEnabled();
         // The staged names are the pre-migration ones. SampleCorpus maps each onto its build
-        // directory; the CUE/BIN itself is original media, so it now sits under the matching
-        // Sample/Media path rather than in the build, which holds the extracted tree.
+        // directory; the media itself is original media, so it now sits under the matching
+        // shared ../Media path; the build holds the extracted tree.
         var directory = SampleCorpus.Candidates(Path.Combine("Full_Builds", stagedDirectory))
             .SelectMany(relative => new[]
             {
-                Path.Combine(RepositoryRoot(), "Sample", MediaRelative(relative)),
+                Path.GetFullPath(Path.Combine(RepositoryRoot(), "..", MediaRelative(relative))),
                 Path.Combine(RepositoryRoot(), "Sample", relative)
             })
             .FirstOrDefault(candidate => Directory.Exists(candidate) &&
-                                         Directory.GetFiles(candidate, "*.cue").Length > 0);
-        var cue = directory is not null ? Directory.GetFiles(directory, "*.cue").FirstOrDefault() : null;
-        Assert.SkipWhen(cue is null, RealAssetPaths.SkipMessage($"{stagedDirectory} CUE/BIN"));
-        return cue;
+                                         (Directory.GetFiles(candidate, "*.chd").Length > 0 ||
+                                          Directory.GetFiles(candidate, "*.cue").Length > 0));
+        var image = directory is null
+            ? null
+            : Directory.GetFiles(directory, "*.chd").FirstOrDefault() ??
+              Directory.GetFiles(directory, "*.cue").FirstOrDefault();
+
+        Assert.SkipWhen(image is null, RealAssetPaths.SkipMessage($"{stagedDirectory} disc image"));
+        return image;
     }
 
     /// <summary>
-    ///     The <c>Sample/Media</c> counterpart of a <c>Sample/Builds</c> relative path. Media keeps
-    ///     the build's directory name, so the two differ only in the first segment.
+    ///     The <c>../Media</c> counterpart of a <c>Sample/Builds</c> relative path. Media keeps
+    ///     the build's directory name, with its root resolved by the caller.
     /// </summary>
     private static string MediaRelative(string buildRelative)
     {
@@ -62,9 +77,9 @@ public sealed class ClassicDiscImageRetailTests
     [Fact]
     public void RedguardDisc1IsAnInstallShieldCabinetNotALooseTree()
     {
-        using var disc = ArchiveReader.Open(RequireCue("Redguard_Disc1"));
+        using var disc = ArchiveReader.Open(RequireDisc("Redguard_Disc1"));
 
-        Assert.Equal("CD image (CUE/BIN)", disc.FormatName);
+        Assert.StartsWith("CD image (", disc.FormatName, StringComparison.Ordinal);
         var entries = disc.ListFiles();
         Assert.Equal(28, entries.Count);
 
@@ -81,7 +96,7 @@ public sealed class ClassicDiscImageRetailTests
     [Fact]
     public void RedguardDisc2IsMoviesPlusSixRedbookTracks()
     {
-        using var disc = ArchiveReader.Open(RequireCue("Redguard_Disc2"));
+        using var disc = ArchiveReader.Open(RequireDisc("Redguard_Disc2"));
 
         var entries = disc.ListFiles();
         var movies = entries.Count(e => e.Extension.Equals(".smk", StringComparison.OrdinalIgnoreCase));
@@ -104,7 +119,7 @@ public sealed class ClassicDiscImageRetailTests
     [Fact]
     public void BattlespireDiscCarriesSevenRedbookTracks()
     {
-        using var disc = ArchiveReader.Open(RequireCue("Battlespire_Disc"));
+        using var disc = ArchiveReader.Open(RequireDisc("Battlespire_Disc"));
 
         // One data track plus tracks 2-8 of Redbook music.
         var audio = disc.ListFiles().Where(e => e.FolderPath == "audio").ToList();

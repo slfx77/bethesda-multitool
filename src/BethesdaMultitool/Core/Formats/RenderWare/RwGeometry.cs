@@ -1,5 +1,5 @@
 // The generic RenderWare geometry layout is ported from NeversoftMultitool
-//   (https://github.com/slfx77/NeversoftMultitool, MIT License) —
+// —
 //   src/NeversoftMultitool/Core/Formats/Mesh/RenderWare/{RwGeometry,RwDffDataSections}.cs. The
 //   reader here is stricter than upstream's: it predicts the declared struct size from the header
 //   and rejects anything that does not match exactly, rather than scanning forward for a plausible

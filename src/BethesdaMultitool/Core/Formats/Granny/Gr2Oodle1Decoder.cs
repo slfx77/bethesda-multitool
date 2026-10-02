@@ -1,4 +1,4 @@
-// Ported from AweMultitool (slfx77), MIT, https://github.com/slfx77/JimmyPCTool
+// Ported from AweMultitool (slfx77)
 // (src/AweMultitool/Core/Formats/Granny/Gr2Oodle1Decoder.cs), adapted to this repository's house style.
 //
 // That file is a C# adaptation of the Granny Oodle1 decompression algorithm from

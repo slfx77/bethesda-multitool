@@ -1,0 +1,55 @@
+{
+  "schema": "bmt-shadowkey-neutral-fidelity-delta-review/v1",
+  "baseCommit": "3abd7ae5a15c07f40fe382108ab253dbe61ddd99",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "scope": "Explicit optional color-key policy, matching alpha material, caller-supplied occurrence identity and selected-frame/skin metadata in the existing neutral adapter. No dispatch, native viewer, decoder, or Shared source changes.",
+  "hashConvention": {
+    "sourceSha256Lf": "SHA-256 of UTF-8 source after CRLF/CR to LF normalization, without trimming.",
+    "declarationSha256Lf": "SHA-256 of the exact Tree-sitter C# method-declaration span in LF-normalized source, including signature and body, excluding preceding comments and following whitespace."
+  },
+  "variables": {
+    "I": "Length of the optional caller-supplied source identity string.",
+    "F": "Selected frame's face count.",
+    "T": "Selected skin's texel count."
+  },
+  "callables": [
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Travels/Shadowkey/ShadowkeyNeutralSceneAdapter.cs",
+      "sourceSha256Lf": "b159878c513f0dd352c91b90568b344bbd71c2cf664c0da3ce2d9c55ecc4e26f",
+      "callable": "TryAdapt",
+      "line": 52,
+      "endLine": 123,
+      "declarationSha256Lf": "f46ca5686b3bdcf8ba6acd2bff90a803716a9f8aeb9de7455503c92da7d01c33",
+      "incrementalTime": "O(I) JSON serialization and existing metadata validation for a constant number of metadata objects. Alpha selection and the additional post-PNG cancellation checkpoint are O(1). No additional geometry walk, skin decode, corpus lookup, or payload read is introduced.",
+      "incrementalStorage": "O(I) metadata strings/serialization storage retained or transient across a constant number of scene objects. Geometry remains O(F), selected skin decode and PNG construction retain their inherited costs. No source buffer is modified or newly retained by the metadata.",
+      "disposition": "Use existing SceneDocument.SourceIdentity and document/node extras. Never infer occurrence identity from the display label. Default to opaque pixels/material; opt-in keying pairs alpha-zero magenta pixels with a mask material. Preserve existing animation declines and source basis/units."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Travels/Shadowkey/ShadowkeyNeutralSceneAdapter.cs",
+      "sourceSha256Lf": "b159878c513f0dd352c91b90568b344bbd71c2cf664c0da3ce2d9c55ecc4e26f",
+      "callable": "Png",
+      "line": 146,
+      "endLine": 149,
+      "declarationSha256Lf": "e314bb528eadded59bc6d8e6caf57becc04c65b3662ed5e5a58f63b440e21f93",
+      "incrementalTime": "O(1) parameter forwarding. Existing selected-skin decode and PNG encoding are unchanged; no second decode or image comparison is added to production.",
+      "incrementalStorage": "No additional image buffer. Existing palette/index expansion and encoded image ownership remain unchanged.",
+      "disposition": "Pass the caller's explicit policy to the existing decoder instead of inheriting its hypothetical keyed default."
+    }
+  ],
+  "verification": {
+    "sourceReview": "Tree-sitter C# parsing of changed production and test files reports no syntax errors. Existing pinned Shared scene/export and SharpGLTF APIs reviewed. No build or tests were run by this implementation task.",
+    "pendingAdapterCases": 19,
+    "pendingPortableCases": 16,
+    "pendingOptInRetailCases": 3,
+    "priorFrozenWindowsBaseline": "18 cases passed with zero skips: 11 pre-increment adapter cases plus 7 existing resolver cases. This is baseline evidence only.",
+    "fixtureEvidence": "docs/shadowkey-neutral-fidelity.md",
+    "testSource": "tests/BethesdaMultitool.Tests/Core/Formats/Travels/Shadowkey/ShadowkeyNeutralSceneAdapterTests.cs"
+  },
+  "limits": [
+    "No production dispatch, native viewer, GUI workflow, or complete plan milestone is accepted by this increment.",
+    "Magenta transparency remains a caller-selected hypothesis, not an authenticated per-asset flag.",
+    "Multi-frame animation with authored sequence rates still declines; no duration or frame rate is invented.",
+    "This is an incremental source complexity review, not a measured throughput, allocation, or peak-memory improvement.",
+    "Cancellation retains existing synchronous unroll/decode boundaries; the added checkpoint observes cancellation after PNG creation."
+  ]
+}

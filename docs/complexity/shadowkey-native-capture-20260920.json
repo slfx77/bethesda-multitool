@@ -1,0 +1,851 @@
+{
+  "schema": "bmt-shadowkey-native-capture-source-review/v1",
+  "baseCommit": "f6290ffe6da503078242b8cc7cb4ce25de739ff3",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "status": "applied_source_review_only_build_tests_native_capture_and_gui_pending",
+  "scope": "New application-owned diagnostic capture command, options, Windows helper and portable behavioral tests. Program routing/registration and its new routing-test row are included as limited deltas. Existing Core decoding, browser UI, Shared native rendering and exporters are delegated contracts, not newly implemented or performance-measured here.",
+  "hashConvention": {
+    "sourceSha256Lf": "SHA-256 of UTF-8 after optional BOM removal and CRLF/CR to LF normalization, without trimming.",
+    "declarationSha256Lf": "Exact Tree-sitter declaration or lambda span including body/attributes, excluding preceding XML comments and following whitespace.",
+    "signatureSha256Lf": "Declaration start to body/accessor-list start, with trailing whitespace removed.",
+    "bodySha256Lf": "Exact body, arrow clause, lambda expression body, or accessor list. Auto-properties are declaration hashes, not separate generated-method claims."
+  },
+  "variables": {
+    "B": "Total three raw input bytes: pack <=33554432, index <=32772, required names <=1048576.",
+    "L": "Combined input/output/source names, paths and formatted diagnostics length.",
+    "S": "Catalog slots, at most 4096.",
+    "D": "Existing selected-record parse, frame/skin normalization and PNG encoding cost, delegated to Core source/adapter.",
+    "V_I": "Selected normalized vertices/indices; existing adapter expands every face to three corners.",
+    "Z": "Encoded scene image bytes; admitted native per-image PNG cap 16 MiB.",
+    "Q": "Output pixels: 512*512; RGBA payload exactly1048576 bytes.",
+    "O": "Completed PNG bytes; reopened only when nonempty and <=8388608 bytes.",
+    "J": "Serialized receipt bytes, including one selected material/image/name and bounded input provenance.",
+    "N": "Shared native preparation/draw/readback/retirement work, including device scheduling; not a constant-time local operation.",
+    "W": "Filesystem, thread scheduling, cancellation callbacks and GPU retirement wait; no hard wall-clock deadline."
+  },
+  "bounds": {
+    "maximumSlots": 4096,
+    "maximumPackBytes": 33554432,
+    "maximumIndexBytes": 32772,
+    "maximumNamesBytes": 1048576,
+    "requiredSourceFiles": 3,
+    "directoryEnumeration": false,
+    "width": 512,
+    "height": 512,
+    "rgbaPayloadBytes": 1048576,
+    "boundsPoseNumericBytes": 134217728,
+    "sampleBankBytes": 268435456,
+    "maximumEncodedPngBytes": 16777216,
+    "maximumRetainedImageBytes": 268435456,
+    "gpuGeometryBytes": 268435456,
+    "gpuTextureStagingBytes": 536870912,
+    "gpuDepthBytes": 134217728,
+    "captureTargetBytes": 4194304,
+    "captureReadbackBytes": 4194304,
+    "maximumCompletedPngBytes": 8388608,
+    "inputFileStreamBufferBytes": 65536,
+    "meaning": "Payload/algorithm admission bounds are not aggregate managed/native/driver working-set guarantees. Raw source copies, selected parser arrays, codec/PNG scratch, receipt storage and runtime bookkeeping coexist. Native cleanup is cooperative and not deadline-bounded."
+  },
+  "costProfiles": {
+    "orchestrate": {
+      "time": "O(B) streaming hashes before/after + bounded catalog read/parse + D + O(V_I) browser bounds + N + inherited PNG export/encoding + O(O + Z + J) output/image hashing and receipt serialization; includes W.",
+      "space": "Retains bounded Core catalog/scene plus native budgets, Q-sized returned pixels, O(J) receipt bytes, one O(Z) encoded-image hash copy at a time, fixed handle/task/identity state. Source copies and codec/native scratch are additional delegated memory."
+    },
+    "composeSource": {
+      "time": "O(L) path/label/stat work and fixed one-node tree creation, plus filesystem latency; no enumeration.",
+      "space": "O(L) source/node/path storage and one LooseFileSystem transferred once to AssetBrowseSession."
+    },
+    "request": {
+      "time": "O(1) fixed camera/appearance validation and budget assignment.",
+      "space": "O(1) request, appearance and budget objects, borrowing immutable camera/lens."
+    },
+    "acquire": {
+      "time": "O(1) local checks and lease acquisition; failure lease release is delegated.",
+      "space": "O(1) native input and lease references; exact immutable scene retained, not cloned."
+    },
+    "capture": {
+      "time": "N + W; cleanup is attempted after capture failure/cancellation, and errors are preserved.",
+      "space": "Native budgets + owned Q RGBA result and fixed task/error state. Failed retirement may retain native worker/resources/source lease until process exit."
+    },
+    "openBounded": {
+      "time": "O(L) path/open/stat admission plus filesystem latency; no file payload scan.",
+      "space": "One read-only FileStream with requested 65536-byte buffer; length failure closes it before rethrow."
+    },
+    "hash": {
+      "time": "O(file bytes) sequential SHA-256; reads only already admitted files and resets position.",
+      "space": "Fixed streaming buffer/hash state plus constant digest; never allocates the whole raw input."
+    },
+    "verify": {
+      "time": "O(file bytes) delegated hash plus fixed-length digest comparison.",
+      "space": "Fixed digest/state beyond the borrowed handle; failure occurs before output publication."
+    },
+    "commandCreate": {
+      "time": "Fixed seven argument/option registrations and one action registration; no payload/native work.",
+      "space": "Fixed parser symbols/default/action delegates and captured references; no file handles."
+    },
+    "commandExecute": {
+      "time": "Delegated RunAsync cost plus O(L) result/diagnostic output.",
+      "space": "Fixed async/error state and diagnostics; does not add another scene or native owner."
+    },
+    "commandAction": {
+      "time": "O(L) options validation/canonicalization; Windows delegates execution, portable returns unavailable without file reads/writes.",
+      "space": "O(L) options paths and fixed result/task state; no portable native resource."
+    },
+    "defaultValue": {
+      "time": "O(1) constant zero.",
+      "space": "O(1)."
+    },
+    "options": {
+      "time": "O(L) path normalization/name/extension checks plus fixed integer guards; no payload I/O.",
+      "space": "O(L) canonical paths and fixed selected scalars."
+    },
+    "destinationGuard": {
+      "time": "Fixed four file/directory existence probes, O(L) receipt-path formation and filesystem latency.",
+      "space": "O(L) receipt path; no file content mutation or output creation."
+    },
+    "property": {
+      "time": "O(1) scalar/reference access; generated accessors are not separate reviewed methods.",
+      "space": "O(1), borrowed immutable value."
+    },
+    "receiptPath": {
+      "time": "O(output path length) string concatenation.",
+      "space": "O(output path length) newly formed receipt path."
+    },
+    "prepareCallback": {
+      "time": "D for one exact catalog selection; no additional VFS read in Prepare.",
+      "space": "Selected parse/scene allocations delegated to Core; closure retains exact catalog/selection/token."
+    },
+    "imageDigestCallback": {
+      "time": "O(Z) owned image copy and SHA-256 once per selected image during receipt serialization.",
+      "space": "O(Z) temporary owned encoded byte copy, fixed digest/name metadata; no image payload file export."
+    },
+    "acquireCallback": {
+      "time": "Delegated AcquireAsync checks/ownership transfer.",
+      "space": "Fixed closure retaining exact snapshot/scene; lease created only after callback invocation."
+    },
+    "registrationDelta": {
+      "time": "One fixed command construction/addition to existing RunCli setup; all inherited parsing/command work excluded.",
+      "space": "One command/symbol graph as commandCreate. No change to legacy dispatch."
+    },
+    "routingDelta": {
+      "time": "One constant-name member added to existing root-name set; ordinary source command routing unchanged.",
+      "space": "One retained string/set member. Existing ShouldRunCli traversal is not reimplemented."
+    },
+    "test": {
+      "time": "Finite synthetic parser/options/path/temporary-output operations; no private fixture decode or native rendering. Filesystem latency is not bounded.",
+      "space": "Small temporary paths/sentinel files/parser results; each test removes only its unique temporary directory where created."
+    },
+    "testCallback": {
+      "time": "Finite predicate/assertion or options-construction work within the enclosing case.",
+      "space": "Fixed test closure/state, except O(L) options/path allocation where invoked."
+    },
+    "routingTest": {
+      "time": "One new capture-name theory row through existing ShouldRunCli, no command execution.",
+      "space": "Fixed short synthetic arguments; no source file, renderer or output."
+    }
+  },
+  "ownershipReview": [
+    "Three source handles are opened read-only with FileShare.Read and per-file length caps before streaming hashes. Their names/lengths/hashes identify actual original inputs.",
+    "Bounded diagnostic tree has one statted real pack leaf; source path is the containing directory. No fabricated slot leaf or recursive GUI enumeration.",
+    "BrowserSession owns the source opening while Core catalog and preview use exact snapshot/selection identity. Factory-acquired NativeSceneInput lease transfers only after constructor succeeds; untransferred lease is released on failure.",
+    "Capture awaits DisposeAsync before input rehash or any output opening. Primary capture and cleanup errors are aggregated; successful native disposal is required for receipt assertions.",
+    "Failed native retirement may retain the background worker, pending resources and source lease until process exit. One-shot CLI does not retain a retry handle or claim reusable-host recovery. BrowserSession retirement releases its owner without waiting for outstanding leases.",
+    "Shared PNG and receipt staging both use overwrite:false. Initial file/directory guards are advisory; final publication independently refuses replacement. The outputs are individually atomic, not transactional as a pair.",
+    "If receipt fails after PNG commits, the command fails and retains the complete PNG. No cleanup deletes a possibly foreign destination.",
+    "Runtime receipt has no hardcoded build/pin assertion; external exact source/assembly/pin evidence is required.",
+    "Capture uses exact browser FrameCamera(bounds,1), initial appearance, static scene and sampler/key policy; it cannot attest GUI interaction, changed viewport/camera state or HWND closure."
+  ],
+  "validation": {
+    "sourceReview": "Independent source/API review found no concrete API/ownership blocker; all source spans hashed from applied files.",
+    "proposedNewFilter": "FullyQualifiedName~ShadowkeyNativeCaptureCommandTests",
+    "expectedNewCases": 19,
+    "expectedNewSkips": 0,
+    "routingFilter": "FullyQualifiedName~CliLaunchModeTests",
+    "expectedRoutingCases": 14,
+    "newRoutingRows": 1,
+    "rootPlannedFocusedCases": 147,
+    "rootPlanComposition": {
+      "existing": 96,
+      "pspDictionary": 18,
+      "capture": 19,
+      "routing": 14
+    },
+    "separateAccessibilityCases": 2,
+    "portableBuild": "pending; active root build at receipt creation",
+    "tests": "pending",
+    "windowsCaptureBuild": "pending",
+    "nativeShadowkeyPixels": "not run",
+    "gui": "not run",
+    "cleanupFaultInjection": "not run",
+    "earlierNativeNeon": "Separate route; not capture/Shadowkey/GUI acceptance.",
+    "openGates": [
+      "Analyzer-enabled builds and proposed test cases",
+      "Actual fern slot0 frame0 skin0 native PNGs with key off/on and pixel/receipt review",
+      "Repeated destination refusal with unchanged outputs/inputs",
+      "Unsupported/empty selection and cancellation with no accepted receipt",
+      "Injected native cleanup failure and terminal retention diagnostics",
+      "Separate visible GUI tree/slot controls, focus/input, camera preservation, replacement, inactive panes, localization and guarded shutdown",
+      "Release acceptance remains open"
+    ]
+  },
+  "relatedDocuments": [
+    "docs/shadowkey-native-capture.md",
+    "docs/shadowkey-pack-native-preview.md",
+    "docs/complexity/shadowkey-pack-preview-source-20260920.json",
+    "docs/complexity/shadowkey-native-preview-ui-20260920.json"
+  ],
+  "createdUtc": "2026-09-21T03:09:47.730071+00:00",
+  "sources": [
+    {
+      "path": "src/BethesdaMultitool/App/ShadowkeyNativeCapture.cs",
+      "sourceSha256Lf": "ef7e6f5458b344f7350ee1adfb83f2f54f0007ff1fc6fa97174557bb268e805c",
+      "sourceBytesLf": 14877,
+      "selection": "All authored method/constructor/property declarations and lambdas.",
+      "callables": [
+        {
+          "name": "ShadowkeyNativeCapture.RunAsync",
+          "kind": "method_declaration",
+          "line": 34,
+          "endLine": 127,
+          "declarationSha256Lf": "78ec41cee1a30f79288b6331d908516d95db4f586d7667f50eb6f04d6439a817",
+          "signatureSha256Lf": "01ddfb071de2bb021c6e2f32f0f6bc7be077015c72b81e8acadff328ff792c06",
+          "bodySha256Lf": "84f4e92b152634f567bfcee905d85d2b54a422d546d42dc801f242175539b045",
+          "costProfile": "orchestrate",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCapture.RunAsync.lambda@58:38",
+          "kind": "lambda_expression",
+          "line": 58,
+          "endLine": 58,
+          "declarationSha256Lf": "8ff02b4c5ca2472467881e9d19edb8dfcbde889c6e2912d9bb4447a132c084f7",
+          "signatureSha256Lf": "b1f7303dc5ce75f2b496883b68d900f81d5a8eebca4b980142bade02f0ee77c5",
+          "bodySha256Lf": "42c8d582940fd5f0930fe84321b515f5d4ac92f67241758b7be740d536bbbf4d",
+          "costProfile": "prepareCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCapture.RunAsync.lambda@104:58",
+          "kind": "lambda_expression",
+          "line": 104,
+          "endLine": 109,
+          "declarationSha256Lf": "e68516095f0b53eec8296c05fbd90f5560fb1a7e8456e407bf24235408ac024a",
+          "signatureSha256Lf": "c0904f7adbba04277f9530fe02665ad70830b260f03bf4abba00d0025b29ff9f",
+          "bodySha256Lf": "91068b94cafe653ec6d343bec241aad4699d443a5d7360e93de9607969fe02a3",
+          "costProfile": "imageDigestCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCapture.CreateSession",
+          "kind": "method_declaration",
+          "line": 134,
+          "endLine": 151,
+          "declarationSha256Lf": "1f7e63276669b7e5b7dec6bd35d33f85bcf5e2befa78f9175cde68170e2ad4be",
+          "signatureSha256Lf": "0fc05260feae38df924e976413590cac08f4dfa02f222c2aff1a393e0aef46db",
+          "bodySha256Lf": "e7abf0388854c7b20f05c1f462c8e2979088f66fc0c1e4312b7e3ad2109f7d5b",
+          "costProfile": "composeSource",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCapture.CreateRequest",
+          "kind": "method_declaration",
+          "line": 156,
+          "endLine": 166,
+          "declarationSha256Lf": "2deecc45cbe5e32ae597a0a1390ab36b39477b6d3c98aefcc9a274ecd0fe7a75",
+          "signatureSha256Lf": "9528c30be32721621d893d80088a366b203343d1e49cf47832e15013613a27b5",
+          "bodySha256Lf": "4b45afa861b235c14a6f458d4cbca95f2a4d8d01d8d90fdbd1cf6924bb2709c9",
+          "costProfile": "request",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCapture.AcquireAsync",
+          "kind": "method_declaration",
+          "line": 173,
+          "endLine": 185,
+          "declarationSha256Lf": "5317d921df8a46104b0ce937332ef85e73bd91eb783e64aa5b72ea051777dc61",
+          "signatureSha256Lf": "6f7b48c061bfd3ab35a82d68cf377e2c6a932c4bf55b6d71bfae5afe2341ff90",
+          "bodySha256Lf": "374e502fd572f8afe4b2cef3da0a00e6761abbcd3aac4794a9b31de3e2ff2ce5",
+          "costProfile": "acquire",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCapture.CaptureAsync",
+          "kind": "method_declaration",
+          "line": 193,
+          "endLine": 213,
+          "declarationSha256Lf": "898ba06737b95e53083e0b24cae86b84c49402d267cd8fc2a2a6258b29c7f1bd",
+          "signatureSha256Lf": "3934b1c6fd5c2268d329f0da50e33ace8022ad60766489b7b26bc06a45fa5d67",
+          "bodySha256Lf": "bac5d42c6d432fa97f58bdf5767710a4dc8ff486ff72c89463fafb10219bb658",
+          "costProfile": "capture",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCapture.CaptureAsync.lambda@201:48",
+          "kind": "lambda_expression",
+          "line": 201,
+          "endLine": 201,
+          "declarationSha256Lf": "e7e2707f173a7fbc7d5af41979f7b18ca39ce840d21885f4ec58fc9cb048e65a",
+          "signatureSha256Lf": "47c64ffeec50f8c3007004e7abad4f963ea6ef89a8e4713b69af25f1c6b9aa74",
+          "bodySha256Lf": "6e176d9f8779b360a943c0f545367a8daa9b415435f932f12b52404f376c290a",
+          "costProfile": "acquireCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCapture.OpenBounded",
+          "kind": "method_declaration",
+          "line": 219,
+          "endLine": 234,
+          "declarationSha256Lf": "6a479bedd4b35dab70043d09c1f7690289f6d9bdfc3fb79f302fc547ca8ee28f",
+          "signatureSha256Lf": "3a60503495b3c0ed15d9f0a60874eca6afc31bfefc76d732b942560ec78344d5",
+          "bodySha256Lf": "e858f5354de877561efa9918ab241a6241aa374f843db564528c3899c96b7aec",
+          "costProfile": "openBounded",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCapture.HashAsync",
+          "kind": "method_declaration",
+          "line": 240,
+          "endLine": 246,
+          "declarationSha256Lf": "ef2ed5cf27ab7c93d1211c0a9b034fe8d2773621797eb863d3a7a780d94c0048",
+          "signatureSha256Lf": "16998f76e159e8375d5f8fc9d130455c935f6f3f0c3923e7747de9490f2c5745",
+          "bodySha256Lf": "74efaf1ac9fdcc824f22b9e1494352783d7dbe6fc50a7cf79cdbfb4b94886818",
+          "costProfile": "hash",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCapture.VerifyUnchangedAsync",
+          "kind": "method_declaration",
+          "line": 253,
+          "endLine": 257,
+          "declarationSha256Lf": "cbd4ba9e1825edfd9f126883f2ed9cd8cebb739ecc492a1ef27c0334df9e7442",
+          "signatureSha256Lf": "f4d55c798bfdc7ead44e79159040ce9349abbf7c333af42c620660150833c0e5",
+          "bodySha256Lf": "a0825e65019ed462421fbbc44f674fc2fc75b40ac93c16b1b5006727cd67f6d3",
+          "costProfile": "verify",
+          "coverage": "new authored callable/declaration"
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/CLI/Commands/Render/ShadowkeyNativeCaptureCommand.cs",
+      "sourceSha256Lf": "ed7773bfb069fc92f61a996238ff33c61607d5e24cf55d68c356bd87ef6ad33e",
+      "sourceBytesLf": 3978,
+      "selection": "All authored method/constructor/property declarations and lambdas.",
+      "callables": [
+        {
+          "name": "ShadowkeyNativeCaptureCommand.Create",
+          "kind": "method_declaration",
+          "line": 10,
+          "endLine": 48,
+          "declarationSha256Lf": "e574c02a389e7f0a0f9ccfc0debda642f16281df2199de90a147720f73ae3653",
+          "signatureSha256Lf": "1e1e3525c0f71ee24efb599a3a7bb74c1308e4f384a76f1f0f8c6c45ca5af1c3",
+          "bodySha256Lf": "cecbce8c2cc37cb28fdd646cce925bfec7200af01856918a25445615aba175c9",
+          "costProfile": "commandCreate",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommand.Create.lambda@17:72",
+          "kind": "lambda_expression",
+          "line": 17,
+          "endLine": 17,
+          "declarationSha256Lf": "ad8760f09ccc5f1fc9c4472b387e37f2f02127900e5b7aa38896dae9602ddfca",
+          "signatureSha256Lf": "6cc4f865c5b21b8169350caed9bea442de111b9732cb94b7144cc7dbccc960e7",
+          "bodySha256Lf": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+          "costProfile": "defaultValue",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommand.Create.lambda@18:70",
+          "kind": "lambda_expression",
+          "line": 18,
+          "endLine": 18,
+          "declarationSha256Lf": "ad8760f09ccc5f1fc9c4472b387e37f2f02127900e5b7aa38896dae9602ddfca",
+          "signatureSha256Lf": "6cc4f865c5b21b8169350caed9bea442de111b9732cb94b7144cc7dbccc960e7",
+          "bodySha256Lf": "5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9",
+          "costProfile": "defaultValue",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommand.Create.lambda@26:27",
+          "kind": "lambda_expression",
+          "line": 26,
+          "endLine": 46,
+          "declarationSha256Lf": "5cd409139667bec576ae8fdc4f4167ea8c798b9d991a6a122244f0300697ed7a",
+          "signatureSha256Lf": "89c0932e1419f12bdd3d73c8343b281324a4a1347b104ed96c36cce21c60f291",
+          "bodySha256Lf": "0d579490366fb92c500a8dcd1b2d61cf9cd916e14dcf01e87297c6936823cb79",
+          "costProfile": "commandAction",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommand.ExecuteAsync",
+          "kind": "method_declaration",
+          "line": 55,
+          "endLine": 79,
+          "declarationSha256Lf": "530bd06a608f352711b210f01a4aa3f1b0d59b9ffe311327fb132f45c5d94643",
+          "signatureSha256Lf": "40ac1168074b30ccf6ac137c30e98afa6256be482cc19131b8634edcc1e3ba1b",
+          "bodySha256Lf": "772876e45b3234f3071ad78d1dd3b7173f08b53a8822cff68a96709a9d8af640",
+          "costProfile": "commandExecute",
+          "coverage": "new authored callable/declaration"
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/CLI/Commands/Render/ShadowkeyNativeCaptureOptions.cs",
+      "sourceSha256Lf": "28569e8a36013c510a97b71ba29f5f461d96beb7ab0fbac9d789e9504be1a6cb",
+      "sourceBytesLf": 3105,
+      "selection": "All authored method/constructor/property declarations and lambdas.",
+      "callables": [
+        {
+          "name": "ShadowkeyNativeCaptureOptions.ShadowkeyNativeCaptureOptions",
+          "kind": "constructor_declaration",
+          "line": 18,
+          "endLine": 37,
+          "declarationSha256Lf": "0048c31bdb814cfb5f62361001e079dfd759f89d43cb09db27a534a6510d24ee",
+          "signatureSha256Lf": "7dfe2660b97bbbc4658dc46ca24bde89ff8e9c64c1385eb92fe3a9dc78577a9a",
+          "bodySha256Lf": "a7105bac8c90cceaca303ad85a697358e450b06256a3128b87e43099251f7e99",
+          "costProfile": "options",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureOptions.PackPath",
+          "kind": "property_declaration",
+          "line": 39,
+          "endLine": 39,
+          "declarationSha256Lf": "e573f47d25e31d899d6b4a7aec8dc3bf3e87cec278aed44bc1400ee29282e654",
+          "signatureSha256Lf": "356030e7c9718a376a680cefc2ff6b651c74be202117731e85b83458e2f8ede2",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "costProfile": "property",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureOptions.OutputPath",
+          "kind": "property_declaration",
+          "line": 40,
+          "endLine": 40,
+          "declarationSha256Lf": "c98e63b611b30a4ef4a203f7a5bddcd47cacf9d75c343d8937e6ed0aa82a971c",
+          "signatureSha256Lf": "cf3450030ba925be21b7ed656242564946fef78c6265e99a460d640750d1cabd",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "costProfile": "property",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureOptions.ReceiptPath",
+          "kind": "property_declaration",
+          "line": 41,
+          "endLine": 41,
+          "declarationSha256Lf": "cb3f364778670b2cde7ca12a1652c0857fab023edda8f2af65bc213779ee894c",
+          "signatureSha256Lf": "03bab7c21e30ce4114ef4ef484edf63195722d7741a31adb765f0b265ee06165",
+          "bodySha256Lf": "fe9e5e32d2685fbc1f04fb371f4ea5f36eb071299f5823eeef709171c5b4e683",
+          "costProfile": "receiptPath",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureOptions.Slot",
+          "kind": "property_declaration",
+          "line": 42,
+          "endLine": 42,
+          "declarationSha256Lf": "bdfb5fa36dc23c5d98a9840a662f367f7ec0ba2ec7eee58644edb5d39b291dc9",
+          "signatureSha256Lf": "07cafa3710d2c38d3de27a8ec4fe7afc330145d51be7abb9bcde7a2321a29d97",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "costProfile": "property",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureOptions.Frame",
+          "kind": "property_declaration",
+          "line": 43,
+          "endLine": 43,
+          "declarationSha256Lf": "69c0f8d0c59c428c0f775cf3cb3f2a93f4df8b66e3a3d227455569d8c7446919",
+          "signatureSha256Lf": "60ba89a4e409a8cd7b2aa47f3af08eb748e70d4dffe47cd3e21e24d3bd3d5ee5",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "costProfile": "property",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureOptions.Skin",
+          "kind": "property_declaration",
+          "line": 44,
+          "endLine": 44,
+          "declarationSha256Lf": "6317088275106481cb89507b4c674410e9a731146ed5e82a5f5b4aac3fe5d58e",
+          "signatureSha256Lf": "25b53f2d792e27b832b17d464e11ddb8eae5202a191bf53c4a147f8f55709173",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "costProfile": "property",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureOptions.MagentaKey",
+          "kind": "property_declaration",
+          "line": 45,
+          "endLine": 45,
+          "declarationSha256Lf": "ea8b8aa2177ec9b0f821904d1618feae5bff7d6b852166006d2bf7737a580126",
+          "signatureSha256Lf": "d16c990b971690d77515c4796a2f56bfd14b404b588bad5a12d8f74cf4bb4998",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "costProfile": "property",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureOptions.EnsureDestinationsAbsent",
+          "kind": "method_declaration",
+          "line": 49,
+          "endLine": 54,
+          "declarationSha256Lf": "6682e5775f2fcc1cfbb8d92100698267c58a2debdc0df56e6fcf5fe8d8b49038",
+          "signatureSha256Lf": "02913c5d0ad2d1f8ceed76c1680d41c7d4c3a760f5e66f387dcbc3b5ab01d23e",
+          "bodySha256Lf": "abc107a092fed86158f8862ba888f2a2c0998d724986fcd562e76d6cf7f749e8",
+          "costProfile": "destinationGuard",
+          "coverage": "new authored callable/declaration"
+        }
+      ]
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/CLI/ShadowkeyNativeCaptureCommandTests.cs",
+      "sourceSha256Lf": "47b4822d21162122292015e80afa7d030382fa195ee50fae1506b1faca1b502c",
+      "sourceBytesLf": 6051,
+      "selection": "All authored method/constructor/property declarations and lambdas.",
+      "callables": [
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.InvalidStaticSelectionIsRejected",
+          "kind": "method_declaration",
+          "line": 10,
+          "endLine": 20,
+          "declarationSha256Lf": "24f72789d47dcb7660e99909c1070ef38c3dbec70fdd2f3c7de16c7d5c9ab166",
+          "signatureSha256Lf": "7278241409cd4e7257e4663d5dcd5b15a96f71fe3215ddeba0154ed5122c33ab",
+          "bodySha256Lf": "97eb90ea573b123f093ea3835f9a8eafe0d77e9412cab340ca8727bb90f9c3bd",
+          "costProfile": "test",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.InvalidStaticSelectionIsRejected.lambda@18:52",
+          "kind": "lambda_expression",
+          "line": 18,
+          "endLine": 19,
+          "declarationSha256Lf": "be79444e65e79a652a070f999cdb2452e5c7b946315493d6eea7c10e9152d9aa",
+          "signatureSha256Lf": "b1f7303dc5ce75f2b496883b68d900f81d5a8eebca4b980142bade02f0ee77c5",
+          "bodySha256Lf": "02d0c1d80a0851f2d2d5ddbe3d9cb1994248a903166342547fb07bff31c298c5",
+          "costProfile": "testCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.DisplayLabelsCannotReplaceTheRealPackPath",
+          "kind": "method_declaration",
+          "line": 22,
+          "endLine": 29,
+          "declarationSha256Lf": "2152f0cce5216ca1a08cd9ca811c6c2451cb06a3ca167093ab3acbb7ab72b2e5",
+          "signatureSha256Lf": "a45d20bcf27625d4e643c02e2150c6fbf199b5af27935d423068be45a48cfaba",
+          "bodySha256Lf": "5f503fb7d606822a912d10f54957b6e5f944a2dca0eed4ab94f7407f3f24322b",
+          "costProfile": "test",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.DisplayLabelsCannotReplaceTheRealPackPath.lambda@27:42",
+          "kind": "lambda_expression",
+          "line": 27,
+          "endLine": 28,
+          "declarationSha256Lf": "6f7b17cdc3ec9ab10ecae97c07dae4cfc8e10292d707349ac66540f82ec4c394",
+          "signatureSha256Lf": "b1f7303dc5ce75f2b496883b68d900f81d5a8eebca4b980142bade02f0ee77c5",
+          "bodySha256Lf": "502ac0226a9311c345027773d85128c4eb68ba12d3ff0f34371f3e77b2f0eadb",
+          "costProfile": "testCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.OutputMustBeANewPngPath",
+          "kind": "method_declaration",
+          "line": 31,
+          "endLine": 38,
+          "declarationSha256Lf": "8d5c4795c5af4e836aec66af8c51612025be744f3517c98e4fc4bff974394b64",
+          "signatureSha256Lf": "24c80a10fa224bd7f364f8d797073a0f3c1fdedbfdafc3e239636f737c6b709c",
+          "bodySha256Lf": "1e992e439665e6fe3373adcc0acf7bb66a95013febdef5b52b13606ce4f7c430",
+          "costProfile": "test",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.OutputMustBeANewPngPath.lambda@36:42",
+          "kind": "lambda_expression",
+          "line": 36,
+          "endLine": 37,
+          "declarationSha256Lf": "78ac6d8ba79daba299b4137a25c0d92ed91e5488556138cdbc63d71df6e9c49d",
+          "signatureSha256Lf": "b1f7303dc5ce75f2b496883b68d900f81d5a8eebca4b980142bade02f0ee77c5",
+          "bodySha256Lf": "68d18cb9c97f43c7604ef68fc12b9c71f8017f88cb8fdefdf16cf85190dd673a",
+          "costProfile": "testCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.CanonicalPathsAndExplicitSelectionArePreserved",
+          "kind": "method_declaration",
+          "line": 40,
+          "endLine": 55,
+          "declarationSha256Lf": "29a0f518434d4e05e31a637a926946950d80e4db49f1295d0ee4d26b2c52c23d",
+          "signatureSha256Lf": "e30977f486872c8e7dea5db93b09cdd5f959ed2bb41f60d16ea4a738fd1fb250",
+          "bodySha256Lf": "37ebcaa35c0973bf4bac9814971128272ab1c197af886af0d6df7ff9e495f352",
+          "costProfile": "test",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.ExistingPngOrReceiptIsRefusedWithoutChangingIt",
+          "kind": "method_declaration",
+          "line": 57,
+          "endLine": 81,
+          "declarationSha256Lf": "2f1a36c99d683900263775126f84a3179d969181d33cbfa677a3e6a95abe04bd",
+          "signatureSha256Lf": "fdb57737c23c322c0fea008315925f34cbc0c5d321635d84369ace9cfdb7510e",
+          "bodySha256Lf": "3f9b26c32726cd59af13dc789e6f974242e83a1b647b457509e0c993c65277ca",
+          "costProfile": "test",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.SlotAndOutputAreRequired",
+          "kind": "method_declaration",
+          "line": 83,
+          "endLine": 90,
+          "declarationSha256Lf": "a51900c4081233545e0711f52307ef8de1689423f2d6a2e8a98c57494e9bdc53",
+          "signatureSha256Lf": "290da03a40a2a7c329c13f88eb179ccf160cde0c396febf60426e74309536bda",
+          "bodySha256Lf": "2c7421e6bbdce8e734d5f9d936959ac1c1e2be72314d484455e32d005e67e310",
+          "costProfile": "test",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.OrdinaryCaptureDefaultsToFrameZeroSkinZeroAndKeyOff",
+          "kind": "method_declaration",
+          "line": 92,
+          "endLine": 104,
+          "declarationSha256Lf": "ac114d061ea4406445ba71c2a38b24ba8f5178844cadd8ef8b6181a9d8f76f81",
+          "signatureSha256Lf": "0a2dc1c9a83f7ea8c9dfa0029738c5d66ff3f13ebc7d5fbfd0dd49a87abb0eb3",
+          "bodySha256Lf": "470d6661c81add30d2406e4ac6c73af4d20d28fc2e6eddb8646a615989942f8e",
+          "costProfile": "test",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.OrdinaryCaptureDefaultsToFrameZeroSkinZeroAndKeyOff.lambda@98:71",
+          "kind": "lambda_expression",
+          "line": 98,
+          "endLine": 98,
+          "declarationSha256Lf": "227541e04e5708babc0256dc0608fc180ae3c3e5dff5637fd1cc7eec2f41a9b0",
+          "signatureSha256Lf": "381ffa4d9834fa765b56d2cc836e5d474d81e9246a6e08f9d9566642b38020a4",
+          "bodySha256Lf": "660a321daa5843ffed7634b2255d1ebd379881b221248fc576ee57b581141c54",
+          "costProfile": "testCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.OrdinaryCaptureDefaultsToFrameZeroSkinZeroAndKeyOff.lambda@99:70",
+          "kind": "lambda_expression",
+          "line": 99,
+          "endLine": 99,
+          "declarationSha256Lf": "46c5d6f92e676d26d099459db40abf18d2251edc5d28754faeb9790b557e49db",
+          "signatureSha256Lf": "381ffa4d9834fa765b56d2cc836e5d474d81e9246a6e08f9d9566642b38020a4",
+          "bodySha256Lf": "88fb2d52f14828850ffcc870d2e66274c8e98798122ca4c64e05b460ccd6c226",
+          "costProfile": "testCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.OrdinaryCaptureDefaultsToFrameZeroSkinZeroAndKeyOff.lambda@100:70",
+          "kind": "lambda_expression",
+          "line": 100,
+          "endLine": 100,
+          "declarationSha256Lf": "34c3a2d3e8ed2f17856fd7789de5addb725e9d7abf5b3a22fb98b247f095eb42",
+          "signatureSha256Lf": "381ffa4d9834fa765b56d2cc836e5d474d81e9246a6e08f9d9566642b38020a4",
+          "bodySha256Lf": "722aea04f72da67446eae0ed446e1295d410e83f779a54045dd1f509d348a9f3",
+          "costProfile": "testCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.ExplicitFrameSkinAndKeyAreNotSilentlyReplacedByDefaults",
+          "kind": "method_declaration",
+          "line": 106,
+          "endLine": 118,
+          "declarationSha256Lf": "30f0a5103003956c37e12b197e4115e4c269037155565d063689f4cf2ec23d61",
+          "signatureSha256Lf": "eb3fbe82dc7cd55d5dd1abc1d48dfee43c6aeea4ad37d22d81205ba69fcd82e0",
+          "bodySha256Lf": "4339fca4020d92863582298f77e8cfe1625128abc7b014a462cbbeae1ddf4b0b",
+          "costProfile": "test",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.ExplicitFrameSkinAndKeyAreNotSilentlyReplacedByDefaults.lambda@112:71",
+          "kind": "lambda_expression",
+          "line": 112,
+          "endLine": 112,
+          "declarationSha256Lf": "227541e04e5708babc0256dc0608fc180ae3c3e5dff5637fd1cc7eec2f41a9b0",
+          "signatureSha256Lf": "381ffa4d9834fa765b56d2cc836e5d474d81e9246a6e08f9d9566642b38020a4",
+          "bodySha256Lf": "660a321daa5843ffed7634b2255d1ebd379881b221248fc576ee57b581141c54",
+          "costProfile": "testCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.ExplicitFrameSkinAndKeyAreNotSilentlyReplacedByDefaults.lambda@113:70",
+          "kind": "lambda_expression",
+          "line": 113,
+          "endLine": 113,
+          "declarationSha256Lf": "46c5d6f92e676d26d099459db40abf18d2251edc5d28754faeb9790b557e49db",
+          "signatureSha256Lf": "381ffa4d9834fa765b56d2cc836e5d474d81e9246a6e08f9d9566642b38020a4",
+          "bodySha256Lf": "88fb2d52f14828850ffcc870d2e66274c8e98798122ca4c64e05b460ccd6c226",
+          "costProfile": "testCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.ExplicitFrameSkinAndKeyAreNotSilentlyReplacedByDefaults.lambda@114:70",
+          "kind": "lambda_expression",
+          "line": 114,
+          "endLine": 114,
+          "declarationSha256Lf": "34c3a2d3e8ed2f17856fd7789de5addb725e9d7abf5b3a22fb98b247f095eb42",
+          "signatureSha256Lf": "381ffa4d9834fa765b56d2cc836e5d474d81e9246a6e08f9d9566642b38020a4",
+          "bodySha256Lf": "722aea04f72da67446eae0ed446e1295d410e83f779a54045dd1f509d348a9f3",
+          "costProfile": "testCallback",
+          "coverage": "new authored callable/declaration"
+        },
+        {
+          "name": "ShadowkeyNativeCaptureCommandTests.PortableExecutionReportsUnavailableWithoutOpeningMissingInputsOrCreatingOutputs",
+          "kind": "method_declaration",
+          "line": 120,
+          "endLine": 134,
+          "declarationSha256Lf": "6f69a41786ec3049679281444c3ae403cf4cdb47119b824ea7708436753efc1d",
+          "signatureSha256Lf": "acd7ad9a8ba0de9d24a2e1c637cef4012871fd195bb065ce714ec35e08a47e0f",
+          "bodySha256Lf": "5d3172c2fa58a188fe76c623bfc8948db6b9bad8b48a33bb64c5fb5dc0c732b8",
+          "costProfile": "test",
+          "coverage": "new authored callable/declaration"
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Program.cs",
+      "sourceSha256Lf": "528f2a5d8e152ac3b19ca22c22907a2c04585a67b58857191a1b64e5798a3c5e",
+      "sourceBytesLf": 16165,
+      "selection": "Selected existing declaration spans; only the new capture registration/set member/theory row is claimed.",
+      "callables": [
+        {
+          "name": "Program.RunCli",
+          "kind": "method_declaration",
+          "line": 137,
+          "endLine": 226,
+          "declarationSha256Lf": "1e8a3ee20dff3466276470118a3851436fb55a7ad53f3152dd552a2667d32cad",
+          "signatureSha256Lf": "e688cd8cb129ce4f3d121915697de8b0a7de1651b2f0fee8205f14ab65f10e72",
+          "bodySha256Lf": "75c0596b84c59d727ac7bb1b275fb7758b6ec88905c83c80af995da3cb481e11",
+          "costProfile": "registrationDelta",
+          "coverage": "existing declaration, capture routing/registration delta only"
+        },
+        {
+          "name": "Program.ShouldRunCli",
+          "kind": "method_declaration",
+          "line": 336,
+          "endLine": 365,
+          "declarationSha256Lf": "603c149270a5fd657b8bee4b7eef669cc17f531b1c5c243143da6d23fde60b66",
+          "signatureSha256Lf": "291513ee8c4ba3083e5e713c5b99ee23de13433228638a02febe669f5f0237ef",
+          "bodySha256Lf": "ee131e1cc9d6dfaf4bf5875d9e458d589caba2e38bd9872e34587096d954d9e1",
+          "costProfile": "routingDelta",
+          "coverage": "existing declaration, capture routing/registration delta only"
+        }
+      ]
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/App/CliLaunchModeTests.cs",
+      "sourceSha256Lf": "738454a699584cd329d11bdc305d0fe1887f61016202a3e95a5584b3af190cff",
+      "sourceBytesLf": 2146,
+      "selection": "Selected existing declaration spans; only the new capture registration/set member/theory row is claimed.",
+      "callables": [
+        {
+          "name": "CliLaunchModeTests.Registered_root_command_selects_cli_without_legacy_flag",
+          "kind": "method_declaration",
+          "line": 9,
+          "endLine": 19,
+          "declarationSha256Lf": "118590c11d8c61ab6b2b3b37dd1c95403d8154b8beee6f9019af7793d0db53f8",
+          "signatureSha256Lf": "ab803a8027d12ffe13afaa55a38a324806bcb6398596355d753efa09794efe0b",
+          "bodySha256Lf": "61d84f2e70d38fdb94adfd2dd5500d4201f3a5045bf582e536939bb198bc8085",
+          "costProfile": "routingTest",
+          "coverage": "existing declaration, capture routing/registration delta only"
+        }
+      ]
+    }
+  ],
+  "callableInventory": {
+    "method_declaration": 23,
+    "lambda_expression": 15,
+    "constructor_declaration": 1,
+    "property_declaration": 7,
+    "total": 46
+  },
+  "parserReview": {
+    "parser": "Tree-sitter C#; full source syntax only, no compilation or semantic binding",
+    "diagnostics": [
+      {
+        "path": "tests/BethesdaMultitool.Tests/App/CliLaunchModeTests.cs",
+        "kind": "identifier",
+        "line": 58,
+        "column": 44,
+        "isError": false,
+        "isMissing": false,
+        "span": "",
+        "context": "ram.ShouldRunCli([]));\n        Asser"
+      }
+    ],
+    "interpretation": "Zero-width has_error leaves in valid empty collection expressions are a known grammar limitation; declaration spans remain complete. Any real error/missing syntax would block this receipt."
+  },
+  "contextSources": [
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ShadowkeyPackPreviewSource.cs",
+      "sourceSha256Lf": "4b4f11da0157984028e4faf5890f89f8bd7d1e2643053643dcb01ec601290781",
+      "role": "Delegated bounded catalog/selection/preparation; Core receipt owns callable costs."
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Helpers/ShadowkeyNativePresentation.cs",
+      "sourceSha256Lf": "dd52f71ef0f8611eebdf887e6c722e4002bfd3cf1a24e6f12c2e0465f794d2a0",
+      "role": "Unchanged exact browser bounds/camera policy; UI receipt owns callable costs."
+    },
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12/Scenes/NativeSceneCapture.cs",
+      "sourceSha256Lf": "98dc62ae8f5f433c45b1848c8732377e074c7c867cd098c6dde47a77346d4b06",
+      "role": "Pinned delegated offscreen preparation/readback/retirement; not new application implementation."
+    },
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12/Scenes/NativeSceneInput.cs",
+      "sourceSha256Lf": "c39b4a53973213384e1513dc96b69361b240e440d74e1db17cae4e7ac834cdd9",
+      "role": "Factory-acquired source lease ownership transfer contract."
+    },
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12/Scenes/NativeSceneCaptureRequest.cs",
+      "sourceSha256Lf": "fa65c209b1f76fdacf3f7c83409d264d98d2fe9c9edd0ace251f8fbc2766de9e",
+      "role": "Public output/camera/allocation policy."
+    },
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12/Scenes/NativeScenePresenter.cs",
+      "sourceSha256Lf": "f17365e48763542c355c90a810b7a87a85fa40174c892e75d60de37cd4466f87",
+      "role": "Existing initial browser appearance/budget policy."
+    },
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.Core/Browsing/BrowserSession.cs",
+      "sourceSha256Lf": "15aaaadbd246a2696cac6f57d6c0184ef13ebcb79338206fa5ce04cdd77ce996",
+      "role": "Owner retirement does not wait for outstanding leases."
+    },
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.Core/Browsing/BrowserSnapshot.cs",
+      "sourceSha256Lf": "39abd0509b141ee8f5616d80e1225fc55b543b5a10270b082d3213c47429d362",
+      "role": "Exact source cancellation/refcount retention."
+    },
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.Media/Images/Png/PngExporter.cs",
+      "sourceSha256Lf": "5a33df05ebca61f04b4dc84a7034e7a16fc6ce10acb142580851669f9c25c743",
+      "role": "Existing safe no-overwrite PNG publication."
+    },
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.Core/Operations/StagedStreamExport.cs",
+      "sourceSha256Lf": "dac0e59c514792ecefc471d8e4ec7072462798c476c0a7dd5bb0c6849f24353b",
+      "role": "Existing separately atomic no-overwrite receipt publication."
+    }
+  ],
+  "sourceAssertions": {
+    "newCaptureCases": 19,
+    "routingCases": 14,
+    "testInvocationUsesRunnerCancellationToken": true,
+    "runtimeReceiptHasNoHardcodedPin": true
+  },
+  "diagnosticFollowup": {
+    "reviewedUtc": "2026-09-21T04:00:33.538365+00:00",
+    "previousCommandSourceSha256Lf": "ea4420b564d58527de8beb3c3674f91a828bb189710ca041f0ab47c5577f7eec",
+    "scope": "Three Windows ExecuteAsync catch messages now await Console.Error.WriteLineAsync before returning their existing exit codes. Success output and source/native/capture cleanup paths are unchanged. Fixed async continuation state; diagnostic formatting remains O(message length), stream latency unbounded.",
+    "priorEvidence": "Parent Windows build51972 passed with6warnings before this follow-up; parent reports six native capture outcomes and fern oracle201samples0mismatches. Those prior receipts remain separate and do not validate newly changed diagnostic calls.",
+    "validation": "Source-only follow-up; next coordinated Windows analyzer run pending. No tests or rendering repeated by this reviewer."
+  },
+  "rootExecutionEvidence": {
+    "receipt": "docs/validation/shadowkey-native-preview-20260920.md",
+    "publishReceipt": "docs/validation/publish-20260920.md",
+    "portableTests": "152 Windows and 152 Ubuntu WSL, zero skips; Linux executes Windows-built portable assemblies. Two Windows accessibility cases pass.",
+    "windowsPublish": "Corrected publish passed, 580.279 seconds, three inherited WIN2D0001 warnings, zero application analyzer diagnostics. Seven source/PDB audits and unchanged 36-input freeze.",
+    "nativeExecution": "Earlier native fern opaque/keyed and arrow captures passed. Two actual published fern captures match accepted PNG/RGBA exactly; two repeat refusals, animated decline and explicit CLI help pass.",
+    "remaining": "Interactive GUI, native cancellation/cleanup-failure injection, Linux source build/publish, readable Shared notice sidecars and complete release acceptance remain open.",
+    "boundary": "Historical source-review status/claims above describe the reviewer at creation; this root execution evidence records later checks. Exact source and binary boundaries remain in the linked receipts."
+  }
+}

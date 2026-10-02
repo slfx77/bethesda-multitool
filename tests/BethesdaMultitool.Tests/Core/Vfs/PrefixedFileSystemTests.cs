@@ -70,7 +70,10 @@ public sealed class PrefixedFileSystemTests
                 GroupHeaderSize = 0,
                 HasRecordVersionTrailer = false,
                 ClassicLooseRoot = "GAMEDATA",
-                ClassicExtraLooseDirectories = ["videos", "missing"]
+                ClassicExtraLooseDirectories = ["videos", "missing"],
+                // Every profile states its unit (required); this test is about mounts, so it borrows the
+                // registry's Battlespire value rather than inventing one.
+                Units = BethesdaMultitool.Core.Games.GameProfiles.For(BethesdaMultitool.Core.Games.BethesdaGame.Battlespire).Units
             };
 
             using var fs = GameFileSystem.OpenGameRoot(profile, root.FullName);

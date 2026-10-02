@@ -1,6 +1,5 @@
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Formats.Travels.OblivionPsp;
-using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
 
 namespace BethesdaMultitool.Core.Formats.Archives;
 

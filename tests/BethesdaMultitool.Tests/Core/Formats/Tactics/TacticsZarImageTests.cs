@@ -1,5 +1,5 @@
 using System.Text;
-using BethesdaMultitool.CLI.Rendering.Sprite;
+using BethesdaMultitool.Core.Media.Sprite;
 using BethesdaMultitool.Core.Formats.Tactics;
 using BethesdaMultitool.Core.Imaging;
 using Xunit;

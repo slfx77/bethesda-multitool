@@ -1,0 +1,546 @@
+{
+  "schema": "bmt-rw-clump-decoding-source-review/v1",
+  "createdUtc": "2026-09-20T23:15:11.638907+00:00",
+  "baseCommit": "9f08c55d2631803a5e39f691e0ad71dc93c250cc",
+  "sharedPin": "2d498be3aac356795a983f34088bfddfd93686f8",
+  "scope": "Source complexity/resource review of the new RwClumpReader increment only. Model-record generated members, existing reader implementations, synthetic/retail tests, normalized adaptation, rendering, and production dispatch are outside callable review scope.",
+  "status": "source_review_only",
+  "hashConvention": {
+    "source": "SHA-256 of UTF-8 source bytes after CRLF/CR to LF normalization; no trimming.",
+    "declaration": "For named methods and lambdas: exact Tree-sitter declaration/expression byte span, including body and excluding preceding comments and following whitespace.",
+    "signature": "Bytes from declaration start to body start, with trailing whitespace removed; expression-bodied method signature excludes the arrow-expression body.",
+    "body": "Exact body node bytes, including block braces or the arrow-expression node for expression-bodied methods.",
+    "primaryConstructor": "Declaration/signature hash covers the Reader class header through its primary-constructor parameter list, excluding the class body. The authored diagnostic field initializer declaration has a separate hash."
+  },
+  "verification": {
+    "method": "Tree-sitter C# callable-span extraction, manual source review, JSON/hash/coverage checks and git diff --check. No compiler, test runner, GUI, benchmark or performance measurement was invoked for this artifact.",
+    "grammarNotes": "The installed grammar marks the empty collection initializer with a zero-width identifier diagnostic. Method/lambda declaration spans were inspected and are complete; no compilation claim is inferred from parsing.",
+    "grammarReportedLeaves": [
+      {
+        "line": 46,
+        "nodeType": "identifier",
+        "text": ""
+      }
+    ],
+    "coverage": {
+      "namedMethods": 24,
+      "lambdas": 11,
+      "primaryConstructors": 1,
+      "totalCallables": 36
+    }
+  },
+  "variables": {
+    "B": "Input CLUMP byte length; after the root check the reader owns exactly one B-byte copy.",
+    "H/h": "Total visited chunk headers / direct children of one container; fixed-depth, constant-repeat structural scans count each header O(1) times.",
+    "F/G/A/M": "Frame / geometry / atomic-plus-camera-light / material-slot counts.",
+    "V/U/L": "Total vertices / stored UV vector values across sets / decoded texture-name and mask-name bytes.",
+    "T/I/S": "Total serialized geometry triangles / BinMesh indices / BinMesh splits.",
+    "P": "Plugin count in the indicated scope; P <= H.",
+    "g/m/x/a": "Subscript narrows a quantity to one geometry/material/texture/atomic.",
+    "D_g": "Candidate BinMesh triangles in one geometry; at most I_g for strips and I_g/3 for lists.",
+    "K_a/K_d/K": "Distinct nondegenerate authored / drawn / current dictionary keys.",
+    "K in Only": "Number of allowed child types supplied through params; at most three at current call sites."
+  },
+  "aggregateBounds": {
+    "timeExpectedAmortized": "O(B + H + F + G + A + M + V + U + T + I + L), hence O(B) for the admitted serialized layout and fixed-width records.",
+    "timeDictionaryWorstCase": "O(B + H + F + G + A + M + V + U + I + L + sum_g((T_g + D_g)^2)); ordinary Dictionary value-tuple hashing is not a worst-case constant-time guarantee.",
+    "ownedOutput": "O(B + H + F + G + A + M + V + U + T + I + L), including the single source copy, decoded arrays/strings, graph records, opaque-slice records and diagnostics.",
+    "additionalTransientStorage": "Direct-child/filter arrays are O(H); frame traversal state is O(F); each topology check uses O(T_g + D_g) dictionary capacity. Only one geometry is checked at a time. Runtime GC may retain unreachable prior scratch until collection; aggregate allocation remains O(input).",
+    "callDepth": "Fixed structural parser call depth; frame ancestry is iterative and opaque plugins are not recursively decoded.",
+    "resourcePolicy": "Bounds are proportional to input, not an arbitrary acceptance cap. No identified count-driven allocation beyond serialized byte bounds. No cancellation token, decode quota, or benchmark-derived memory ceiling is provided by this pure reader."
+  },
+  "resourceReview": [
+    "Root type, bounded declared size, and exact end are checked before ToArray; an invalid outer container avoids the source copy.",
+    "Frame count and material-map count use Int64 exact-size equations before casts/allocations. Geometry count is compared with observed bounded chunks.",
+    "Existing RwGeometry and RwBinMesh decoders own their arrays and validate predicted/remaining payload sizes before their count-based allocations.",
+    "The row-vector frame matrices, flags, material reuse map and occurrence indices are retained. No scene normalization, coordinate conversion, UV changes, normal normalization or skin evaluation is performed.",
+    "Opaque chunk payloads and complete camera/light chunks are ReadOnlyMemory slices of the private source; creating wrappers does not copy plugin bodies.",
+    "The parent cycle walk uses one byte per frame and traverses each active edge a constant number of times; forward references do not require recursive stacks.",
+    "Topology keys preserve cyclic winding, material identity and multiplicity. Repeated-index degenerates remain in the source arrays and are excluded only from the redundant topology comparison.",
+    "Single allocates all matching child headers before checking uniqueness; malformed duplicate children can increase temporary allocations only in proportion to the actual input headers.",
+    "Error strings with offsets, type words, and source ordinals have bounded machine-integer lengths. Runtime exception/stack behavior is excluded from deterministic managed-algorithm claims."
+  ],
+  "followUps": [
+    {
+      "id": "RW-1300-PERMISSIVE-SHORT-DECLARATION",
+      "status": "explicit_follow_up_unmodified",
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwChunk.cs",
+      "detail": "The existing 0x1300 header correction uses Math.Max(0, declaredSize - 8), so declared sizes below eight are accepted as empty bodies when surrounding chunks tile. This review records that inherited permissiveness; it neither changes the reader nor claims those short declarations are valid RenderWare payloads. Decide and test the malformed-header policy separately."
+    }
+  ],
+  "limitations": [
+    "Asymptotic source review only; no measured throughput, latency, peak-memory or rendering-performance claim.",
+    "No independent test execution, compiler validation, platform acceptance, release acceptance or dispatch replacement is established by this artifact.",
+    "Successful structural decoding retains explicit diagnostics for unsupported plugin/skin/HAnim/camera/light semantics; it is not normalized-scene or visual-fidelity acceptance.",
+    "Record model files and independent retail-oracle assertions are reviewed elsewhere; this artifact binds only the reader callables and their stated external parser assumptions."
+  ],
+  "externalParserSources": [
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwChunk.cs",
+      "sourceSha256Lf": "9dd7c8a957d7f83c1b2f4694700cd1d287b5e5d80e43d3ec1dd739ce14a0f878",
+      "role": "Existing constant-time bounded header parser; its inherited 0x1300 correction is unchanged."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwGeometry.cs",
+      "sourceSha256Lf": "1936a64ec6bcf64bc6b9b2bb2e1aa2e1f677f27e849ec743d07a7a0569b8f4fb",
+      "role": "Existing generic geometry decoder verifies predicted Int64 byte size before array allocation; the new reader restricts morph count to one."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwBinMesh.cs",
+      "sourceSha256Lf": "092b2d713a7bf02355db2911a283baf0d0b194139a31011fe29afb9448173ff6",
+      "role": "Existing decoder bounds split headers and index arrays by remaining payload bytes before allocation."
+    }
+  ],
+  "files": [
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/RenderWare/RwClumpReader.cs",
+      "sourceSha256Lf": "a64859956c7e77d0914213eaa6533855aaa6f3370c742304a5d7ca15db7e9174",
+      "callables": [
+        {
+          "name": "RwClumpReader.TryRead",
+          "kind": "method",
+          "line": 22,
+          "endLine": 42,
+          "declarationSha256Lf": "78fb71d612171f0c20429f2ad0eb3b6b14d73aa1bad714a15ab0c235f2dffd59",
+          "signatureSha256Lf": "a5682fde9b12c46448b06e0fc225690fc80a76f30a6b8957f5f69893c8ae4419",
+          "bodySha256Lf": "718030d7c95e960ed95219d12989fb46d1f429d329b4668b84397ad60efa076b",
+          "timeBound": "O(1) for an invalid outer header; otherwise O(B + H + F + V + U + T + I + M + A + L) expected/amortized",
+          "spaceBound": "O(B + H + F + V + U + T + I + M + A + L) owned output and transient storage",
+          "review": "Checks the complete root before allocation, then takes exactly one private source copy and delegates. Copies/decoding are O(input); dictionary worst cases are described in the aggregate policy. InvalidDataException is converted to an error; memory exhaustion and unrelated runtime failures are not swallowed."
+        },
+        {
+          "name": "RwClumpReader.Reader.Reader(byte[] data)",
+          "kind": "primaryConstructor",
+          "line": 44,
+          "endLine": 44,
+          "declarationSha256Lf": "87c0a70fabe01c5749f7fa0d94b0f9e5d67c0c7e1a83a7192d4cb036ad460cba",
+          "signatureSha256Lf": "87c0a70fabe01c5749f7fa0d94b0f9e5d67c0c7e1a83a7192d4cb036ad460cba",
+          "initializerDeclarationSha256Lf": "20a1a10713011b6dbcab93d92fc9eb255d039dd936a17994f8347b2a1fd8f517",
+          "initializerLine": 46,
+          "timeBound": "O(1)",
+          "spaceBound": "O(1); captures the already owned source reference and initializes one empty diagnostic list",
+          "review": "The compiler-generated primary-constructor body does not copy data. The explicit field initializer is hashed separately; nested method declarations are not part of this constructor hash."
+        },
+        {
+          "name": "RwClumpReader.Reader.Read",
+          "kind": "method",
+          "line": 48,
+          "endLine": 99,
+          "declarationSha256Lf": "6e43905ca45c8340e1210d9d8723fb66aab1d86c5c256c6a8e23347e4e43c44d",
+          "signatureSha256Lf": "03527e4d807dced859e5ce601001d8f5cdb6ef8e27e3fd6fab482ee5080e5768",
+          "bodySha256Lf": "c19845eb2ced2f9a14aa61a3191331baafb9b885bc2070e2b038f8a88dafd19c",
+          "timeBound": "O(H + F + V + U + T + I + M + A + L) expected/amortized",
+          "spaceBound": "O(H + F + V + U + T + I + M + A + L), excluding the already owned B-byte source",
+          "review": "Each top-level child is consumed once; a frame-association Struct consumes its adjacent camera/light. A constant number of filtered scans does not create nested all-pairs work. Child decoders and topology validation dominate."
+        },
+        {
+          "name": "RwClumpReader.Reader.Read.lambda1",
+          "kind": "lambda",
+          "line": 95,
+          "endLine": 95,
+          "declarationSha256Lf": "fc41defcf619e2d142f92bd14d32ef18a4f2125710952367ab9af48b1fd93b3d",
+          "signatureSha256Lf": "7535fd5b7b0e205260aa366ba7334c4445e58b9942ca56e1431ba5a40f38b525",
+          "bodySha256Lf": "ab43dd02cc315545b2c0a7a70670c44cc061012dffaceeb8909934f13920da34",
+          "expression": "a => a.Chunk.Type == Light",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) per invocation",
+          "review": "Fixed-size property/index comparison; enclosing LINQ traversal and delegate capture are accounted for at the owning method."
+        },
+        {
+          "name": "RwClumpReader.Reader.Read.lambda2",
+          "kind": "lambda",
+          "line": 96,
+          "endLine": 96,
+          "declarationSha256Lf": "a5f105556b94389bb1552ea2c8d1e71f91fa767f95ba3ca9cb32b298dcfefb88",
+          "signatureSha256Lf": "7535fd5b7b0e205260aa366ba7334c4445e58b9942ca56e1431ba5a40f38b525",
+          "bodySha256Lf": "60895a5ad8f0e11422a72efc5f7ff02f22f0584c4c86b045b2f848282d85ad5f",
+          "expression": "a => a.Chunk.Type == Camera",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) per invocation",
+          "review": "Fixed-size property/index comparison; enclosing LINQ traversal and delegate capture are accounted for at the owning method."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadFrames",
+          "kind": "method",
+          "line": 101,
+          "endLine": 148,
+          "declarationSha256Lf": "0650255794b8e254a6cafe1053a4c3670cac0f2578fbad190f8faa10bbf1dc47",
+          "signatureSha256Lf": "03dc9264a874a36a82daf3f1cfc54d3a2292068b63c43b64de6736b26d5e8b49",
+          "bodySha256Lf": "801581c9da91654e1b1c2c1960835147ba1d29ede8482c4ca51d76afdd4e9a33",
+          "timeBound": "O(h + F + P)",
+          "spaceBound": "O(h + F + P) output/transient records; O(F) explicit traversal state",
+          "review": "Exact 4 + 56*count size uses Int64 before the frame-array allocation. Frame-parent range is checked before traversal. The three-color iterative walk transitions each frame from unvisited to active to complete once; forward references do not add quadratic ancestry work. P is the plugins in these frames."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadFrames.lambda1",
+          "kind": "lambda",
+          "line": 109,
+          "endLine": 109,
+          "declarationSha256Lf": "d1601de1cb4ebe81d0064dbb951dcc04c8aa9ce678ecc2e9721190b423760b39",
+          "signatureSha256Lf": "9a2580d090d374707d65cdf1b8d44efc49aba9c9c96f9ea7c897e23aa0adb918",
+          "bodySha256Lf": "67141fda6e752bc10f19fa852f0bda44ab1e15c4a4fe0efd44c7b64087467004",
+          "expression": "c => c.Type == RwChunk.Extension",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) per invocation",
+          "review": "Fixed-size property/index comparison; enclosing LINQ traversal and delegate capture are accounted for at the owning method."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadGeometries",
+          "kind": "method",
+          "line": 150,
+          "endLine": 179,
+          "declarationSha256Lf": "533007c083459a8ee93bf015a0943c297dc089ab4f302c6894698bfcef2f069f",
+          "signatureSha256Lf": "7b618e36cfc70c80bf4f873b04119dc561f0133b8071eca2002bbc62acead848",
+          "bodySha256Lf": "0bbc997e127100e3c6747fb0ce45393931bfe605d418787617231a6d736961b9",
+          "timeBound": "O(h + G + V + U + T + I + M + L + P) expected/amortized",
+          "spaceBound": "O(h + G + V + U + T + I + M + L + P) output, plus O(max_g(T_g + D_g)) topology scratch",
+          "review": "Declared geometry count must equal observed geometry chunks. Each geometry is decoded once; the existing parsers bound arrays by serialized sizes. One geometry's triangle dictionaries are used at a time; managed reclamation timing is runtime-owned."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadGeometries.lambda1",
+          "kind": "lambda",
+          "line": 155,
+          "endLine": 155,
+          "declarationSha256Lf": "5309d1720cbfb88feac94a01adc2e5d834bc42474c6ebcb37f893c2a889a56b0",
+          "signatureSha256Lf": "9a2580d090d374707d65cdf1b8d44efc49aba9c9c96f9ea7c897e23aa0adb918",
+          "bodySha256Lf": "962581df9f7096941087b6f12ed934a3a86cb6aaa52664ef178dca555128fd8f",
+          "expression": "c => c.Type == RwChunk.Geometry",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) per invocation",
+          "review": "Fixed-size property/index comparison; enclosing LINQ traversal and delegate capture are accounted for at the owning method."
+        },
+        {
+          "name": "RwClumpReader.Reader.ValidateGeometryValues",
+          "kind": "method",
+          "line": 181,
+          "endLine": 211,
+          "declarationSha256Lf": "a1663584ab1a9c329e502c9449a13ed3e5bfb5b911f332e54ebb6f74421a343d",
+          "signatureSha256Lf": "5af571a75decd9c0169b17436aab1c4481e2f4675905364ebd01c10dbbc3229c",
+          "bodySha256Lf": "530c8ad26c730c545f0190c3a96eea88151f7d27516248e6abe9f1c0e6640ece",
+          "timeBound": "O(V_g + U_g)",
+          "spaceBound": "O(1)",
+          "review": "Reads the first morph presence flags and sphere, then visits all positions, optional normals, and UV values. Earlier exact geometry-size validation bounds offset arithmetic. No normalization or array copy occurs."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadMaterials",
+          "kind": "method",
+          "line": 213,
+          "endLine": 242,
+          "declarationSha256Lf": "be29ad37adb7cf2a581a489246e918da6ada893d5d1e1c2fa6e1c4c5865f3e79",
+          "signatureSha256Lf": "6c7457912225bb2fcd306f1e83d374720ac67a8e2ea02f4a7df4ae595466377b",
+          "bodySha256Lf": "3a07aafabb52ec66c079bda373f20e1001224c667b6f1bf55a9445c61d6eb516",
+          "timeBound": "O(h + M_g + L_g + P_g)",
+          "spaceBound": "O(h + M_g + L_g + P_g) owned output/transient records",
+          "review": "Material-map length is checked with Int64 before allocation. Every reuse index references an earlier slot and copies a reference in O(1), without following an alias chain. Newly authored material chunks are decoded once."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadMaterials.lambda1",
+          "kind": "lambda",
+          "line": 221,
+          "endLine": 221,
+          "declarationSha256Lf": "4dcb33f719f4f2862f9d0471d672fd12a689ff7ce9725052f6e3ea9032a94961",
+          "signatureSha256Lf": "9a2580d090d374707d65cdf1b8d44efc49aba9c9c96f9ea7c897e23aa0adb918",
+          "bodySha256Lf": "92614bb681b598844f4900c63f628c83abde5af65b782c2817cecbe17b558569",
+          "expression": "c => c.Type == RwChunk.Material",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) per invocation",
+          "review": "Fixed-size property/index comparison; enclosing LINQ traversal and delegate capture are accounted for at the owning method."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadMaterial",
+          "kind": "method",
+          "line": 244,
+          "endLine": 257,
+          "declarationSha256Lf": "d9a775a6d4cf5d25c9a354cf33305300b62c2a284b254da88599d189ad6af5d9",
+          "signatureSha256Lf": "3097545b428ffd706db812e8bb5a445c26679da0f0cac0d3c34e2a058d63f61d",
+          "bodySha256Lf": "6074c4c997723d0ccdb2b64e8455b38063954e76ab250a8c6fb23e421b4ee019",
+          "timeBound": "O(h + L_m + P_m)",
+          "spaceBound": "O(h + L_m + P_m)",
+          "review": "Constant-sized structure and texture-presence checks precede optional texture decoding. Texture strings and opaque plugin records dominate variable cost; float values are retained and checked for finiteness."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadMaterial.lambda1",
+          "kind": "lambda",
+          "line": 251,
+          "endLine": 251,
+          "declarationSha256Lf": "1d2f46d2b9868284ffe6b64a23c31fed926992a4c2b022529aa63b59e3267a84",
+          "signatureSha256Lf": "9a2580d090d374707d65cdf1b8d44efc49aba9c9c96f9ea7c897e23aa0adb918",
+          "bodySha256Lf": "129ee0623f52a6ac4c3f2b2855004a35d88b07e08b15e4527a6acbdc665c39e8",
+          "expression": "c => c.Type == RwChunk.Texture",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) per invocation",
+          "review": "Fixed-size property/index comparison; enclosing LINQ traversal and delegate capture are accounted for at the owning method."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadTexture",
+          "kind": "method",
+          "line": 259,
+          "endLine": 267,
+          "declarationSha256Lf": "98d7b9287998fdae8f202620cc7273645d2ec58b5a3adff20587fd0be2829786",
+          "signatureSha256Lf": "08a7ade2a24719dbdab1f80e01458ca45a6d5837bac1eb24df1936518eaba608",
+          "bodySha256Lf": "3dd31ce1ba42f0024f4ede9ed9c5839dd3f2951ce5c687847a4752a7c6dca984",
+          "timeBound": "O(h + L_x + P_x)",
+          "spaceBound": "O(h + L_x + P_x)",
+          "review": "Requires exactly two string chunks; sampler is retained without reinterpretation. String decode and extension enumeration are linear in their source domains."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadTexture.lambda1",
+          "kind": "lambda",
+          "line": 263,
+          "endLine": 263,
+          "declarationSha256Lf": "0363c0a6a066ed0ba4d008dd1aacdf65cbe3d7fca08e423214c0b42c213532a9",
+          "signatureSha256Lf": "9a2580d090d374707d65cdf1b8d44efc49aba9c9c96f9ea7c897e23aa0adb918",
+          "bodySha256Lf": "19ac853402ac5f9b9eb33a15d77d9ca95cdc5da70252dc8ed09ba5ce0ff1d716",
+          "expression": "c => c.Type == RwChunk.String",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) per invocation",
+          "review": "Fixed-size property/index comparison; enclosing LINQ traversal and delegate capture are accounted for at the owning method."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadString",
+          "kind": "method",
+          "line": 269,
+          "endLine": 276,
+          "declarationSha256Lf": "af3b5c22c1c660f4de6f1d31ed0f15962ac5d73d87f464fb752ad3416818ecdf",
+          "signatureSha256Lf": "61308866dba3454cb926b247432242475641039a6b5c3ba0e08ab6d960d163ca",
+          "bodySha256Lf": "b61007c0c5298443e4febb9cbaf6bf0899ccd2212c8c45358227f6e830c16aef",
+          "timeBound": "O(L_x)",
+          "spaceBound": "O(L_x) returned string; O(1) scratch",
+          "review": "NUL search is bounded by the chunk payload. Latin-1 decoding copies only the prefix and retains each source byte value. A missing terminator declines rather than reading the next chunk."
+        },
+        {
+          "name": "RwClumpReader.Reader.ReadAtomic",
+          "kind": "method",
+          "line": 278,
+          "endLine": 289,
+          "declarationSha256Lf": "f7c033ea7a0673e3f2341c67429b9e9d1b2d75ca4105d5a6d84eda2cf108d685",
+          "signatureSha256Lf": "586e2a8eb24176b662f5d359d8160e3ef13de400cd5bf0b779f146c9d85338c9",
+          "bodySha256Lf": "1ff90c968a19796026a66eb64c8c1364a2f582876e54cd035c659feedc5ec27f",
+          "timeBound": "O(h + P_a)",
+          "spaceBound": "O(h + P_a)",
+          "review": "The 16-byte core is constant; frame and geometry references are range checked. Plugin records retain borrowed slices into the private source copy."
+        },
+        {
+          "name": "RwClumpReader.Reader.Extensions",
+          "kind": "method",
+          "line": 291,
+          "endLine": 310,
+          "declarationSha256Lf": "a696a0440ca0c19196ead67c19f261fce4bcd8d933f5812833a35daf49142c69",
+          "signatureSha256Lf": "1a5b07f01ec8062203cac80dc1e670cb4f2b8f361905683be36002b07f21a623",
+          "bodySha256Lf": "5f514b1eb437b1a25a3dcff104657f1e869cbba04bb393891211e97a5026608d",
+          "timeBound": "O(P)",
+          "spaceBound": "O(P) chunk headers, opaque records, list storage and diagnostics",
+          "review": "Only plugin headers are walked. Payloads are not recursively decoded or copied; each plugin gets one opaque record, and each undecoded type gets one diagnostic. Scope strings are passed by reference; integer scope labels are fixed-width machine values."
+        },
+        {
+          "name": "RwClumpReader.Reader.Opaque",
+          "kind": "method",
+          "line": 312,
+          "endLine": 314,
+          "declarationSha256Lf": "9b6c03b092d8aaa259c3ae9909982e399fe941748980ec3d69b9a567d94bd9f9",
+          "signatureSha256Lf": "9a0da4dfb1ccc8b61f71ece00062c05f2b628e630ab4a6d72eabca0fd341a440",
+          "bodySha256Lf": "a825e7a0671da62b1c1d2653793edff5083a6ea8faef434200c27a3ce2d12f1e",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) record; no payload copy",
+          "review": "AsMemory retains a bounded slice of the Reader-owned source array together with type, library id and source-relative header offset."
+        },
+        {
+          "name": "RwClumpReader.Reader.Children",
+          "kind": "method",
+          "line": 316,
+          "endLine": 329,
+          "declarationSha256Lf": "d778614d9e33a6aa266649eace7e28904df707fae87e395497bf23adb71d4f95",
+          "signatureSha256Lf": "e50c63464a3c4a7105fd87ec5728f136b8d9303e14d54d9ec433ad04446f9cd1",
+          "bodySha256Lf": "6340261b72482ca723dc16393e0f91ce6c62a0f24b6c95182da06cef54481a76",
+          "timeBound": "O(h)",
+          "spaceBound": "O(h)",
+          "review": "Every successful chunk consumes its 12-byte header plus nonnegative corrected payload. Parent bounds are checked by RwChunk.TryRead; the walk progresses even for empty bodies and does not recursively scan opaque bytes. List growth is amortized."
+        },
+        {
+          "name": "RwClumpReader.Reader.Body",
+          "kind": "method",
+          "line": 331,
+          "endLine": 335,
+          "declarationSha256Lf": "9bf0b711dd1d0f05d3e6886fb6183185f008bf7ebb64fb26c5418a32c2778581",
+          "signatureSha256Lf": "d797458bfe25329e032e0f6d70b890559a99e563aa11d63f97d9fb8cb9526b71",
+          "bodySha256Lf": "3f402c61741f3dc977f5d92d29cffa325a224622b21ccf57ec7c7f6cea88a1cc",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Checks optional exact structure size and returns a span over owned data. The formatted offset diagnostic has bounded machine-integer length; no payload copy."
+        },
+        {
+          "name": "RwClumpReader.Reader.Single",
+          "kind": "method",
+          "line": 337,
+          "endLine": 342,
+          "declarationSha256Lf": "98f2f994bf5f6f51afcc2cd8a2833bcc641f19240d05d94359768a7fdbbb0cc1",
+          "signatureSha256Lf": "8ef97e868bde5348e5b7a2acbd1b1d97334e66cc840d292ab19fe8fdd200d3f5",
+          "bodySha256Lf": "525003c9aa0315c834b923fa05baa69915f86438a7762f68e8403f8f7ae141bd",
+          "timeBound": "O(h)",
+          "spaceBound": "O(k), k matching headers and k <= h",
+          "review": "The filtered ToArray scans direct children and may allocate for every duplicate before rejecting. This remains input-proportional; it is not a count-controlled allocation."
+        },
+        {
+          "name": "RwClumpReader.Reader.Single.lambda1",
+          "kind": "lambda",
+          "line": 339,
+          "endLine": 339,
+          "declarationSha256Lf": "0ed9045b352814e85bda780ada2e6e22969359438e56a9aec97ba0fb1d23c3d0",
+          "signatureSha256Lf": "9a2580d090d374707d65cdf1b8d44efc49aba9c9c96f9ea7c897e23aa0adb918",
+          "bodySha256Lf": "8ccb11300ddd709f73e35648aa0340e8df745c95b9375151b0234d1f9d9e0778",
+          "expression": "c => c.Type == type",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) per invocation",
+          "review": "Fixed-size property/index comparison; enclosing LINQ traversal and delegate capture are accounted for at the owning method."
+        },
+        {
+          "name": "RwClumpReader.Reader.Only",
+          "kind": "method",
+          "line": 344,
+          "endLine": 347,
+          "declarationSha256Lf": "db3ced780fdc3bbc61517c7d208fd1c4a57e0fbdc1c793bbdde5d4addb692a73",
+          "signatureSha256Lf": "58423b44fd467b048f9e0080702d6aa499f4bb4dff305c469d60461fb1bd9ef1",
+          "bodySha256Lf": "440fe8fe6da0a3cf75ae4ead4ce52172626a0f3ad80874249bacb4aa078bf71d",
+          "timeBound": "O(h*K), O(h) at existing call sites where K <= 3",
+          "spaceBound": "O(1) inside the predicate/enumerator, plus O(K) caller params storage",
+          "review": "Each direct child is checked against a small allowed-type array. Short-circuits on the first unsupported type."
+        },
+        {
+          "name": "RwClumpReader.Reader.Only.lambda1",
+          "kind": "lambda",
+          "line": 346,
+          "endLine": 346,
+          "declarationSha256Lf": "992a4bbf22be49fc2a2ae2b62a763fea25d9de548f9c3f6a541356a8676085be",
+          "signatureSha256Lf": "ae75de0d7acdbf38ac75d0f5d36ea57a1442a56b386ab169bda9149a9f30924d",
+          "bodySha256Lf": "22998798b1ca030e69d2dbea8e25b6fc9f23448ede82bea576f995e1aa5bb7f2",
+          "expression": "child => types.Contains(child.Type)",
+          "timeBound": "O(K); K <= 3 at current call sites",
+          "spaceBound": "O(1) per invocation",
+          "review": "Checks one child type against the allowed-type array; included in Only bounds."
+        },
+        {
+          "name": "RwClumpReader.Reader.ValidateTopology",
+          "kind": "method",
+          "line": 349,
+          "endLine": 393,
+          "declarationSha256Lf": "d30ae2e4ebc3001f5b6fba7f07efc041ec53adc0f6789c59678764b648c739c8",
+          "signatureSha256Lf": "de61a848490c2b296f041b9ead7a8a1eb772b2b5c61b2031130a81245e9b8819",
+          "bodySha256Lf": "d86a1408b3e819e1993ad639a22ecd13f22c5f71234fef82fad35cd43b33082c",
+          "timeBound": "O(S_g + T_g + I_g + D_g) expected/amortized; O(S_g + I_g + (T_g + D_g)^2) collision worst case",
+          "spaceBound": "O(K_a + K_d), bounded by O(T_g + D_g)",
+          "review": "Checks all source references before accumulating orientation/material/multiplicity keys. Each strip index participates in O(1) candidate triangles; D_g <= I_g. Repeated-index degenerate faces are ignored only for correspondence, while both original arrays remain unchanged. Separate authored/drawn dictionaries use ordinary value-tuple hashing."
+        },
+        {
+          "name": "RwClumpReader.Reader.ValidateTopology.lambda1",
+          "kind": "lambda",
+          "line": 364,
+          "endLine": 364,
+          "declarationSha256Lf": "5a538a9516b16cda142c061d83bd20fef98247ca75efe9630766cea0f4f53de4",
+          "signatureSha256Lf": "b2420daaed8165261b7bcdf287d798a3c14fb192b056d2b1965f67ec88b705fd",
+          "bodySha256Lf": "8bf7b98b1fb2e409dbe1f90d130e1f63f449555be4759657bdbd5a515adb2887",
+          "expression": "i => i < geometry.Positions.Length",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) per invocation",
+          "review": "Fixed-size property/index comparison; enclosing LINQ traversal and delegate capture are accounted for at the owning method."
+        },
+        {
+          "name": "RwClumpReader.Reader.ValidateTopology.lambda2",
+          "kind": "lambda",
+          "line": 391,
+          "endLine": 391,
+          "declarationSha256Lf": "eb5082bc0e0d2f7ca901ffe46506e3308432e295aa6fa5f623c51e8405dac760",
+          "signatureSha256Lf": "fb1f978c6b04b933e4343262e31016a9f7eecdbc8db1feaf4438a5b8cf490cdc",
+          "bodySha256Lf": "9ca0c87a55e9d5540f2cce8dba9c130309eb71f8f6cffbfd8a2ffe0b6a36dbed",
+          "expression": "pair => drawn.GetValueOrDefault(pair.Key) == pair.Value",
+          "timeBound": "O(1) expected/amortized; O(K_d) worst-case dictionary collision chain",
+          "spaceBound": "O(1) per invocation",
+          "review": "One fixed-size key lookup in the drawn-triangle dictionary; included in ValidateTopology bounds."
+        },
+        {
+          "name": "RwClumpReader.Reader.AddTriangle",
+          "kind": "method",
+          "line": 395,
+          "endLine": 421,
+          "declarationSha256Lf": "56bd485e080668ae4bbe92af64acb6a0da4e29e94ee8e88ba675b386af0042a0",
+          "signatureSha256Lf": "6ded021b625c48840acee41be57afc750a17c0cb2648a3827b1a66a95379887c",
+          "bodySha256Lf": "765abc8aae940cbdef843d70a46edaf15cc11bcb5646b333f96d0dcc8fb82c1d",
+          "timeBound": "O(1) expected/amortized; O(K) for a collision-chain lookup or resizing at K keys",
+          "spaceBound": "O(1) amortized retained entry growth; O(K) transient capacity replacement on resize",
+          "review": "Three integer comparisons/rotations canonicalize cyclic order without reversing winding. Repeated-index degenerates return immediately. Key hashing/comparison is fixed-size; Dictionary complexity is not asserted as deterministic O(1)."
+        },
+        {
+          "name": "RwClumpReader.Reader.U32",
+          "kind": "method",
+          "line": 423,
+          "endLine": 423,
+          "declarationSha256Lf": "8f502f4ec8f9370055188b960d6c6370aa7c89dfcdf70303bcbc47c8640bfbee",
+          "signatureSha256Lf": "0631f54309777f0a734a6c133dc2b32bf8cfd6e8972c1ab6a913dbf50b084c06",
+          "bodySha256Lf": "e18a998ecb636b73f8189bb124e549b4a033fbd4c069c8068e483c2daae70fd1",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Reads one little-endian word from a previously bounded structure."
+        },
+        {
+          "name": "RwClumpReader.Reader.I32",
+          "kind": "method",
+          "line": 424,
+          "endLine": 424,
+          "declarationSha256Lf": "adb676b16a4ce5606a205f26b42a98536e8dc87a3dd2f93b969c8554e3633c25",
+          "signatureSha256Lf": "517b17f77ff1368caba429b9a8286169f5d7be514f3b7c451597c97e915b73af",
+          "bodySha256Lf": "fed5f81a5e011d5aa4ddcfd5cd1122d95182b3406fd53748a70487e9cafe2442",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Reads one signed little-endian word from a previously bounded structure."
+        },
+        {
+          "name": "RwClumpReader.Reader.Finite",
+          "kind": "method",
+          "line": 425,
+          "endLine": 425,
+          "declarationSha256Lf": "35cc7cfabfa42d9a5875f460acd93a31a556c91461537bd0197d61d649128dd1",
+          "signatureSha256Lf": "8fc87bb91124413a90bb710214cd796da9a374265bba5f2be954d5174479551e",
+          "bodySha256Lf": "189061d88b3563f027ab9d4340ba552fd0a08996f89752fcea9f95111b36558d",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "One floating-point finiteness test."
+        },
+        {
+          "name": "RwClumpReader.Reader.F32",
+          "kind": "method",
+          "line": 427,
+          "endLine": 432,
+          "declarationSha256Lf": "b8f8b82c58368bb86097d3bf9fcc3655ca052baa33b5ae76fa1a8ac95ec0dbe3",
+          "signatureSha256Lf": "b3a8538952dea4d4d7bad02c2612b5c0481840c8e23dd4982aec9b9b289d9a8e",
+          "bodySha256Lf": "a5f331c3b13f92e3f1ebef5eeb237b0d9a8445edfad2d88b5b441c5f67d31f65",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Reads one little-endian float and rejects nonfinite values; does not alter finite source bits."
+        },
+        {
+          "name": "RwClumpReader.Reader.Invalid",
+          "kind": "method",
+          "line": 434,
+          "endLine": 434,
+          "declarationSha256Lf": "626579f6f4c8f588e1031fb0a5c61e1a30c5f8c07e05975f692dd50f6d453b7a",
+          "signatureSha256Lf": "40abb464141c56d7fad4f84881496f9ef5306964a3cb170e1f6b5f1f9e959d18",
+          "bodySha256Lf": "cb99e7d6a4495d86b401951dcdd39be9931895f90d0d9124031e2a5e99a2ae8a",
+          "timeBound": "O(1) excluding runtime exception machinery",
+          "spaceBound": "O(1) exception object; borrows message string",
+          "review": "Does not parse or copy input. Runtime exception construction/stack handling is not a measured performance claim."
+        },
+        {
+          "name": "RwClumpReader.Reader.Require",
+          "kind": "method",
+          "line": 436,
+          "endLine": 442,
+          "declarationSha256Lf": "b6f6cfe03cc20d32209cf56eeb417714288240fe6b52ea1c2769fe6a7da92495",
+          "signatureSha256Lf": "05055588285b1a7290dba40b6b19366326d31cbdb400cd473ec8c2380fe01542",
+          "bodySha256Lf": "0c5cbe97df591b2b895caca3b991dff58ead1fb1e9dd886b6125c33ba179dccd",
+          "timeBound": "O(1) excluding runtime throw/stack handling on failure",
+          "spaceBound": "O(1) on success; exception allocation on failure",
+          "review": "Returns for a true condition, otherwise throws the reader's InvalidDataException. Callers may already have allocated diagnostic text, accounted for at their call sites."
+        }
+      ]
+    }
+  ]
+}

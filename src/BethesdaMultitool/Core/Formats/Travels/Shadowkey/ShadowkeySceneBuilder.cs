@@ -20,8 +20,11 @@ internal enum ShadowkeyAxisConvention
 
     /// <summary>
     ///     Rotate the source Y-up data into the Z-up convention the Bethesda viewer uses, by
-    ///     mapping <c>(x, y, z)</c> to <c>(x, z, y)</c>. This is a DISPLAY choice, not a decode
-    ///     claim: the file records no handedness, so it is settled by the viewer it feeds.
+    ///     mapping <c>(x, y, z)</c> to <c>(x, -z, y)</c>: a proper rotation (determinant +1), the
+    ///     mesh-to-zone map the cut-2 placement measurement selected (mesh +Y to zone +Z, mesh +Z to
+    ///     zone -Y; 7,687 blocked vertices against 21,017 for the old <c>(x, z, y)</c> reflection,
+    ///     <c>ShadowkeyModelUnits.MeshToZone</c>). The x mirror is not measured; the proper map
+    ///     keeps every mesh congruent to its own document.
     /// </summary>
     ZUp
 }
@@ -165,7 +168,7 @@ internal static class ShadowkeySceneBuilder
     private static Vector3 Orient(Vector3 source, ShadowkeyAxisConvention axes)
     {
         return axes == ShadowkeyAxisConvention.ZUp
-            ? new Vector3(source.X, source.Z, source.Y)
+            ? new Vector3(source.X, -source.Z, source.Y)
             : source;
     }
 

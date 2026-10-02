@@ -7,7 +7,7 @@ using BethesdaMultitool.Core.Formats.Bsa.Models;
 using BethesdaMultitool.Core.Formats.Ddx;
 using BethesdaMultitool.Core.Orchestration;
 using Spectre.Console;
-using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
+using ArchiveEntry = BethesdaMultitool.Core.Formats.Archives.ArchiveEntry;
 
 namespace BethesdaMultitool.CLI.Commands.Bsa;
 

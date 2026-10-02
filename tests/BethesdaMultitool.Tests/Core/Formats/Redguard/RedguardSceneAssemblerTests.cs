@@ -12,10 +12,13 @@ namespace BethesdaMultitool.Tests.Core.Formats.Redguard;
 ///     and <see cref="XnGineScenePreviewRenderer" />: the placement units, the axis/order/sign
 ///     convention read off <c>RG.EXE</c> and settled by the retail controls, and the terrain grid.
 ///     <para>
-///         ⚠ The expected values are LITERALS computed outside the code under test (a numpy model of
-///         the engine's row-update matrices, <c>expected.py</c> in the measurement scratch), never
-///         derived from the assembler itself — a test whose expectation comes from the constant it
-///         pins cannot fail.
+///         ⚠ The expected values are LITERALS computed outside the code under test, never derived
+///         from the assembler itself, since a test whose expectation comes from the constant it pins
+///         cannot fail. The rotation literals are the engine's own arithmetic:
+///         <c>tools/scripts/redguard/placement_rotation.py</c> ports <c>FUN_00082fc2</c> and its three
+///         helpers from <c>RG.EXE</c>'s instructions, runs them on the executable's own sine table and
+///         prints <c>world = M · p</c> for the probe (2026-09-28). The pitch, roll and multi-axis
+///         literals pinned before that date came from a model with the X and Z helpers transposed.
 ///     </para>
 /// </summary>
 public sealed class RedguardSceneAssemblerTests
@@ -47,21 +50,25 @@ public sealed class RedguardSceneAssemblerTests
     [Fact]
     public void PlacementRotation_ComponentZeroIsThePitch()
     {
-        AssertVector(new Vector3(100f, -3f, 20f), Rotate(512, 0, 0));
+        // FUN_000b7bd0 turns about X by the negated component: a stored 512 carries +Y onto -Z, so
+        // (100, 20, 3) lands on (100, 3, -20). The reading this replaced gave (100, -3, 20).
+        AssertVector(new Vector3(100f, 3f, -20f), Rotate(512, 0, 0));
     }
 
     [Fact]
     public void PlacementRotation_ComponentTwoIsTheRoll()
     {
-        AssertVector(new Vector3(-20f, 100f, 3f), Rotate(0, 0, 512));
+        // FUN_000b7ce0 turns about Z by the negated component: a stored 512 carries +X onto -Y, so
+        // (100, 20, 3) lands on (20, -100, 3). The reading this replaced gave (-20, 100, 3).
+        AssertVector(new Vector3(20f, -100f, 3f), Rotate(0, 0, 512));
     }
 
     [Fact]
     public void PlacementRotation_MultiAxis_IsAppliedYThenXThenZ()
     {
-        // Any other order or sign lands elsewhere: the numpy model gives this only for
-        // Ry(-640)·Rx(-256)·Rz(-128) applied to a column vector.
-        AssertVector(new Vector3(-71.4573f, 38.0041f, 62.1171f), Rotate(256, 640, 128));
+        // The engine's own M = Ry(-640)·Rx(-256)·Rz(-128) applied to a column vector. The reading
+        // this replaced, Ry(-640)·Rx(+256)·Rz(+128), gave (-71.4573, 38.0041, 62.1171).
+        AssertVector(new Vector3(-53.1730f, -11.8729f, 86.2593f), Rotate(256, 640, 128));
     }
 
     [Fact]

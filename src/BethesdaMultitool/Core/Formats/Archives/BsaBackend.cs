@@ -1,6 +1,5 @@
 using BethesdaMultitool.Core.Formats.Bsa.Extraction;
 using BethesdaMultitool.Core.Formats.Bsa.Models;
-using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
 
 namespace BethesdaMultitool.Core.Formats.Archives;
 
@@ -9,7 +8,7 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 ///     thin adapter over <see cref="BsaExtractor" />, which keeps the memory-mapped extraction,
 ///     folder tree, and the Xbox-360 conversion toggles that <see cref="MarkShared" /> locks out.
 /// </summary>
-internal sealed class BsaBackend : IArchiveBackend
+internal sealed class BsaBackend : IArchiveBackend, IBsaExtractorSource
 {
     public BsaBackend(BsaExtractor extractor)
     {

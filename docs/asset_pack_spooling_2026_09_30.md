@@ -1,0 +1,19 @@
+# Asset pack memory follow-up
+
+The xex44 / July asset replay exited after 105.264 seconds with a 4 GiB managed heap limit. It had converted 225 XMA files successfully and retained 3,665,208,913 bytes of successful output. Allocation failures then affected small texture inputs before archive writing started. The retained receipt and per-clip outcomes are in `artifacts/prototype-feedback/retry-checks/audio-asset-pack-replay-001/validation.json`.
+
+Converted assets now append to one private temporary file. The packer retains path, offset and length metadata through planning, loose-file delivery and archive writing. The temporary file is removed on disposal, including cancellation and failure.
+
+`BsaWriter.AddFileFromDisk` accepts a bounded source region. The existing byte-array and `Write` entry points remain available. Compression and embedded-name preparation use a second temporary spool, followed by 64 KiB copies to the output stream. Non-seeking output streams remain supported. A shortened registered source fails explicitly.
+
+Focused validation is in `BsaWriterSpoolTests`: compressed/uncompressed and embedded/non-embedded round-trips, exact file-region selection, non-seeking output, shortened input, cancellation during copying, reuse after cancellation, and spool cleanup. Existing archive flag, packing-plan and loose-delivery cases cover the unchanged paths. The coordinated Development build and 228 focused cases passed (`artifacts/prototype-feedback/focused-eighth.receipt.json`, DLL `64d0729b…`).
+
+The prior collector matched only Violet's captured INFO. Explicit unbound-audio inclusion now requests the five selected audio-only rows at their original archive paths, with exact/extension source matching and per-row audit identities. It creates no dialogue records.
+
+Before writing loose files or archives, the service groups prepared assets by the BSA writer's normalized output path. Identical length and SHA-256 payloads coalesce; differing payloads produce a deterministic failure before output writes. Only collision groups are hashed from the spool. Failed jobs retain `Prepared` audit outcomes, avoiding a false `Packed` claim for a discarded payload. Two focused spool cases cover agreeing and conflicting payloads, including request-order independence.
+
+The full replay completed in 169.267 seconds under the same 4 GiB heap limit, producing four BSAs. It converted 230 XMA files with zero conversion failures. Peak working set was 3,264,425,984 bytes; maximum sampled private memory was 3,068,993,536 bytes. The operating-system peak pagefile/commit counter was 3,501,961,216 bytes. Sources and tool were unchanged (`artifacts/prototype-feedback/retry-checks/audio-asset-pack-replay-002/receipt.json`).
+
+BMT extraction and FFmpeg decode verified all six selected OGG files against the per-row audit and transcription model identity. Five LIP files also matched; Felicia's LIP is explicitly missing. The wider request set has 2,024 unresolved asset paths in total. Full readback evidence is `audio-verification/validation.json` beneath the replay directory. Human listening remains pending.
+
+**L02 catalog check: Passed.** Five July/retail mesh and texture archives yielded 94,590 entries with complete counts. None of the 2,024 unresolved requests had an exact, DDS/DDX-variant or same-basename match in those catalogs; 279 audio requests remain outside their coverage. Next: preserve request owners and derivation, distinguish unavailable companion candidates, and prevent unproved morph substitutions. Runtime requirement and generated fallback remain unverified. [Catalog evidence](../artifacts/prototype-feedback/asset-pack-unresolved-triage-001/physical-catalog-001/acceptance.json) | [Request policy](../artifacts/prototype-feedback/asset-pack-unresolved-triage-001/request-policy-001/README.md).

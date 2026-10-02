@@ -1,5 +1,5 @@
-// Ported from NeversoftMultitool (MIT License), src/NeversoftMultitool/Core/Formats/DiscImage/
-// Iso9660FileSystem.cs at commit 314bc9e0 (2026-08-14). See THIRD_PARTY_LICENSES.
+// Ported from NeversoftMultitool, src/NeversoftMultitool/Core/Formats/DiscImage/
+// Iso9660FileSystem.cs at commit 314bc9e0 (2026-08-14).
 
 using System.Buffers.Binary;
 using System.Text;

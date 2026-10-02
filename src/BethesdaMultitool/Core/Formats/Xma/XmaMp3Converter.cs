@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Media;
 using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Xma;
@@ -42,7 +43,7 @@ internal static class XmaMp3Converter
         byte[] xmaData,
         int bitrate = DefaultBitrate,
         int sampleRate = DefaultSampleRate,
-        int channels = DefaultChannels)
+        int channels = DefaultChannels, CancellationToken cancellationToken = default)
     {
         if (!FfmpegLocator.IsAvailable)
         {
@@ -71,34 +72,15 @@ internal static class XmaMp3Converter
             CreateNoWindow = true
         };
 
-        using var process = new Process();
-        process.StartInfo = startInfo;
-
         try
         {
-            process.Start();
-
-            // Write XMA data to stdin and read MP3 from stdout concurrently
-            // Must run concurrently to avoid deadlock (FFmpeg buffers are finite)
-            var writeTask = WriteInputAsync(process, xmaData);
-            var readTask = ReadOutputAsync(process);
-            var stderrTask = process.StandardError.ReadToEndAsync();
-
-            await writeTask;
-            var mp3Data = await readTask;
-            var stderr = await stderrTask;
-
-            await process.WaitForExitAsync();
-
-            if (process.ExitCode != 0)
+            var result = await FfmpegPipeRunner.RunAsync(startInfo, xmaData, cancellationToken).ConfigureAwait(false);
+            if (!result.Success)
             {
-                if (!string.IsNullOrEmpty(stderr))
-                {
-                    Log.Debug($"[XmaMp3Converter] FFmpeg error: {stderr.Trim()}");
-                }
-
-                return new ConversionResult { Success = false, Notes = "FFmpeg XMA -> MP3 failed" };
+                Log.Debug($"[XmaMp3Converter] {result.Error}");
+                return new ConversionResult { Success = false, Notes = result.Error };
             }
+            var mp3Data = result.Output;
 
             if (mp3Data.Length < 10)
             {
@@ -123,30 +105,11 @@ internal static class XmaMp3Converter
                 Notes = "Converted to MP3"
             };
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             Log.Debug($"[XmaMp3Converter] Exception: {ex.Message}");
             return new ConversionResult { Success = false, Notes = $"Conversion error: {ex.Message}" };
         }
     }
 
-    private static async Task WriteInputAsync(Process process, byte[] data)
-    {
-        try
-        {
-            await process.StandardInput.BaseStream.WriteAsync(data);
-            process.StandardInput.Close(); // Signal EOF to FFmpeg
-        }
-        catch
-        {
-            // Process may have exited early due to error
-        }
-    }
-
-    private static async Task<byte[]> ReadOutputAsync(Process process)
-    {
-        using var ms = new MemoryStream();
-        await process.StandardOutput.BaseStream.CopyToAsync(ms);
-        return ms.ToArray();
-    }
 }

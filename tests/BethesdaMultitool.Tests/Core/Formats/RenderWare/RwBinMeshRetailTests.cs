@@ -24,11 +24,10 @@ public sealed class RwBinMeshRetailTests
     private static string[] RequirePacks()
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        var root = RealAssetPaths.Travels.OblivionPspBuildsRoot();
-        Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP (cancelled betas)"));
+        var builds = RealAssetPaths.Travels.OblivionPspBuilds();
+        Assert.SkipWhen(builds.Count == 0, RealAssetPaths.SkipMessage("Oblivion PSP (cancelled betas)"));
 
-        var packs = Directory
-            .EnumerateFiles(root, "GR.ARC", SearchOption.AllDirectories)
+        var packs = builds.SelectMany(build => Directory.EnumerateFiles(build, "GR.ARC", SearchOption.AllDirectories))
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         Assert.SkipWhen(packs.Length == 0, "No GR.ARC packs are staged.");
@@ -132,7 +131,9 @@ public sealed class RwBinMeshRetailTests
             }
         }
 
-        Assert.True(total > 8_000, $"Only {total} BINMESH chunks were reached; the join or walk regressed.");
+        // 7,398 across the six dated betas (measured 2026-09-09). The bar sat at 8,000 while the
+        // corpus also held the community repack, which re-counted the February 2007 pack.
+        Assert.True(total > 7_000, $"Only {total} BINMESH chunks were reached; the join or walk regressed.");
         Assert.Equal(total, parsed);
         Assert.Equal(total, agreed);
 

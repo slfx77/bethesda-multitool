@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.DiscImage;
+using BethesdaMultitool.Core.Formats.DiscImage.Chd;
 using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool.Core.FileFormat;
@@ -58,12 +59,17 @@ internal static class ClassicSourceProbe
     /// </summary>
     public static GameProfile? TryDetectDiscImage(string filePath)
     {
-        // Two gates, either of which admits an image: the ISO9660 signature (the PS2 disc) and the
-        // XDVDFS one (the Xbox disc). ⚠ The Xbox disc happens to carry a STUB ISO9660 descriptor as
-        // well, so the first gate alone would in fact let it through — but only by accident, and an
-        // Xbox title mastered without that stub would then be invisible here. The XDVDFS check is
-        // the honest one for that family; both stay cheap, since this runs on arbitrary paths.
-        if (!HasIso9660Descriptor(filePath) && !XdvdfsVolume.TryProbe(filePath))
+        // Three gates, any of which admits an image: the ISO9660 signature (the PS2 disc), the
+        // XDVDFS one (the Xbox disc), and the CHD magic. ⚠ The Xbox disc happens to carry a STUB
+        // ISO9660 descriptor as well, so the first gate alone would in fact let it through — but
+        // only by accident, and an Xbox title mastered without that stub would then be invisible
+        // here. The XDVDFS check is the honest one for that family.
+        // ⚠⚠ The CHD gate is not optional: the corpus stores EVERY optical original compressed, so
+        // the raw-byte gates read a container header and match nothing, and each disc-as-install
+        // (Brotherhood of Steel on PS2 and Xbox) silently stops being a recognised game. The read
+        // is an eight-byte magic, no dearer than the other two, and ArchiveReader below opens the
+        // container natively.
+        if (!HasIso9660Descriptor(filePath) && !XdvdfsVolume.TryProbe(filePath) && !ChdFile.IsChd(filePath))
         {
             return null;
         }

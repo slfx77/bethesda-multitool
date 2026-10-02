@@ -1,16 +1,18 @@
-// Structure and sector handling ported from NeversoftMultitool (MIT License),
+// Structure and sector handling ported from NeversoftMultitool,
 // src/NeversoftMultitool/Core/Formats/DiscImage/DiscImageArchive.cs at commit 314bc9e0
-// (2026-08-14), reshaped onto this repository's IArchiveBackend seam. See THIRD_PARTY_LICENSES.
+// (2026-08-14), reshaped onto this repository's IArchiveBackend seam.
 
 using System.Buffers.Binary;
 using BethesdaMultitool.Core.Formats.Archives;
-using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
+using BethesdaMultitool.Core.Formats.DiscImage.Chd;
 
 namespace BethesdaMultitool.Core.Formats.DiscImage;
 
 /// <summary>
-///     CD images behind the archive seam: plain <c>.iso</c> (ISO9660), and <c>.cue</c> +
-///     <c>.bin</c> (redump raw 2352-byte sectors, single- or multi-file). Data files list under
+///     CD images behind the archive seam: plain <c>.iso</c> (ISO9660), <c>.cue</c> +
+///     <c>.bin</c> (redump raw 2352-byte sectors, single- or multi-file), and <c>.chd</c> (MAME's
+///     compressed container, CD- or DVD-shaped, read natively by <see cref="ChdFile" /> — the
+///     form every optical original in the corpus is stored in). Data files list under
 ///     their ISO9660 paths and extract through the filesystem; a file that turns out to hold
 ///     Mode2 Form2 sectors (XA audio/video streams) extracts as a 2336-byte-sector stream so its
 ///     subheaders survive; CD audio tracks list as <c>audio/trackNN.wav</c> and extract as 44.1 kHz
@@ -118,7 +120,8 @@ internal sealed class DiscImageBackend : IArchiveBackend
     ///     Extension + content gate. <c>.bin</c> needs a raw-sector sync pattern (bare .bin files
     ///     elsewhere are Dreamcast executables and Redguard's own <c>REDGUARD.bin</c> installer
     ///     payload), <c>.cue</c> must parse with every referenced file present, <c>.iso</c> must
-    ///     carry a volume descriptor.
+    ///     carry a volume descriptor, <c>.chd</c> must be a v5 container that is CD-shaped or
+    ///     carries a volume descriptor in its 2048-byte units.
     /// </summary>
     public static bool TryProbe(string path)
     {
@@ -129,10 +132,11 @@ internal sealed class DiscImageBackend : IArchiveBackend
                 ".iso" => SniffIso(path),
                 ".cue" => TryParseCue(path) != null,
                 ".bin" => HasSyncPattern(path),
+                ".chd" => SniffChd(path),
                 _ => false
             };
         }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException)
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or InvalidDataException or NotSupportedException)
         {
             return false;
         }
@@ -165,6 +169,33 @@ internal sealed class DiscImageBackend : IArchiveBackend
                         {
                             audioTracks.Add((number, region));
                         }
+                    }
+
+                    break;
+                }
+
+                case ".chd":
+                {
+                    var chd = ChdFile.Open(path);
+                    if (chd.IsCdShaped)
+                    {
+                        var chdSource = new ChdSectorSource(chd);
+                        source = chdSource;
+                        formatName = "CD image (CHD)";
+                        var number = 0;
+                        foreach (var region in chdSource.Tracks)
+                        {
+                            number++;
+                            if (region.IsAudio)
+                            {
+                                audioTracks.Add((number, region));
+                            }
+                        }
+                    }
+                    else
+                    {
+                        source = new IsoSectorSource(new ChdStream(chd, ownsFile: true));
+                        formatName = "DVD image (CHD)";
                     }
 
                     break;
@@ -256,11 +287,16 @@ internal sealed class DiscImageBackend : IArchiveBackend
         }
     }
 
-    /// <summary>CD-DA: raw 2352-byte sectors are 44.1 kHz 16-bit LE stereo PCM.</summary>
-    private static void ExtractAudioTrack(DiscTrackRegion region, Stream output)
+    /// <summary>
+    ///     CD-DA: raw 2352-byte sectors are 44.1 kHz 16-bit LE stereo PCM. Read through the
+    ///     sector source, so a track inside a CHD and a track in a <c>.bin</c> take the same path.
+    /// </summary>
+    private void ExtractAudioTrack(DiscTrackRegion region, Stream output)
     {
-        using var input = new FileStream(region.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read);
-        input.Position = region.FileByteOffset;
+        if (_source is not IRawTrackSource raw)
+        {
+            throw new InvalidOperationException("This image's sector source cannot hand back raw sectors.");
+        }
 
         var dataBytes = region.SectorCountValue * region.PhysicalSectorSize;
         Span<byte> header = stackalloc byte[44];
@@ -279,15 +315,35 @@ internal sealed class DiscImageBackend : IArchiveBackend
         BinaryPrimitives.WriteUInt32LittleEndian(header[40..], (uint)dataBytes);
         output.Write(header);
 
-        var buffer = new byte[64 * 1024];
-        var remaining = dataBytes;
-        while (remaining > 0)
+        var sector = new byte[RawSectorSource.RawSectorSize];
+        for (var lba = region.StartLba; lba < region.EndLba; lba++)
         {
-            var chunk = (int)Math.Min(buffer.Length, remaining);
-            input.ReadExactly(buffer.AsSpan(0, chunk));
-            output.Write(buffer, 0, chunk);
-            remaining -= chunk;
+            var size = raw.ReadRawSector(lba, sector);
+            output.Write(sector, 0, size);
         }
+    }
+
+    /// <summary>A v5 CHD that is CD-shaped, or DVD-shaped with an ISO9660 descriptor in its units.</summary>
+    private static bool SniffChd(string path)
+    {
+        if (!ChdFile.IsChd(path))
+        {
+            return false;
+        }
+
+        using var chd = ChdFile.Open(path);
+        if (chd.IsCdShaped)
+        {
+            return true;
+        }
+
+        if (chd.UnitBytes != SectorSize)
+        {
+            return false;
+        }
+
+        using var source = new IsoSectorSource(new ChdStream(chd, ownsFile: false));
+        return Iso9660FileSystem.HasVolumeDescriptor(source);
     }
 
     private static bool SniffIso(string path)

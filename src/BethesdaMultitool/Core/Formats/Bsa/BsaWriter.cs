@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.IO.Compression;
 using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
@@ -94,8 +95,10 @@ public sealed class BsaWriter : IDisposable
         foreach (var file in files)
         {
             var normalized = file.Replace('/', '\\').TrimStart('\\');
-            var ext = Path.GetExtension(normalized).ToLowerInvariant();
-            var dir = Path.GetDirectoryName(normalized)?.ToLowerInvariant() ?? "";
+            // BSA paths use backslashes on every host, including Linux.
+            var separator = normalized.LastIndexOf('\\');
+            var ext = Path.GetExtension(normalized[(separator + 1)..]).ToLowerInvariant();
+            var dir = separator >= 0 ? normalized[..separator].ToLowerInvariant() : "";
 
             // Folder-based detection first (like BSArchPro)
             if (dir.StartsWith("meshes\\", StringComparison.Ordinal) || dir == "meshes")
@@ -215,6 +218,23 @@ public sealed class BsaWriter : IDisposable
     /// <param name="data">File data</param>
     public void AddFile(string relativePath, byte[] data)
     {
+        ArgumentNullException.ThrowIfNull(data);
+        AddFileInput(relativePath, new PendingFile("", "", data, null, 0, data.LongLength));
+    }
+
+    /// <summary>Adds a bounded region of a file without retaining its payload in memory.</summary>
+    public void AddFileFromDisk(string relativePath, string sourcePath, long offset = 0, long? length = null)
+    {
+        var sourceLength = new FileInfo(sourcePath).Length;
+        var count = length ?? checked(sourceLength - offset);
+        if (offset < 0 || count < 0 || offset > sourceLength || count > sourceLength - offset)
+            throw new ArgumentOutOfRangeException(nameof(length), "Source region exceeds the file.");
+        AddFileInput(relativePath, new PendingFile("", "", null, Path.GetFullPath(sourcePath), offset, count));
+    }
+
+    private void AddFileInput(string relativePath, PendingFile input)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         // Normalize path separators
         relativePath = relativePath.Replace('/', '\\').TrimStart('\\');
 
@@ -252,23 +272,39 @@ public sealed class BsaWriter : IDisposable
             return;
         }
 
-        files.Add(new PendingFile(fileName, relativePath.Replace('/', '\\').TrimStart('\\'), data));
+        files.Add(input with { Name = fileName, FullPath = relativePath });
     }
 
     /// <summary>
     ///     Writes the BSA archive to a file.
     /// </summary>
-    public void Write(string outputPath)
+    public void Write(string outputPath) => Write(outputPath, CancellationToken.None);
+
+    public void Write(string outputPath, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+        var target = Path.GetFullPath(outputPath);
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (_folders.Values.SelectMany(files => files).Any(file => file.SourcePath is not null &&
+                string.Equals(file.SourcePath, target, comparison)))
+            throw new IOException("BSA output must differ from its registered source files.");
         using var stream = File.Create(outputPath);
-        Write(stream);
+        Write(stream, cancellationToken);
     }
 
     /// <summary>
     ///     Writes the BSA archive to a stream.
     /// </summary>
-    public void Write(Stream stream)
+    public void Write(Stream stream) => Write(stream, CancellationToken.None);
+
+    public void Write(Stream stream, CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        cancellationToken.ThrowIfCancellationRequested();
+        // Prepared payloads also live on disk: compressed output can approach the input size.
+        using var payloads = new FileStream(Path.Combine(Path.GetTempPath(), $"bmt-bsa-{Guid.NewGuid():N}.tmp"),
+            FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read, 65536,
+            FileOptions.DeleteOnClose | FileOptions.SequentialScan);
         using var writer = new BinaryWriter(stream, Encoding.ASCII, true);
 
         // Sort folders and files by hash
@@ -325,8 +361,13 @@ public sealed class BsaWriter : IDisposable
             foreach (var file in folder.Files)
             {
                 var compressed = ShouldCompressFile(file.FullPath);
-                var fileData = PrepareFileData(file.Data, file.FullPath, compressed);
-                var size = (uint)fileData.Length;
+                cancellationToken.ThrowIfCancellationRequested();
+                var payloadStart = payloads.Position;
+                PrepareFileData(file, compressed, payloads, cancellationToken);
+                var payloadLength = payloads.Position - payloadStart;
+                if (payloadLength >= 0x40000000L)
+                    throw new InvalidOperationException($"BSA file payload exceeds the size field limit: '{file.FullPath}'.");
+                var size = checked((uint)payloadLength);
 
                 // BSA size field bit 30 (0x40000000) inverts the archive default compression
                 // for this individual file. When the per-file choice disagrees with the
@@ -351,11 +392,12 @@ public sealed class BsaWriter : IDisposable
                     Hash = HashPath(file.Name, false),
                     Size = size,
                     Offset = (uint)currentDataOffset,
-                    Data = fileData,
                     Name = file.Name
                 });
 
-                currentDataOffset += fileData.Length;
+                currentDataOffset += payloadLength;
+                if (currentDataOffset > uint.MaxValue)
+                    throw new InvalidOperationException("BSA data exceeds the 4 GiB u32 offset limit; split the archive.");
             }
 
             folderRecords.Add(new FolderRecordData
@@ -411,47 +453,61 @@ public sealed class BsaWriter : IDisposable
             }
         }
 
-        // Write file data
-        foreach (var folder in folderRecords)
-        {
-            foreach (var file in folder.Files)
-            {
-                writer.Write(file.Data);
-            }
-        }
+        // Copy prepared payloads in the same hash order as the file records.
+        writer.Flush();
+        payloads.Position = 0;
+        CopyExactly(payloads, stream, payloads.Length, cancellationToken);
     }
 
-    private byte[] PrepareFileData(byte[] data, string fullPath, bool compressed)
+    private void PrepareFileData(PendingFile file, bool compressed, Stream output, CancellationToken token)
     {
-        using var output = new MemoryStream();
-        using var bw = new BinaryWriter(output);
-
-        // Embedded filename (BString: length byte + chars, no null terminator)
-        // Written BEFORE compression header, per BSArchPro line 1863-1865
+        using var bw = new BinaryWriter(output, Encoding.ASCII, true);
         if (_embedFileNames)
         {
-            var pathBytes = Encoding.ASCII.GetBytes(fullPath.ToLowerInvariant());
+            var pathBytes = Encoding.ASCII.GetBytes(file.FullPath.ToLowerInvariant());
+            if (pathBytes.Length > byte.MaxValue)
+                throw new InvalidDataException("Embedded BSA filename exceeds 255 bytes.");
             bw.Write((byte)pathBytes.Length);
             bw.Write(pathBytes);
         }
 
+        using var input = file.Data is not null
+            ? (Stream)new MemoryStream(file.Data, writable: false)
+            : new FileStream(file.SourcePath!, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete, 65536, FileOptions.SequentialScan);
+        input.Position = file.SourceOffset;
+        if (file.Length > input.Length - input.Position)
+            throw new EndOfStreamException($"BSA source changed: {file.SourcePath}");
         if (compressed)
         {
-            // Write original size first (for decompression)
-            bw.Write((uint)data.Length);
-
-            // Compress with zlib
-            using (var zlibStream = new ZLibStream(output, _compressionLevel, true))
-            {
-                zlibStream.Write(data);
-            }
+            bw.Write(checked((uint)file.Length));
+            bw.Flush();
+            using var zlib = new ZLibStream(output, _compressionLevel, leaveOpen: true);
+            CopyExactly(input, zlib, file.Length, token);
         }
         else
         {
-            bw.Write(data);
+            bw.Flush();
+            CopyExactly(input, output, file.Length, token);
         }
+    }
 
-        return output.ToArray();
+    internal static void CopyExactly(Stream input, Stream output, long length, CancellationToken token)
+    {
+        var buffer = ArrayPool<byte>.Shared.Rent(65536);
+        try
+        {
+            while (length > 0)
+            {
+                token.ThrowIfCancellationRequested();
+                var count = input.Read(buffer, 0, (int)Math.Min(length, 65536));
+                if (count == 0) throw new EndOfStreamException("BSA source ended before its declared length.");
+                output.Write(buffer, 0, count);
+                length -= count;
+            }
+            token.ThrowIfCancellationRequested();
+        }
+        finally { ArrayPool<byte>.Shared.Return(buffer); }
     }
 
     /// <summary>
@@ -578,7 +634,8 @@ public sealed class BsaWriter : IDisposable
         return (hash2 << 32) | hash1;
     }
 
-    private sealed record PendingFile(string Name, string FullPath, byte[] Data);
+    private sealed record PendingFile(string Name, string FullPath, byte[]? Data,
+        string? SourcePath, long SourceOffset, long Length);
 
     private sealed class FolderRecordData
     {
@@ -593,7 +650,6 @@ public sealed class BsaWriter : IDisposable
         public required ulong Hash { get; init; }
         public required uint Size { get; set; }
         public required uint Offset { get; set; }
-        public required byte[] Data { get; init; }
         public required string Name { get; init; }
     }
 }

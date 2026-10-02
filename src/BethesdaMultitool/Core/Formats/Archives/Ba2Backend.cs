@@ -1,5 +1,4 @@
 using BethesdaMultitool.Core.Formats.Bsa.Ba2;
-using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
 
 namespace BethesdaMultitool.Core.Formats.Archives;
 
@@ -8,7 +7,7 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 ///     over <see cref="Ba2Extractor" />. BA2 is a flat list, so the folder histogram comes from the
 ///     interface default's path derivation, matching the historical <c>ArchiveReader</c> behavior.
 /// </summary>
-internal sealed class Ba2Backend : IArchiveBackend
+internal sealed class Ba2Backend : IArchiveBackend, IBa2ExtractorSource
 {
     private readonly Lazy<IReadOnlyList<ArchiveEntry>> _files;
 

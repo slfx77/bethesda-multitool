@@ -142,24 +142,27 @@ public class GameProfilesTests
 
     /// <summary>
     ///     The world UNIT is a separate axis from the cell size, and conflating them is the specific
-    ///     bug this pins: Starfield's cell shrank 40.96× (4096→100) while its unit grew 70× (1.42875 cm
-    ///     → 1 m), because a Starfield cell spans 100 m where a Fallout cell spans ~58 m. Scaling a
-    ///     human-scale constant by the CELL ratio therefore leaves it 1.5625× too big — a walk-mode eye
-    ///     2.7 m off the ground instead of 1.6 m.
+    ///     bug this pins: Starfield's cell shrank 40.96× (4096→100) while its unit grew 70× (1/70 m,
+    ///     about 1.43 cm → 1 m), because a Starfield cell spans 100 m where a Fallout cell spans ~58 m.
+    ///     Scaling a human-scale constant by the CELL ratio therefore leaves it 1.5625× too big — a
+    ///     walk-mode eye 2.7 m off the ground instead of 1.6 m.
     ///     <para>
     ///         Measured from retail mesh bounds: ChairPlastic01 1.02 tall, ChairUtilityB01 0.98,
-    ///         GenIntRmSmWallMid_DoorA00 2.84, InvisibleDoor01 2.41 × 1.60. Those are metres.
+    ///         GenIntRmSmWallMid_DoorA00 2.84, InvisibleDoor01 2.41 × 1.60. Those are meters.
     ///     </para>
     /// </summary>
     [Fact]
-    public void Profiles_PinWorldUnitsPerMetre()
+    public void Profiles_PinWorldUnitsPerMeter()
     {
-        Assert.Equal(1f, GameProfiles.For(BethesdaGame.Starfield).WorldUnitsPerMetre);
-        Assert.Equal(1f, GameProfiles.UnitsPerMetreOrDefault(BethesdaGame.Starfield));
+        Assert.Equal(1f, GameProfiles.For(BethesdaGame.Starfield).ViewerUnitsPerMeter);
+        Assert.Equal(1f, GameProfiles.UnitsPerMeterOrDefault(BethesdaGame.Starfield));
 
-        // Unset everywhere else => the classic Gamebryo/Creation unit.
-        Assert.Equal(0f, GameProfiles.For(BethesdaGame.FalloutNewVegas).WorldUnitsPerMetre);
-        Assert.Equal(70f, GameProfiles.UnitsPerMetreOrDefault(BethesdaGame.FalloutNewVegas));
+        // Every other profile keeps the viewer's classic camera convention, EXACTLY 70f, so
+        // HumanScaleFactor stays a bit-exact 1. The measured unit lives in GameProfile.Units
+        // (WorldUnitScaleTests) and is deliberately not this number.
+        Assert.Equal(70f, GameProfiles.For(BethesdaGame.FalloutNewVegas).ViewerUnitsPerMeter);
+        Assert.Equal(70f, GameProfiles.UnitsPerMeterOrDefault(BethesdaGame.FalloutNewVegas));
+        Assert.Equal(70f, GameProfiles.UnitsPerMeterOrDefault(BethesdaGame.Unknown));
     }
 
     /// <summary>
@@ -181,7 +184,7 @@ public class GameProfilesTests
     }
 
     [Fact]
-    public void HumanScaleFactor_ScalesStarfieldToMetres()
+    public void HumanScaleFactor_ScalesStarfieldToMeters()
     {
         var factor = GameProfiles.HumanScaleFactor(BethesdaGame.Starfield);
 
@@ -298,8 +301,9 @@ public class GameProfilesTests
     }
 
     /// <summary>
-    ///     Classic-unit invariance extends to the classic games: their profiles leave the world unit
-    ///     unset, so every human-scale camera constant stays a bit-exact no-op for them too.
+    ///     Classic-unit invariance extends to the classic games: their profiles carry the viewer's
+    ///     classic unit (1/70 m, stated as an assumption in <see cref="GameProfile.Units" />), so every
+    ///     human-scale camera constant stays a bit-exact no-op for them too.
     /// </summary>
     [Theory]
     [InlineData(BethesdaGame.Arena)]

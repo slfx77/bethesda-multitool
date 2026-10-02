@@ -88,7 +88,7 @@ public sealed class XdvdfsRetailTests
         Assert.Equal(RetailFileCount, reader.TotalFiles);
         Assert.Equal(RetailPayloadBytes, reader.ListFiles().Sum(e => e.Size));
 
-        using var stream = new FileStream(iso, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var stream = DiscImageStreams.Open(iso);
         var volume = XdvdfsVolume.Read(stream);
 
         // The exactness claim: 68 tables (root + 67 directories) totalling 139,668 bytes, of which
@@ -124,7 +124,7 @@ public sealed class XdvdfsRetailTests
     public void TheIso9660ReaderAcceptsTheDiscAndThenFindsNoneOfItsFiles()
     {
         var iso = RequireIso();
-        using var stream = new FileStream(iso, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var stream = DiscImageStreams.Open(iso);
         using var source = new IsoSectorSource(stream);
 
         Assert.True(Iso9660FileSystem.HasVolumeDescriptor(source));
@@ -251,7 +251,7 @@ public sealed class XdvdfsRetailTests
         Assert.Equal(X360FileCount, reader.TotalFiles);
         Assert.Equal(X360PayloadBytes, reader.ListFiles().Sum(e => e.Size));
 
-        using var stream = new FileStream(iso, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var stream = DiscImageStreams.Open(iso);
         var volume = XdvdfsVolume.Read(stream);
 
         Assert.Equal(0x0FD90000L, volume.PartitionOffset);
@@ -344,7 +344,7 @@ public sealed class XdvdfsRetailTests
     public void TheIso9660ReaderAcceptsTheXbox360DumpAndReturnsItsDummyPartitionInstead()
     {
         var iso = RequireX360Iso();
-        using var stream = new FileStream(iso, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var stream = DiscImageStreams.Open(iso);
         using var source = new IsoSectorSource(stream);
 
         Assert.True(Iso9660FileSystem.HasVolumeDescriptor(source));

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.SpeedTree;
 
@@ -174,8 +175,9 @@ internal static class SpeedTreeRuntimeLod
 
     public static string BillboardTexturePath(string modelPath)
     {
-        var normalized = modelPath.Replace('/', '\\').Trim();
-        var stem = Path.GetFileNameWithoutExtension(normalized);
+        // Engine path in, engine path out: split on both separators ourselves, because on a Unix
+        // host Path.GetFileNameWithoutExtension does not see '\' and keeps the directory in the stem.
+        var stem = EnginePath.FileNameWithoutExtension(modelPath.Trim());
         if (string.IsNullOrWhiteSpace(stem))
         {
             stem = "tree";

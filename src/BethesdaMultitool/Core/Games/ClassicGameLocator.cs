@@ -1,4 +1,5 @@
 using System.IO.Compression;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Games;
 
@@ -185,7 +186,10 @@ public static class ClassicGameLocator
     /// </summary>
     private static bool MarkersSatisfied(string root, IReadOnlyList<string> markers)
     {
-        return MarkersSatisfied(markers, alternative => File.Exists(Path.Combine(root, alternative)));
+        // Markers are engine-spelled (ARENA2\ARCH3D.BSA) over an install the game itself treats
+        // case-insensitively. HostPath re-spells the separator for a Unix host and, there, matches
+        // case after an exact miss; on Windows this is File.Exists(Path.Combine(root, alternative)).
+        return MarkersSatisfied(markers, alternative => HostPath.FileExists(root, alternative));
     }
 
     private static bool MarkersSatisfied(IReadOnlyList<string> markers, Func<string, bool> exists)

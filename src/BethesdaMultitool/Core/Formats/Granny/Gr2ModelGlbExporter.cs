@@ -1,4 +1,4 @@
-// Original to this repository: AweMultitool (slfx77, MIT) has no glTF/SharpGLTF exporter for its
+// Original to this repository: AweMultitool (slfx77) has no glTF/SharpGLTF exporter for its
 // Granny reader, so nothing here is ported; this consumes the Gr2File the ported reader produces.
 
 using System.Globalization;

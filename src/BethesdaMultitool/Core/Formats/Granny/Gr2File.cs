@@ -1,4 +1,4 @@
-// Ported from AweMultitool (slfx77), MIT, https://github.com/slfx77/JimmyPCTool
+// Ported from AweMultitool (slfx77)
 // (the mesh/skeleton side of src/AweMultitool/Core/Formats/Granny/Gr2ModelBuilder.cs), reshaped for
 // the 2003 Granny SDK 2.2 files this repository reads: the vertex layout is read from the file's
 // own type record instead of being pinned to one stride, and animation curves are the SDK 2.2

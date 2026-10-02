@@ -20,7 +20,13 @@ namespace BethesdaMultitool.Core.Formats.Travels.Shadowkey;
 ///     </para>
 ///     <list type="number">
 ///         <item>
-///             <b>+y is up, matching the models.</b> The shell's vertices are mostly NEGATIVE in y
+///             <b>+y is up, matching the models</b>, and the shell reaches the z-up viewer through the
+///             same proper map as every placed mesh, <c>(x, y, z)</c> to <c>(x, -z, y)</c> (cut-2 decision D13,
+///             2026-09-28; it was the reflection <c>(x, z, y)</c>, which left the sky a mirror image of
+///             the placements once they moved to the proper map). The image is still read here as
+///             512x256 palette indices; the model reader reads it as the 256x256 0x0RGB skin it is
+///             (decision D8), and that half of D13 is not yet applied to the viewer. The shell's
+///             vertices are mostly NEGATIVE in y
 ///             (the outdoor dome spans -290..+40), which reads at a glance as a y-down convention
 ///             and would hang the sky under the world. It is not. The texture is a POLAR
 ///             projection with the zenith at its centre, so the zenith is whichever pole maps
@@ -165,10 +171,11 @@ internal static class ShadowkeySkySceneBuilder
 
                 var source = skybox.Vertices[v];
 
-                // Source is y-up (reading 1); the viewer is z-up, so (x, y, z) becomes (x, z, y),
-                // the same swap the mesh bridge makes. The horizon ring is pulled to
-                // baseHeightTiles so the sky meets the ground rather than floating.
-                var placed = new Vector3(source.X, source.Z, source.Y - horizon) * scale;
+                // Source is y-up (reading 1); the viewer is z-up, so (x, y, z) becomes (x, -z, y),
+                // the proper rotation the mesh bridge makes (ShadowkeyAxisConvention.ZUp, cut-2
+                // decision D13) and the model document's mesh-to-zone map. The horizon ring is
+                // pulled to baseHeightTiles so the sky meets the ground rather than floating.
+                var placed = new Vector3(source.X, -source.Z, source.Y - horizon) * scale;
                 positions[corner * 3 + 0] = placed.X + centre.X;
                 positions[corner * 3 + 1] = placed.Y + centre.Y;
                 positions[corner * 3 + 2] = placed.Z + centre.Z;

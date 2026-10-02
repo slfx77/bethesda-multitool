@@ -47,6 +47,7 @@ public sealed class RedguardSceneRetailTests
         var flatsPlaced = 0;
         var terrains = 0;
         var missing = new List<string>();
+        var loose = new List<string>();
         foreach (var path in maps)
         {
             using var level = RedguardLevelLoader.Load(path);
@@ -58,6 +59,9 @@ public sealed class RedguardSceneRetailTests
             flatsPlaced += level.Flats.Instances.Count;
             terrains += level.Terrain is null ? 0 : 1;
             missing.AddRange(level.Scene.MissingNames.Select(n => $"{level.Stem}:{n}"));
+            loose.AddRange(level.MeshOrigins
+                .Where(o => o.Value.Source == RedguardMeshSource.LooseAnimatedKeyframe)
+                .Select(o => $"{level.Stem}:{o.Key}:{o.Value.FileName}"));
             Assert.Empty(level.MeshFailures);
         }
 
@@ -66,6 +70,15 @@ public sealed class RedguardSceneRetailTests
         Assert.Equal(1_552, placements);
         Assert.Equal(placements, placementsResolved);
         Assert.Empty(missing);
+
+        // Measured 2026-09-28 by a read-only Python census over the raw ROB and RGM bytes
+        // (tools/scripts/redguard/rob_placeholder_census.py): exactly one of the 1,552 placements
+        // names an empty ROB placeholder (ISLAND MPOB #490, object TS_WAGON, mesh BWAGA001) and no
+        // static does. It resolves only through the loose 3dart\BWAGA001.3DC, which is what lifts the
+        // count from 1,551 to 1,552; a loader that ignores placeholders reads 1,551 here and 509 on
+        // ISLAND.
+        var placeholder = Assert.Single(loose);
+        Assert.Equal("ISLAND:BWAGA001:BWAGA001.3DC", placeholder, ignoreCase: true);
         Assert.Equal(956, flats);
         Assert.Equal(flats, flatsPlaced);
 
@@ -328,10 +341,13 @@ public sealed class RedguardSceneRetailTests
         Assert.True(columnShared > 2 * rowShared, $"column {columnShared} vs row {rowShared}");
     }
 
-    /// <summary>Triangles of every static, binned by 64-unit grid cell for near-surface queries.</summary>
+    /// <summary>Triangles of every static, binned by 64-unit grid cell for near-surface and piercing queries.</summary>
     private sealed class StaticSurface
     {
         private const float CellSize = 64f;
+
+        /// <summary>How far past a static face both ends of an edge must lie for the edge to pierce it.</summary>
+        private const float PierceEpsilon = 0.05f;
         private readonly Dictionary<(int, int, int), List<int>> _grid = [];
         private readonly List<(Vector3 A, Vector3 B, Vector3 C)> _triangles = [];
 
@@ -440,15 +456,109 @@ public sealed class RedguardSceneRetailTests
 
             return false;
         }
+
+        /// <summary>
+        ///     True when the segment's two ends lie strictly on opposite sides of some triangle's plane,
+        ///     each more than <see cref="PierceEpsilon" /> from it, and the crossing point is on or inside
+        ///     all three of the triangle's edges. A triangle is tested when it shares a grid cell with the
+        ///     segment's bounding box.
+        /// </summary>
+        public bool Pierces(Vector3 p0, Vector3 p1)
+        {
+            var lo = Vector3.Min(p0, p1);
+            var hi = Vector3.Max(p0, p1);
+            for (var x = Floor(lo.X); x <= Floor(hi.X); x++)
+            {
+                for (var y = Floor(lo.Y); y <= Floor(hi.Y); y++)
+                {
+                    for (var z = Floor(lo.Z); z <= Floor(hi.Z); z++)
+                    {
+                        if (!_grid.TryGetValue((x, y, z), out var list))
+                        {
+                            continue;
+                        }
+
+                        foreach (var index in list)
+                        {
+                            if (Crosses(_triangles[index], p0, p1))
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool Crosses((Vector3 A, Vector3 B, Vector3 C) triangle, Vector3 p0, Vector3 p1)
+        {
+            var (a, b, c) = triangle;
+            var n = Vector3.Cross(b - a, c - a);
+            var length = n.Length();
+            if (length <= 0)
+            {
+                return false;
+            }
+
+            n /= length;
+            var d0 = Vector3.Dot(p0 - a, n);
+            var d1 = Vector3.Dot(p1 - a, n);
+            if (!((d0 > PierceEpsilon && d1 < -PierceEpsilon) || (d0 < -PierceEpsilon && d1 > PierceEpsilon)))
+            {
+                return false;
+            }
+
+            var x = p0 + (p1 - p0) * (d0 / (d0 - d1));
+            return Vector3.Dot(Vector3.Cross(b - a, x - a), n) >= 0 &&
+                   Vector3.Dot(Vector3.Cross(c - b, x - b), n) >= 0 &&
+                   Vector3.Dot(Vector3.Cross(a - c, x - c), n) >= 0;
+        }
     }
 
-    /// <summary>The engine's matrix WITHOUT the negation it applies — the losing sign.</summary>
+    /// <summary>
+    ///     The engine's matrix WITHOUT the negation it applies, Ry(+y)·Rx(+x)·Rz(+z) in column form:
+    ///     the losing sign.
+    /// </summary>
     private static Matrix4x4 UnnegatedRotation(RedguardRgmVector rotation)
     {
         const float scale = float.Tau / RedguardSceneAssembler.AngleUnitsPerTurn;
-        return Matrix4x4.CreateRotationZ(-(rotation.Z & RedguardSceneAssembler.AngleMask) * scale)
-               * Matrix4x4.CreateRotationX(-(rotation.X & RedguardSceneAssembler.AngleMask) * scale)
+        return Matrix4x4.CreateRotationZ((rotation.Z & RedguardSceneAssembler.AngleMask) * scale)
+               * Matrix4x4.CreateRotationX((rotation.X & RedguardSceneAssembler.AngleMask) * scale)
                * Matrix4x4.CreateRotationY((rotation.Y & RedguardSceneAssembler.AngleMask) * scale);
+    }
+
+    /// <summary>
+    ///     The reading <see cref="RedguardSceneAssembler.PlacementRotation" /> used until 2026-09-28,
+    ///     Ry(-y)·Rx(+x)·Rz(+z) in column form: the engine's yaw with the pitch and roll signs flipped.
+    /// </summary>
+    private static Matrix4x4 ReplacedPlacementRotation(RedguardRgmVector rotation)
+    {
+        const float scale = float.Tau / RedguardSceneAssembler.AngleUnitsPerTurn;
+        return Matrix4x4.CreateRotationZ((rotation.Z & RedguardSceneAssembler.AngleMask) * scale)
+               * Matrix4x4.CreateRotationX((rotation.X & RedguardSceneAssembler.AngleMask) * scale)
+               * Matrix4x4.CreateRotationY(-(rotation.Y & RedguardSceneAssembler.AngleMask) * scale);
+    }
+
+    /// <summary>The unordered pairs of consecutive stored points of every plane, the closing pair included.</summary>
+    private static List<(int A, int B)> Edges(XnGineMesh mesh)
+    {
+        var edges = new HashSet<(int, int)>();
+        foreach (var plane in mesh.Planes)
+        {
+            for (var i = 0; i < plane.Points.Count; i++)
+            {
+                var a = plane.Points[i].PointIndex;
+                var b = plane.Points[(i + 1) % plane.Points.Count].PointIndex;
+                if (a != b)
+                {
+                    edges.Add((Math.Min(a, b), Math.Max(a, b)));
+                }
+            }
+        }
+
+        return [.. edges];
     }
 
     [Fact]
@@ -502,14 +612,129 @@ public sealed class RedguardSceneRetailTests
             }
         }
 
-        // Measured 2026-09-08 on the same population: 155 placements, 3,226 points; the engine's
-        // negated angles put 1,146 within 6 units of a static face, the un-negated ones 991. The
-        // wall plaques, torches and levers are what separate them.
+        // Measured 2026-09-28 on the same population, 155 placements and 3,226 points, from the raw
+        // CATACOMB.RGM and CATACOMB.ROB bytes by an independent Python walk that scores every reading
+        // twice, in float64 and in float32 (tools/scripts/redguard/control.py). Where the two differ,
+        // the figure below is the range they give. The engine's negated angles, Ry(-y)·Rx(-x)·Rz(-z),
+        // put 1,016 within 6 units of a static face in both; the un-negated ones 811 to 812. Before the
+        // pitch and roll fix of the same day the product read 1,013 here, this test's own count exactly,
+        // against an un-negated rival of 811 to 812 as well. The 1,146 and 991 recorded here before were
+        // never produced by this test: it read 1,013 at c94ac2f1, the commit that added it, and no
+        // reading tried reproduces the pair (48 axis orders and sign patterns, both static matrix
+        // readings, five near rules). This control sees the YAW sign only. The 133 placements that turn
+        // about Y alone score 862 against 646 to 647, and every one of the 24 orders and sign patterns
+        // that keeps the engine's yaw scores 991 to 1,029 in all, every one that flips it 788 to 815.
+        // The other 22 (torches, levers, weights) score 129 to 168 under all 48, so the pitch and roll
+        // signs and the order are not tested here; PlacementPitchRollControl tests them. The 18 CTPILL06
+        // and the doors are what separate the signs.
         Assert.Equal(155, population);
         Assert.Equal(3_226, vertices);
-        Assert.True(negatedNear >= 1_100, $"negated angles: {negatedNear} of {vertices} near a static face");
-        Assert.True(unnegatedNear <= 1_050, $"un-negated angles: {unnegatedNear} — the control no longer discriminates");
+        Assert.True(negatedNear >= 960, $"negated angles: {negatedNear} of {vertices} near a static face");
+        Assert.True(unnegatedNear <= 860, $"un-negated angles: {unnegatedNear}; the control no longer discriminates");
         Assert.True(negatedNear > unnegatedNear);
+    }
+
+    [Fact]
+    public void PlacementPitchRollControl_PitchedAndRolledObjectsStandInTheirRoomsOnlyWithTheEngineSigns()
+    {
+        var root = RequireDataRoot();
+        var maps = Directory.GetFiles(Path.Combine(root, "maps"), "*.RGM");
+        Assert.Equal(27, maps.Length);
+
+        var mapsScored = 0;
+        var population = 0;
+        var vertices = 0;
+        var edgeCount = 0;
+        var engineNear = 0;
+        var enginePierces = 0;
+        var replacedNear = 0;
+        var replacedPierces = 0;
+        foreach (var path in maps)
+        {
+            var map = RedguardRgmFile.Parse(File.ReadAllBytes(path), Path.GetFileName(path));
+            var robPath = RedguardMeshLibrary.FindArchive(root, Path.GetFileNameWithoutExtension(path));
+            Assert.NotNull(robPath);
+
+            using var archive = RedguardRobMeshArchive.Open(robPath);
+            var placed = new List<(RedguardRgmPlacement Placement, XnGineMesh Mesh)>();
+            foreach (var placement in map.Placements)
+            {
+                if (placement.Type is not (1 or 257) || !placement.HasMesh)
+                {
+                    continue;
+                }
+
+                var r = placement.Rotation;
+                if ((r.X & RedguardSceneAssembler.AngleMask) == 0 && (r.Z & RedguardSceneAssembler.AngleMask) == 0)
+                {
+                    continue;
+                }
+
+                var index = archive.IndexOf(placement.MeshStem);
+                if (index < 0 || archive.IsEmpty(index))
+                {
+                    continue;
+                }
+
+                var mesh = archive.Parse(index);
+                if (mesh.Points.Count > 0)
+                {
+                    placed.Add((placement, mesh));
+                }
+            }
+
+            if (placed.Count == 0)
+            {
+                continue;
+            }
+
+            mapsScored++;
+            using var meshes = RedguardMeshLibrary.Open(robPath, root);
+            var surface = new StaticSurface(RedguardSceneAssembler.Assemble(map, meshes.Resolve));
+            foreach (var (placement, mesh) in placed)
+            {
+                population++;
+                var position = new Vector3(placement.Position.X, placement.Position.Y, placement.Position.Z) /
+                               RedguardRgmFile.UnitsPerWorldUnit;
+                var engine = RedguardSceneAssembler.PlacementTransform(placement);
+                var replaced = ReplacedPlacementRotation(placement.Rotation) * Matrix4x4.CreateTranslation(position);
+                var local = mesh.Points.Select(p => new Vector3(p.X, p.Y, p.Z) / XnGineMesh.PointDivisor).ToList();
+                var engineWorld = local.Select(p => Vector3.Transform(p, engine)).ToList();
+                var replacedWorld = local.Select(p => Vector3.Transform(p, replaced)).ToList();
+                vertices += local.Count;
+                engineNear += engineWorld.Count(p => surface.IsNear(p, 6f));
+                replacedNear += replacedWorld.Count(p => surface.IsNear(p, 6f));
+                foreach (var (a, b) in Edges(mesh))
+                {
+                    edgeCount++;
+                    enginePierces += surface.Pierces(engineWorld[a], engineWorld[b]) ? 1 : 0;
+                    replacedPierces += surface.Pierces(replacedWorld[a], replacedWorld[b]) ? 1 : 0;
+                }
+            }
+        }
+
+        // Measured 2026-09-28 by a read-only Python walk of the raw RGM and ROB bytes that scores all 48
+        // axis orders and sign patterns in float64 and in float32 (tools/scripts/redguard/multiaxis_control.py):
+        // 302 placements with a pitch or a roll, on 16 maps, 5,123 points and 10,487 edges. The engine's
+        // matrix, Ry(-y)·Rx(-x)·Rz(-z), puts 753 points within 6 units of a static face and pierces the
+        // statics with 140 to 141 edges; the reading PlacementRotation used before that day,
+        // Ry(-y)·Rx(+x)·Rz(+z), scores 647 and 290 to 291. It pierces less on 9 of the 16 maps and more on
+        // none. The two thresholds together admit the engine's reading and no other of the 48: every
+        // other reading within 170 pierces scores at most 719 near (Ry(-y)·Rz(-z)·Rx(-x)), and every
+        // other reading with 735 near or more pierces at least 246 times (Ry(+y)·Rx(-x)·Rz(+z)). The
+        // catacomb control cannot see this: its 22 such placements score 129 to 168 under all 48.
+        Assert.Equal(16, mapsScored);
+        Assert.Equal(302, population);
+        Assert.Equal(5_123, vertices);
+        Assert.Equal(10_487, edgeCount);
+        Assert.True(engineNear >= 735, $"engine signs: {engineNear} of {vertices} points near a static face");
+        Assert.True(enginePierces <= 170, $"engine signs: {enginePierces} of {edgeCount} edges pierce a static face");
+        Assert.True(replacedNear <= 700,
+            $"replaced signs: {replacedNear} points near a static face; the control no longer discriminates");
+        Assert.True(replacedPierces >= 240,
+            $"replaced signs: {replacedPierces} edges pierce a static face; the control no longer discriminates");
+        Assert.True(engineNear > replacedNear && enginePierces < replacedPierces,
+            $"engine {engineNear} near / {enginePierces} pierces against replaced {replacedNear} / {replacedPierces}");
     }
 
     private static AssetNode? FindNode(AssetNode node, string name)
@@ -561,6 +786,12 @@ public sealed class RedguardSceneRetailTests
             p.Submesh.DiffuseTexturePath is { } path && scene.TryGetGeneratedTexture(path, out _));
         Assert.True(textured >= scene.MeshParts.Count * 9 / 10,
             $"{textured} of {scene.MeshParts.Count} parts carry a generated texture");
+
+        // The pane reports the approximation the CLI reports: ISLAND's wagon is the one placeholder a
+        // retail map places, drawn from BWAGA001.3DC in its keyframe pose.
+        var note = Assert.Single(scene.SourceNotes);
+        Assert.StartsWith("1 empty ROB placeholder(s)", note, StringComparison.Ordinal);
+        Assert.EndsWith(": BWAGA001.3DC", note, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

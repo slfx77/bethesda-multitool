@@ -76,14 +76,15 @@ internal sealed class RwPspTexture
     /// <summary>Row pitch alignment, and also its minimum.</summary>
     public const int PitchAlignment = 16;
 
-    private RwPspTexture(string name, int width, int height, RwPspPixelFormat format, int mipCount, byte[] rgba)
+    private RwPspTexture(
+        string name, int width, int height, RwPspPixelFormat format,
+        IReadOnlyList<DecodedTextureMipLevel> mipLevels)
     {
         Name = name;
         Width = width;
         Height = height;
         Format = format;
-        MipCount = mipCount;
-        Rgba = rgba;
+        MipLevels = mipLevels;
     }
 
     /// <summary>The texture's name, e.g. <c>SFX_Skydome_1_lava</c>.</summary>
@@ -99,10 +100,13 @@ internal sealed class RwPspTexture
     public RwPspPixelFormat Format { get; }
 
     /// <summary>Levels in the mip chain; 1 for all but fifteen retail textures.</summary>
-    public int MipCount { get; }
+    public int MipCount => MipLevels.Count;
+
+    /// <summary>Authored mip levels decoded in source order; no levels are generated.</summary>
+    public IReadOnlyList<DecodedTextureMipLevel> MipLevels { get; }
 
     /// <summary>The base level decoded to RGBA, row-major, four bytes per pixel.</summary>
-    public byte[] Rgba { get; }
+    public byte[] Rgba => MipLevels[0].Pixels;
 
     /// <summary>Bits per pixel for a format.</summary>
     public static int BitsPerPixel(RwPspPixelFormat format)
@@ -133,7 +137,7 @@ internal sealed class RwPspTexture
     /// </summary>
     public static int Pitch(int width, RwPspPixelFormat format)
     {
-        var bytes = width * BitsPerPixel(format) / 8;
+        var bytes = (width * BitsPerPixel(format) + 7) / 8;
         var aligned = (bytes + PitchAlignment - 1) / PitchAlignment * PitchAlignment;
         return Math.Max(PitchAlignment, aligned);
     }
@@ -151,7 +155,7 @@ internal sealed class RwPspTexture
     }
 
     /// <summary>
-    ///     Parses a TEXTURENATIVE Struct body, decoding the base level to RGBA. Returns null when
+    ///     Parses a TEXTURENATIVE Struct body, decoding every authored mip to RGBA. Returns null when
     ///     the bytes do not fit the layout — including when no mip count reproduces the body length
     ///     exactly, which is the check that keeps a mis-located chunk from decoding as noise.
     /// </summary>
@@ -197,11 +201,26 @@ internal sealed class RwPspTexture
 
         var name = RwChunk.ReadString(body, NameOffset, NameLength);
         var clut = clutBytes > 0 ? body.Slice(ClutOffset, clutBytes) : default;
-        var rgba = Decode(body[pixelStart..], width, height, format, clut);
-        return new RwPspTexture(name, width, height, format, mipCount, rgba);
+        var mipLevels = new DecodedTextureMipLevel[mipCount];
+        var offset = pixelStart;
+        for (var level = 0; level < mipCount; level++)
+        {
+            var mipWidth = Math.Max(1, width >> level);
+            var mipHeight = Math.Max(1, height >> level);
+            var byteCount = Pitch(mipWidth, format) * mipHeight;
+            mipLevels[level] = new DecodedTextureMipLevel
+            {
+                Width = mipWidth,
+                Height = mipHeight,
+                Pixels = Decode(body.Slice(offset, byteCount), mipWidth, mipHeight, format, clut)
+            };
+            offset += byteCount;
+        }
+
+        return new RwPspTexture(name, width, height, format, Array.AsReadOnly(mipLevels));
     }
 
-    /// <summary>Decodes the base mip level into RGBA.</summary>
+    /// <summary>Decodes one mip level into RGBA.</summary>
     private static byte[] Decode(
         ReadOnlySpan<byte> pixels, int width, int height, RwPspPixelFormat format, ReadOnlySpan<byte> clut)
     {
@@ -285,9 +304,9 @@ internal sealed class RwPspTexture
         return (byte)(value | (value >> bits));
     }
 
-    /// <summary>The base level as a <see cref="DecodedTexture" /> for the viewer and browser.</summary>
+    /// <summary>All authored levels as a <see cref="DecodedTexture" /> for the viewer and browser.</summary>
     public DecodedTexture ToDecodedTexture()
     {
-        return DecodedTexture.FromBaseLevel(Rgba, Width, Height, false);
+        return new DecodedTexture { MipLevels = MipLevels };
     }
 }

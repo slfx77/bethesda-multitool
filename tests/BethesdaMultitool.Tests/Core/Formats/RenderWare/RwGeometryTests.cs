@@ -285,9 +285,9 @@ public sealed class RwGeometryRetailTests
     private static string[] RequirePacks()
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        var root = RealAssetPaths.Travels.OblivionPspBuildsRoot();
-        Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP (cancelled betas)"));
-        var packs = Directory.EnumerateFiles(root, "GR.ARC", SearchOption.AllDirectories)
+        var builds = RealAssetPaths.Travels.OblivionPspBuilds();
+        Assert.SkipWhen(builds.Count == 0, RealAssetPaths.SkipMessage("Oblivion PSP (cancelled betas)"));
+        var packs = builds.SelectMany(build => Directory.EnumerateFiles(build, "GR.ARC", SearchOption.AllDirectories))
             .OrderBy(p => p, StringComparer.OrdinalIgnoreCase).ToArray();
         Assert.SkipWhen(packs.Length == 0, "No GR.ARC packs are staged.");
         return packs;
@@ -330,7 +330,9 @@ public sealed class RwGeometryRetailTests
             }
         }
 
-        Assert.True(count > 1_000, $"Only {count} geometries parsed; the generic layout claim regressed.");
+        // 993 across the six dated betas (measured 2026-09-09; the floor was 1,000 while the
+        // corpus also held the community repack).
+        Assert.True(count > 950, $"Only {count} geometries parsed; the generic layout claim regressed.");
     }
 
     /// <summary>

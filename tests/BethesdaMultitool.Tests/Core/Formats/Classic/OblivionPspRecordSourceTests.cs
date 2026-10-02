@@ -17,15 +17,13 @@ namespace BethesdaMultitool.Tests.Core.Formats.Classic;
 [Trait("Category", BucketBTestGuard.Category)]
 public sealed class OblivionPspRecordSourceTests
 {
+    /// <param name="build">The build's date, <c>yyyy-M-d</c>, as its corpus directory carries it.</param>
     private static string BuildRoot(string build)
     {
         BucketBTestGuard.SkipUnlessEnabled();
-        var root = RealAssetPaths.Travels.OblivionPspBuildsRoot();
-        Assert.SkipWhen(root is null, RealAssetPaths.SkipMessage("Oblivion PSP betas"));
-
-        var buildRoot = Path.Combine(root, build);
+        var buildRoot = RealAssetPaths.Travels.OblivionPspBuild(build);
         Assert.SkipWhen(
-            !File.Exists(Path.Combine(buildRoot, @"PSP_GAME\USRDIR\GR.ARC")),
+            buildRoot is null || !File.Exists(Path.Combine(buildRoot, @"PSP_GAME\USRDIR\GR.ARC")),
             RealAssetPaths.SkipMessage($"Oblivion PSP build '{build}'"));
         return buildRoot;
     }
@@ -34,9 +32,9 @@ public sealed class OblivionPspRecordSourceTests
     // has none of the latter — the localisation set arrives with the November build, and it ships a
     // single "String.db" instead — so the count has to be per build rather than a constant.
     [Theory]
-    [InlineData("1june 9th 2006", 64, 14, 0)]
-    [InlineData("2November 21st 2006", 126, 115, 6)]
-    [InlineData("6April 27th 2007", 87, 74, 6)]
+    [InlineData("2006-6-9", 64, 14, 0)]
+    [InlineData("2006-11-21", 126, 115, 6)]
+    [InlineData("2007-4-27", 87, 74, 6)]
     public async Task AStagedBuildSynthesizesOneRecordPerPackEntryWithUniqueIds(
         string build, int expected, int renderWareEntries, int stringDatabases)
     {
@@ -73,7 +71,7 @@ public sealed class OblivionPspRecordSourceTests
         // A prison/crypt slideshow build: 43 of its 64 entries are JPEG stills and only 14 are
         // RenderWare. Worth pinning, because it is the single clearest sign that this pack predates
         // the game proper rather than being a subset of it.
-        var records = (await ClassicGameAnalyzer.LoadAsync(BuildRoot("1june 9th 2006"), TestContext.Current.CancellationToken)).Records.GenericRecords;
+        var records = (await ClassicGameAnalyzer.LoadAsync(BuildRoot("2006-6-9"), TestContext.Current.CancellationToken)).Records.GenericRecords;
 
         Assert.Equal(43, records.Count(r => (string?)r.Fields["Kind"] == "jpeg"));
         Assert.Equal(14, records.Count(r => (string?)r.Fields["Kind"] == "renderware"));
@@ -91,8 +89,8 @@ public sealed class OblivionPspRecordSourceTests
         // GlobalStream is one of only two names present in every dated beta, and it moves position
         // between them (the packs are rebuilt), so it is the exact case a position-derived id would
         // get wrong.
-        var first = await ClassicGameAnalyzer.LoadAsync(BuildRoot("2November 21st 2006"), TestContext.Current.CancellationToken);
-        var later = await ClassicGameAnalyzer.LoadAsync(BuildRoot("6April 27th 2007"), TestContext.Current.CancellationToken);
+        var first = await ClassicGameAnalyzer.LoadAsync(BuildRoot("2006-11-21"), TestContext.Current.CancellationToken);
+        var later = await ClassicGameAnalyzer.LoadAsync(BuildRoot("2007-4-27"), TestContext.Current.CancellationToken);
 
         var a = first.Records.GenericRecords.Single(r => r.FullName == "GlobalStream");
         var b = later.Records.GenericRecords.Single(r => r.FullName == "GlobalStream");
@@ -101,21 +99,6 @@ public sealed class OblivionPspRecordSourceTests
 
         // Same identity, different position in the two packs — which is the whole point.
         Assert.NotEqual((int)a.Fields["Index"]!, (int)b.Fields["Index"]!);
-    }
-
-    [Fact]
-    public async Task TheRepackedDiscSurfacesItsTruncatedEntryAndItsSignature()
-    {
-        var modified = await ClassicGameAnalyzer.LoadAsync(BuildRoot("Modified 5Feburary 1st 2007"), TestContext.Current.CancellationToken);
-        var records = modified.Records.GenericRecords;
-
-        var hub = records.Single(r => r.FullName == "Hub_5_Demo");
-        Assert.Equal(0L, hub.Fields["Size"]);
-        Assert.True(Assert.IsType<bool>(hub.Fields["Empty"]));
-
-        // The 18-byte entry the repacker added to sign its work.
-        var credits = records.Single(r => r.FullName == "Credits");
-        Assert.Equal(18L, credits.Fields["Size"]);
     }
 
     [Fact]

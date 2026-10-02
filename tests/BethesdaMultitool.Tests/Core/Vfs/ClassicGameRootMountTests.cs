@@ -35,7 +35,10 @@ public sealed class ClassicGameRootMountTests : IDisposable
 
     private void Write(string relativePath, byte[] content)
     {
-        var full = Path.Combine(_root, relativePath);
+        // Stages a HOST tree from the profile's engine spellings (@"ARENA2\..."), so the separator
+        // is re-spelled for the host — a no-op on Windows; on a Unix host the literal join would
+        // write one file named "ARENA2\ARCH3D.BSA" at the root and stage nothing under ARENA2.
+        var full = Path.Combine(_root, relativePath.Replace('\\', Path.DirectorySeparatorChar));
         Directory.CreateDirectory(Path.GetDirectoryName(full)!);
         File.WriteAllBytes(full, content);
     }

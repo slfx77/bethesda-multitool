@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.DiscImage;
+using BethesdaMultitool.Core.Formats.DiscImage.Chd;
+using BethesdaMultitool.Core.Utils;
 using Microsoft.Win32.SafeHandles;
-using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
 
 namespace BethesdaMultitool.Core.Formats.Archives;
 
@@ -28,7 +29,8 @@ namespace BethesdaMultitool.Core.Formats.Archives;
 internal sealed class XdvdfsBackend : IArchiveBackend
 {
     private const int CopyBufferSize = 1 << 20;
-    private readonly SafeFileHandle _handle;
+    private readonly SafeFileHandle? _handle;
+    private readonly ChdStream? _chd;
 
     private readonly XdvdfsVolume _volume;
 
@@ -38,6 +40,14 @@ internal sealed class XdvdfsBackend : IArchiveBackend
         _handle = handle;
     }
 
+    private XdvdfsBackend(XdvdfsVolume volume, ChdStream chd)
+    {
+        _volume = volume;
+        _chd = chd;
+    }
+
+    // ⚠ The volume's own format, with no mention of the container it came out of: a caller that
+    // pinned this string must not have to care whether the image is raw or stored as CHD.
     public string FormatName =>
         _volume.PartitionOffset == 0
             ? "XDVDFS (Xbox disc)"
@@ -85,11 +95,11 @@ internal sealed class XdvdfsBackend : IArchiveBackend
             return bytes;
         }
 
-        var read = RandomAccess.Read(_handle, bytes, _volume.OffsetOf(record));
+        var read = ReadAt(_volume.OffsetOf(record), bytes);
         var total = read;
         while (total < bytes.Length && read > 0)
         {
-            read = RandomAccess.Read(_handle, bytes.AsSpan(total), _volume.OffsetOf(record) + total);
+            read = ReadAt(_volume.OffsetOf(record) + total, bytes.AsSpan(total));
             total += read;
         }
 
@@ -117,7 +127,9 @@ internal sealed class XdvdfsBackend : IArchiveBackend
             throw new InvalidOperationException($"Archive entry path is not extractable: '{record.FullPath}'.");
         }
 
-        var target = Path.Combine(outputDir, relative);
+        // `relative` is backslash-normalized above; re-spell it for the host so a Unix extraction
+        // creates the directory tree instead of one file with backslashes in its name.
+        var target = HostPath.Combine(outputDir, relative);
         if (!overwrite && File.Exists(target))
         {
             return false;
@@ -133,7 +145,9 @@ internal sealed class XdvdfsBackend : IArchiveBackend
         while (remaining > 0)
         {
             var wanted = (int)Math.Min(buffer.Length, remaining);
-            var read = await RandomAccess.ReadAsync(_handle, buffer.AsMemory(0, wanted), offset).ConfigureAwait(false);
+            var read = _handle is not null
+                ? await RandomAccess.ReadAsync(_handle, buffer.AsMemory(0, wanted), offset).ConfigureAwait(false)
+                : _chd!.ReadAt(offset, buffer.AsSpan(0, wanted));
             if (read <= 0)
             {
                 throw new InvalidDataException(
@@ -183,7 +197,13 @@ internal sealed class XdvdfsBackend : IArchiveBackend
 
     public void Dispose()
     {
-        _handle.Dispose();
+        _handle?.Dispose();
+        _chd?.Dispose();
+    }
+
+    private int ReadAt(long offset, Span<byte> buffer)
+    {
+        return _handle is not null ? RandomAccess.Read(_handle, buffer, offset) : _chd!.ReadAt(offset, buffer);
     }
 
     /// <summary>Whether <paramref name="path" /> is an XDVDFS image. See <see cref="XdvdfsVolume.TryProbe" />.</summary>
@@ -197,6 +217,22 @@ internal sealed class XdvdfsBackend : IArchiveBackend
     {
         ArgumentNullException.ThrowIfNull(path);
         XdvdfsVolume volume;
+        if (Path.GetExtension(path).Equals(".chd", StringComparison.OrdinalIgnoreCase))
+        {
+            var chdStream = new ChdStream(ChdFile.Open(path), ownsFile: true);
+            try
+            {
+                volume = XdvdfsVolume.Read(chdStream);
+            }
+            catch
+            {
+                chdStream.Dispose();
+                throw;
+            }
+
+            return new XdvdfsBackend(volume, chdStream);
+        }
+
         using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
         {
             volume = XdvdfsVolume.Read(stream);

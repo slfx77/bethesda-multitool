@@ -1,7 +1,6 @@
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.Core.Compression;
 using BethesdaMultitool.Core.Formats.Xngine.Bsa;
-using ArchiveEntry = BethesdaMultitool.Core.Formats.Bsa.Index.ArchiveReader.ArchiveEntry;
 
 namespace BethesdaMultitool.Core.Formats.Archives;
 

@@ -78,7 +78,7 @@ public sealed class OblivionMobileLevelRetailTests
         var jar = RealAssetPaths.Travels.OblivionMobileJar();
         Assert.SkipWhen(
             jar is null,
-            "The Oblivion Mobile JAR is not staged (Sample/Builds/The Elder Scrolls Travels - Oblivion (J2ME - Final)/oblivion-repaired.jar).");
+            "The Oblivion Mobile JAR is not staged (Media/The Elder Scrolls Travels - Oblivion (2006-7-14, J2ME - Final)/elder_scrolls_iv_oblivion.jar).");
         return ArchiveReader.Open(jar);
     }
 

@@ -1,5 +1,5 @@
 // The RenderWare 3.x chunk walk is ported from NeversoftMultitool
-//   (https://github.com/slfx77/NeversoftMultitool, MIT License) —
+// —
 //   src/NeversoftMultitool/Core/Formats/Mesh/RenderWare/RwChunkReader.cs. Upstream names its
 //   constants SCREAMING_SNAKE; they are PascalCase here to satisfy this repo's S101 rule, and the
 //   byte-order reads go through BinaryPrimitives rather than BitConverter so the little-endian

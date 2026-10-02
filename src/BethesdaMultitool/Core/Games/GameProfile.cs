@@ -180,10 +180,16 @@ public sealed record GameProfile
     public float ExteriorCellWorldSize { get; init; }
 
     /// <summary>
-    ///     World units per real-world metre, i.e. how big one unit physically is. Gamebryo/Creation
-    ///     games use ~<b>70</b> (1 unit = 1.42875 cm); Creation Engine 2 went metric and Starfield uses
-    ///     <b>1</b> — measured from retail mesh bounds, where a chair is 0.98–1.13 tall and a door
-    ///     2.4–2.8. Zero means "use the classic default".
+    ///     How big one world unit physically is, with the provenance of the number. Required: every
+    ///     profile states its unit and its grounds, so a consumer can print
+    ///     <see cref="WorldUnitScale.Describe" /> beside any metric figure instead of presenting an
+    ///     assumption as a fact. FNV, FO3, Oblivion and Skyrim carry the value read from their
+    ///     executables (RE-1, docs/world_scale_units_re1.md: 128 units = 6 feet, so 69.99125 or
+    ///     69.9904 units per meter, ReverseEngineered); Fallout 4 and 76 carry the same chain Assumed
+    ///     (not read yet); Morrowind and Starfield carry Assumed values; the classic games carry the viewer's classic-unit assumption with
+    ///     evidence saying so, because their formats' own units belong to the per-format registry the
+    ///     model-document design schedules for cut 1c (docs/design/model-document-design-20260923.md
+    ///     §4.1, §9 rows 10 and 14).
     ///     <para>
     ///         ⚠ This is NOT derivable from <see cref="ExteriorCellWorldSize" />. The cell shrank by
     ///         4096→100 (40.96×) while the unit grew by 70→1 (70×), because a Starfield cell covers 100 m
@@ -191,7 +197,18 @@ public sealed record GameProfile
     ///         height, jump) must scale by THIS; only cell-grid distances scale by the cell size.
     ///     </para>
     /// </summary>
-    public float WorldUnitsPerMetre { get; init; }
+    public required WorldUnitScale Units { get; init; }
+
+    /// <summary>
+    ///     The viewer's camera unit convention, in world units per meter: 70 for every Gamebryo/Creation
+    ///     and classic profile (the unit every human-scale camera constant in this codebase was
+    ///     authored against; a 112-unit eye is a 1.6 m human) and 1 for Starfield. This is a
+    ///     convention, deliberately distinct from <see cref="Units" />: the measured Gamebryo unit is
+    ///     69.99125 or 69.9904 units per meter (RE-1), 0.0125% away, and adopting it here would move
+    ///     <see cref="GameProfiles.HumanScaleFactor" /> off its bit-exact 1 for no visible gain. Export
+    ///     and <c>mesh info</c> read <see cref="Units" />; the camera reads this.
+    /// </summary>
+    public float ViewerUnitsPerMeter { get; init; } = 70f;
 
     // ---- Map markers (consumed by the 2D world map; see MapMarkerCatalog + IMapMarkerIconSet) ----
 
