@@ -431,7 +431,8 @@ public sealed class ExportScriptsCommandTests : IDisposable
             Out = new AnsiConsoleOutput(writer),
             Ansi = AnsiSupport.No,
             ColorSystem = ColorSystemSupport.NoColors,
-            Interactive = InteractionSupport.No
+            Interactive = InteractionSupport.No,
+            Enrichment = new ProfileEnrichment { UseDefaultEnrichers = false }
         });
         console.Profile.Width = 400;
         return console;

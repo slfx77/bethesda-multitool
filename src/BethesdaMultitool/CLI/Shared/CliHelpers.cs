@@ -53,7 +53,10 @@ internal static class CliHelpers
             Out = new AnsiConsoleOutput(writer),
             Ansi = AnsiSupport.No,
             ColorSystem = ColorSystemSupport.NoColors,
-            Interactive = InteractionSupport.No
+            Interactive = InteractionSupport.No,
+            // CI profile enrichers can re-enable ANSI even when explicitly disabled above.
+            // File captures must retain their plain-text contract in every host environment.
+            Enrichment = new ProfileEnrichment { UseDefaultEnrichers = false }
         });
         render(console);
         return writer.ToString();
