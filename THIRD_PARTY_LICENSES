@@ -2,6 +2,21 @@ This file contains the license texts for third-party components included in
 this repository and distributed with release binaries.
 
 ================================================================================
+libchdr - CHD v5 container: behaviour reference only, nothing copied
+================================================================================
+
+Source: https://github.com/rtissera/libchdr
+License: BSD-3-Clause
+
+Core/Formats/DiscImage/Chd/ reads MAME's CHD v5 container natively. It was written from the
+format's behaviour as libchdr documents it - the header field order, the two-pass Huffman and
+delta coding of the hunk map, the per-hunk CRC-16, the 'L'/'B' marker on a FLAC hunk and the
+[ecc bitmap][sector data][subcode] framing of a CD hunk - together with the public LZMA
+specification, RFC 9639 (FLAC) and ECMA-130 Annex A (CD-ROM ECC). No libchdr source was copied,
+and MAME's own CHD sources (GPL-2.0-or-later) were never opened. chdman remains a separate
+process where the corpus tooling needs it.
+
+================================================================================
 DDXConv - DDX to DDS texture conversion
 ================================================================================
 
@@ -144,138 +159,6 @@ a header comment:
 The MIT License (MIT)
 
 Copyright (c) 2016-2026 The OpenTESArena Developers
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-================================================================================
-NeversoftMultitool - Sample corpus generator; 2D level view seam; RenderWare 3.x chunk walk
-and BINMESH plugin reader
-================================================================================
-
-Source: https://github.com/slfx77/NeversoftMultitool
-License: MIT
-
-The Sample/Builds corpus generator is ported from it:
-  tools/corpus/SampleGenerator/ <- tools/corpus/SampleGenerator/ (commit a524525a, 2026-09-07)
-The build-directory naming convention ("Game Name (yyyy-M-d, Platform - Kind)"), the
-media-root/research-cache/sample-output model, the mirror-then-repopulate pipeline and
-SampleGeneratorPathSafety (destination canonicalization, strict-descendant checks and
-reparse-point rejection) come from there essentially unchanged. What is new here: a catalog whose
-entries name their own scattered sources instead of one media root; multi-part builds, so a build
-can hold a disc image beside the tree extracted from it; measured date provenance recorded per
-build; and the one-way migration off this repository's older Sample/Full_Builds layout.
-
-The RenderWare 3.x chunk walk and BINMESH plugin reader are also ported from it:
-  Core/Formats/RenderWare/RwChunk.cs   <- Core/Formats/Mesh/RenderWare/RwChunkReader.cs
-  Core/Formats/RenderWare/RwBinMesh.cs <- the BINMESH layout it declares
-Two deliberate divergences: the chunk 0x1300 size overshoot is corrected inside the reader
-rather than at call sites, and the library-id word is genuinely unpacked instead of compared
-against a constant (upstream's comparison reaches the correct branch by luck for every id in
-either corpus).
-
-The 2D-level seam behind the Asset Browser's map pane is ported from that project:
-  Core/Rendering/Level2D/Level2DRender.cs <- Core/Rendering/Level2d/Level2dRender.cs
-                                             (ILevel2dSource, Level2dRender, Level2dLayer;
-                                              names carry a capital D here to satisfy this
-                                              repo's naming rule, and the layer set is
-                                              retargeted to the classic voxel/heightmap grids)
-
-The CD-image reader behind `archive` for .iso / .cue+.bin (commit 314bc9e0, 2026-08-14):
-  Core/Formats/DiscImage/IDiscSectorSource.cs  <- Core/Formats/DiscImage/IDiscSectorSource.cs
-  Core/Formats/DiscImage/IsoSectorSource.cs    <- Core/Formats/DiscImage/IsoSectorSource.cs
-  Core/Formats/DiscImage/RawSectorSource.cs    <- Core/Formats/DiscImage/RawSectorSource.cs
-  Core/Formats/DiscImage/CueSheet.cs           <- Core/Formats/DiscImage/CueSheet.cs
-  Core/Formats/DiscImage/DiscImageRecords.cs   <- CueTrack.cs, DiscTrackRegion.cs, DiscFileEntry.cs
-  Core/Formats/DiscImage/Iso9660FileSystem.cs  <- Core/Formats/DiscImage/Iso9660FileSystem.cs
-  Core/Formats/DiscImage/DiscImageBackend.cs   <- the ISO9660/raw/CD-DA paths of DiscImageArchive.cs,
-                                                  reshaped onto this repo's IArchiveBackend seam
-  (the GDI, GCM and Wii paths are not taken)
-
-The XDVDFS reader behind `archive` for original-Xbox and Xbox 360 disc images (2026-09-08):
-  Core/Formats/DiscImage/XdvdfsVolume.cs <- tools/corpus/SampleGenerator/SampleGeneratorXboxIsoOperations.cs
-                                            (descriptor offset 0x10000, the 14-byte directory-entry
-                                            layout, the 0xFFFF subtree sentinel, the 0xFF pad byte
-                                            and the magic)
-                                         <- tools/corpus/SampleGenerator/SampleGeneratorDiscOperations.cs
-                                            (the four redump game-partition bases)
-  Everything else in that file and in Core/Formats/Archives/XdvdfsBackend.cs — the twice-repeated
-  magic as the probe gate, the exact-tiling verification and its refusal semantics, the 0xFF-only
-  filler rule, the depth and shared-table refusals, name validation and the streaming extractor —
-  is this repository's own work measured against the retail images.
-
-MIT License
-
-Copyright (c) 2021-2026
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-================================================================================
-JimmyPCTool / AweMultitool - shared GUI helpers; Granny 2 (.gr2) reader
-================================================================================
-
-Source: https://github.com/slfx77/JimmyPCTool
-License: MIT
-
-Two general-purpose helpers behind the Asset Browser are ported from that project's
-Core layer, which is UI-framework-independent:
-  Core/Concurrency/LatestOnlyJob.cs   <- Core/Concurrency/LatestOnlyJob.cs (verbatim; the
-                                         "only the newest selection may paint" guard)
-  Core/AssetBrowse/ThumbnailScaler.cs <- Core/Formats/Canvas/CanvasThumbnailer.cs (the
-                                         whole-number upscale and alpha-weighted box
-                                         downscale rules; reshaped to take raw RGBA so one
-                                         scaler serves every decoder here)
-Their test cases are ported alongside, from the matching files under tests/.
-
-The Granny 2 (RAD Game Tools .gr2) reader that decodes Van Buren's character meshes is ported
-from the same project's Core layer (2026-09-08), src/AweMultitool/Core/Formats/Granny/:
-  Core/Formats/Granny/Gr2Container.cs, Gr2ExpandedFile.cs, Gr2File.cs, Gr2TypeTree.cs,
-  Gr2SchemaDumper.cs, Gr2ModelGlbExporter.cs   <- the matching files (plain repo MIT)
-  Core/Formats/Granny/Gr2Oodle0Decoder.cs      <- Gr2Oodle0Decoder.cs, itself a port of the
-                                                  clean-room MIT readers Rasetsuu/blendergranny
-                                                  and Stitchuuuu/granny-ro-js (entries below)
-  Core/Formats/Granny/Gr2Oodle1Decoder.cs      <- Gr2Oodle1Decoder.cs, itself adapted from
-                                                  carbonenginejs/format-gr2 src/core/oodle1.js
-                                                  (MIT), a port of Arbos/nwn2mdk gr2_decompress.cpp
-                                                  (Boost Software License 1.0) (entries below)
-  ⚠ Its Granny-Bink texture path is NOT taken (those textures return null here), and NOTHING from
-  that project's FFmpeg-derived Bink files (LGPL-2.1) is present: the Bink video decoder under
-  Core/Formats/Bink/ is this repository's own clean-room work — see its section below.
-
-MIT License
-
-Copyright (c) 2026 slfx77
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
