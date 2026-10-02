@@ -1,0 +1,4 @@
+; Zero-argument investigation function, replaced with script.load.
+begin function {}
+    SetFunctionValue (player.GetAV Health)
+end

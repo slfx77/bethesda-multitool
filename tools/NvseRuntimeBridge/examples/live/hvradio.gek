@@ -1,0 +1,7 @@
+; Retail control for the prototype article's removed radio-repair choice.
+; Restore the pinned save after the interaction.
+begin function {}
+    player.SetAV Explosives 40
+    ShowMessage 000AF687
+    SetFunctionValue (GetFormIDString 000AF687)
+end

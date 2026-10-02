@@ -1,5 +1,6 @@
 using System.CommandLine;
 using System.CommandLine.Help;
+using System.CommandLine.Parsing;
 using System.Text;
 using BethesdaMultitool.CLI.Commands.Audio;
 using BethesdaMultitool.CLI.Commands.Classic;
@@ -25,6 +26,7 @@ public static class Program
         "stats",
         "list",
         "show",
+        "refs",
         "diff",
         "convert-nif",
         "convert-ddx",
@@ -34,18 +36,25 @@ public static class Program
         "ba2",
         "btd",
         "dialogue",
+        "assets",
         "papyrus",
+        "pex",
         "world",
         "repack",
         "rtti",
+        "runtime",
         "save",
         "dmp",
         "render",
+        "capture-shadowkey-native",
         "sprite",
         "classic",
         "audio",
+        "lip",
+        "tri",
         "video",
         "export",
+        "mesh",
         "analyze",
         "report",
         "version-track",
@@ -131,12 +140,23 @@ public static class Program
 
     private static int RunCli(string[] args)
     {
+        // Spectre captures Console.Out on its first use. Set its encoding before that writer exists.
+        Console.OutputEncoding = Encoding.UTF8;
+        var originalArgs = args;
+        var resourceStats = args.Contains("--resource-stats", StringComparer.OrdinalIgnoreCase)
+                            || EnvironmentVariables.IsEnabled(EnvironmentVariables.Diagnostics.ResourceStats);
+        args = args.Where(a => !a.Equals("--plain", StringComparison.OrdinalIgnoreCase)
+                               && !a.Equals("--no-ansi", StringComparison.OrdinalIgnoreCase)
+                               && !a.Equals("--resource-stats", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        var parseResult = CreateCliCommand().Parse(args);
         // Detect plain output mode BEFORE any AnsiConsole usage.
         // Triggers: --plain flag, --no-ansi (compat), piped output, NO_COLOR env var.
-        var plainMode = args.Contains("--plain", StringComparer.OrdinalIgnoreCase)
-                        || args.Contains("--no-ansi", StringComparer.OrdinalIgnoreCase)
-                        || Console.IsOutputRedirected
-                        || Environment.GetEnvironmentVariable("NO_COLOR") != null;
+        // A JSON document owns stdout, so a JSON request is also plain: no banner may precede it even on an
+        // interactive terminal.
+        var jsonOutput = RequestsJsonOutput(parseResult);
+        var plainMode = IsPlainMode(originalArgs, Console.IsOutputRedirected,
+            Environment.GetEnvironmentVariable("NO_COLOR") != null, jsonOutput);
 
         if (plainMode)
         {
@@ -145,18 +165,7 @@ public static class Program
             AnsiConsole.Profile.Capabilities.Links = false;
             Logger.Instance.UseSpectre = false;
         }
-
-        // End-of-run resource statistics: --resource-stats flag or FALLOUT_RESOURCE_STATS=1.
-        var resourceStats = args.Contains("--resource-stats", StringComparer.OrdinalIgnoreCase)
-                            || EnvironmentVariables.IsEnabled(EnvironmentVariables.Diagnostics.ResourceStats);
-
-        // Strip flags before System.CommandLine sees them
-        args = args.Where(a => !a.Equals("--plain", StringComparison.OrdinalIgnoreCase)
-                               && !a.Equals("--no-ansi", StringComparison.OrdinalIgnoreCase)
-                               && !a.Equals("--resource-stats", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-
-        Console.OutputEncoding = Encoding.UTF8;
+        if (jsonOutput) Logger.SetOutput(Console.Error);
 
         if (!plainMode)
         {
@@ -167,6 +176,65 @@ public static class Program
             AnsiConsole.WriteLine();
         }
 
+        // Parse errors include help and typo suggestions: in JSON mode those diagnostics belong on stderr.
+        using var cancellation = new CancellationTokenSource();
+        void CancelInvocation(object? sender, ConsoleCancelEventArgs eventArgs)
+        {
+            eventArgs.Cancel = true;
+            cancellation.Cancel();
+        }
+        // Register before invoking: an async handler can perform substantial synchronous work
+        // before its first await. Also handles Ctrl+Break on Windows, alongside Ctrl+C.
+        Console.CancelKeyPress += CancelInvocation;
+        int exitCode;
+        try
+        {
+            var configuration = new InvocationConfiguration();
+            if (jsonOutput && parseResult.Errors.Count > 0)
+            {
+                configuration.Output = Console.Error;
+                configuration.Error = Console.Error;
+            }
+            exitCode = parseResult.InvokeAsync(configuration, cancellation.Token).GetAwaiter().GetResult();
+            exitCode = CLI.Commands.Mesh.MeshCommand.MapUsageExitCode(parseResult, exitCode);
+            if (cancellation.IsCancellationRequested) exitCode = 130;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= CancelInvocation;
+        }
+
+        if (resourceStats)
+        {
+            var stdoutConsole = AnsiConsole.Console;
+            if (jsonOutput)
+            {
+                AnsiConsole.Console = CliConsoles.Stderr;
+            }
+
+            try
+            {
+                CliResourceStatsReporter.WriteIfAnyRegistered(ResourceRegistry.Instance);
+            }
+            finally
+            {
+                AnsiConsole.Console = stdoutConsole;
+            }
+        }
+
+        return exitCode;
+    }
+
+    internal static bool IsPlainMode(IReadOnlyList<string> args, bool outputRedirected, bool noColor,
+        bool jsonOutput)
+    {
+        return args.Contains("--plain", StringComparer.OrdinalIgnoreCase)
+               || args.Contains("--no-ansi", StringComparer.OrdinalIgnoreCase)
+               || outputRedirected || noColor || jsonOutput;
+    }
+
+    private static RootCommand CreateCliCommand()
+    {
         var rootCommand = BuildRootCommand();
 
         // Format-agnostic analysis commands (auto-detect file type)
@@ -174,6 +242,7 @@ public static class Program
         rootCommand.Subcommands.Add(StatsCommand.Create());
         rootCommand.Subcommands.Add(ListCommand.Create());
         rootCommand.Subcommands.Add(ShowCommand.Create());
+        rootCommand.Subcommands.Add(RefsCommand.Create());
         rootCommand.Subcommands.Add(DiffCommand.Create());
 
         // Format-specific diagnostic commands
@@ -185,35 +254,68 @@ public static class Program
         rootCommand.Subcommands.Add(Ba2Command.Create()); // deprecated alias of 'archive'
         rootCommand.Subcommands.Add(BtdCommand.Create());
         rootCommand.Subcommands.Add(DialogueCommand.Create());
+        rootCommand.Subcommands.Add(CLI.Commands.Assets.AssetsCommand.Create());
         rootCommand.Subcommands.Add(PapyrusCommand.Create());
         rootCommand.Subcommands.Add(WorldCommand.Create());
         rootCommand.Subcommands.Add(RepackCommand.Create());
         rootCommand.Subcommands.Add(RttiCommand.Create());
+        rootCommand.Subcommands.Add(CLI.Commands.Runtime.RuntimeCommand.Create());
         rootCommand.Subcommands.Add(SaveCommand.Create());
         rootCommand.Subcommands.Add(DmpCommand.Create());
         rootCommand.Subcommands.Add(RenderCommand.Create());
+        rootCommand.Subcommands.Add(ShadowkeyNativeCaptureCommand.Create());
         rootCommand.Subcommands.Add(SpriteCommand.Create());
         rootCommand.Subcommands.Add(ClassicCommand.Create());
         rootCommand.Subcommands.Add(AudioCommand.Create());
+        rootCommand.Subcommands.Add(LipCommand.Create());
+        rootCommand.Subcommands.Add(BethesdaMultitool.CLI.Commands.FaceGen.TriCommand.Create());
         rootCommand.Subcommands.Add(VideoCommand.Create());
         rootCommand.Subcommands.Add(ExportCommand.Create());
+        rootCommand.Subcommands.Add(CLI.Commands.Mesh.MeshCommand.Create());
         rootCommand.Subcommands.Add(AnalyzeCommand.Create());
         rootCommand.Subcommands.Add(ReportCommand.Create());
         rootCommand.Subcommands.Add(VersionTrackCommand.Create());
         rootCommand.Subcommands.Add(
             BuildShaderBytecodePackCommand.Create());
 
-        var exitCode = rootCommand.Parse(args).Invoke();
+        return rootCommand;
+    }
 
-        // Single hook covering every command: print the resource table after the command finishes,
-        // when opted in and anything actually registered during the run.
-        if (resourceStats)
+    /// <summary>
+    ///     Uses the parser's option identity and value, including aliases and colon/equal delimiters.
+    ///     A string-valued --json output path or a -f filter/FormID is not a stdout JSON request.
+    /// </summary>
+    internal static bool RequestsJsonOutput(IReadOnlyList<string> args)
+    {
+        return RequestsJsonOutput(CreateCliCommand().Parse(args.ToArray()));
+    }
+
+    private static bool RequestsJsonOutput(ParseResult parseResult)
+    {
+        // These document commands own stdout even without a format switch. terminal-graph's DOT
+        // alternative has the same banner/diagnostic routing contract as its default JSON output.
+        if (parseResult.CommandResult.Command.Name is "actor-details" or "terminal-graph" or "audio-catalog") { return true; }
+        foreach (var result in parseResult.CommandResult.Children.OfType<OptionResult>())
         {
-            CliResourceStatsReporter.WriteIfAnyRegistered(
-                ResourceRegistry.Instance);
+            if (result.Option is Option<string> format &&
+                (format.Name == "--format" || format.Aliases.Contains("--format")) &&
+                result.Tokens.Any(token => token.Value.Equals("json", StringComparison.OrdinalIgnoreCase) ||
+                    parseResult.CommandResult.Command.Name == "objects" &&
+                    token.Value.Equals("csv", StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            if (result.Option is Option<bool> json &&
+                (json.Name == "--json" || json.Aliases.Contains("--json") ||
+                 json.Name == "--samples" && parseResult.CommandResult.Command.Name == "inspect") &&
+                result.GetValueOrDefault<bool>())
+            {
+                return true;
+            }
         }
 
-        return exitCode;
+        return false;
     }
 
     private static RootCommand BuildRootCommand()

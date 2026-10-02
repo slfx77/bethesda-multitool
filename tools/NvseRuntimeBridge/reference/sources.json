@@ -1,0 +1,110 @@
+{
+  "repository": "https://github.com/xNVSE/NVSE",
+  "commit": "0ccd23ad885ddae533c1790a3fc56cd073e38de3",
+  "files": [
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/PluginAPI.h",
+      "path": "PluginAPI.h",
+      "sha256": "bc07f783fd90425e192dbbc026a48aa73f1639983b0267aeb24a43a5a5e191f9"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/nvse_version.h",
+      "path": "nvse_version.h",
+      "sha256": "63c78b764d1df68b35ab2a2306f7a52866c33088ded596d6ae3aece62bbe9b1b"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameForms.h",
+      "path": "GameForms.h",
+      "sha256": "86e7d5a94bc2b6fff99e867254b317bff7b1b64ec5862f6075688295a75c612d"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/EventManager.cpp",
+      "path": "EventManager.cpp",
+      "sha256": "e1ae0e4223c2b69ca40eacf414584185cdff8ef037d052e855ef1bab9de7c991"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/EventManager.h",
+      "path": "EventManager.h",
+      "sha256": "bc46915405299d1854a94e016a9ec718d47462090359748d0a48e82fa8a633cf"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/CommandTable.h",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/CommandTable.h",
+      "sha256": "5373340a8416947ce1f098e4836cf8d2bd3d4ac152f64bdeb5948528040fc5dd"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameScript.cpp",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameScript.cpp",
+      "sha256": "3cb185ceebc77f0a70a51137ef3191c995c88b42f6f6b9b2c682c738844898a3"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameAPI.h",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameAPI.h",
+      "sha256": "38ee90eb3f0ffe129ca4a4f37bb0bc72a4c000e0590def3a4c979e95dd4b73c5"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/Commands_Game.cpp",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/Commands_Game.cpp",
+      "sha256": "1494d567e0a2a78985fcfc629fcdb8bb6a2b36dff165bd397229cd17064cfcfd"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameScript.h",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameScript.h",
+      "sha256": "2b340c2a252707c774e4e8dc44eb83f67279025d1897f80d80ab77ea3edcc4e6"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/Hooks_Script.cpp",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/Hooks_Script.cpp",
+      "sha256": "35b6bd3891ed8ef316204b0b7eddbfeb4fade5955be696d660d9d3442400e2d0"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/Hooks_Gameplay.cpp",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/Hooks_Gameplay.cpp",
+      "sha256": "2f62e15a78d1fe73b42e1e53af9aabd08c267d5c3b9b2e3ced22b68676339e3d"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameData.cpp",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameData.cpp",
+      "sha256": "ab7bd3332a051605f80b2492a446a4f66246ab80b7532ad6e7bb8901989d6dbe"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameData.h",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameData.h",
+      "sha256": "3716e2842658690f3108739701e2abec381f2094e840c3ed0b0d84c63ccbbd78"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameAPI.cpp",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameAPI.cpp",
+      "sha256": "37f3788f29a52092a556398767d76eba5d578a9e425bd20bb277cb44c2601d57"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameTypes.h",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/GameTypes.h",
+      "sha256": "a53f37ad9eaac9bd19d7de4062c91fe5c0c7dec21a85f2bf89b9e2231ed231d5"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/NiTypes.h",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/NiTypes.h",
+      "sha256": "6ba46ebc625ccc181fb0e999aa967f81e00471cd584976699e606f7c3ed6d953"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/Commands_Script.cpp",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/Commands_Script.cpp",
+      "sha256": "2de2c064eb0efb85093003d2897f768d85e6a18ecdbf6e6b4736846a17f4426f"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/Commands_Script.h",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/Commands_Script.h",
+      "sha256": "39aecbbde2158a44271e0f84f70083c9cce64e915cb5b85ce531b4018f3a812b"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/xNVSE/NVSE/0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/FunctionScripts.cpp",
+      "path": "source/NVSE-0ccd23ad885ddae533c1790a3fc56cd073e38de3/nvse/nvse/FunctionScripts.cpp",
+      "sha256": "4a8a29a2979d637137e8e0f6fbd73610cb84165f6bc0fb08edb2289752683c40"
+    }
+  ],
+  "sourceArchive": {
+    "url": "https://codeload.github.com/xNVSE/NVSE/zip/0ccd23ad885ddae533c1790a3fc56cd073e38de3",
+    "sha256": "22b4d48350b610d8ca1ff7aa620670d6e4c1ad1de58b6a1f22b6d58c4cc09454"
+  }
+}

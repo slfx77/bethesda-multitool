@@ -1,0 +1,13 @@
+{
+  "op": "sequence.run",
+  "sequence": {
+    "version": 1,
+    "steps": [
+      {"type":"snapshot","fields":["player.position","player.rotation"]},
+      {"type":"input","durationMs":2000,"keys":["W"]},
+      {"type":"input","durationMs":500,"mouse":{"dx":120,"dy":0}},
+      {"type":"wait","durationMs":100},
+      {"type":"snapshot","fields":["player.position","player.rotation"]}
+    ]
+  }
+}

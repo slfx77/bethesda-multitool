@@ -1,0 +1,27 @@
+{
+  "release": "v0.5.7.2",
+  "commit": "a50d84c64c9244f80dc67e9fe7af209bfe514d5b",
+  "files": [
+    {
+      "url": "https://raw.githubusercontent.com/ModOrganizer2/usvfs/a50d84c64c9244f80dc67e9fe7af209bfe514d5b/include/usvfs/usvfs.h",
+      "path": "usvfs.h",
+      "sha256": "e0b7c2492c566e1aa2e4e81cdf5d5dc31c28a089b5c103c8993703b8bd775608"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/ModOrganizer2/usvfs/a50d84c64c9244f80dc67e9fe7af209bfe514d5b/include/usvfs/usvfsparameters.h",
+      "path": "usvfsparameters.h",
+      "sha256": "89bbeabac141b5f4b44681fca263fa3e8d4b5de6b6a1a9a2531a8919d393b694"
+    },
+    {
+      "url": "https://raw.githubusercontent.com/ModOrganizer2/usvfs/a50d84c64c9244f80dc67e9fe7af209bfe514d5b/README.md",
+      "path": "README.md",
+      "sha256": "29db108fd119ef2d723c1170a3e6674d041022bb905573414b6b083731cd4fb5"
+    },
+    {
+      "url": "https://github.com/ModOrganizer2/usvfs/releases/download/v0.5.7.2/usvfs_v0.5.7.2.7z",
+      "path": "usvfs_v0.5.7.2.7z",
+      "size": 26027971,
+      "sha256": "c6252eed78ee1c307733a4412cb68522cffc48107be4795c4e38b2b8d7c76d01"
+    }
+  ]
+}

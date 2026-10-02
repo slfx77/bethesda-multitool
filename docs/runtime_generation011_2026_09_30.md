@@ -1,0 +1,16 @@
+# Runtime generation 11
+
+The generation 10 actor probe has now run against the isolated PC game. Session008 captured the player and Doc Mitchell with explicit reference/base identities, Level, seven actor values and their current/base/permanent components. Current player health was restored after the 180 → 179 → 180 control. Four captures imported without gaps/drops/errors; originals remained unchanged after normal close. Evidence is under `artifacts/prototype-runtime/pc/session-008-summary.md/json`.
+
+Generation 11 adds two bounded actions, independently pinned from the frozen research export generation. Engine validation is pending.
+
+The reviewed native **generation012** supersedes the initial native011 binary before any game launch. It passes the admitted capture generation to menu and actor-mutation observations, preventing stale output from entering a reconnected session. Mutation output labels distinguish an observed requested value/change from assumed causality. The generation011 binary and manifest remain preserved; session009's copied bridge/profile replacement has a separate receipt. Exact VFS verification of generation012 passed in 107.63 seconds, with originals unchanged. DLL SHA256: `3a45a7a111e9ad112743e32b14fd62fde8c10c3e579fb6aa9b26a157e7e64d61`.
+
+- `read-message-state` inspects the active one-button message menu. `choose-message` requires `target: visible|probe`, exact ASCII `message` and `button`, and `buttonIndex: 0`. The native game-thread queue validates actual visible menu state, complete live handler bytes, text/button ownership, engine-returned index, and two agreeing queued-message/callback identities. It invokes the normal menu `HandleClick` method. A probe additionally requires the current dedicated callback and capture generation; its normal callback observation remains distinct from the handler return. No Windows activation/input or direct callback shortcut is used.
+- `set-actor-value` initially supports only `name: Endurance`, integer values 1–10, and either `target: player` or explicit `plugin`/local `formId`. The shared resident actor resolver supplies the SDK command's calling reference. Before/after base-value reads accompany console acceptance; subsequent actor-state snapshots independently check health and other values. No raw memory is written.
+
+The menu handler and current-message getter are gated by actual session008 routine bytes. The button-index lookup ABI comes from that validated handler's call site; its runtime bytes are recorded with each menu observation. An attempted static extraction of its packed on-disk bytes remains preserved as an unsuccessful lookup and is not used as runtime code evidence.
+
+Both native projects compile with zero warnings/errors; the native test executable passes, including 22 new menu/protocol/mutation checks. `RuntimeSessionTests` adds 18 cases through parameterized fixtures for the managed protocol, terminal-response sequencing, exact menu text and bounded actor mutation. Managed compilation and engine replay are parent-coordinated and still pending at this checkpoint.
+
+These actions do not add full condition evaluation, measured weapon damage, general NPC/creature stat formulas, or arbitrary multi-button menu automation.

@@ -1,0 +1,1 @@
+{"op":"sequence.run","sequence":{"version":1,"steps":[{"type":"input","durationMs":100,"keys":["F5"]},{"type":"wait","durationMs":500}]}}
