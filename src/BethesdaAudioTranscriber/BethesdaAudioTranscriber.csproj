@@ -65,13 +65,21 @@
     </ItemGroup>
   </Target>
 
-  <!-- Remove the referenced WinUI project's content files (App.xaml, app.manifest, etc.) from the
-       publish file list. Both WinUI projects produce these files with the same relative paths, and
-       the single-file bundler cannot handle duplicate BundleRelativePath entries. The referenced
-       project's DLL comes from its bin directory, not its source tree, so this is safe. -->
+  <!-- Remove source/intermediate content owned by the referenced WinUI project, preserving its
+       bin outputs. Resolve that project's directory explicitly: searching the entire path for
+       "BethesdaMultitool" also matches local checkout names and hides unrelated duplicate items.
+       DDXConv is used through its managed DLL; its RID and portable apphosts can both arrive
+       through transitive references, and neither executable belongs in this application's bundle. -->
   <Target Name="RemoveReferencedProjectPublishContent" BeforeTargets="_ComputeFilesToBundle">
+    <PropertyGroup>
+      <_ReferencedAppProjectDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..\BethesdaMultitool'))</_ReferencedAppProjectDirectory>
+      <_ReferencedAppBinDirectory>$([MSBuild]::NormalizeDirectory('$(_ReferencedAppProjectDirectory)bin'))</_ReferencedAppBinDirectory>
+    </PropertyGroup>
     <ItemGroup>
-      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="$([System.String]::new('%(FullPath)').Contains('BethesdaMultitool')) AND&#xD;&#xA;                   !$([System.String]::new('%(FullPath)').Contains('bin')) AND&#xD;&#xA;                   !$([System.String]::new('%(FullPath)').Contains('.nuget'))" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+                             Condition="'%(ResolvedFileToPublish.RelativePath)' == 'DDXConv.exe' OR
+                                        ($([System.String]::new('%(ResolvedFileToPublish.FullPath)').StartsWith('$(_ReferencedAppProjectDirectory)', System.StringComparison.OrdinalIgnoreCase)) AND
+                                         !$([System.String]::new('%(ResolvedFileToPublish.FullPath)').StartsWith('$(_ReferencedAppBinDirectory)', System.StringComparison.OrdinalIgnoreCase)))" />
     </ItemGroup>
   </Target>
 
