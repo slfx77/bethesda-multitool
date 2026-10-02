@@ -64,6 +64,9 @@ public sealed class RuntimeStringOwnershipAnalysisTests
     {
         var data = new byte[256];
         WriteCString(data, 0x30, "TestEditor_One");
+        data[0x94] = 42;
+        WriteBeUInt32(data, 0x9C, 0x00123456);
+        WriteBsStringT(data, 0xA0, BaseVa + 0x30, "TestEditor_One".Length);
 
         var result = Analyze(
             data,
@@ -171,9 +174,10 @@ public sealed class RuntimeStringOwnershipAnalysisTests
 
         const int messageOffset = 0x140;
         const int buttonOffset = 0x280;
+        data[messageOffset + 4] = 0x62;
         WriteBeUInt32(data, messageOffset + 12, 0x00333333);
         WriteBeUInt32(data, messageOffset + 64, BaseVa + buttonOffset); // BGSMessage.ButtonList
-        WriteBsStringT(data, buttonOffset + 8, BaseVa + 0x40, buttonText.Length);
+        WriteBsStringT(data, buttonOffset, BaseVa + 0x40, buttonText.Length); // PDB Text +0; Conditions +8
 
         var result = Analyze(
             data,
@@ -258,10 +262,12 @@ public sealed class RuntimeStringOwnershipAnalysisTests
     {
         var data = new byte[256];
         WriteCString(data, 0x40, "SomeRuntimeAllocatedStringValue");
+        data[0x64] = 0x46;
+        WriteBeUInt32(data, 0x6C, 0x00555555);
         WriteBeUInt32(data, 0x80, BaseVa + 0x40);
 
-        // Form starts 4 bytes before the referrer, so the pointer sits at field offset +4 — past
-        // the vtable slot the resolver refuses, and inside any real struct layout.
+        // A valid INFO header starts at 0x60. Its pointer at +0x20 is inside the
+        // PDB object extent, beyond the identity fields checked by containment.
         var result = Analyze(
             data,
             CreateCoverage(data.Length, StringGap(0, data.Length)),
@@ -270,9 +276,9 @@ public sealed class RuntimeStringOwnershipAnalysisTests
                 {
                     EditorId = "ContainingForm",
                     FormId = 0x00555555,
-                    FormType = 42,
-                    TesFormOffset = 0x7C,
-                    TesFormPointer = BaseVa + 0x7C
+                    FormType = 0x46,
+                    TesFormOffset = 0x60,
+                    TesFormPointer = BaseVa + 0x60
                 }
             ]);
 
@@ -282,7 +288,7 @@ public sealed class RuntimeStringOwnershipAnalysisTests
         Assert.Equal(0x00555555u, hit.OwnerResolution?.OwnerFormId);
         Assert.Equal("ContainingForm", hit.OwnerResolution?.OwnerName);
         // The field cannot be named without a layout for it, so the raw offset is the claim.
-        Assert.Equal("+0x4", hit.OwnerResolution?.OwnerFieldOrSubrecord);
+        Assert.Equal("+0x20", hit.OwnerResolution?.OwnerFieldOrSubrecord);
     }
 
     [Fact]

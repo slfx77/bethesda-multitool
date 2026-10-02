@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using BethesdaMultitool.Core.Utils;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 
@@ -30,8 +32,10 @@ internal sealed class OwnershipContainmentResolver
     /// </summary>
     private readonly (uint StartVa, uint EndVa, RuntimeEditorIdEntry Entry, string? RecordCode)[] _spans;
 
+    private readonly RuntimeMemoryContext _memory;
     public OwnershipContainmentResolver(BufferAnalysisContext ctx)
     {
+        _memory = new RuntimeMemoryContext(new MmfMemoryAccessor(ctx.Accessor), ctx.FileSize, ctx.MinidumpInfo);
         _spans = Build(ctx.RuntimeEditorIds);
     }
 
@@ -51,14 +55,18 @@ internal sealed class OwnershipContainmentResolver
             entries.Count);
         foreach (var entry in entries)
         {
-            if (entry.TesFormPointer is not > 0 and not <= uint.MaxValue
+            if (entry.TesFormPointer is not { } pointer || pointer == 0 ||
+                pointer < int.MinValue || pointer > uint.MaxValue
                 || !layouts.TryGetValue(entry.FormType, out var layout)
                 || layout.StructSize <= 0)
             {
                 continue;
             }
 
-            var start = (uint)entry.TesFormPointer!.Value;
+            var tesFormVa = unchecked((uint)pointer);
+            var interior = (uint)PdbStructLayouts.GetTesFormInteriorOffset(layout);
+            if (tesFormVa < interior) continue;
+            var start = tesFormVa - interior;
             var end = start + (uint)layout.StructSize;
             if (end <= start)
             {
@@ -126,15 +134,17 @@ internal sealed class OwnershipContainmentResolver
 
     /// <summary>
     ///     Try to claim <paramref name="hit" /> for whichever runtime form holds one of its
-    ///     referrers. Referrers are tried in order and the first containing form wins; a string
-    ///     reachable from several forms is genuinely shared, and naming one owner is more useful
-    ///     than naming none.
+    ///     referrers. Retain distinct containing owners instead of choosing the first shared owner.
     /// </summary>
-    internal RuntimeStringOwnershipClaim? TryContainmentMatch(RuntimeStringHit hit)
+    internal RuntimeStringOwnershipClaim? TryContainmentMatch(RuntimeStringHit hit) =>
+        ResolveCandidates(hit).FirstOrDefault();
+
+    internal List<RuntimeStringOwnershipClaim> ResolveCandidates(RuntimeStringHit hit)
     {
+        var candidates = new List<RuntimeStringOwnershipClaim>();
         if (_spans.Length == 0 || hit.OwnerResolution is not { } resolution)
         {
-            return null;
+            return candidates;
         }
 
         foreach (var referrerVa in EnumerateReferrerVas(resolution))
@@ -148,7 +158,10 @@ internal sealed class OwnershipContainmentResolver
             }
 
             var (entry, recordType) = owner;
-            return new RuntimeStringOwnershipClaim(
+            var header = _memory.ReadBytesAtVa(entry.TesFormPointer!.Value, 16);
+            if (header == null || BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(12)) != entry.FormId ||
+                entry.FormId == 0 || header[4] != (entry.OriginalFormType ?? entry.FormType)) continue;
+            candidates.Add(new RuntimeStringOwnershipClaim(
                 hit.FileOffset,
                 hit.VirtualAddress,
                 "RuntimeObjectContainment",
@@ -156,13 +169,14 @@ internal sealed class OwnershipContainmentResolver
                     ? $"{recordType ?? "TESForm"} 0x{entry.FormId:X8}"
                     : entry.EditorId,
                 entry.FormId != 0 ? entry.FormId : null,
-                entry.TesFormOffset,
+                _memory.VaToFileOffset(referrerVa - (uint)fieldOffset),
                 ClaimSource.SecondPassContainment,
                 recordType,
-                $"+0x{fieldOffset:X}");
+                $"+0x{fieldOffset:X}", Xbox360MemoryUtils.VaToLong(referrerVa),
+                _memory.VaToFileOffset(referrerVa), "validated TESForm identity; containment only"));
         }
 
-        return null;
+        return candidates;
     }
 
     private static IEnumerable<uint> EnumerateReferrerVas(RuntimeStringOwnerResolution resolution)

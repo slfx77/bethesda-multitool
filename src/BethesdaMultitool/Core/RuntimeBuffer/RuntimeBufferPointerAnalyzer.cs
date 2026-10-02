@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Minidump;
@@ -80,56 +81,46 @@ internal sealed class RuntimeBufferPointerAnalyzer
         // Walking the module's RTTI tables costs ~20 MB of reads and yields every class the build
         // defines. Null for a dump with no captured game module, in which case the object sweep and
         // census below are simply skipped and nothing else changes.
-        var rtti = DumpRttiIndex.Build(
-            _ctx.MinidumpInfo, new MmfMemoryAccessor(_ctx.Accessor), _ctx.FileSize);
+        var rtti = _ctx.Stages.Run("RTTI index", _ => DumpRttiIndex.Build(
+            _ctx.MinidumpInfo, new MmfMemoryAccessor(_ctx.Accessor), _ctx.FileSize, _ctx.CancellationToken));
 
-        var scan = ScanInboundPointers(hitsByVa, rtti);
+        var scan = _ctx.Stages.Run("pointer scan", stage => ScanInboundPointers(hitsByVa, rtti, stage));
         var referrersByVa = scan.Referrers;
-        var claimsByFileOffset = BuildDirectOwnerClaims(result, hitsByFileOffset);
+        var claimsByFileOffset = _ctx.Stages.Run("direct owners", _ => BuildDirectOwnerClaims(result, hitsByFileOffset));
 
         foreach (var hit in meaningfulHits)
         {
+            _ctx.CancellationToken.ThrowIfCancellationRequested();
             PointerRefInfo? referrerInfo = null;
             if (hit.VirtualAddress is >= 0 and <= uint.MaxValue)
             {
                 referrersByVa.TryGetValue((uint)hit.VirtualAddress.Value, out referrerInfo);
             }
 
-            claimsByFileOffset.TryGetValue(hit.FileOffset, out var claim);
+            claimsByFileOffset.TryGetValue(hit.FileOffset, out var claims);
+            var resolution = claims is { Count: > 0 }
+                ? RuntimeStringOwnerResolution.FromClaims(claims, referrerInfo?.AllReferrers) : null;
 
             hit.InboundPointerCount = referrerInfo?.Count ?? 0;
 
-            if (claim != null)
+            if (resolution is { HasValidatedOwner: true })
             {
                 hit.OwnershipStatus = RuntimeStringOwnershipStatus.Owned;
-                hit.OwnerResolution = new RuntimeStringOwnerResolution
+                hit.OwnerResolution = resolution;
+                analysis.OwnedHits.Add(hit);
+                var source = resolution.ClaimSource!.Value;
+                analysis.ClaimSourceCounts.TryGetValue(source, out var sourceCount);
+                analysis.ClaimSourceCounts[source] = sourceCount + 1;
+            }
+            else if (referrerInfo != null || resolution != null)
+            {
+                hit.OwnershipStatus = RuntimeStringOwnershipStatus.ReferencedOwnerUnknown;
+                hit.OwnerResolution = resolution ?? new RuntimeStringOwnerResolution
                 {
-                    OwnerKind = claim.OwnerKind,
-                    OwnerName = claim.OwnerName,
-                    OwnerFormId = claim.OwnerFormId,
-                    OwnerFileOffset = claim.OwnerFileOffset,
-                    ClaimSource = claim.ClaimSource,
-                    OwnerRecordType = claim.OwnerRecordType,
-                    OwnerFieldOrSubrecord = claim.OwnerFieldOrSubrecord,
                     ReferrerVa = referrerInfo?.ReferrerVa,
                     ReferrerFileOffset = referrerInfo?.ReferrerFileOffset,
                     ReferrerContext = referrerInfo?.ReferrerContext,
                     AllReferrers = referrerInfo?.AllReferrers
-                };
-                analysis.OwnedHits.Add(hit);
-
-                analysis.ClaimSourceCounts.TryGetValue(claim.ClaimSource, out var sourceCount);
-                analysis.ClaimSourceCounts[claim.ClaimSource] = sourceCount + 1;
-            }
-            else if (referrerInfo != null)
-            {
-                hit.OwnershipStatus = RuntimeStringOwnershipStatus.ReferencedOwnerUnknown;
-                hit.OwnerResolution = new RuntimeStringOwnerResolution
-                {
-                    ReferrerVa = referrerInfo.ReferrerVa,
-                    ReferrerFileOffset = referrerInfo.ReferrerFileOffset,
-                    ReferrerContext = referrerInfo.ReferrerContext,
-                    AllReferrers = referrerInfo.AllReferrers
                 };
                 analysis.ReferencedOwnerUnknownHits.Add(hit);
             }
@@ -149,13 +140,14 @@ internal sealed class RuntimeBufferPointerAnalyzer
 
         // Second pass: resolve remaining unknowns via BSStringT, vtable, and text-content strategies
         var secondPass = new SecondPassOwnershipResolver(_ctx);
-        secondPass.Resolve(analysis);
+        _ctx.Stages.Run("owner resolution", stage => secondPass.Resolve(analysis, stage));
 
         // Measure — do not claim. The census runs on what is STILL unowned after every strategy,
         // which is the population any future work would have to name.
         if (rtti != null)
         {
-            analysis.ObjectCensus = BuildObjectCensus(rtti, scan.ObjectHits, analysis);
+            analysis.ObjectCensus = _ctx.Stages.Run("object census", stage =>
+                BuildObjectCensus(rtti, scan.ObjectHits, analysis, stage));
         }
 
         result.StringOwnership = analysis;
@@ -178,6 +170,7 @@ internal sealed class RuntimeBufferPointerAnalyzer
 
         foreach (var gap in pointerGaps)
         {
+            _ctx.CancellationToken.ThrowIfCancellationRequested();
             var sampleSize = (int)Math.Min(gap.Size, 256);
             sampleSize = sampleSize / 4 * 4; // Align to 4 bytes
             if (sampleSize < 4)
@@ -259,7 +252,8 @@ internal sealed class RuntimeBufferPointerAnalyzer
     ///     </para>
     /// </summary>
     private InboundScanResult ScanInboundPointers(
-        IReadOnlyDictionary<uint, RuntimeStringHit> hitsByVa, DumpRttiIndex? rtti)
+        IReadOnlyDictionary<uint, RuntimeStringHit> hitsByVa, DumpRttiIndex? rtti,
+        AnalysisStages.Stage stage)
     {
         var refs = new Dictionary<uint, PointerRefInfo>();
         var objectHits = new List<(uint BaseVa, int ClassId)>();
@@ -272,6 +266,8 @@ internal sealed class RuntimeBufferPointerAnalyzer
         var vtableMax = rtti?.MaxVtableVa ?? 0;
         var pointerTargets = hitsByVa.Keys.ToHashSet();
         var buffer = new byte[PointerScanChunkSize];
+        long scanned = 0;
+        var totalBytes = _ctx.MinidumpInfo.MemoryRegions.Sum(region => region.Size);
 
         foreach (var region in _ctx.MinidumpInfo.MemoryRegions)
         {
@@ -284,6 +280,7 @@ internal sealed class RuntimeBufferPointerAnalyzer
             var regionOffset = alignDelta;
             while (regionOffset + 4 <= region.Size)
             {
+                stage.Checkpoint(scanned, totalBytes);
                 var remaining = region.Size - regionOffset;
                 var readSize = (int)Math.Min(PointerScanChunkSize, remaining);
                 readSize -= readSize % 4;
@@ -334,16 +331,15 @@ internal sealed class RuntimeBufferPointerAnalyzer
                     }
 
                     info.AllReferrers ??= [];
-                    if (info.AllReferrers.Count < 32)
-                    {
-                        info.AllReferrers.Add((referrerFileOffset, referrerVa, context));
-                    }
+                    info.AllReferrers.Add((referrerFileOffset, referrerVa, context));
                 }
 
                 regionOffset += readSize;
+                scanned += readSize;
             }
         }
 
+        stage.Checkpoint(scanned, totalBytes);
         return new InboundScanResult(refs, objectHits);
     }
 
@@ -351,12 +347,13 @@ internal sealed class RuntimeBufferPointerAnalyzer
     ///     Measure how much of the still-unowned string population the dump's objects could account
     ///     for. Produces numbers only — no claim is made and no hit changes status here.
     /// </summary>
-    private static RuntimeObjectCensus BuildObjectCensus(
+    private RuntimeObjectCensus BuildObjectCensus(
         DumpRttiIndex rtti,
         List<(uint BaseVa, int ClassId)> objectHits,
-        RuntimeStringOwnershipAnalysis analysis)
+        RuntimeStringOwnershipAnalysis analysis,
+        AnalysisStages.Stage stage)
     {
-        var inventory = RuntimeObjectInventory.Build(rtti, objectHits);
+        var inventory = RuntimeObjectInventory.Build(rtti, objectHits, _ctx.CancellationToken);
 
         var census = new RuntimeObjectCensus
         {
@@ -376,8 +373,11 @@ internal sealed class RuntimeBufferPointerAnalyzer
             LiveClassCount = inventory.Spans.Select(s => s.ClassId).Distinct().Count()
         };
 
+        long processed = 0;
+        var total = inventory.Spans.Count + analysis.ReferencedOwnerUnknownHits.Count;
         foreach (var span in inventory.Spans)
         {
+            stage.Checkpoint(processed++, total);
             var band = $"0x{span.BaseVa >> 24:X2}";
             census.ObjectsByVaBand[band] = census.ObjectsByVaBand.GetValueOrDefault(band) + 1;
 
@@ -388,6 +388,7 @@ internal sealed class RuntimeBufferPointerAnalyzer
 
         foreach (var hit in analysis.ReferencedOwnerUnknownHits)
         {
+            stage.Checkpoint(processed++, total);
             census.UnknownHitsExamined++;
 
             var referrers = hit.OwnerResolution?.AllReferrers;
@@ -454,22 +455,40 @@ internal sealed class RuntimeBufferPointerAnalyzer
         Dictionary<uint, PointerRefInfo> Referrers,
         List<(uint BaseVa, int ClassId)> ObjectHits);
 
-    private Dictionary<long, RuntimeStringOwnershipClaim> BuildDirectOwnerClaims(
+    private Dictionary<long, List<RuntimeStringOwnershipClaim>> BuildDirectOwnerClaims(
         BufferExplorationResult result,
         Dictionary<long, RuntimeStringHit> hitsByFileOffset)
     {
-        var claims = new Dictionary<long, RuntimeStringOwnershipClaim>();
+        var claims = new Dictionary<long, List<RuntimeStringOwnershipClaim>>();
+        var memoryContext = new RuntimeMemoryContext(new MmfMemoryAccessor(_ctx.Accessor),
+            _ctx.FileSize, _ctx.MinidumpInfo);
+        void Add(RuntimeStringOwnershipClaim claim)
+        {
+            _ctx.CancellationToken.ThrowIfCancellationRequested();
+            if (!claims.TryGetValue(claim.StringFileOffset, out var list))
+                claims[claim.StringFileOffset] = list = [];
+            if (!list.Contains(claim)) list.Add(claim);
+        }
 
         if (_ctx.RuntimeEditorIds != null)
         {
             foreach (var entry in _ctx.RuntimeEditorIds)
             {
+                _ctx.CancellationToken.ThrowIfCancellationRequested();
                 if (!hitsByFileOffset.TryGetValue(entry.StringOffset, out _))
                 {
                     continue;
                 }
 
-                claims.TryAdd(entry.StringOffset, new RuntimeStringOwnershipClaim(
+                var ownerVa = entry.TesFormPointer ?? (entry.TesFormOffset is { } formOffset
+                    ? _ctx.MinidumpInfo.FileOffsetToVirtualAddress(formOffset) : null);
+                var header = ownerVa.HasValue ? memoryContext.ReadBytesAtVa(ownerVa.Value, 24) : null;
+                var stringVa = _ctx.MinidumpInfo.FileOffsetToVirtualAddress(entry.StringOffset);
+                var validated = header != null && entry.FormId != 0 && stringVa.HasValue &&
+                    header[4] == (entry.OriginalFormType ?? entry.FormType) &&
+                    BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(12)) == entry.FormId &&
+                    BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(16)) == unchecked((uint)stringVa.Value);
+                Add(new RuntimeStringOwnershipClaim(
                     entry.StringOffset,
                     _ctx.MinidumpInfo.FileOffsetToVirtualAddress(entry.StringOffset),
                     "RuntimeEditorId",
@@ -479,7 +498,10 @@ internal sealed class RuntimeBufferPointerAnalyzer
                     // Stated explicitly: omitting it took the record's default (ManagerGlobal), so
                     // the largest bucket in ClaimSourceCounts was reported as something it is not
                     // and ClaimSource.RuntimeEditorId was assigned nowhere in the codebase.
-                    ClaimSource.RuntimeEditorId));
+                    ClaimSource.RuntimeEditorId, OwnerFieldOrSubrecord: "TESForm.cFormEditorID",
+                    ReferrerVa: validated ? ownerVa + 16 : null,
+                    ReferrerFileOffset: validated ? _ctx.MinidumpInfo.VirtualAddressToFileOffset(ownerVa!.Value + 16) : null,
+                    Validation: validated ? "validated TESForm identity and EditorID pointer" : "inventory string offset only"));
             }
         }
 
@@ -490,22 +512,17 @@ internal sealed class RuntimeBufferPointerAnalyzer
                 continue;
             }
 
-            claims.TryAdd(claim.StringFileOffset, claim);
+            Add(claim);
         }
 
         if (_ctx.RuntimeEditorIds is { Count: > 0 })
         {
-            var memoryContext = new RuntimeMemoryContext(
-                new MmfMemoryAccessor(_ctx.Accessor),
-                _ctx.FileSize,
-                _ctx.MinidumpInfo);
-
             foreach (var claim in RuntimeStructStringClaimExtractor.ExtractClaims(_ctx.RuntimeEditorIds,
                          memoryContext))
             {
                 if (hitsByFileOffset.ContainsKey(claim.StringFileOffset))
                 {
-                    claims.TryAdd(claim.StringFileOffset, claim);
+                    Add(claim);
                 }
             }
 
@@ -514,7 +531,7 @@ internal sealed class RuntimeBufferPointerAnalyzer
             {
                 if (hitsByFileOffset.ContainsKey(claim.StringFileOffset))
                 {
-                    claims.TryAdd(claim.StringFileOffset, claim);
+                    Add(claim);
                 }
             }
         }
@@ -528,7 +545,7 @@ internal sealed class RuntimeBufferPointerAnalyzer
             {
                 if (hitsByFileOffset.ContainsKey(claim.StringFileOffset))
                 {
-                    claims.TryAdd(claim.StringFileOffset, claim);
+                    Add(claim);
                 }
             }
         }

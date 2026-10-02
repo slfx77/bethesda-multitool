@@ -1,5 +1,6 @@
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
+using BethesdaMultitool.Core.Formats.Esm.Runtime.Readers.Specialized;
 using BethesdaMultitool.Core.Minidump;
 using BethesdaMultitool.Core.Utils;
 
@@ -45,20 +46,16 @@ internal static class RuntimeNestedStringClaimExtractor
     private const int MaxQuestObjectiveIndex = 4096;
     private const int MaxQuestObjectiveState = 8;
 
-    private const int MessageStructSize = 80;
-    private const int MessageButtonListOffset = 64;
-    private const int MessageButtonTextOffset = 8;
-
     internal static List<RuntimeStringOwnershipClaim> ExtractClaims(
         IReadOnlyList<RuntimeEditorIdEntry> runtimeEditorIds,
         RuntimeMemoryContext memCtx)
     {
         var claims = new List<RuntimeStringOwnershipClaim>();
-        var claimedOffsets = new HashSet<long>();
         var shift = RuntimeBuildOffsets.GetPdbShift(MinidumpAnalyzer.DetectBuildType(memCtx.MinidumpInfo));
 
         foreach (var entry in runtimeEditorIds)
         {
+            var claimedOffsets = new HashSet<long>();
             if (entry.TesFormOffset == null)
             {
                 continue;
@@ -276,33 +273,24 @@ internal static class RuntimeNestedStringClaimExtractor
         HashSet<long> claimedOffsets)
     {
         var offset = entry.TesFormOffset!.Value;
-        var buffer = ReadValidatedTesFormBuffer(entry, memCtx, offset, MessageStructSize);
-        if (buffer == null)
+        var view = new RuntimePdbFieldAccessor(memCtx).OpenStructView(entry);
+        if (view == null)
         {
             return;
         }
 
         var ownerName = FormatOwner("MESG", entry);
-        foreach (var itemVa in memCtx.WalkInlineBSSimpleListItemPointers(buffer, MessageButtonListOffset))
+        foreach (var button in RuntimeMessageDataReader.Read(memCtx, view).Evidence.Buttons)
         {
-            var itemOffset = memCtx.VaToFileOffset(itemVa);
-            if (itemOffset == null)
+            if (button.TextStatus != "captured" || button.TextFileOffset is not { } stringOffset ||
+                !claimedOffsets.Add(stringOffset))
             {
                 continue;
             }
-
-            AddClaim(
-                claims,
-                claimedOffsets,
-                memCtx,
-                itemOffset.Value,
-                MessageButtonTextOffset,
-                "RuntimeStruct",
-                ownerName,
-                entry.FormId,
-                offset,
-                "MESG",
-                "MESSAGEBOX_BUTTON.text");
+            claims.Add(new RuntimeStringOwnershipClaim(stringOffset, button.TextVirtualAddress,
+                "RuntimeStruct", ownerName, entry.FormId, offset, ClaimSource.RuntimeStructField,
+                "MESG", "MESSAGEBOX_BUTTON.text", button.ItemVirtualAddress, button.ItemFileOffset,
+                $"validated MESG identity; button index {button.Index}; PDB Text at +0"));
         }
     }
 
@@ -354,7 +342,10 @@ internal static class RuntimeNestedStringClaimExtractor
             ownerFileOffset,
             ClaimSource.RuntimeStructField,
             recordType,
-            fieldLabel));
+            fieldLabel,
+            memCtx.MinidumpInfo.FileOffsetToVirtualAddress(structOffset) is { } ownerVa
+                ? ownerVa + fieldOffset : null,
+            structOffset + fieldOffset, "nested BSStringT pointer"));
     }
 
     private static string FormatOwner(string recordCode, RuntimeEditorIdEntry entry)

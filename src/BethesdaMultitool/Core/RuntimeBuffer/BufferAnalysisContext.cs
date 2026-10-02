@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Minidump;
@@ -23,7 +24,8 @@ internal sealed class BufferAnalysisContext
         uint moduleStart,
         uint moduleEnd,
         IReadOnlyList<GmstRecord>? gameSettings = null,
-        IReadOnlyList<DetectedMainRecord>? mainRecords = null)
+        IReadOnlyList<DetectedMainRecord>? mainRecords = null,
+        AnalysisStages? stages = null)
     {
         Accessor = accessor;
         FileSize = fileSize;
@@ -35,6 +37,7 @@ internal sealed class BufferAnalysisContext
         ModuleEnd = moduleEnd;
         GameSettings = gameSettings;
         MainRecords = mainRecords;
+        Stages = stages ?? new AnalysisStages();
     }
 
     public MemoryMappedViewAccessor Accessor { get; }
@@ -47,6 +50,8 @@ internal sealed class BufferAnalysisContext
     public uint ModuleEnd { get; }
     public IReadOnlyList<GmstRecord>? GameSettings { get; }
     public IReadOnlyList<DetectedMainRecord>? MainRecords { get; }
+    public AnalysisStages Stages { get; }
+    public CancellationToken CancellationToken => Stages.CancellationToken;
 
     /// <summary>
     ///     Check if a 32-bit value is a valid pointer in the minidump.

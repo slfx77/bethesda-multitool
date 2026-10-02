@@ -31,17 +31,17 @@ internal sealed class OwnershipTextMatcher
     /// <summary>
     ///     Case-insensitive lookup from dialogue line text to RuntimeEditorIdEntry.
     /// </summary>
-    private readonly Dictionary<string, RuntimeEditorIdEntry>? _dialogueTextLookup;
+    private readonly Dictionary<string, List<RuntimeEditorIdEntry>>? _dialogueTextLookup;
 
     /// <summary>
     ///     Case-insensitive lookup from EditorID text to RuntimeEditorIdEntry.
     /// </summary>
-    private readonly Dictionary<string, RuntimeEditorIdEntry>? _editorIdTextLookup;
+    private readonly Dictionary<string, List<RuntimeEditorIdEntry>>? _editorIdTextLookup;
 
     /// <summary>
     ///     Case-insensitive lookup from GMST setting name to GmstRecord.
     /// </summary>
-    private readonly Dictionary<string, GmstRecord>? _gmstTextLookup;
+    private readonly Dictionary<string, List<GmstRecord>>? _gmstTextLookup;
 
     /// <summary>
     ///     VA-space reader for the cFormEditorID step-back. Fails closed at region boundaries,
@@ -90,102 +90,36 @@ internal sealed class OwnershipTextMatcher
                && hit.Text.Length >= MinUnclassifiedTextMatchLength;
     }
 
-    /// <summary>
-    ///     Match ReferencedOwnerUnknown EditorId strings by text content
-    ///     against the known EditorID inventory.
-    /// </summary>
-    internal RuntimeStringOwnershipClaim? TryEditorIdTextMatch(RuntimeStringHit hit)
+    /// <summary>Exact-text matches retain every inventory identity; they do not invent a pointer path.</summary>
+    internal IEnumerable<RuntimeStringOwnershipClaim> ResolveTextCandidates(RuntimeStringHit hit)
     {
-        if (_editorIdTextLookup == null || !CanTryTextMatch(hit, StringCategory.EditorId))
+        if (CanTryTextMatch(hit, StringCategory.EditorId) &&
+            _editorIdTextLookup?.TryGetValue(hit.Text, out var editorIds) == true)
         {
-            return null;
+            foreach (var entry in editorIds)
+                yield return new RuntimeStringOwnershipClaim(hit.FileOffset, hit.VirtualAddress,
+                    "TextContentMatch", entry.EditorId, entry.FormId != 0 ? entry.FormId : null,
+                    entry.TesFormOffset, ClaimSource.TextContentMatch,
+                    Validation: "exact inventory text; pointer ownership not established");
         }
-
-        if (!_editorIdTextLookup.TryGetValue(hit.Text, out var entry))
+        if (CanTryTextMatch(hit, StringCategory.GameSetting) &&
+            _gmstTextLookup?.TryGetValue(hit.Text, out var gameSettings) == true)
         {
-            return null;
+            foreach (var gmst in gameSettings)
+                yield return new RuntimeStringOwnershipClaim(hit.FileOffset, hit.VirtualAddress,
+                    "TextContentMatch", $"GMST [{gmst.Name}]", null, gmst.Offset,
+                    ClaimSource.TextContentMatch, "GMST", gmst.Name,
+                    Validation: "exact inventory text; pointer ownership not established");
         }
-
-        return new RuntimeStringOwnershipClaim(
-            hit.FileOffset,
-            hit.VirtualAddress,
-            "TextContentMatch",
-            entry.EditorId,
-            entry.FormId != 0 ? entry.FormId : null,
-            entry.TesFormOffset,
-            ClaimSource.TextContentMatch);
-    }
-
-    /// <summary>
-    ///     Match ReferencedOwnerUnknown GameSetting strings by text content
-    ///     against the GMST record inventory and EditorID inventory.
-    /// </summary>
-    internal RuntimeStringOwnershipClaim? TryGameSettingTextMatch(RuntimeStringHit hit)
-    {
-        if (!CanTryTextMatch(hit, StringCategory.GameSetting))
+        if (CanTryTextMatch(hit, StringCategory.DialogueLine) &&
+            _dialogueTextLookup?.TryGetValue(hit.Text, out var dialogue) == true)
         {
-            return null;
+            foreach (var entry in dialogue)
+                yield return new RuntimeStringOwnershipClaim(hit.FileOffset, hit.VirtualAddress,
+                    "TextContentMatch", $"INFO [{entry.EditorId}]", entry.FormId != 0 ? entry.FormId : null,
+                    entry.TesFormOffset, ClaimSource.TextContentMatch, "INFO", "DialogueLine",
+                    Validation: "exact inventory text; pointer ownership not established");
         }
-
-        // Try GMST record inventory first
-        if (_gmstTextLookup != null && _gmstTextLookup.TryGetValue(hit.Text, out var gmst))
-        {
-            return new RuntimeStringOwnershipClaim(
-                hit.FileOffset,
-                hit.VirtualAddress,
-                "TextContentMatch",
-                $"GMST [{gmst.Name}]",
-                null,
-                gmst.Offset,
-                ClaimSource.TextContentMatch,
-                "GMST",
-                gmst.Name);
-        }
-
-        // Fall back to EditorID inventory (GMST records have EditorIDs too)
-        if (_editorIdTextLookup != null && _editorIdTextLookup.TryGetValue(hit.Text, out var entry))
-        {
-            return new RuntimeStringOwnershipClaim(
-                hit.FileOffset,
-                hit.VirtualAddress,
-                "TextContentMatch",
-                entry.EditorId,
-                entry.FormId != 0 ? entry.FormId : null,
-                entry.TesFormOffset,
-                ClaimSource.TextContentMatch,
-                "GMST",
-                entry.EditorId);
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    ///     Match ReferencedOwnerUnknown DialogueLine strings by text content
-    ///     against dialogue lines extracted from RuntimeEditorIdEntry inventory.
-    /// </summary>
-    internal RuntimeStringOwnershipClaim? TryDialogueTextMatch(RuntimeStringHit hit)
-    {
-        if (_dialogueTextLookup == null || !CanTryTextMatch(hit, StringCategory.DialogueLine))
-        {
-            return null;
-        }
-
-        if (!_dialogueTextLookup.TryGetValue(hit.Text, out var entry))
-        {
-            return null;
-        }
-
-        return new RuntimeStringOwnershipClaim(
-            hit.FileOffset,
-            hit.VirtualAddress,
-            "TextContentMatch",
-            $"INFO [{entry.EditorId}]",
-            entry.FormId != 0 ? entry.FormId : null,
-            entry.TesFormOffset,
-            ClaimSource.TextContentMatch,
-            "INFO",
-            "DialogueLine");
     }
 
     /// <summary>
@@ -342,54 +276,58 @@ internal sealed class OwnershipTextMatcher
             vtableFileOffset,
             ClaimSource.SecondPassCFormEditorIdPosition,
             recordCode,
-            "TESForm.cFormEditorID");
+            "TESForm.cFormEditorID", Xbox360MemoryUtils.VaToLong(referrerVa), _ctx.VaToFileOffset(referrerVa),
+            "positional fallback; field ownership not established");
     }
 
-    private Dictionary<string, RuntimeEditorIdEntry>? BuildEditorIdTextLookup()
+    private Dictionary<string, List<RuntimeEditorIdEntry>>? BuildEditorIdTextLookup()
     {
         if (_ctx.RuntimeEditorIds is not { Count: > 0 })
         {
             return null;
         }
 
-        var lookup = new Dictionary<string, RuntimeEditorIdEntry>(StringComparer.OrdinalIgnoreCase);
+        var lookup = new Dictionary<string, List<RuntimeEditorIdEntry>>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in _ctx.RuntimeEditorIds)
         {
-            lookup.TryAdd(entry.EditorId, entry);
+            if (!lookup.TryGetValue(entry.EditorId, out var entries)) lookup[entry.EditorId] = entries = [];
+            entries.Add(entry);
         }
 
         return lookup;
     }
 
-    private Dictionary<string, GmstRecord>? BuildGmstTextLookup()
+    private Dictionary<string, List<GmstRecord>>? BuildGmstTextLookup()
     {
         if (_ctx.GameSettings is not { Count: > 0 })
         {
             return null;
         }
 
-        var lookup = new Dictionary<string, GmstRecord>(StringComparer.OrdinalIgnoreCase);
+        var lookup = new Dictionary<string, List<GmstRecord>>(StringComparer.OrdinalIgnoreCase);
         foreach (var gmst in _ctx.GameSettings)
         {
-            lookup.TryAdd(gmst.Name, gmst);
+            if (!lookup.TryGetValue(gmst.Name, out var records)) lookup[gmst.Name] = records = [];
+            records.Add(gmst);
         }
 
         return lookup;
     }
 
-    private Dictionary<string, RuntimeEditorIdEntry>? BuildDialogueTextLookup()
+    private Dictionary<string, List<RuntimeEditorIdEntry>>? BuildDialogueTextLookup()
     {
         if (_ctx.RuntimeEditorIds is not { Count: > 0 })
         {
             return null;
         }
 
-        var lookup = new Dictionary<string, RuntimeEditorIdEntry>(StringComparer.OrdinalIgnoreCase);
+        var lookup = new Dictionary<string, List<RuntimeEditorIdEntry>>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in _ctx.RuntimeEditorIds)
         {
             if (!string.IsNullOrEmpty(entry.DialogueLine))
             {
-                lookup.TryAdd(entry.DialogueLine, entry);
+                if (!lookup.TryGetValue(entry.DialogueLine, out var entries)) lookup[entry.DialogueLine] = entries = [];
+                entries.Add(entry);
             }
         }
 

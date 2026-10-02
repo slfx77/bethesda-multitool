@@ -17,6 +17,32 @@ public sealed class RuntimeStringOwnerResolution
     public string? OwnerRecordType { get; init; }
     public string? OwnerFieldOrSubrecord { get; init; }
     public IReadOnlyList<(long FileOffset, long Va, string? Context)>? AllReferrers { get; init; }
+    public IReadOnlyList<RuntimeStringOwnershipCandidate> Candidates { get; init; } = [];
+    public bool HasAmbiguousOwners { get; init; }
+    public bool HasValidatedOwner { get; init; }
+
+    internal static RuntimeStringOwnerResolution FromClaims(IEnumerable<RuntimeStringOwnershipClaim> claims,
+        IReadOnlyList<(long FileOffset, long Va, string? Context)>? referrers)
+    {
+        var candidates = claims.Select(RuntimeStringOwnershipCandidate.FromClaim).Distinct().ToArray();
+        var validated = candidates.Where(c => c.EstablishesOwnership).ToArray();
+        var selection = validated.Length > 0 ? validated : candidates;
+        var ambiguous = selection.Select(c => (FormId: c.OwnerFileOffset.HasValue ? null : c.OwnerFormId, c.OwnerFileOffset,
+                Name: c.OwnerFormId.HasValue || c.OwnerFileOffset.HasValue ? null : c.OwnerName))
+            .Distinct().Skip(1).Any();
+        var best = ambiguous ? null : validated.OrderBy(c => c.Confidence).FirstOrDefault();
+        return new RuntimeStringOwnerResolution
+        {
+            OwnerKind = best?.OwnerKind, OwnerName = best?.OwnerName, OwnerFormId = best?.OwnerFormId,
+            OwnerFileOffset = best?.OwnerFileOffset, OwnerRecordType = best?.OwnerRecordType,
+            OwnerFieldOrSubrecord = best?.OwnerFieldOrSubrecord, ClaimSource = best?.ClaimSource,
+            ReferrerVa = best?.ReferrerVa, ReferrerFileOffset = best?.ReferrerFileOffset,
+            ReferrerContext = best?.ReferrerFileOffset is { } pointerOffset
+                ? referrers?.FirstOrDefault(r => r.FileOffset == pointerOffset).Context : null,
+            AllReferrers = referrers, Candidates = candidates, HasAmbiguousOwners = ambiguous,
+            HasValidatedOwner = best != null
+        };
+    }
 
     /// <summary>
     ///     How much this claim can be trusted, from <see cref="ClaimSource" />. Derived rather than

@@ -91,8 +91,12 @@ internal sealed class OwnershipVtableResolver
         return -1;
     }
 
-    internal RuntimeStringOwnershipClaim? TryVtableReverseLookup(RuntimeStringHit hit, uint referrerVa)
+    internal RuntimeStringOwnershipClaim? TryVtableReverseLookup(RuntimeStringHit hit, uint referrerVa) =>
+        ResolveVtableCandidates(hit, referrerVa).FirstOrDefault();
+
+    internal List<RuntimeStringOwnershipClaim> ResolveVtableCandidates(RuntimeStringHit hit, uint referrerVa)
     {
+        var candidates = new List<RuntimeStringOwnershipClaim>();
         // Scan backwards from the referrer to find a vtable pointer.
         //
         // This walks VA space, not file-offset space. Until 2026-09-04 the candidate was read at
@@ -105,7 +109,7 @@ internal sealed class OwnershipVtableResolver
         var maxScanBack = TryReadBackwardWindow(referrerVa);
         if (maxScanBack < 0)
         {
-            return null;
+            return candidates;
         }
 
         for (var backOffset = 0; backOffset <= maxScanBack; backOffset += 4)
@@ -163,7 +167,7 @@ internal sealed class OwnershipVtableResolver
             var recordCode = layout?.RecordCode ?? rtti.Value.ClassName;
             var objectBaseFileOffset = _ctx.VaToFileOffset(objectBaseVa);
 
-            return new RuntimeStringOwnershipClaim(
+            candidates.Add(new RuntimeStringOwnershipClaim(
                 hit.FileOffset,
                 hit.VirtualAddress,
                 "SecondPassVtable",
@@ -172,10 +176,10 @@ internal sealed class OwnershipVtableResolver
                 objectBaseFileOffset,
                 ClaimSource.SecondPassVtable,
                 recordCode,
-                matchedField.Label);
+                matchedField.Label));
         }
 
-        return null;
+        return candidates;
     }
 
     /// <summary>

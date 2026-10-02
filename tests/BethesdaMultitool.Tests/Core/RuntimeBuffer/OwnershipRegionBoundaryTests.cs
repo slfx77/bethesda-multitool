@@ -96,6 +96,10 @@ public sealed class OwnershipRegionBoundaryTests
     {
         var data = new byte[256];
         WriteCString(data, 0x40, "GoodspringsSchoolhouse");
+        data[0x94] = 42;
+        WriteBeUInt32(data, 0x9C, 0x00123456);
+        WriteBeUInt32(data, 0xA0, RegionAVa + 0x40);
+        BinaryPrimitives.WriteUInt16BigEndian(data.AsSpan(0xA4), (ushort)"GoodspringsSchoolhouse".Length);
 
         var result = Analyze(
             data,
@@ -106,7 +110,9 @@ public sealed class OwnershipRegionBoundaryTests
                     EditorId = "GoodspringsSchoolhouse",
                     FormId = 0x00123456,
                     FormType = 42,
-                    StringOffset = 0x40
+                    StringOffset = 0x40,
+                    TesFormOffset = 0x90,
+                    TesFormPointer = RegionAVa + 0x90
                 }
             ]);
 

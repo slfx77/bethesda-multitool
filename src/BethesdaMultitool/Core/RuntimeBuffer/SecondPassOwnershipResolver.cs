@@ -1,5 +1,8 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Utils;
+using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Runtime;
 
 namespace BethesdaMultitool.Core.RuntimeBuffer;
 
@@ -31,6 +34,8 @@ internal sealed class SecondPassOwnershipResolver
     private readonly OwnershipContainmentResolver _containmentResolver;
 
     private readonly BufferAnalysisContext _ctx;
+    private readonly RuntimeMemoryContext _memory;
+    private readonly Dictionary<uint, List<RuntimeEditorIdEntry>> _entriesByBaseVa = new();
 
     private readonly OwnershipTextMatcher _textMatcher;
     private readonly OwnershipVtableResolver _vtableResolver;
@@ -38,6 +43,21 @@ internal sealed class SecondPassOwnershipResolver
     public SecondPassOwnershipResolver(BufferAnalysisContext ctx)
     {
         _ctx = ctx;
+        _memory = new RuntimeMemoryContext(new MmfMemoryAccessor(ctx.Accessor), ctx.FileSize, ctx.MinidumpInfo);
+        foreach (var entry in ctx.RuntimeEditorIds ?? [])
+        {
+            var layout = PdbStructLayouts.Get(entry.FormType);
+            var pointer = entry.TesFormPointer ?? (entry.TesFormOffset is { } offset
+                ? ctx.MinidumpInfo.FileOffsetToVirtualAddress(offset) : null);
+            if (layout == null || !pointer.HasValue) continue;
+            var interior = PdbStructLayouts.GetTesFormInteriorOffset(layout);
+            var va = unchecked((uint)pointer.Value);
+            if (va < interior) continue;
+            var baseVa = va - (uint)interior;
+            if (!_entriesByBaseVa.TryGetValue(baseVa, out var entries))
+                _entriesByBaseVa[baseVa] = entries = [];
+            entries.Add(entry);
+        }
 
         var (bsStringTFieldIndex, classNameFieldIndex, charPointerFieldIndex) =
             OwnershipFieldIndexBuilder.BuildFieldIndices();
@@ -59,264 +79,104 @@ internal sealed class SecondPassOwnershipResolver
     ///     Run all second-pass strategies on ReferencedOwnerUnknown hits.
     ///     Reclassifies matching hits to Owned with appropriate ClaimSource.
     /// </summary>
-    internal void Resolve(RuntimeStringOwnershipAnalysis analysis)
+    internal void Resolve(RuntimeStringOwnershipAnalysis analysis, AnalysisStages.Stage? stage = null)
     {
-        if (analysis.ReferencedOwnerUnknownHits.Count == 0)
+        var hits = analysis.OwnedHits.Concat(analysis.ReferencedOwnerUnknownHits).ToArray();
+        long processed = 0;
+        analysis.OwnedHits.Clear();
+        analysis.ReferencedOwnerUnknownHits.Clear();
+        analysis.ClaimSourceCounts.Clear();
+        foreach (var hit in hits)
         {
-            return;
-        }
-
-        var promoted = new List<RuntimeStringHit>();
-
-        foreach (var hit in analysis.ReferencedOwnerUnknownHits)
-        {
-            var claim = TryResolveViaReferrers(hit);
-
-            // Text-content matching strategies (if pointer strategies didn't match)
-            claim ??= _textMatcher.TryEditorIdTextMatch(hit);
-            claim ??= _textMatcher.TryGameSettingTextMatch(hit);
-            claim ??= _textMatcher.TryDialogueTextMatch(hit);
-
-            // Content-based file path matching: asset paths with known extensions
-            claim ??= OwnershipTextMatcher.TryAssetPathContentMatch(hit);
-
-            // Containment: which runtime object physically holds one of the referring pointers.
-            // Placed after the strategies that can name a FIELD, because this one names only the
-            // owner and a raw offset — but before the positional cFormEditorID guess, since
-            // "the address is inside this object" is evidence and "it is near one" is not.
-            claim ??= _containmentResolver.TryContainmentMatch(hit);
-
-            // Low-priority fallback: cFormEditorID at +16 for EditorId strings
-            // near any TESForm vtable. Runs last since TESForms are densely packed.
-            claim ??= _textMatcher.TryCFormEditorIdFallback(hit);
-
-            if (claim == null)
+            _ctx.CancellationToken.ThrowIfCancellationRequested();
+            stage?.Checkpoint(processed++, hits.Length);
+            var claims = (hit.OwnerResolution?.Candidates ?? []).Select(c =>
+                new RuntimeStringOwnershipClaim(hit.FileOffset, hit.VirtualAddress, c.OwnerKind, c.OwnerName,
+                    c.OwnerFormId, c.OwnerFileOffset, c.ClaimSource, c.OwnerRecordType, c.OwnerFieldOrSubrecord,
+                    c.ReferrerVa, c.ReferrerFileOffset, c.Validation)).ToList();
+            claims.AddRange(ResolveViaReferrers(hit));
+            claims.AddRange(_textMatcher.ResolveTextCandidates(hit));
+            claims.AddRange(_containmentResolver.ResolveCandidates(hit));
+            if (OwnershipTextMatcher.TryAssetPathContentMatch(hit) is { } path) claims.Add(path);
+            if (_textMatcher.TryCFormEditorIdFallback(hit) is { } positional) claims.Add(positional);
+            if (claims.Count > 0)
+                hit.OwnerResolution = RuntimeStringOwnerResolution.FromClaims(claims, hit.OwnerResolution?.AllReferrers);
+            if (hit.OwnerResolution?.HasValidatedOwner == true)
             {
-                continue;
+                hit.OwnershipStatus = RuntimeStringOwnershipStatus.Owned;
+                analysis.OwnedHits.Add(hit);
+                var source = hit.OwnerResolution.ClaimSource!.Value;
+                analysis.ClaimSourceCounts[source] = analysis.ClaimSourceCounts.GetValueOrDefault(source) + 1;
             }
-
-            hit.OwnershipStatus = RuntimeStringOwnershipStatus.Owned;
-            hit.OwnerResolution = new RuntimeStringOwnerResolution
+            else
             {
-                OwnerKind = claim.OwnerKind,
-                OwnerName = claim.OwnerName,
-                OwnerFormId = claim.OwnerFormId,
-                OwnerFileOffset = claim.OwnerFileOffset,
-                ReferrerVa = hit.OwnerResolution?.ReferrerVa,
-                ReferrerFileOffset = hit.OwnerResolution?.ReferrerFileOffset,
-                ReferrerContext = hit.OwnerResolution?.ReferrerContext,
-                ClaimSource = claim.ClaimSource,
-                OwnerRecordType = claim.OwnerRecordType,
-                OwnerFieldOrSubrecord = claim.OwnerFieldOrSubrecord,
-                AllReferrers = hit.OwnerResolution?.AllReferrers
-            };
-            promoted.Add(hit);
-
-            analysis.ClaimSourceCounts.TryGetValue(claim.ClaimSource, out var srcCount);
-            analysis.ClaimSourceCounts[claim.ClaimSource] = srcCount + 1;
-        }
-
-        // Move promoted hits from ReferencedOwnerUnknown to Owned
-        foreach (var hit in promoted)
-        {
-            analysis.ReferencedOwnerUnknownHits.Remove(hit);
-            analysis.OwnedHits.Add(hit);
-
-            // Update status counts
-            analysis.StatusCounts.TryGetValue(RuntimeStringOwnershipStatus.ReferencedOwnerUnknown,
-                out var unknownCount);
-            analysis.StatusCounts[RuntimeStringOwnershipStatus.ReferencedOwnerUnknown] =
-                Math.Max(0, unknownCount - 1);
-
-            analysis.StatusCounts.TryGetValue(RuntimeStringOwnershipStatus.Owned, out var ownedCount);
-            analysis.StatusCounts[RuntimeStringOwnershipStatus.Owned] = ownedCount + 1;
-        }
-    }
-
-    /// <summary>
-    ///     Try all referrers (not just the first) for BSStringT and vtable strategies.
-    /// </summary>
-    private RuntimeStringOwnershipClaim? TryResolveViaReferrers(RuntimeStringHit hit)
-    {
-        if (hit.OwnerResolution == null)
-        {
-            return null;
-        }
-
-        // Build the list of referrers to try
-        var allReferrers = hit.OwnerResolution.AllReferrers;
-
-        if (allReferrers is { Count: > 0 })
-        {
-            // Try each referrer for both strategies
-            foreach (var (fileOffset, va, _) in allReferrers)
-            {
-                if (va < 0 || va > uint.MaxValue)
-                {
-                    continue;
-                }
-
-                var claim = TryBSStringTReverseLookup(hit, fileOffset, (uint)va);
-                claim ??= _vtableResolver.TryVtableReverseLookup(hit, (uint)va);
-
-                if (claim != null)
-                {
-                    return claim;
-                }
-            }
-
-            return null;
-        }
-
-        // Fall back to single referrer (backward compat)
-        if (hit.OwnerResolution.ReferrerFileOffset == null || hit.OwnerResolution.ReferrerVa == null)
-        {
-            return null;
-        }
-
-        var singleFileOffset = hit.OwnerResolution.ReferrerFileOffset.Value;
-        var singleVa = (uint)hit.OwnerResolution.ReferrerVa.Value;
-
-        var result = TryBSStringTReverseLookup(hit, singleFileOffset, singleVa);
-        result ??= _vtableResolver.TryVtableReverseLookup(hit, singleVa);
-        return result;
-    }
-
-    #region Strategy 1: BSStringT Reverse TESForm Lookup
-
-    private RuntimeStringOwnershipClaim? TryBSStringTReverseLookup(
-        RuntimeStringHit hit, long referrerFileOffset, uint referrerVa)
-    {
-        // Validate BSStringT wrapper: read 4 bytes after the char* pointer
-        // BSStringT layout: [4B char* VA] [2B uint16 length] [2B unused]
-        var bsStringTValid = false;
-        if (referrerFileOffset + 8 <= _ctx.FileSize)
-        {
-            var lengthBytes = new byte[4];
-            _ctx.Accessor.ReadArray(referrerFileOffset + 4, lengthBytes, 0, 4);
-            var storedLength = BinaryPrimitives.ReadUInt16BigEndian(lengthBytes.AsSpan(0, 2));
-            bsStringTValid = storedLength == hit.Text.Length || storedLength == hit.Text.Length + 1;
-        }
-
-        // Fast path: BSStringT validated — try BSStringT field index
-        if (bsStringTValid)
-        {
-            var claim = TryTESFormReverseLookup(hit, referrerVa, _bsStringTFieldIndex);
-            if (claim != null)
-            {
-                return claim;
+                hit.OwnershipStatus = RuntimeStringOwnershipStatus.ReferencedOwnerUnknown;
+                analysis.ReferencedOwnerUnknownHits.Add(hit);
             }
         }
-
-        // Relaxed fallback: skip BSStringT validation, try TESForm header validation directly.
-        // This catches raw char* fields (Script.m_text, ActorValueInfo.sScriptName, etc.)
-        // and cases where the BSStringT length field is corrupted or zero'd.
-        return TryTESFormReverseLookup(hit, referrerVa, _bsStringTFieldIndex, true);
+        analysis.StatusCounts[RuntimeStringOwnershipStatus.Owned] = analysis.OwnedHits.Count;
+        analysis.StatusCounts[RuntimeStringOwnershipStatus.ReferencedOwnerUnknown] = analysis.ReferencedOwnerUnknownHits.Count;
     }
 
-    /// <summary>
-    ///     Try to reverse-map a referrer VA to a TESForm instance using the field index.
-    ///     When <paramref name="relaxed" /> is true, BSStringT length validation was skipped
-    ///     so we only match if the triple validation (vtable + FormType + FormID) passes.
-    ///     Uses pre-built distinct offset array: for each unique offset, peeks the formType
-    ///     byte at the candidate base, then does a direct dictionary lookup instead of
-    ///     iterating the entire field index.
-    /// </summary>
-    private RuntimeStringOwnershipClaim? TryTESFormReverseLookup(
-        RuntimeStringHit hit, uint referrerVa,
-        Dictionary<(byte FormType, int FieldOffset), (string RecordCode, string FieldLabel)> fieldIndex,
-        bool relaxed = false)
+    /// <summary>Retains candidates from every recorded pointer, including conflicting owners.</summary>
+    private List<RuntimeStringOwnershipClaim> ResolveViaReferrers(RuntimeStringHit hit)
     {
+        var claims = new List<RuntimeStringOwnershipClaim>();
+        var resolution = hit.OwnerResolution;
+        if (resolution == null) return claims;
+        var referrers = resolution.AllReferrers;
+        if (referrers is not { Count: > 0 } && resolution.ReferrerFileOffset is { } offset &&
+            resolution.ReferrerVa is { } va)
+            referrers = [(offset, va, resolution.ReferrerContext)];
+        foreach (var (fileOffset, pointerVa, _) in referrers ?? [])
+        {
+            if (pointerVa < int.MinValue || pointerVa > uint.MaxValue) continue;
+            var referrerVa = unchecked((uint)pointerVa);
+            var fromForms = ResolveTesForms(hit, referrerVa);
+            claims.AddRange(fromForms);
+            claims.AddRange(_vtableResolver.ResolveVtableCandidates(hit, referrerVa).Select(vtable =>
+                vtable with { ReferrerVa = pointerVa, ReferrerFileOffset = fileOffset,
+                    Validation = "RTTI class and field offset" }));
+        }
+        return claims;
+    }
+
+    private List<RuntimeStringOwnershipClaim> ResolveTesForms(RuntimeStringHit hit, uint referrerVa)
+    {
+        var claims = new List<RuntimeStringOwnershipClaim>();
+        // VA-safe wrapper reads cannot borrow adjacent file bytes from an unrelated captured region.
+        var wrapper = _memory.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(referrerVa), 8);
+        if (wrapper == null || hit.VirtualAddress is not { } stringVa ||
+            BinaryPrimitives.ReadUInt32BigEndian(wrapper) != unchecked((uint)stringVa)) return claims;
+        var length = BinaryPrimitives.ReadUInt16BigEndian(wrapper.AsSpan(4, 2));
+        var strict = length == hit.Text.Length || length == hit.Text.Length + 1;
         foreach (var fieldOffset in _bsStringTDistinctOffsets)
         {
-            if (referrerVa < (uint)fieldOffset)
+            if (referrerVa < fieldOffset) continue;
+            var baseVa = referrerVa - (uint)fieldOffset;
+            if (!_entriesByBaseVa.TryGetValue(baseVa, out var entries)) continue;
+            foreach (var entry in entries)
             {
-                continue;
+                // Raw FormType numbers drift between prototypes. Only the recovered, calibrated
+                // identity selects a PDB class; the bytes must still match that entry's raw type/ID.
+                if (!_bsStringTFieldIndex.TryGetValue((entry.FormType, fieldOffset), out var match)) continue;
+                var layout = PdbStructLayouts.Get(entry.FormType)!;
+                var headerVa = baseVa + (uint)PdbStructLayouts.GetTesFormInteriorOffset(layout);
+                var header = _memory.ReadBytesAtVa(Xbox360MemoryUtils.VaToLong(headerVa), 16);
+                if (header == null || entry.FormId == 0 ||
+                    BinaryPrimitives.ReadUInt32BigEndian(header.AsSpan(12)) != entry.FormId ||
+                    header[4] != (entry.OriginalFormType ?? entry.FormType) ||
+                    !Xbox360MemoryUtils.IsModulePointer(BinaryPrimitives.ReadUInt32BigEndian(header))) continue;
+                claims.Add(new RuntimeStringOwnershipClaim(hit.FileOffset, hit.VirtualAddress,
+                    strict ? "SecondPassReverse" : "SecondPassReverseRelaxed",
+                    $"{match.RecordCode} [{entry.FormId:X8}]", entry.FormId, _ctx.VaToFileOffset(baseVa),
+                    strict ? ClaimSource.SecondPassReverse : ClaimSource.SecondPassReverseRelaxed,
+                    match.RecordCode, strict ? match.FieldLabel : $"candidate field: {match.FieldLabel}",
+                    Xbox360MemoryUtils.VaToLong(referrerVa), _ctx.VaToFileOffset(referrerVa),
+                    $"canonical type 0x{entry.FormType:X2}; raw type 0x{header[4]:X2}; exact FormID and TESForm address; " +
+                    (strict ? "BSStringT length validated" : "BSStringT length not validated")));
             }
-
-            var candidateBaseVa = referrerVa - (uint)fieldOffset;
-            var candidateBaseFileOffset = _ctx.VaToFileOffset(candidateBaseVa);
-            if (candidateBaseFileOffset == null)
-            {
-                continue;
-            }
-
-            // Peek the formType byte at the candidate base (+4) before full validation.
-            // This avoids the heavier vtable + FormID checks for non-matching types.
-            if (candidateBaseFileOffset.Value + 5 > _ctx.FileSize)
-            {
-                continue;
-            }
-
-            var formTypeBuf = new byte[1];
-            _ctx.Accessor.ReadArray(candidateBaseFileOffset.Value + 4, formTypeBuf, 0, 1);
-            var candidateFormType = formTypeBuf[0];
-
-            if (!fieldIndex.TryGetValue((candidateFormType, fieldOffset), out var match))
-            {
-                continue;
-            }
-
-            if (!ValidateTESFormHeader(candidateBaseFileOffset.Value, candidateFormType,
-                    out var candidateFormId))
-            {
-                continue;
-            }
-
-            // When relaxed, require a non-zero FormID (tighter validation to compensate for missing BSStringT check)
-            if (relaxed && candidateFormId == 0)
-            {
-                continue;
-            }
-
-            return new RuntimeStringOwnershipClaim(
-                hit.FileOffset,
-                hit.VirtualAddress,
-                relaxed ? "SecondPassReverseRelaxed" : "SecondPassReverse",
-                $"{match.RecordCode} [{candidateFormId:X8}]",
-                candidateFormId,
-                candidateBaseFileOffset.Value,
-                // The relaxed pass skipped BSStringT length validation, so it must not be counted
-                // as its strict sibling — until 2026-09-04 both reported SecondPassReverse and
-                // ClaimSource.SecondPassReverseRelaxed was assigned nowhere.
-                relaxed ? ClaimSource.SecondPassReverseRelaxed : ClaimSource.SecondPassReverse,
-                match.RecordCode,
-                match.FieldLabel);
         }
-
-        return null;
+        return claims;
     }
-
-    /// <summary>
-    ///     Validate a TESForm header at the given file offset.
-    ///     Checks vtable in module range, FormType match, and FormID validity.
-    /// </summary>
-    private bool ValidateTESFormHeader(long fileOffset, byte expectedFormType, out uint formId)
-    {
-        formId = 0;
-        if (fileOffset + 16 > _ctx.FileSize)
-        {
-            return false;
-        }
-
-        var headerBytes = new byte[16];
-        _ctx.Accessor.ReadArray(fileOffset, headerBytes, 0, 16);
-
-        var vtablePtr = BinaryPrimitives.ReadUInt32BigEndian(headerBytes.AsSpan(0, 4));
-        if (!Xbox360MemoryUtils.IsModulePointer(vtablePtr))
-        {
-            return false;
-        }
-
-        var candidateFormType = headerBytes[4];
-        if (candidateFormType != expectedFormType)
-        {
-            return false;
-        }
-
-        formId = BinaryPrimitives.ReadUInt32BigEndian(headerBytes.AsSpan(12, 4));
-        return formId > 0 && formId <= 0x00FFFFFF;
-    }
-
-    #endregion
 }

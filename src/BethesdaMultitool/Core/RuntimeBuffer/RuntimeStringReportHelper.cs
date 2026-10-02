@@ -14,14 +14,17 @@ internal static class RuntimeStringReportHelper
     internal static RuntimeStringReportData? Extract(
         AnalysisResult result,
         MemoryMappedViewAccessor accessor,
-        CoverageResult? coverage = null)
+        CoverageResult? coverage = null,
+        AnalysisStages? stages = null)
     {
         if (result.MinidumpInfo == null)
         {
             return null;
         }
 
-        coverage ??= CoverageAnalyzer.Analyze(result, accessor);
+        stages ??= new AnalysisStages();
+        coverage ??= stages.Run("coverage", stage =>
+            CoverageAnalyzer.Analyze(result, accessor, stages.CancellationToken, stage));
 
         var bufferAnalyzer = new RuntimeBufferAnalyzer(
             accessor,
@@ -31,7 +34,8 @@ internal static class RuntimeStringReportHelper
             coverage.PdbAnalysis,
             result.EsmRecords?.RuntimeEditorIds,
             result.EsmRecords?.GameSettings,
-            result.EsmRecords?.MainRecords);
+            result.EsmRecords?.MainRecords,
+            stages);
 
         var stringData = bufferAnalyzer.ExtractStringDataOnly();
         RuntimeBufferAnalyzer.CrossReferenceWithCarvedFiles(stringData.StringPool, result.CarvedFiles);

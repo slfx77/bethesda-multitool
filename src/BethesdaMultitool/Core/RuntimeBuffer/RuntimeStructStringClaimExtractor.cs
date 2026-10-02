@@ -18,11 +18,11 @@ internal static class RuntimeStructStringClaimExtractor
         RuntimeMemoryContext memCtx)
     {
         var claims = new List<RuntimeStringOwnershipClaim>();
-        var claimedOffsets = new HashSet<long>();
         var fieldAccessor = new RuntimePdbFieldAccessor(memCtx);
 
         foreach (var entry in runtimeEditorIds)
         {
+            var claimedOffsets = new HashSet<long>();
             // The entry stores TESForm*, which may be an interior subobject (MSTT/FLOR).
             // Resolve the complete object once so pre-captured and PDB-discovered claims agree
             // on the owner even when the string payload itself was captured earlier.
@@ -30,6 +30,9 @@ internal static class RuntimeStructStringClaimExtractor
                 ? fieldAccessor.ReadStruct(entry)
                 : null;
             var (ownerOffsetResolved, ownerFileOffset) = ResolveOwnerFileOffset(entry, memCtx, structData);
+
+            if (structData.HasValue)
+                ExtractAllBSStringTClaims(entry, memCtx, structData.Value, claims, claimedOffsets);
 
             // Claim validated DisplayName payload offset captured during EditorID extraction.
             if (entry.DisplayNameStringOffset.HasValue)
@@ -45,11 +48,6 @@ internal static class RuntimeStructStringClaimExtractor
                     "cPrompt", memCtx.MinidumpInfo, ownerFileOffset, ownerOffsetResolved);
             }
 
-            // PDB BSStringT walk for ALL types (no HasSpecializedReader exclusion)
-            if (structData.HasValue)
-            {
-                ExtractAllBSStringTClaims(entry, memCtx, structData.Value, claims, claimedOffsets);
-            }
         }
 
         return claims;
@@ -85,7 +83,9 @@ internal static class RuntimeStructStringClaimExtractor
             var fieldLabel = field.Owner != null ? $"{field.Owner}.{field.Name}" : field.Name;
 
             AddClaim(claims, claimedOffsets, entry, info.Value.StringFileOffset,
-                fieldLabel, memCtx.MinidumpInfo, structData.FileOffset, true);
+                fieldLabel, memCtx.MinidumpInfo, structData.FileOffset, true,
+                memCtx.MinidumpInfo.FileOffsetToVirtualAddress(structData.FileOffset) is { } ownerVa
+                    ? ownerVa + field.Offset : null);
         }
     }
 
@@ -150,7 +150,8 @@ internal static class RuntimeStructStringClaimExtractor
         string fieldName,
         MinidumpInfo minidumpInfo,
         long? ownerFileOffset = null,
-        bool ownerOffsetResolved = false)
+        bool ownerOffsetResolved = false,
+        long? referrerVa = null)
     {
         if (!claimedOffsets.Add(stringFileOffset))
         {
@@ -168,6 +169,8 @@ internal static class RuntimeStructStringClaimExtractor
             ownerOffsetResolved ? ownerFileOffset : entry.TesFormOffset,
             ClaimSource.RuntimeStructField,
             formTypeName,
-            fieldName));
+            fieldName, referrerVa,
+            referrerVa is { } pointerVa ? minidumpInfo.VirtualAddressToFileOffset(pointerVa) : null,
+            referrerVa.HasValue ? "validated TESForm identity and PDB BSStringT field" : "previously captured string field"));
     }
 }

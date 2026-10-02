@@ -13,4 +13,7 @@ internal sealed record RuntimeStringOwnershipClaim(
     long? OwnerFileOffset,
     ClaimSource ClaimSource = ClaimSource.ManagerGlobal,
     string? OwnerRecordType = null,
-    string? OwnerFieldOrSubrecord = null);
+    string? OwnerFieldOrSubrecord = null,
+    long? ReferrerVa = null,
+    long? ReferrerFileOffset = null,
+    string? Validation = null);

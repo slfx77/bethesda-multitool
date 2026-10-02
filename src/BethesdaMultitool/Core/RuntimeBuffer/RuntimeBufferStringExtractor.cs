@@ -53,12 +53,14 @@ internal sealed class RuntimeBufferStringExtractor
         HashSet<string> editorIds,
         HashSet<string> dialogue,
         HashSet<string> settings,
-        StringPoolSummary summary)
+        StringPoolSummary summary,
+        CancellationToken cancellationToken = default)
     {
         var start = -1;
 
         for (var i = 0; i < buffer.Length; i++)
         {
+            if ((i & 0xFFFF) == 0) cancellationToken.ThrowIfCancellationRequested();
             if (EsmStringUtils.IsPrintableGameTextByte(buffer[i]))
             {
                 if (start < 0)

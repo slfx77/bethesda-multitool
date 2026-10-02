@@ -61,7 +61,7 @@ public sealed class RuntimeStructStringClaimExtractorTests
 
         Assert.Equal(2, claims.Count);
         var fullNameClaim = Assert.Single(claims, claim => claim.StringFileOffset == fullNameFileOffset);
-        Assert.Equal("cFullName", fullNameClaim.OwnerFieldOrSubrecord);
+        Assert.Equal("TESFullName.cFullName", fullNameClaim.OwnerFieldOrSubrecord);
         Assert.Equal(objectPrefixFileOffset, fullNameClaim.OwnerFileOffset);
         var modelClaim = Assert.Single(claims, claim => claim.StringFileOffset == modelFileOffset);
         Assert.Equal("TESModel.cModel", modelClaim.OwnerFieldOrSubrecord);
@@ -105,7 +105,7 @@ public sealed class RuntimeStructStringClaimExtractorTests
 
         var claim = Assert.Single(claims);
         Assert.Equal(promptFileOffset, claim.StringFileOffset);
-        Assert.Equal("cPrompt", claim.OwnerFieldOrSubrecord);
+        Assert.Equal("TESTopicInfo.cPrompt", claim.OwnerFieldOrSubrecord);
     }
 
     [Fact]

@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Text;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.Pdb;
 using BethesdaMultitool.Core.Strings;
@@ -57,6 +58,7 @@ internal sealed class RuntimeBufferScanner
         {
             foreach (var global in globals)
             {
+                _ctx.CancellationToken.ThrowIfCancellationRequested();
                 if (!global.Global.Name.Contains(nameContains, StringComparison.Ordinal))
                 {
                     continue;
@@ -97,7 +99,7 @@ internal sealed class RuntimeBufferScanner
     /// <summary>
     ///     Extract strings from StringPool and AsciiText gaps.
     /// </summary>
-    internal void RunStringPoolExtraction(BufferExplorationResult result)
+    internal void RunStringPoolExtraction(BufferExplorationResult result, AnalysisStages.Stage? stage = null)
     {
         var summary = new StringPoolSummary();
         var uniqueStrings = new HashSet<string>(StringComparer.Ordinal);
@@ -114,8 +116,11 @@ internal sealed class RuntimeBufferScanner
         summary.RegionCount = textGaps.Count;
         summary.TotalBytes = textGaps.Sum(g => g.Size);
 
+        long scanned = 0;
         foreach (var gap in textGaps)
         {
+            _ctx.CancellationToken.ThrowIfCancellationRequested();
+            stage?.Checkpoint(scanned++, textGaps.Count);
             var readSize = (int)Math.Min(gap.Size, 1024 * 1024);
             var buffer = new byte[readSize];
             _ctx.Accessor.ReadArray(gap.FileOffset, buffer, 0, readSize);
@@ -131,8 +136,9 @@ internal sealed class RuntimeBufferScanner
                 editorIdSet,
                 dialogueSet,
                 settingSet,
-                summary);
+                summary, _ctx.CancellationToken);
         }
+        stage?.Checkpoint(scanned, textGaps.Count);
 
         summary.UniqueStrings = uniqueStrings.Count;
         summary.FilePaths = filePathSet.Count;
@@ -177,6 +183,7 @@ internal sealed class RuntimeBufferScanner
 
         foreach (var gap in binaryGaps)
         {
+            _ctx.CancellationToken.ThrowIfCancellationRequested();
             var scanSize = (int)Math.Min(gap.Size, SignatureScanBytes);
             if (scanSize < 4)
             {

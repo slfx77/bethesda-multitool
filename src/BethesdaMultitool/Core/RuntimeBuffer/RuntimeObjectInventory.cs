@@ -64,7 +64,7 @@ internal sealed class RuntimeObjectInventory
     ///     checked.
     /// </summary>
     internal static RuntimeObjectInventory Build(
-        DumpRttiIndex rtti, List<(uint BaseVa, int ClassId)> hits)
+        DumpRttiIndex rtti, List<(uint BaseVa, int ClassId)> hits, CancellationToken cancellationToken = default)
     {
         var classNames = rtti.Classes.Select(c => c.ClassName).ToArray();
         var declaredSizes = BuildDeclaredSizes(classNames);
@@ -83,6 +83,7 @@ internal sealed class RuntimeObjectInventory
         var i = 0;
         while (i < hits.Count)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var baseVa = hits[i].BaseVa;
             var bestClass = hits[i].ClassId;
             var bestSize = SizeOf(bestClass);
@@ -128,6 +129,7 @@ internal sealed class RuntimeObjectInventory
         var spans = new RuntimeObjectSpan[chosen.Count];
         for (var s = 0; s < chosen.Count; s++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var (baseVa, classId, size) = chosen[s];
             uint endVa;
             bool declared;

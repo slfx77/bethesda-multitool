@@ -1,4 +1,5 @@
 using System.IO.MemoryMappedFiles;
+using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Coverage;
 using BethesdaMultitool.Core.FileFormat;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -28,7 +29,8 @@ internal sealed class RuntimeBufferAnalyzer
         PdbAnalysisResult? pdbAnalysis,
         IReadOnlyList<RuntimeEditorIdEntry>? runtimeEditorIds = null,
         IReadOnlyList<GmstRecord>? gameSettings = null,
-        IReadOnlyList<DetectedMainRecord>? mainRecords = null)
+        IReadOnlyList<DetectedMainRecord>? mainRecords = null,
+        AnalysisStages? stages = null)
     {
         var gameModule = MinidumpAnalyzer.FindGameModule(minidumpInfo);
         uint moduleStart = 0;
@@ -41,7 +43,7 @@ internal sealed class RuntimeBufferAnalyzer
 
         _ctx = new BufferAnalysisContext(
             accessor, fileSize, minidumpInfo, coverage, pdbAnalysis, runtimeEditorIds,
-            moduleStart, moduleEnd, gameSettings, mainRecords);
+            moduleStart, moduleEnd, gameSettings, mainRecords, stages);
 
         var stringExtractor = new RuntimeBufferStringExtractor(_ctx);
         _pointerAnalyzer = new RuntimeBufferPointerAnalyzer(_ctx);
@@ -62,13 +64,13 @@ internal sealed class RuntimeBufferAnalyzer
 
         if (_ctx.PdbAnalysis != null)
         {
-            _scanner.RunManagerWalk(result);
+            _ctx.Stages.Run("manager strings", _ => _scanner.RunManagerWalk(result));
         }
 
-        _scanner.RunStringPoolExtraction(result);
-        _pointerAnalyzer.RunStringOwnershipAnalysis(result);
-        _scanner.RunBinarySignatureScan(result);
-        _pointerAnalyzer.RunPointerGraphAnalysis(result);
+        _ctx.Stages.Run("string extraction", stage => _scanner.RunStringPoolExtraction(result, stage));
+        _ctx.Stages.Run("string ownership", _ => _pointerAnalyzer.RunStringOwnershipAnalysis(result));
+        _ctx.Stages.Run("binary signatures", _ => _scanner.RunBinarySignatureScan(result));
+        _ctx.Stages.Run("pointer graph", _ => _pointerAnalyzer.RunPointerGraphAnalysis(result));
 
         return result;
     }
@@ -90,11 +92,11 @@ internal sealed class RuntimeBufferAnalyzer
         var result = new BufferExplorationResult();
         if (_ctx.PdbAnalysis != null)
         {
-            _scanner.RunManagerWalk(result);
+            _ctx.Stages.Run("manager strings", _ => _scanner.RunManagerWalk(result));
         }
 
-        _scanner.RunStringPoolExtraction(result);
-        _pointerAnalyzer.RunStringOwnershipAnalysis(result);
+        _ctx.Stages.Run("string extraction", stage => _scanner.RunStringPoolExtraction(result, stage));
+        _ctx.Stages.Run("string ownership", _ => _pointerAnalyzer.RunStringOwnershipAnalysis(result));
         return new RuntimeStringReportData(result.StringPools!, result.StringOwnership!);
     }
 
