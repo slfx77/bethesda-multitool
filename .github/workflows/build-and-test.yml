@@ -13,7 +13,7 @@ permissions:
 jobs:
   build-and-test:
     if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     
     steps:
     - name: Checkout repository
@@ -35,6 +35,12 @@ jobs:
       uses: actions/setup-dotnet@v5
       with:
         global-json-file: global.json
+
+    # These Win32/x64 console fixtures exercise the native bridge's pure/synthetic boundaries.
+    # The pinned Windows 2025/VS2026 image supplies v145, matching the project defaults.
+    # No game or emulator process is launched, and no downloaded SDK or private corpus is used.
+    - name: Run Native Runtime Bridge Tests
+      run: ./tools/scripts/test-runtime-bridges.ps1 -PlatformToolset v145
 
     - name: Restore dependencies
       run: dotnet restore -p:AnalyzerProfile=Full -p:Platform=x64 -m:1 -nodeReuse:false
@@ -128,12 +134,6 @@ jobs:
             --report-xunit-trx-filename ddxconv-test-results.trx `
             --minimum-expected-tests 150
         }
-
-    # These Win32/x64 console fixtures exercise the native bridge's pure/synthetic boundaries.
-    # The hosted image supplies VS2022 (v143); the vcxproj defaults support local VS2026 (v145).
-    # No game or emulator process is launched, and no downloaded SDK or private corpus is used.
-    - name: Run Native Runtime Bridge Tests
-      run: ./tools/scripts/test-runtime-bridges.ps1 -PlatformToolset v143
 
     - name: Upload Test Results
       uses: actions/upload-artifact@v7

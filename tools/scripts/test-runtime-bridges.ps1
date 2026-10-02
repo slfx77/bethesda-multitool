@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS Builds and runs the source-contained native runtime bridge fixtures.
 .DESCRIPTION Uses synthetic inputs; no game, emulator, SDK download, or captured corpus is required.
-The project default is v145. CI selects v143 from its installed Visual Studio 2022 toolchain.
+The project default and CI use v145 (Visual Studio 2026). Pass v143 for Visual Studio 2022.
 #>
 [CmdletBinding()]
 param(
