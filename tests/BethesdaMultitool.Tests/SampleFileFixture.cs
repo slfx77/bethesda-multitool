@@ -68,20 +68,24 @@ public class SampleFileFixture
     /// </summary>
     public static string? FindSamplePath(string relativePath)
     {
+        return FindSamplePath(relativePath, AppContext.BaseDirectory);
+    }
+
+    internal static string? FindSamplePath(string relativePath, string baseDirectory)
+    {
         var candidates = SampleCorpus.Candidates(relativePath).ToArray();
-        var dir = AppContext.BaseDirectory;
-        for (var i = 0; i < 8 && dir is not null; i++)
+        // Analyzer profiles and runtime identifiers add output-directory levels. Walk actual
+        // parents to the filesystem root rather than assuming a fixed build-output depth.
+        for (var directory = new DirectoryInfo(baseDirectory); directory is not null; directory = directory.Parent)
         {
             foreach (var relative in candidates)
             {
-                var candidate = Path.Combine(dir, relative);
+                var candidate = Path.Combine(directory.FullName, relative);
                 if (File.Exists(candidate))
                 {
                     return candidate;
                 }
             }
-
-            dir = Path.GetDirectoryName(dir);
         }
 
         return null;
