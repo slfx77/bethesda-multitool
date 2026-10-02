@@ -68,8 +68,9 @@
   <!-- Remove source/intermediate content owned by the referenced WinUI project, preserving its
        bin outputs. Resolve that project's directory explicitly: searching the entire path for
        "BethesdaMultitool" also matches local checkout names and hides unrelated duplicate items.
-       DDXConv is used through its managed DLL; its RID and portable apphosts can both arrive
-       through transitive references, and neither executable belongs in this application's bundle. -->
+       DDXConv is used through its managed DLL; its RID and portable executable artifacts can
+       both arrive through transitive references. Its apphost, dependency manifest and runtime
+       configuration belong to standalone DDXConv, not this application's bundle. -->
   <Target Name="RemoveReferencedProjectPublishContent" BeforeTargets="_ComputeFilesToBundle">
     <PropertyGroup>
       <_ReferencedAppProjectDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)..\BethesdaMultitool'))</_ReferencedAppProjectDirectory>
@@ -78,6 +79,8 @@
     <ItemGroup>
       <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
                              Condition="'%(ResolvedFileToPublish.RelativePath)' == 'DDXConv.exe' OR
+                                        '%(ResolvedFileToPublish.RelativePath)' == 'DDXConv.deps.json' OR
+                                        '%(ResolvedFileToPublish.RelativePath)' == 'DDXConv.runtimeconfig.json' OR
                                         ($([System.String]::new('%(ResolvedFileToPublish.FullPath)').StartsWith('$(_ReferencedAppProjectDirectory)', System.StringComparison.OrdinalIgnoreCase)) AND
                                          !$([System.String]::new('%(ResolvedFileToPublish.FullPath)').StartsWith('$(_ReferencedAppBinDirectory)', System.StringComparison.OrdinalIgnoreCase)))" />
     </ItemGroup>
