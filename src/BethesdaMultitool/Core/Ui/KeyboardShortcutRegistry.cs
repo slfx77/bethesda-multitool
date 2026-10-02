@@ -39,6 +39,8 @@ public static class KeyboardShortcutRegistry
         new("HexViewer", "Page Up / Page Down", "Scroll by one screen"),
 
         new("Asset Browser", "Ctrl+O", "Open a folder, archive, or game install"),
+        new("Asset Browser", "Ctrl+Shift+T", "Show or hide the asset tree panel"),
+        new("Asset Browser", "Ctrl+Shift+P", "Show or hide the preview panel"),
 
         new("Model Tools — Viewer", "Ctrl+O", "Open folder or archive"),
         new("Model Tools — Viewer", "Ctrl+E", "Export current NIF as GLB"),

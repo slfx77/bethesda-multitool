@@ -20,7 +20,7 @@ namespace BethesdaMultitool;
 ///     virtualized progress event log on the right. Settings (plugin metadata, validation
 ///     options, compression) live in a slide-out drawer.
 /// </summary>
-public sealed partial class DmpToEsmConverterTab : UserControl, IDisposable, IHasSettingsDrawer
+public sealed partial class DmpToEsmConverterTab : UserControl, IDisposable
 {
     private const int LogBatchTickMs = 50;
     private const int LogMaxBatchSize = 250;
@@ -124,8 +124,6 @@ public sealed partial class DmpToEsmConverterTab : UserControl, IDisposable, IHa
         }
     }
 
-    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
-    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
 
     public void Dispose()
     {
@@ -640,6 +638,7 @@ public sealed partial class DmpToEsmConverterTab : UserControl, IDisposable, IHa
             OutputBsaPath = OutputBsaTextBox.Text,
             VerbosePerAsset = VerboseDecisionsCheckBox.IsChecked == true,
             WriteAuditFile = WriteMissingListCheckBox.IsChecked == true,
+            IncludeUnboundDialogueAudio = IncludeUnboundAudioCheckBox.IsChecked == true,
             OverrideVanillaBaseline = OverrideVanillaCheckBox.IsChecked == true,
             DialogueAudioCsvPaths = SnapshotDialogueCsvs()
         };

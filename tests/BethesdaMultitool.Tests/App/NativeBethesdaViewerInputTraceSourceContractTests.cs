@@ -19,8 +19,19 @@ public sealed class NativeBethesdaViewerInputTraceSourceContractTests
             "var captureAdmitted = RenderPanel.CapturePointer(e.Pointer);",
             "if (!captureAdmitted)", "\"capture-pointer-failed\"", "return;",
             "_capturedPointerId = e.Pointer.PointerId;", "captureAdmitted: true",
-            "RenderPanel.Focus(FocusState.Pointer);", "e.Handled = true;");
+            "Viewport.Focus(FocusState.Pointer);", "e.Handled = true;");
         Assert.Contains("\"pointer-press-enter\"", pressed, StringComparison.Ordinal);
+        Assert.DoesNotContain("RenderPanel.Focus(", camera, StringComparison.Ordinal);
+
+        // Shared owns keyboard focus on the viewport; panel capture still owns the pointer gesture.
+        var lifecycle = SourceContract.ReadAppSource("BethesdaSceneViewerControl.Lifecycle.cs");
+        var subscribe = SourceContract.Extract(lifecycle,
+            "private void SubscribePanelEvents()", "private void UnsubscribePanelEvents()");
+        var unsubscribe = SourceContract.Extract(lifecycle,
+            "private void UnsubscribePanelEvents()", "private void InitializeRenderSession()");
+        Assert.Contains("Viewport.KeyDown += OnRenderPanelKeyDown;", subscribe, StringComparison.Ordinal);
+        Assert.Contains("Viewport.KeyDown -= OnRenderPanelKeyDown;", unsubscribe, StringComparison.Ordinal);
+        Assert.DoesNotContain("RenderPanel.KeyDown", lifecycle, StringComparison.Ordinal);
     }
 
     [Fact]

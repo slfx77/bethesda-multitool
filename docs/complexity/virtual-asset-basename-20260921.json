@@ -1,0 +1,80 @@
+{
+  "schema": "bmt-virtual-asset-basename-review/v1",
+  "baseCommit": "862d3add",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "scope": "Platform-independent final game-path components in existing asset indexing/resolution and skeleton classification. This reviews the new helper and incremental call-site changes, not entire inherited resolver methods.",
+  "files": [
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Esm/Plugin/AssetPacking/AssetPathRules.cs",
+      "sourceLfSha256": "bd640afe7f310d682ef2c9a42fbe88e888faef5f5c9f7c05f2da5675bd40bdb4",
+      "changedDeclarations": [
+        {
+          "name": "GetVirtualFileName",
+          "line": 261,
+          "declarationLfSha256": "82eb9e1300ce7e44d3d57c2a7269fc2d0f18e94f2a93e89d658e9f7b0a0b963f",
+          "scope": "New helper: O(path length) scan and at most one final-component string; other listed methods replace virtual-basename extraction only, preserving existing indexing, filtering and resolver algorithms."
+        },
+        {
+          "name": "IsEngineGlobalCharacterAsset",
+          "line": 272,
+          "declarationLfSha256": "6b287b653b94d0bd1260c3960ff36fcbf66ce052c0b8298acb47137f311fadf7",
+          "scope": "New helper: O(path length) scan and at most one final-component string; other listed methods replace virtual-basename extraction only, preserving existing indexing, filtering and resolver algorithms."
+        },
+        {
+          "name": "ComputeLooseBasename",
+          "line": 354,
+          "declarationLfSha256": "9ca99c2805f174b8589824e4de12bf65587333b042bf246aa50913af889ad265",
+          "scope": "New helper: O(path length) scan and at most one final-component string; other listed methods replace virtual-basename extraction only, preserving existing indexing, filtering and resolver algorithms."
+        }
+      ],
+      "errorOrMissingNodes": []
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Esm/Plugin/AssetPacking/DataFolderIndex.cs",
+      "sourceLfSha256": "6fa83d1251ee605d78f072e0971f274ee639c6e8fa72dcb13aac16498e7f9f33",
+      "changedDeclarations": [
+        {
+          "name": "AddSource",
+          "line": 630,
+          "declarationLfSha256": "9b762876dd462b561abc7e5198717d604cbd066184857fff4ddb8058ae51d02f",
+          "scope": "New helper: O(path length) scan and at most one final-component string; other listed methods replace virtual-basename extraction only, preserving existing indexing, filtering and resolver algorithms."
+        }
+      ],
+      "errorOrMissingNodes": []
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Esm/Plugin/AssetPacking/DataFolderResolver.cs",
+      "sourceLfSha256": "33c3ce1b0a6876396718f2a853c3c0333b936c33db4a716952a0a73d2fa87de9",
+      "changedDeclarations": [
+        {
+          "name": "Resolve",
+          "line": 86,
+          "declarationLfSha256": "4c2ccd170950ff834e01843b45d588ad010d14f039f7607ebfb7d97492346446",
+          "scope": "New helper: O(path length) scan and at most one final-component string; other listed methods replace virtual-basename extraction only, preserving existing indexing, filtering and resolver algorithms."
+        },
+        {
+          "name": "FindSubstringSuffixMatch",
+          "line": 397,
+          "declarationLfSha256": "2d4a32fdd1ff1373497050510c825c4a7c246ce00b43c3fcce77044ddd22a4c2",
+          "scope": "New helper: O(path length) scan and at most one final-component string; other listed methods replace virtual-basename extraction only, preserving existing indexing, filtering and resolver algorithms."
+        },
+        {
+          "name": "FindDirectoryContainmentMatch",
+          "line": 513,
+          "declarationLfSha256": "3568e89ff24314b4d9dd784f79ffe13fbb8509dad56d6bbcc7245b5407a9a967",
+          "scope": "New helper: O(path length) scan and at most one final-component string; other listed methods replace virtual-basename extraction only, preserving existing indexing, filtering and resolver algorithms."
+        }
+      ],
+      "errorOrMissingNodes": []
+    }
+  ],
+  "ownership": "Pure string handling; no source, archive, cache, stream or lifetime owner added. Physical filesystem paths still use System.IO.Path.",
+  "compatibility": "Slash/backslash game separators recognized on both hosts. Final component spelling, exact-resolution order, source provenance, collision preference and fuzzy scoring stay unchanged. Existing non-null game path contracts retained.",
+  "validation": {
+    "cause": "First Linux batch290/291passes0skip; existing fuzzyrename behavior failed because backslash virtual paths remained whole basenames.",
+    "sourceReview": "Root and material_resume_review reviewed actual diff and affected behavior scope.",
+    "retry": "321focused+2accessibility pending; adds20DataFolderResolverTests and10AssetPathCollectorTests.",
+    "receipt": "docs/validation/nif-egm-linux-20260921.md"
+  },
+  "releaseAcceptance": false
+}

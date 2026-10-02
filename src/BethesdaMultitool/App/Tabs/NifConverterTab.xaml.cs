@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
+using BethesdaMultitool.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.Web.WebView2.Core;
@@ -20,6 +21,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
 {
     private readonly NifConverterViewModel _nifViewer = new();
     private bool _dependencyCheckDone;
+    private GridLength _batchOptionsWidth = new(280);
 
     // NIF Viewer state
     private NifBrowserService? _nifBrowserService;
@@ -46,6 +48,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         InitializeComponent();
         ReorderTabsForModelWorkflow();
         SetupTextBoxContextMenus();
+        NifSceneViewer.EmptySceneMessage = Strings.Get("Viewer_SelectNif");
         NifSceneViewer.RenderStateChanged += NifSceneViewer_RenderStateChanged;
         NifSceneViewer.AttachRenderSession(new BethesdaViewerRenderSession12());
         Loaded += NifConverterTab_Loaded;
@@ -62,7 +65,6 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     protected override FontIcon SizeSortIcon => NifSizeSortIcon;
     protected override FontIcon FormatSortIcon => NifFormatSortIcon;
     protected override FontIcon StatusSortIcon => NifStatusSortIcon;
-    protected override Border SettingsDrawerElement => SettingsDrawer;
 
     private void ReorderTabsForModelWorkflow()
     {
@@ -70,6 +72,13 @@ public sealed partial class NifConverterTab : NifFileConverterBase
         NifTabView.TabItems.Add(NifViewerTab);
         NifTabView.TabItems.Add(NifBatchConvertTab);
         NifTabView.SelectedItem = NifViewerTab;
+    }
+
+    /// <summary>Refreshes compatibility-viewer labels without changing its model, camera, animation, or native host.</summary>
+    internal void RefreshLocalization()
+    {
+        NifSceneViewer.EmptySceneMessage = Strings.Get("Viewer_SelectNif");
+        _ = CompatibilityViewerLocalization.RefreshAsync(NifModelViewer, "Viewer_SelectNif");
     }
 
     private async void NifConverterTab_Loaded(object sender, RoutedEventArgs e)
@@ -287,6 +296,19 @@ public sealed partial class NifConverterTab : NifFileConverterBase
     private void NifTabView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         var viewerSelected = ReferenceEquals(NifTabView.SelectedItem, NifViewerTab);
+        var batchSelected = ReferenceEquals(NifTabView.SelectedItem, NifBatchConvertTab);
+        var optionsVisible = ToolOptionsPanel.Visibility == Visibility.Visible;
+        if (optionsVisible != batchSelected)
+        {
+            // Retain the user's resized options width while Viewer uses the whole row.
+            if (optionsVisible) _batchOptionsWidth = ToolOptionsColumn.Width;
+            ToolOptionsPanel.Visibility = batchSelected ? Visibility.Visible : Visibility.Collapsed;
+            ToolOptionsColumn.MinWidth = batchSelected ? 220 : 0;
+            ToolOptionsColumn.Width = batchSelected ? _batchOptionsWidth : new GridLength(0);
+            ToolOptionsSplitterColumn.Width = new GridLength(batchSelected ? 8 : 0);
+            ToolOptionsSplitter.Visibility = batchSelected ? Visibility.Visible : Visibility.Collapsed;
+        }
+
         NifSceneViewer.SetPresentationActive(viewerSelected);
         if (!viewerSelected) return;
 
@@ -360,14 +382,15 @@ public sealed partial class NifConverterTab : NifFileConverterBase
             }
 
             // Set initial status after page loads. The WebView2 page renders its own
-            // "Select a NIF file to view" message via setStatus. Visibility remains owned by
+            // localized empty-selection message via setStatus. Visibility remains owned by
             // the exact faulted-scene path; successful Chromium startup alone must not place a
             // transparent WebView over the native renderer.
             NifModelViewer.CoreWebView2.NavigationCompleted += async (_, _) =>
             {
                 try
                 {
-                    await NifModelViewer.ExecuteScriptAsync("setStatus('Select a NIF file to view')");
+                    await CompatibilityViewerLocalization.RefreshAsync(NifModelViewer, "Viewer_SelectNif");
+                    await NifModelViewer.ExecuteScriptAsync("setLocalizedStatus('Viewer_SelectNif')");
                 }
                 catch
                 {
@@ -791,7 +814,7 @@ public sealed partial class NifConverterTab : NifFileConverterBase
                         ShowNifViewerCompatibilityHost();
                         try
                         {
-                            await NifModelViewer.ExecuteScriptAsync("setStatus('Loading compatibility model...')");
+                            await NifModelViewer.ExecuteScriptAsync("setLocalizedStatus('Viewer_LoadingCompatibility')");
                             var compatibilityGlb = await Task.Run(
                                 () => service.ExportViewerSceneToGlb(result.Scene),
                                 cancellationToken);

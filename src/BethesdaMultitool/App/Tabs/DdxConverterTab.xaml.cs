@@ -12,7 +12,7 @@ namespace BethesdaMultitool;
 ///     Tab for batch converting Xbox 360 DDX texture files to DDS format.
 ///     Uses DDXConv by kran27 for conversion.
 /// </summary>
-public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSettingsDrawer
+public sealed partial class DdxConverterTab : UserControl, IDisposable
 {
     private readonly List<DdxFileEntry> _allDdxFiles = [];
     private readonly ConvertibleFileSorter<DdxFileEntry> _sorter = new();
@@ -34,8 +34,6 @@ public sealed partial class DdxConverterTab : UserControl, IDisposable, IHasSett
 #pragma warning disable CA1822, S2325
     private StatusTextHelper StatusTextBlock => new();
 #pragma warning restore CA1822, S2325
-    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
-    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
 
     public void Dispose()
     {

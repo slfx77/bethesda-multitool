@@ -1,5 +1,5 @@
 #pragma warning disable CA1707 // Identifiers should not contain underscores - localization key names match resource entries
-using Microsoft.Windows.ApplicationModel.Resources;
+using Slfx77.Multitool.Core.Localization;
 
 namespace BethesdaMultitool.Localization;
 
@@ -10,7 +10,8 @@ namespace BethesdaMultitool.Localization;
 /// </summary>
 public static class Strings
 {
-    private static readonly ResourceLoader _loader = new();
+    /// <summary>The explicit display language; machine-format cultures remain unchanged.</summary>
+    internal static DisplayLanguage Display => MainWindow.Instance!.DisplayLanguage;
 
     // ===== Empty State Messages (code-behind usage) =====
     public static string Empty_NoBsaLoaded => Get("Empty_NoBsaLoaded");
@@ -103,11 +104,11 @@ public static class Strings
     public static string FileType_ScdaScripts => Get("FileType_ScdaScripts");
 
     /// <summary>Gets a localized string by key.</summary>
-    public static string Get(string key) => _loader.GetString(key);
+    public static string Get(string key) => Display.GetString(key);
 
     /// <summary>Gets a localized string and formats it with arguments.</summary>
-    public static string GetFormat(string key, params object[] args)
-        => string.Format(_loader.GetString(key), args);
+    public static string GetFormat(string key, params object?[] args)
+        => Display.Format(key, args);
 
     // ===== Status Messages (parameterized - code-behind usage) =====
     public static string Status_FoundFiles(int count) => GetFormat("Status_FoundFiles", count);

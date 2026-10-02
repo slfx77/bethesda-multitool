@@ -19,10 +19,8 @@ namespace BethesdaMultitool;
 /// <summary>
 ///     BSA Extractor tab for extracting files from Bethesda archives.
 /// </summary>
-public sealed partial class BsaExtractorTab : UserControl, IDisposable, IHasSettingsDrawer
+public sealed partial class BsaExtractorTab : UserControl, IDisposable
 {
-    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
-    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
 
     private readonly ObservableCollection<BsaFileEntry> _allFiles = [];
     private readonly ObservableCollection<BsaFileEntry> _filteredFiles = [];

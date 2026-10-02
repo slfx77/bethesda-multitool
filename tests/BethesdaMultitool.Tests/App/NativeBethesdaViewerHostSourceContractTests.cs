@@ -226,36 +226,19 @@ public sealed class NativeBethesdaViewerHostSourceContractTests
             control,
             "internal void SetPresentationActive(bool active)",
             "internal void AttachRenderSession(");
-        SourceContract.AssertOrder(
-            presentationActivation,
-            "if (_isPresentationActive == active)",
-            "if (active)",
-            "InvalidateViewport();",
-            "return;");
-        Assert.Contains("if (!_isPresentationActive || !IsEffectivelyVisible())", lifecycle, StringComparison.Ordinal);
-        Assert.Contains(
-            "_renderState == BethesdaSceneViewerRenderState.Ready &&\n            _scene is not null &&\n            (_surface is null || !_hasPresentedFrame)",
-            lifecycle,
-            StringComparison.Ordinal);
-        SourceContract.AssertOrder(
-            lifecycle,
-            "_surface = GpuSwapChainSurface12.Create(",
-            "_frameInvalidated = true;",
-            "NotifyObservableRenderStateChanged();");
-        SourceContract.AssertOrder(
-            lifecycle,
-            "recording.Submit(capture);",
-            "surface.Present();",
-            "_hasPresentedFrame = true;");
-        var rendering = SourceContract.Extract(
-            lifecycle,
-            "private void OnRendering(",
-            "private bool IsEffectivelyVisible()");
-        SourceContract.AssertOrder(
-            rendering,
-            "RenderNativeFrame(graphics, surface, session, scene, deltaSeconds);",
-            "_renderingFrame = false;",
-            "SynchronizeRenderState();");
+        // Architecture guards follow the moved owner. Behavioral retirement/readiness is
+        // exercised by Shared's native ownership tests and the actual BMT presentation gate.
+        Assert.Contains("Viewport.SetPresentationActive(active)", presentationActivation, StringComparison.Ordinal);
+        Assert.DoesNotContain("CompositionTarget.Rendering", lifecycle, StringComparison.Ordinal);
+        Assert.Contains("new BethesdaNativeViewportRenderer(this)", control, StringComparison.Ordinal);
+        var sharedViewport = SourceContract.ReadSource("shared", "Multitool.Shared", "src",
+            "Slfx77.Multitool.WinUI", "Rendering", "NativeViewport.cs");
+        Assert.Contains("CompositionTarget.Rendering += OnRendering", sharedViewport, StringComparison.Ordinal);
+        Assert.Contains("CompositionTarget.Rendering -= OnRendering", sharedViewport, StringComparison.Ordinal);
+        Assert.Contains("IsEffectivelyVisible()", sharedViewport, StringComparison.Ordinal);
+        SourceContract.AssertOrder(lifecycle, "recording.Submit(capture);", "surface.Present();");
+        var adapter = SourceContract.ReadAppSource("BethesdaNativeViewportRenderer.cs");
+        SourceContract.AssertOrder(adapter, "owner.RenderNativeFrame(", "return true;");
     }
 
     [Fact]
@@ -279,7 +262,7 @@ public sealed class NativeBethesdaViewerHostSourceContractTests
             "else",
             "SubTabView.TabItems.Clear();",
             "SubTabView.TabItems.Add(item);",
-            "TrySelectSubTab(AnalysisSubTabPolicy.Fallback(previous, fileType));");
+            "TrySelectSubTab(visibleTabs.Contains(previous) ? previous : visibleTabs[0]);");
     }
 
     [Fact]
@@ -301,7 +284,6 @@ public sealed class NativeBethesdaViewerHostSourceContractTests
             StringComparison.Ordinal);
         SourceContract.AssertOrder(
             publish,
-            "DetachRenderLoop();",
             "CancelPendingCapture(",
             "state == BethesdaSceneViewerRenderState.Faulted",
             "ReleasePanelSurface();");

@@ -114,14 +114,21 @@ internal static class ClassicLevelPreviewSource
                 return null;
             }
 
-            var meshDirectory = Path.GetDirectoryName(Path.GetFullPath(session.SourcePath));
+            // A session opened on a game root has a DIRECTORY source path, and taking its parent
+            // walks above the install so 3dart is never found and nothing resolves. Only a
+            // file-backed source (an archive or a single map) needs its containing directory.
+            var fullSourcePath = Path.GetFullPath(session.SourcePath);
+            var meshDirectory = Directory.Exists(fullSourcePath)
+                ? fullSourcePath
+                : Path.GetDirectoryName(fullSourcePath);
             if (meshDirectory is null)
             {
                 return null;
             }
 
             var generated = new Dictionary<string, DecodedTexture>(StringComparer.OrdinalIgnoreCase);
-            var instances = Assemble(bytes, node.Name, meshDirectory, generated, out var textureFor);
+            var notes = new List<string>();
+            var instances = Assemble(bytes, node.Name, meshDirectory, generated, notes, out var textureFor);
             if (instances.Count == 0)
             {
                 return null;
@@ -138,6 +145,7 @@ internal static class ClassicLevelPreviewSource
                 viewerScene.AddGeneratedTexture(path, texture);
             }
 
+            viewerScene.SourceNotes.AddRange(notes);
             return viewerScene;
         }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException
@@ -151,16 +159,19 @@ internal static class ClassicLevelPreviewSource
     ///     Routes the payload to its game's assembler by CONTENT and returns the placed instances,
     ///     empty when nothing resolved. <paramref name="generated" /> collects the RGBA textures the
     ///     scene must register (keyed by the lookup path <paramref name="textureFor" /> hands out),
-    ///     and <paramref name="textureFor" /> is null for a game whose art is not resolved here.
+    ///     <paramref name="notes" /> collects the approximations the assembler states (the scene carries
+    ///     them as <see cref="BethesdaViewerScene.SourceNotes" />), and <paramref name="textureFor" /> is
+    ///     null for a game whose art is not resolved here.
     /// </summary>
     private static IReadOnlyList<XnGineMeshInstance> Assemble(
         byte[] bytes, string name, string meshDirectory,
-        Dictionary<string, DecodedTexture> generated, out Func<int, int, XnGineViewerTexture?>? textureFor)
+        Dictionary<string, DecodedTexture> generated, List<string> notes,
+        out Func<int, int, XnGineViewerTexture?>? textureFor)
     {
         textureFor = null;
         if (RedguardRgmFile.IsRgmFile(bytes))
         {
-            return AssembleRedguard(bytes, name, meshDirectory, generated, out textureFor);
+            return AssembleRedguard(bytes, name, meshDirectory, generated, notes, out textureFor);
         }
 
         // Arena .MIF: a voxel level, built (not placed) by ArenaSceneAssembler and textured through
@@ -239,11 +250,14 @@ internal static class ClassicLevelPreviewSource
     ///     walking up from the opened source to the directory holding <c>WORLD.INI</c>. Placed by
     ///     <see cref="RedguardSceneAssembler" />, textured through <c>3dart\TEXTURE.nnn</c> (or the
     ///     3dfx <c>fxart</c> when the install is Disc 1's), the same route <c>classic level export</c>
-    ///     takes.
+    ///     takes. What the CLI reports about an approximated mesh (an empty ROB placeholder drawn from its
+    ///     loose <c>.3DC</c> in keyframe pose, <see cref="RedguardLevelAssembly.LooseKeyframeNote" />) goes
+    ///     into <paramref name="notes" />, so the pane shows the same line.
     /// </summary>
     private static IReadOnlyList<XnGineMeshInstance> AssembleRedguard(
         byte[] bytes, string name, string meshDirectory,
-        Dictionary<string, DecodedTexture> generated, out Func<int, int, XnGineViewerTexture?>? textureFor)
+        Dictionary<string, DecodedTexture> generated, List<string> notes,
+        out Func<int, int, XnGineViewerTexture?>? textureFor)
     {
         textureFor = null;
         var dataRoot = RedguardLevelLoader.FindDataRoot(meshDirectory)
@@ -257,6 +271,11 @@ internal static class ClassicLevelPreviewSource
         if (level.Scene.Instances.Count == 0)
         {
             return [];
+        }
+
+        if (level.LooseKeyframeNote is { } looseNote)
+        {
+            notes.Add(looseNote);
         }
 
         // Resolved EAGERLY for the same reason as Battlespire's: the level (and its ROB) is disposed

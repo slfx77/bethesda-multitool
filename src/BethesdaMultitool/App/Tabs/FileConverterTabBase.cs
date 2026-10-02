@@ -10,7 +10,7 @@ namespace BethesdaMultitool;
 ///     selection, and progress patterns. Each subclass keeps its own XAML and
 ///     provides UI element references via abstract properties.
 /// </summary>
-public abstract class FileConverterTabBase<TEntry> : UserControl, IDisposable, IHasSettingsDrawer
+public abstract class FileConverterTabBase<TEntry> : UserControl, IDisposable
     where TEntry : class, IConvertibleFileEntry
 {
     private readonly List<TEntry> _allFiles = [];
@@ -33,14 +33,11 @@ public abstract class FileConverterTabBase<TEntry> : UserControl, IDisposable, I
     protected abstract FontIcon SizeSortIcon { get; }
     protected abstract FontIcon FormatSortIcon { get; }
     protected abstract FontIcon StatusSortIcon { get; }
-    protected abstract Border SettingsDrawerElement { get; }
 
 #pragma warning disable CA1822, S2325
     protected StatusTextHelper StatusTextBlock => new();
 #pragma warning restore CA1822, S2325
 
-    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawerElement);
-    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawerElement);
 
     public void Dispose()
     {

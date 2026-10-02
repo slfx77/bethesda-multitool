@@ -16,63 +16,28 @@ namespace BethesdaMultitool.Tests.Core.Ui;
 /// </summary>
 public class AnalysisRecordAvailabilityTests
 {
-    public static TheoryData<AnalysisFileType> AllFileTypes()
-    {
-        var data = new TheoryData<AnalysisFileType>();
-        foreach (var fileType in Enum.GetValues<AnalysisFileType>())
-        {
-            data.Add(fileType);
-        }
-
-        return data;
-    }
-
     /// <summary>
-    ///     The whole point: a classic install browses its records without ever having scanned a
-    ///     byte. If this passes and nothing else does, the bug is fixed.
-    /// </summary>
-    [Fact]
-    public void ClassicGameData_SupportsBrowsing_WithNoEsmScan()
-    {
-        Assert.True(
-            AnalysisRecordAvailability.SupportsRecordBrowsing(
-                AnalysisFileType.ClassicGameData, false));
-    }
-
-    /// <summary>
-    ///     ⚠ The discriminating assertion. A predicate written as <c>=> hasEsmRecords</c> passes
-    ///     every other test in this class; only this one separates the fix from the bug. Classic
-    ///     is the sole type that answers true without a scan, so this pins both halves at once:
-    ///     the widening happened, and it did not spill onto anything else.
+    ///     Classic installs browse records without an ESM scan. Save files use their separate
+    ///     SaveData path, so they must not enter the ESM browser without a scan. Literal expected
+    ///     values keep this table independent of the production predicate.
     /// </summary>
     [Theory]
-    [MemberData(nameof(AllFileTypes))]
-    public void WithoutAnEsmScan_OnlyClassicGameDataSupportsBrowsing(AnalysisFileType fileType)
+    [InlineData(AnalysisFileType.Unknown, false, false)]
+    [InlineData(AnalysisFileType.Minidump, false, false)]
+    [InlineData(AnalysisFileType.EsmFile, false, false)]
+    [InlineData(AnalysisFileType.SaveFile, false, false)]
+    [InlineData(AnalysisFileType.ClassicGameData, false, true)]
+    [InlineData(AnalysisFileType.Unknown, true, true)]
+    [InlineData(AnalysisFileType.Minidump, true, true)]
+    [InlineData(AnalysisFileType.EsmFile, true, true)]
+    [InlineData(AnalysisFileType.SaveFile, true, true)]
+    [InlineData(AnalysisFileType.ClassicGameData, true, true)]
+    public void SupportsRecordBrowsing_RespectsSourceAndScan(
+        AnalysisFileType fileType, bool hasEsmRecords, bool expected)
     {
-        var supported = AnalysisRecordAvailability.SupportsRecordBrowsing(fileType, false);
-
-        Assert.Equal(fileType == AnalysisFileType.ClassicGameData, supported);
-    }
-
-    /// <summary>An ESM scan is sufficient on its own, whatever the file type.</summary>
-    [Theory]
-    [MemberData(nameof(AllFileTypes))]
-    public void AnEsmScanAlwaysSupportsBrowsing(AnalysisFileType fileType)
-    {
-        Assert.True(AnalysisRecordAvailability.SupportsRecordBrowsing(fileType, true));
-    }
-
-    /// <summary>
-    ///     A save file is the near miss worth pinning separately: it populates the Records tab
-    ///     through its own <c>SaveData</c> path, not through this predicate, so widening it here
-    ///     would route saves into the ESM browser.
-    /// </summary>
-    [Fact]
-    public void SaveFile_DoesNotSupportBrowsing_WithoutAnEsmScan()
-    {
-        Assert.False(
+        Assert.Equal(expected,
             AnalysisRecordAvailability.SupportsRecordBrowsing(
-                AnalysisFileType.SaveFile, false));
+                fileType, hasEsmRecords));
     }
 
     /// <summary>

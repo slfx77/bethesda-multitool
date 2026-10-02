@@ -7,7 +7,7 @@
   <Application.Resources>
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
-        <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+        <ResourceDictionary Source="ms-appx:///Slfx77.Multitool.WinUI/Styles/AwtTheme.xaml" />
         <!-- Shared tab styles -->
         <ResourceDictionary Source="ms-appx:///App/Styles/TabStyles.xaml" />
       </ResourceDictionary.MergedDictionaries>
@@ -25,8 +25,6 @@
           <SolidColorBrush x:Key="AccentButtonForegroundDisabled"
                            Color="#60FFFFFF" />
           <!--  Panel backgrounds (semi-transparent for Mica)  -->
-          <SolidColorBrush x:Key="CardBackgroundBrush"
-                           Color="#80202020" />
           <SolidColorBrush x:Key="CardBackgroundSolidBrush"
                            Color="#FF1E1E1E" />
           <SolidColorBrush x:Key="CardBackgroundAltBrush"
@@ -71,8 +69,6 @@
           <SolidColorBrush x:Key="AccentButtonForegroundDisabled"
                            Color="#60FFFFFF" />
           <!--  Panel backgrounds (semi-transparent for Mica)  -->
-          <SolidColorBrush x:Key="CardBackgroundBrush"
-                           Color="#40000000" />
           <SolidColorBrush x:Key="CardBackgroundSolidBrush"
                            Color="#FFF3F3F3" />
           <SolidColorBrush x:Key="CardBackgroundAltBrush"

@@ -66,7 +66,7 @@ public sealed partial class SingleFileTab
             cancellationToken.ThrowIfCancellationRequested();
             if (_session.SemanticResult == null) return;
 
-            StatusTextBlock.Text = Strings.Status_GeneratingReports;
+            MainWindow.Instance?.SetLocalizedStatus("Status_GeneratingReports");
 
             // Extract string pool data for minidump files (requires coverage + accessor)
             if ((_session.StringPool == null || _session.StringOwnership == null) && !_session.IsEsmFile
@@ -88,6 +88,8 @@ public sealed partial class SingleFileTab
                 _session.StringOwnership = stringData?.OwnershipAnalysis;
             }
 
+            var selectedView = await GetSelectedLoadOrderViewAsync();
+            cancellationToken.ThrowIfCancellationRequested();
             var sources = new ReportDataSources(
                 _session.SemanticResult,
                 _session.AnalysisResult?.FormIdMap,
@@ -97,7 +99,10 @@ public sealed partial class SingleFileTab
                 _session.StringOwnership);
 
             var reports = await Task.Run(() =>
-                GeckReportGenerator.GenerateAllReports(sources));
+                selectedView == null ? GeckReportGenerator.GenerateAllReports(sources) :
+                    Core.Formats.Esm.Export.Report.LoadOrderReportWriter.Generate(
+                        new Core.Semantic.LoadOrder.LoadOrderReportView(selectedView),
+                        typeof(SingleFileTab).Assembly.GetName().Version?.ToString() ?? "unknown"));
             cancellationToken.ThrowIfCancellationRequested();
 
             _reportEntries.Clear();

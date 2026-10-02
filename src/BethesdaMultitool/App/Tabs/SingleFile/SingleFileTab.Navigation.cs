@@ -1,9 +1,10 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Inspection;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.Ui;
@@ -59,6 +60,7 @@ public sealed partial class SingleFileTab
     private readonly Stack<UnifiedNavLocation> _unifiedForwardStack = new();
     private Task? _formIdBuildTask;
     private Dictionary<uint, FormIdNodeEntry>? _formIdNodeIndex;
+    private HashSet<uint> _ambiguousPlacementFormIds = [];
     private bool _isNavigating;
 
     /// <summary>
@@ -107,6 +109,8 @@ public sealed partial class SingleFileTab
         }
 
         var index = new Dictionary<uint, FormIdNodeEntry>();
+        var placementIds = new HashSet<uint>();
+        var ambiguousPlacements = new HashSet<uint>();
 
         foreach (var category in tree)
         {
@@ -135,6 +139,8 @@ public sealed partial class SingleFileTab
                         // The walk is already at the parent chain — capture it so navigation never
                         // has to search for it.
                         index.TryAdd(formId, new FormIdNodeEntry(record, category, typeNode));
+                        if (record.DataObject is PlacementBrowserEntry && !placementIds.Add(formId))
+                        { ambiguousPlacements.Add(formId); }
                     }
                 }
             }
@@ -142,6 +148,7 @@ public sealed partial class SingleFileTab
 
         if (generation != Volatile.Read(ref _navIndexGeneration)) return;
         _formIdNodeIndex = index;
+        _ambiguousPlacementFormIds = ambiguousPlacements;
     }
 
     // ── Unified Navigation ──
@@ -331,8 +338,8 @@ public sealed partial class SingleFileTab
             {
                 ParseProgressBar.Visibility = Visibility.Visible;
                 ParseProgressBar.IsIndeterminate = true;
-                ParseStatusText.Text = Strings.Status_BuildingNavIndex;
-                StatusTextBlock.Text = Strings.Status_BuildingNavIndex;
+                RuntimeLocalization.SetText(ParseStatusText, "Status_BuildingNavIndex");
+                MainWindow.Instance?.SetLocalizedStatus("Status_BuildingNavIndex");
                 try
                 {
                     await _formIdBuildTask;
@@ -341,7 +348,7 @@ public sealed partial class SingleFileTab
                 {
                     ParseProgressBar.Visibility = Visibility.Collapsed;
                     ParseProgressBar.IsIndeterminate = false;
-                    ParseStatusText.Text = "";
+                    RuntimeLocalization.SetRaw(ParseStatusText, TextBlock.TextProperty, "");
                     StatusTextBlock.Text = "";
                 }
             }
@@ -352,7 +359,7 @@ public sealed partial class SingleFileTab
             {
                 BuildFormIdNodeIndex(
                     currentTree,
-                    _session.SemanticResult,
+                    _session.EffectiveRecords,
                     _session.EffectiveResolver,
                     _placementIndex,
                     _usageIndex,
@@ -362,10 +369,29 @@ public sealed partial class SingleFileTab
             }
         }
 
+        if (_ambiguousPlacementFormIds.Contains(formId))
+        {
+            // A FormID link cannot choose between physical occurrences. Present the existing
+            // searchable list with source/offset labels instead of silently selecting the first.
+            _suppressSearchTextChanged = true;
+            EsmSearchBox.Text = $"{formId:X8}";
+            _suppressSearchTextChanged = false;
+            _currentSearchQuery = EsmSearchBox.Text;
+            FilterAndRebuildTreeView(_currentSearchQuery);
+            _selectedBrowserNode = null;
+            PropertyPanel.Children.Clear();
+            GoToOffsetButton.Visibility = Visibility.Collapsed;
+            ViewWorldspaceButton.Visibility = Visibility.Collapsed;
+            ViewInWorldButton.Visibility = Visibility.Collapsed;
+            ViewNpcButton.Visibility = Visibility.Collapsed;
+            RuntimeLocalization.SetRaw(SelectedRecordTitle, TextBlock.TextProperty, $"Choose an occurrence of 0x{formId:X8}");
+            return;
+        }
+
         if (_formIdNodeIndex == null || !_formIdNodeIndex.TryGetValue(formId, out var entry))
         {
             // Show brief status for records not in the data browser tree
-            SelectedRecordTitle.Text = $"Record 0x{formId:X8} is not available in Records";
+            RuntimeLocalization.SetRaw(SelectedRecordTitle, TextBlock.TextProperty, $"Record 0x{formId:X8} is not available in Records");
             return;
         }
 
@@ -407,6 +433,7 @@ public sealed partial class SingleFileTab
         _unifiedBackStack.Clear();
         _unifiedForwardStack.Clear();
         _formIdNodeIndex = null;
+        _ambiguousPlacementFormIds = [];
         _formIdBuildTask = null;
         UpdateUnifiedNavButtons();
     }

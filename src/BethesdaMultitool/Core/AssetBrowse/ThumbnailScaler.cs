@@ -1,5 +1,5 @@
 // Scaling rules ported from JimmyPCTool / AweMultitool
-//   (https://github.com/slfx77/JimmyPCTool, MIT License) — src/AweMultitool/Core/Formats/Canvas/CanvasThumbnailer.cs.
+// — src/AweMultitool/Core/Formats/Canvas/CanvasThumbnailer.cs.
 //   Reshaped to take raw RGBA rather than that project's CanvasImage, so one scaler serves every
 //   decoder here (DDS, classic palettized sprites, PNG). License texts are collected centrally in
 //   THIRD_PARTY_LICENSES.

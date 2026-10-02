@@ -151,12 +151,35 @@ public sealed class NativeBethesdaViewerCaptureSourceContractTests
             "public void WaitForGpuIdle()");
         SourceContract.AssertOrder(
             endFrame,
-            "_gpu.DirectQueue.ExecuteCommandList(CommandList);",
-            "_gpu.DirectQueue.Signal(_gpu.FrameFence, signalValue).CheckError();",
-            "FinalizeFailedSubmission(ex, true, retainIfUnfenced)");
-        Assert.Contains("_unfencedSubmissionRetirements.Add(retainIfUnfenced);", recorder,
-            StringComparison.Ordinal);
-        Assert.Contains("ThrowIfSubmissionPoisoned();", recorder, StringComparison.Ordinal);
+            "_native.EndFrame(retainIfUnfenced);",
+            "result.Succeeded, result.CommandListMayHaveReachedQueue, result.FenceValue, result.SubmissionFailure");
+        var nativeRecorder = SourceContract.ReadSource(
+            "shared", "Multitool.Shared", "src", "Slfx77.Multitool.WinUI.Direct3D12.Shaders",
+            "NativeFrameRecorder.cs");
+        var nativeEndFrame = SourceContract.Extract(
+            nativeRecorder,
+            "public NativeFrameSubmissionResult EndFrame(",
+            "public NativeFrameAbortResult AbortFrame()");
+        SourceContract.AssertOrder(
+            nativeEndFrame,
+            "conditional = new NativeFrameConditionalLifetime(retainIfUnfenced);",
+            "_submissions.Retain(conditional,",
+            "_submissions.MarkSubmissionPossible();",
+            "_queue.ExecuteCommandList(_commands);",
+            "_queue.Signal(_fence, signal).CheckError();",
+            "FinishFailedSubmission(failure, true, conditional)");
+        var finalizeFailure = SourceContract.Extract(
+            nativeRecorder,
+            "private NativeFrameSubmissionResult FinishFailedSubmission(",
+            "private Exception? NotifyOutcome(");
+        SourceContract.AssertOrder(
+            finalizeFailure,
+            "possible ? SubmissionOutcome.SubmissionUncertain : SubmissionOutcome.DefinitelyAbandoned",
+            "if (possible) conditional?.TakeOwnership();",
+            "NotifyOutcome(outcome);",
+            "_submissionPoisoned = true;",
+            "AdvanceFrame();");
+        Assert.Contains("VerifyRecordingAdmission();", nativeRecorder, StringComparison.Ordinal);
         Assert.Contains("_gpu.TryForceDeviceRemoval(\"command-recorder-teardown\")", recorder,
             StringComparison.Ordinal);
 
@@ -166,13 +189,13 @@ public sealed class NativeBethesdaViewerCaptureSourceContractTests
         var terminalize = SourceContract.Extract(
             context,
             "private void TerminalizeDeviceAfterUnfencedSubmissionCore(",
-            "private static void DisposeOwnedNoThrow(");
+            "private static BethesdaSceneViewerGraphicsContext12 Create()");
         SourceContract.AssertOrder(
             terminalize,
             "Gpu.TryForceDeviceRemoval(context)",
-            "Gpu.Dispose();",
-            "_deviceTerminal = true;",
-            "Recorder.DisposeAfterGpuIdleAttempt();");
+            "throw new InvalidOperationException(",
+            "_deviceTerminal = true;");
+        Assert.DoesNotContain("Gpu.Dispose()", terminalize, StringComparison.Ordinal);
 
         var gpu = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
@@ -180,7 +203,7 @@ public sealed class NativeBethesdaViewerCaptureSourceContractTests
         var removeDevice = SourceContract.Extract(
             gpu,
             "internal bool TryForceDeviceRemoval(string context)",
-            "private static void DisposeNoThrow(");
+            "public void PumpDebugMessages()");
         SourceContract.AssertOrder(
             removeDevice,
             "Device.QueryInterfaceOrNull<ID3D12Device5>()",
@@ -191,20 +214,18 @@ public sealed class NativeBethesdaViewerCaptureSourceContractTests
     }
 
     [Fact]
-    public void SharedContextWaitsOnceAndStillReleasesEveryOwnerAfterDeviceLoss()
+    public void SharedContextRequiresProofAndKeepsDependencyOrderedRetirement()
     {
         var context = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "App", "Controls", "BethesdaSceneViewer",
             "BethesdaSceneViewerGraphicsContext12.cs");
         var dispose =
-            SourceContract.Extract(context, "public void Dispose()", "private static void DisposeOwnedNoThrow(");
-        SourceContract.AssertOrder(
-            dispose,
-            "Recorder.WaitForGpuIdle();",
-            "catch (Exception ex)",
-            "DisposeOwnedNoThrow(DeletionQueue",
-            "Recorder.DisposeAfterGpuIdleAttempt();",
-            "DisposeOwnedNoThrow(Gpu");
+            SourceContract.Extract(context, "public void Dispose()", "private static BethesdaSceneViewerGraphicsContext12 Create()");
+        // Source-level ownership wiring only; shared executable tests verify retry behavior.
+        SourceContract.AssertOrder(dispose, "Recorder.WaitForGpuIdle();", "new RetiredResourceDisposal(");
+        Assert.Contains("Recorder.DisposeAfterGpuIdleAttempt()", dispose, StringComparison.Ordinal);
+        Assert.Contains("_retiredResources.Dispose();", dispose, StringComparison.Ordinal);
+        Assert.DoesNotContain("DisposeOwnedNoThrow", dispose, StringComparison.Ordinal);
         Assert.DoesNotContain("Recorder.Dispose();", dispose, StringComparison.Ordinal);
 
         var idle = SourceContract.Extract(

@@ -30,7 +30,8 @@ internal static class DialogueConversationBuilder
         DialogueRecord? promptSourceInfo = null,
         Action<InfoDialogueNode>? onResponseSelected = null,
         InfoDialogueNode? selectedResponse = null,
-        Border? topicDetailPanel = null)
+        Border? topicDetailPanel = null,
+        Func<DialogueRecord, UIElement?>? buildAudioControls = null)
     {
         var elements = new List<UIElement>();
 
@@ -88,14 +89,14 @@ internal static class DialogueConversationBuilder
             var isSelected = selectedResponse == displayChain[i];
             var responseElement = BuildNpcResponseBlock(
                 displayChain[i], resolveSpeakerName, subtitleLookup, buildRecordDetailPanel,
-                onResponseSelected, isSelected);
+                onResponseSelected, isSelected, buildAudioControls);
             elements.Add(responseElement);
 
             if (displayChain.Count == 1 || isSelected)
             {
                 AddFollowUpResponseElements(
                     elements, displayChain[i], resolveSpeakerName, subtitleLookup,
-                    buildRecordDetailPanel);
+                    buildRecordDetailPanel, buildAudioControls);
             }
         }
 
@@ -114,11 +115,12 @@ internal static class DialogueConversationBuilder
         InfoDialogueNode sourceNode,
         Func<uint?, string> resolveSpeakerName,
         Func<uint, SubtitleEntry?> subtitleLookup,
-        Func<DialogueRecord, Border> buildRecordDetailPanel)
+        Func<DialogueRecord, Border> buildRecordDetailPanel,
+        Func<DialogueRecord, UIElement?>? buildAudioControls)
     {
         AddFollowUpResponseElements(
             elements, sourceNode, resolveSpeakerName, subtitleLookup, buildRecordDetailPanel,
-            [sourceNode.Info.FormId], 0);
+            [sourceNode.Info.FormId], 0, buildAudioControls);
     }
 
     private static void AddFollowUpResponseElements(
@@ -128,7 +130,8 @@ internal static class DialogueConversationBuilder
         Func<uint, SubtitleEntry?> subtitleLookup,
         Func<DialogueRecord, Border> buildRecordDetailPanel,
         HashSet<uint> visitedInfoFormIds,
-        int depth)
+        int depth,
+        Func<DialogueRecord, UIElement?>? buildAudioControls)
     {
         if (depth >= MaxFollowUpDisplayDepth || sourceNode.FollowUpInfos.Count == 0)
         {
@@ -160,10 +163,11 @@ internal static class DialogueConversationBuilder
         {
             visitedInfoFormIds.Add(followUp.Info.FormId);
             elements.Add(BuildNpcResponseBlock(
-                followUp, resolveSpeakerName, subtitleLookup, buildRecordDetailPanel));
+                followUp, resolveSpeakerName, subtitleLookup, buildRecordDetailPanel,
+                buildAudioControls: buildAudioControls));
             AddFollowUpResponseElements(
                 elements, followUp, resolveSpeakerName, subtitleLookup,
-                buildRecordDetailPanel, visitedInfoFormIds, depth + 1);
+                buildRecordDetailPanel, visitedInfoFormIds, depth + 1, buildAudioControls);
         }
 
         if (wasTruncated)
@@ -183,7 +187,8 @@ internal static class DialogueConversationBuilder
         Func<uint, SubtitleEntry?> subtitleLookup,
         Func<DialogueRecord, Border> buildRecordDetailPanel,
         Action<InfoDialogueNode>? onResponseSelected = null,
-        bool isSelected = false)
+        bool isSelected = false,
+        Func<DialogueRecord, UIElement?>? buildAudioControls = null)
     {
         var info = infoNode.Info;
         var content = new StackPanel { Spacing = 4 };
@@ -251,6 +256,7 @@ internal static class DialogueConversationBuilder
             content.Children.Add(tagStrip);
         }
 
+        if (buildAudioControls?.Invoke(info) is { } audioControls) content.Children.Add(audioControls);
         content.Children.Add(buildRecordDetailPanel(info));
         return DialogueTreeRenderer.WrapInResponseCard(content, isSelected, onResponseSelected != null);
     }

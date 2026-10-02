@@ -159,7 +159,7 @@ public sealed partial class SingleFileTab
         treeNode.Children.Add(placeholder);
 
         // Capture UI-thread state for the worker (instance fields can change on reload/load-order edits).
-        var semanticResult = _session.SemanticResult;
+        var semanticResult = _session.EffectiveRecords;
         var resolver = _session.EffectiveResolver;
         var placementIndex = _placementIndex;
         var usageIndex = _usageIndex;
@@ -420,10 +420,10 @@ public sealed partial class SingleFileTab
         // Ensure all children are loaded before filtering (lazy loading)
         if (!_flatListBuilt)
         {
-            StatusTextBlock.Text = Strings.Status_BuildingSearchIndex;
+            MainWindow.Instance?.SetLocalizedStatus("Status_BuildingSearchIndex");
             var resolver = _session.EffectiveResolver;
             var tree = _esmBrowserTree;
-            var allRecords = _session.SemanticResult;
+            var allRecords = _session.EffectiveRecords;
             var placements = _placementIndex;
             var usageIndex = _usageIndex;
             await Task.Run(() => EnsureAllChildrenLoaded(

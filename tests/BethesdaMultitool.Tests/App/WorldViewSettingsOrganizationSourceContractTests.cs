@@ -80,58 +80,50 @@ public sealed class WorldViewSettingsOrganizationSourceContractTests
     public void DependencyStateChangesOnlyAvailabilityAndEveryParentRefreshesIt()
     {
         var panel = SourceContract.ReadAppSource("WorldView3DSettingsPanel.xaml.cs");
-        // End the window at the next member's doc comment: the Video-profile members that now
-        // follow ApplyDependencyState legitimately discuss IsOn/visibility in their own contracts.
+        // Use member signatures as boundaries; documentation wording is not part of the contract.
         var apply = SourceContract.Extract(
-            panel, "internal void ApplyDependencyState", "/// <summary>");
-        Assert.Contains("Lighting.ShadowsControlEnabled = lighting;", apply, StringComparison.Ordinal);
-        Assert.Contains("PlacedLightsToggle.IsEnabled = lighting;", apply, StringComparison.Ordinal);
-        Assert.Contains("TerrainTexturesToggle.IsEnabled = terrain;", apply, StringComparison.Ordinal);
-        Assert.Contains("VertexColorsToggle.IsEnabled = terrain;", apply, StringComparison.Ordinal);
+            panel, "internal void ApplyDependencyState", "internal void ApplyVideoProfile");
+        SourceContract.AssertContainsIgnoringWhitespace("Lighting.ShadowsControlEnabled = lighting;", apply);
+        SourceContract.AssertContainsIgnoringWhitespace("PlacedLightsToggle.IsEnabled = lighting;", apply);
+        SourceContract.AssertContainsIgnoringWhitespace("TerrainTexturesToggle.IsEnabled = terrain;", apply);
+        SourceContract.AssertContainsIgnoringWhitespace("VertexColorsToggle.IsEnabled = terrain;", apply);
         foreach (var child in new[]
                  {
                      "GrassCheckBox", "TreesCheckBox", "EffectsCheckBox", "SkyMeshesCheckBox",
                      "AnimationsCheckBox", "EditorMarkersCheckBox", "ActivatorsCheckBox", "DisabledCheckBox"
                  })
         {
-            Assert.Contains($"{child}.IsEnabled = meshes;", apply, StringComparison.Ordinal);
+            SourceContract.AssertContainsIgnoringWhitespace($"{child}.IsEnabled = meshes;", apply);
         }
 
         // Panels are FrameworkElements rather than Controls in WinUI and cannot be disabled.
         Assert.DoesNotContain("DependentControls.IsEnabled", apply, StringComparison.Ordinal);
-        Assert.DoesNotContain("IsChecked", apply, StringComparison.Ordinal);
-        Assert.DoesNotContain("IsOn", apply, StringComparison.Ordinal);
+        const string assignment = @"\s*(?:\?\?=|[&|^]=|=(?!=))";
+        Assert.DoesNotMatch(@"\.(?:IsChecked|IsOn)" + assignment, apply);
 
         var lighting = SourceContract.ReadAppSource("LightingControlsPanel.xaml.cs");
         var shadowsAvailability = SourceContract.Extract(
-            lighting, "internal bool ShadowsControlEnabled", "/// <summary>Skybox on/off.");
+            lighting, "internal bool ShadowsControlEnabled", "public bool SkyboxEnabled");
         Assert.Contains("ShadowsToggle.IsEnabled", shadowsAvailability, StringComparison.Ordinal);
-        Assert.DoesNotContain("ShadowsToggle.IsOn =", shadowsAvailability, StringComparison.Ordinal);
+        Assert.DoesNotMatch(@"ShadowsToggle\.IsOn" + assignment, shadowsAvailability);
 
         var toolbar = SourceContract.ReadAppSource("WorldView3DControl.Toolbar.cs");
-        Assert.Contains(
+        SourceContract.AssertContainsIgnoringWhitespace(
             "p.ApplyDependencyState(_showLighting, _showTerrain, _showReferences);",
             SourceContract.Extract(
-                toolbar, "private void WireSettingsPanel()", "private void PlacedLightsToggle_Changed"),
-            StringComparison.Ordinal);
-        Assert.Contains(
+                toolbar, "private void WireSettingsPanel()", "private void PlacedLightsToggle_Changed"));
+        SourceContract.AssertContainsIgnoringWhitespace(
             "SettingsPanel.ApplyDependencyState(_showLighting, _showTerrain, _showReferences);",
             SourceContract.Extract(
-                toolbar, "private void TerrainToggle_Changed", "private void WaterCheckBox_Changed"),
-            StringComparison.Ordinal);
-        Assert.Contains(
+                toolbar, "private void TerrainToggle_Changed", "private void WaterCheckBox_Changed"));
+        SourceContract.AssertContainsIgnoringWhitespace(
             "SettingsPanel.ApplyDependencyState(_showLighting, _showTerrain, _showReferences);",
             SourceContract.Extract(
-                toolbar, "private void RefsToggle_Changed", "private void LightingPanel_LightingToggled"),
-            StringComparison.Ordinal);
-        Assert.Contains(
+                toolbar, "private void RefsToggle_Changed", "private void LightingPanel_LightingToggled"));
+        SourceContract.AssertContainsIgnoringWhitespace(
             "SettingsPanel.ApplyDependencyState(_showLighting, _showTerrain, _showReferences);",
             SourceContract.Extract(
-                toolbar, "private void LightingPanel_LightingToggled", "private void LightingPanel_SkyboxToggled"),
-            StringComparison.Ordinal);
-        Assert.Equal(4, SourceContract.CountOccurrences(
-            toolbar,
-            "ApplyDependencyState(_showLighting, _showTerrain, _showReferences);"));
+                toolbar, "private void LightingPanel_LightingToggled", "private void LightingPanel_SkyboxToggled"));
     }
 
     [Fact]

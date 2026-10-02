@@ -40,7 +40,7 @@ public sealed class NpcStartupActorSelectionSourceContractTests
             "_session.NpcBrowserPopulated",
             "AnalysisPipelinePhase.Parsing",
             "await _tasks.RunExclusiveAsync(\"populate-npcs\", PopulateNpcBrowserAsync)",
-            "if (!_session.NpcBrowserPopulated || _npcBrowserService is null)",
+            "if (!_session.NpcBrowserPopulated || (_npcBrowserService is null && _actorInspector is null))",
             "SelectAutoOpenActor(actorSelector, log)");
         Assert.Contains("opening Actors never picks an arbitrary row", autoOpen, StringComparison.Ordinal);
     }

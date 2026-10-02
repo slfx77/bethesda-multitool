@@ -4,10 +4,18 @@
   x:Class="BethesdaMultitool.AssetBrowserTab"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:live="using:BethesdaMultitool.Localization"
   xmlns:controls="using:Microsoft.UI.Xaml.Controls"
-  xmlns:local="using:BethesdaMultitool">
+  xmlns:ctk="using:CommunityToolkit.WinUI.Controls"
+  xmlns:browsing="using:Slfx77.Multitool.WinUI.Browsing"
+  xmlns:images="using:Slfx77.Multitool.WinUI.Images"
+  xmlns:layout="using:Slfx77.Multitool.WinUI.Layout"
+  xmlns:playback="using:Slfx77.Multitool.WinUI.Playback"
+  xmlns:shared="using:Slfx77.Multitool.WinUI.Controls"
+  xmlns:local="using:BethesdaMultitool"
+  xmlns:native="using:Slfx77.Multitool.WinUI.Direct3D12.Scenes">
 
-  <Grid Padding="16" VerticalAlignment="Stretch">
+  <Grid x:Name="BrowserLayout" Padding="16" VerticalAlignment="Stretch">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
@@ -15,19 +23,19 @@
     </Grid.RowDefinitions>
 
     <!--  Header  -->
-    <StackPanel Grid.Row="0" Margin="0,0,0,8"
+    <StackPanel x:Name="BrowserHeader" Grid.Row="0" Margin="0,0,0,8"
                 Style="{StaticResource TabHeaderStackPanelStyle}">
       <TextBlock
-        x:Uid="Header_AssetBrowser"
+        live:RuntimeLocalization.Uid="Header_AssetBrowser"
         AutomationProperties.HeadingLevel="Level1"
         Style="{StaticResource SubtitleTextBlockStyle}" />
       <TextBlock
-        x:Uid="Subtitle_AssetBrowser"
+        live:RuntimeLocalization.Uid="Subtitle_AssetBrowser"
         Style="{StaticResource TabSubtitleStyle}" />
     </StackPanel>
 
     <!--  Source bar: path + open menu  -->
-    <Grid Grid.Row="1" Margin="0,0,0,8">
+    <Grid x:Name="BrowserSourceBar" Grid.Row="1" Margin="0,0,0,8">
       <Grid.ColumnDefinitions>
         <ColumnDefinition Width="*" />
         <ColumnDefinition Width="Auto" />
@@ -72,6 +80,8 @@
       </DropDownButton>
     </Grid>
 
+    <Grid x:Name="WorkspacePanes" Grid.Row="2" Visibility="Collapsed" />
+
     <!--  Panes  -->
     <controls:TabView
       x:Name="PaneTabView"
@@ -83,11 +93,12 @@
       VerticalAlignment="Stretch">
       <controls:TabView.TabItems>
 
-        <controls:TabViewItem x:Uid="Pane_DataExplorer" IsClosable="False">
+        <controls:TabViewItem x:Name="BrowserDataPane" live:RuntimeLocalization.Uid="Pane_DataExplorer" IsClosable="False">
           <Grid>
             <Grid.ColumnDefinitions>
               <ColumnDefinition Width="300" MinWidth="180" />
-              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="8" />
+              <ColumnDefinition Width="*" MinWidth="240" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
               <RowDefinition Height="*" />
@@ -97,267 +108,391 @@
             <TextBlock
               x:Name="DataExplorerPlaceholder"
               Grid.Row="0"
-              Grid.ColumnSpan="2"
+              Grid.ColumnSpan="3"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
               Style="{StaticResource EmptyTabPlaceholderStyle}"
               Text="Open a classic game install to browse its synthesized records." />
 
-            <TreeView
-              x:Name="RecordTreeView"
-              Grid.Row="0"
-              Grid.Column="0"
-              AutomationProperties.Name="Record types"
-              SelectionMode="Single"
-              Visibility="Collapsed"
-              VerticalAlignment="Stretch">
-              <!--  Group and record nodes both carry a DisplayName (RecordTypeGroup / RecordBrowserItem);
-                    without a template the node shows its content's ToString().  -->
-              <TreeView.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock FontSize="12" Text="{Binding Content.DisplayName}" TextTrimming="CharacterEllipsis" />
-                </DataTemplate>
-              </TreeView.ItemTemplate>
-            </TreeView>
+            <Border Grid.Column="0" Style="{StaticResource MultitoolCardBorderStyle}"
+                    Visibility="{Binding Visibility, ElementName=RecordTreeView}">
+              <TreeView
+                x:Name="RecordTreeView"
+                Grid.Row="0"
+                Grid.Column="0"
+                AutomationProperties.Name="Record types"
+                SelectionMode="Single"
+                Visibility="Collapsed"
+                VerticalAlignment="Stretch">
+                <!--  Group and record nodes both carry a DisplayName (RecordTypeGroup / RecordBrowserItem);
+                      without a template the node shows its content's ToString().  -->
+                <TreeView.ItemTemplate>
+                  <DataTemplate>
+                    <TextBlock FontSize="12" Text="{Binding Content.DisplayName}" TextTrimming="CharacterEllipsis" />
+                  </DataTemplate>
+                </TreeView.ItemTemplate>
+              </TreeView>
+            </Border>
 
-            <ListView
-              x:Name="RecordFieldsList"
-              Grid.Row="0"
-              Grid.Column="1"
-              Margin="8,0,0,0"
-              AutomationProperties.Name="Record fields"
-              SelectionMode="None"
-              Visibility="Collapsed">
-              <ListView.ItemTemplate>
-                <DataTemplate x:DataType="local:RecordFieldRow">
-                  <Grid Padding="0,2">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="200" />
-                      <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" FontSize="12" Opacity="0.7" Text="{x:Bind Name}" />
-                    <TextBlock Grid.Column="1" FontSize="12" Text="{x:Bind Value}" TextWrapping="Wrap" />
-                  </Grid>
-                </DataTemplate>
-              </ListView.ItemTemplate>
-            </ListView>
+            <ctk:GridSplitter Grid.Column="1" Style="{StaticResource MultitoolColumnSplitterStyle}"
+                              Visibility="{Binding Visibility, ElementName=RecordTreeView}"
+                              AutomationProperties.AutomationId="Data.PaneSplitter"
+                              live:RuntimeLocalization.Uid="Data_ResizePanes" />
+
+            <Border Grid.Column="2" Style="{StaticResource MultitoolCardBorderStyle}" Padding="8"
+                    Visibility="{Binding Visibility, ElementName=RecordFieldsList}">
+              <ListView
+                x:Name="RecordFieldsList"
+                Grid.Row="0"
+                AutomationProperties.Name="Record fields"
+                SelectionMode="None"
+                Visibility="Collapsed">
+                <ListView.ItemTemplate>
+                  <DataTemplate x:DataType="local:RecordFieldRow">
+                    <Grid Padding="0,2">
+                      <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200" />
+                        <ColumnDefinition Width="*" />
+                      </Grid.ColumnDefinitions>
+                      <TextBlock Grid.Column="0" FontSize="12" Opacity="0.7" Text="{x:Bind Name}" />
+                      <TextBlock Grid.Column="1" FontSize="12" Text="{x:Bind Value}" TextWrapping="Wrap" />
+                    </Grid>
+                  </DataTemplate>
+                </ListView.ItemTemplate>
+              </ListView>
+            </Border>
 
             <TextBlock
               x:Name="RecordStatusText"
               Grid.Row="1"
-              Grid.ColumnSpan="2"
+              Grid.ColumnSpan="3"
               Margin="0,8,0,0"
               Style="{StaticResource TabSubtitleStyle}"
               Text="" />
           </Grid>
         </controls:TabViewItem>
 
-        <controls:TabViewItem x:Uid="Pane_MapViewer" IsClosable="False">
-          <Grid>
-            <TextBlock
-              x:Name="MapViewerPlaceholder"
-              HorizontalAlignment="Center"
-              VerticalAlignment="Center"
-              Style="{StaticResource EmptyTabPlaceholderStyle}"
-              Text="Select a level (Arena .MIF/.RMD, Daggerfall WOODS.WLD or a .PAK overlay) to view it." />
-            <local:Level2dMapControl x:Name="Level2dMap" Visibility="Collapsed" />
-          </Grid>
+        <controls:TabViewItem x:Name="BrowserMapPane" live:RuntimeLocalization.Uid="Pane_MapViewer" IsClosable="False">
+          <Border Style="{StaticResource MultitoolCardBorderStyle}">
+            <Grid>
+              <TextBlock
+                x:Name="MapViewerPlaceholder"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Style="{StaticResource EmptyTabPlaceholderStyle}"
+                Text="Select a level (Arena .MIF/.RMD, Daggerfall WOODS.WLD or a .PAK overlay) to view it." />
+              <local:Level2dMapControl x:Name="Level2dMap" Visibility="Collapsed" />
+            </Grid>
+          </Border>
         </controls:TabViewItem>
 
-        <controls:TabViewItem x:Uid="Pane_AssetExplorer" IsClosable="False">
-          <Grid>
+        <controls:TabViewItem x:Name="BrowserAssetsPane" live:RuntimeLocalization.Uid="Pane_AssetExplorer" IsClosable="False">
+          <!--  Three columns: the asset tree, the gallery and the preview pane. The side columns are
+                Shared CollapsiblePanels (card, title, accessible collapse strip); PanelWidthClamp
+                shrinks them toward their minima on a narrow window. Minima sum to 756 DIPs
+                (180 + 8 + 240 + 8 + 320), inside the 850x650 compact gate. Ctrl+Shift+T / Ctrl+Shift+P
+                toggle the side panes while focus is inside this grid.  -->
+          <Grid x:Name="AssetColumns">
+            <Grid.KeyboardAccelerators>
+              <KeyboardAccelerator Key="T" Modifiers="Control,Shift" ScopeOwner="{x:Bind AssetColumns}" Invoked="ToggleTreePane_Invoked" />
+              <KeyboardAccelerator Key="P" Modifiers="Control,Shift" ScopeOwner="{x:Bind AssetColumns}" Invoked="TogglePreviewPane_Invoked" />
+            </Grid.KeyboardAccelerators>
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="300" MinWidth="180" />
-              <ColumnDefinition Width="*" />
+              <ColumnDefinition x:Name="TreeColumn" Width="280" MinWidth="180" />
+              <ColumnDefinition Width="8" />
+              <ColumnDefinition x:Name="GalleryColumn" Width="*" MinWidth="240" />
+              <ColumnDefinition Width="8" />
+              <ColumnDefinition x:Name="PreviewColumn" Width="420" MinWidth="320" />
             </Grid.ColumnDefinitions>
             <Grid.RowDefinitions>
               <RowDefinition Height="*" />
               <RowDefinition Height="Auto" />
-              <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <TreeView
-              x:Name="AssetTreeView"
-              Grid.Row="0"
-              Grid.Column="0"
-              AutomationProperties.Name="Asset tree"
-              SelectionMode="Single"
-              VerticalAlignment="Stretch">
-              <!--  Without a template a TreeViewNode presents Content.ToString(), which for an
-                    AssetNode is its type name; the label a person needs is the node's Name.  -->
-              <TreeView.ItemTemplate>
-                <DataTemplate>
-                  <TextBlock FontSize="12" Text="{Binding Content.Name}" TextTrimming="CharacterEllipsis" />
-                </DataTemplate>
-              </TreeView.ItemTemplate>
-            </TreeView>
+            <!--  Column 0: the asset tree, inside a Shared collapsible panel that supplies the card.  -->
+            <layout:CollapsiblePanel x:Name="TreePanel" Grid.Row="0" Grid.Column="0">
+              <layout:CollapsiblePanel.PanelContent>
+                <Grid>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+                  <TreeView
+                    x:Name="AssetTreeView"
+                    Grid.Row="0"
+                    AutomationProperties.Name="Asset tree"
+                    SelectionMode="Single"
+                    VerticalAlignment="Stretch">
+                    <!--  Without a template a TreeViewNode presents Content.ToString(), which for an
+                          AssetNode is its type name; the label a person needs is the node's Name.  -->
+                    <TreeView.ItemTemplate>
+                      <DataTemplate>
+                        <CheckBox IsThreeState="True" shared:CheckBoxState.Value="{Binding Content.IsChecked, Mode=OneWay}"
+                                  Tag="{Binding Content}" Loaded="AssetCheckBox_Loaded" Click="AssetCheckBox_Click"
+                                  Content="{Binding Content.Name}" MinWidth="0" FontSize="12" />
+                      </DataTemplate>
+                    </TreeView.ItemTemplate>
+                  </TreeView>
 
-            <TextBlock
-              x:Name="AssetTreeStatusText"
-              Grid.Row="2"
-              Grid.Column="0"
-              Margin="0,8,0,0"
-              Style="{StaticResource TabSubtitleStyle}"
-              Text="No source opened." />
+                  <TextBlock
+                    x:Name="AssetTreeStatusText"
+                    Grid.Row="1"
+                    Margin="8"
+                    Style="{StaticResource TabSubtitleStyle}"
+                    Text="No source opened." />
 
-            <!--  Thumbnail gallery. Tiles decode lazily as they are realized; see AssetThumbnailLoader.  -->
-            <GridView
-              x:Name="AssetGalleryView"
-              Grid.Row="0"
-              Grid.Column="1"
-              Margin="8,0,0,0"
-              AutomationProperties.Name="Asset thumbnails"
-              ContainerContentChanging="AssetGalleryView_ContainerContentChanging"
-              IsItemClickEnabled="False"
-              SelectionMode="Single"
-              VerticalAlignment="Stretch">
-              <GridView.ItemsPanel>
-                <ItemsPanelTemplate>
-                  <ItemsWrapGrid Orientation="Horizontal" ItemWidth="128" ItemHeight="152" />
-                </ItemsPanelTemplate>
-              </GridView.ItemsPanel>
-              <GridView.ItemContainerStyle>
-                <!--  Zero the container's own padding so ItemWrapGrid's cell size IS the tile size.  -->
-                <Style TargetType="GridViewItem">
-                  <Setter Property="Margin" Value="0" />
-                  <Setter Property="Padding" Value="0" />
-                  <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                  <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                </Style>
-              </GridView.ItemContainerStyle>
-              <GridView.ItemTemplate>
-                <DataTemplate x:DataType="local:AssetGalleryItem">
-                  <Grid
-                    Width="124"
-                    Height="148"
-                    Padding="4"
-                    AutomationProperties.Name="{x:Bind DisplayName}"
-                    ToolTipService.ToolTip="{x:Bind VirtualPath}">
+                  <Button x:Name="OpenSelectedArchiveButton"
+                          Grid.Row="2"
+                          Margin="8,0,8,8"
+                          HorizontalAlignment="Stretch"
+                          live:RuntimeLocalization.Uid="Assets_OpenArchive"
+                          IsEnabled="False"
+                          Click="OpenSelectedArchive_Click" />
+                </Grid>
+              </layout:CollapsiblePanel.PanelContent>
+            </layout:CollapsiblePanel>
+
+            <ctk:GridSplitter x:Name="TreeSplitter" Grid.Row="0" Grid.Column="1"
+                              Style="{StaticResource MultitoolColumnSplitterStyle}"
+                              AutomationProperties.AutomationId="Assets.TreeSplitter"
+                              live:RuntimeLocalization.Uid="Assets_ResizeTree" />
+
+            <!--  Column 2: the gallery. Shared retains the native layouts, search and per-mode scrolling.  -->
+            <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource MultitoolCardBorderStyle}" Padding="8">
+              <Grid RowSpacing="4">
+                <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto" />
+                  <RowDefinition Height="*" />
+                  <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <browsing:BrowserFilterToolbar x:Name="AssetGalleryFilter" Grid.Row="0"
+                    AutomationProperties.AutomationId="Assets.Images.Filter">
+                  <browsing:BrowserFilterToolbar.Filters>
+                    <StackPanel Spacing="8" MinWidth="208" MaxWidth="400">
+                      <!--  Shared asset-type visibility filter; BMT supplies the kinds and counts and owns the predicate.  -->
+                      <browsing:BrowserTypeFilterControl x:Name="AssetTypeFilters" />
+                      <Border Height="1" Background="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                      <Button x:Name="ClearThumbnailCacheButton" HorizontalAlignment="Stretch"
+                          Click="ClearThumbnailCache_Click"
+                          live:RuntimeLocalization.Uid="AssetGallery_ClearThumbnailCache"
+                          AutomationProperties.AutomationId="Assets.Images.ClearThumbnailCache" />
+                      <TextBlock x:Name="ThumbnailCacheStatusText" TextWrapping="Wrap"
+                          IsTextSelectionEnabled="True" AutomationProperties.LiveSetting="Polite"
+                          AutomationProperties.AutomationId="Assets.Images.ThumbnailCacheStatus" />
+                    </StackPanel>
+                  </browsing:BrowserFilterToolbar.Filters>
+                </browsing:BrowserFilterToolbar>
+                <browsing:ThumbnailGallery x:Name="AssetGalleryView" Grid.Row="1"
+                    live:RuntimeLocalization.Uid="AssetGallery_View"
+                    AutomationProperties.AutomationId="Assets.Images.Gallery" />
+                <TextBlock
+                  x:Name="AssetGalleryStatusText"
+                  Grid.Row="2"
+                  Margin="0,4,0,0"
+                  Style="{StaticResource TabSubtitleStyle}"
+                  Text="" />
+              </Grid>
+            </Border>
+
+            <ctk:GridSplitter x:Name="PreviewSplitter" Grid.Row="0" Grid.Column="3"
+                              Style="{StaticResource MultitoolColumnSplitterStyle}"
+                              AutomationProperties.AutomationId="Assets.PreviewSplitter"
+                              live:RuntimeLocalization.Uid="Assets_ResizePreview" />
+
+            <!--  Column 4: the preview pane. One row-0 surface is visible at a time; the transport rows
+                  and the status line sit below it.  -->
+            <layout:CollapsiblePanel x:Name="PreviewPanel" Grid.Row="0" Grid.Column="4">
+              <layout:CollapsiblePanel.PanelContent>
+                <Grid x:Name="PreviewSurfaces" Padding="8">
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                  </Grid.RowDefinitions>
+
+                  <TextBlock x:Name="AssetPreviewPlaceholder" Grid.Row="0" TextWrapping="Wrap"
+                             Style="{StaticResource EmptyTabPlaceholderStyle}"
+                             live:RuntimeLocalization.Uid="AssetPreview_Empty" />
+
+                  <!--  Full-size picture surface. Pixel-perfect integer fit by default; the control's
+                        own zoom row is the toggle.  -->
+                  <images:ImagePreviewControl x:Name="ImagePreview" Grid.Row="0" Visibility="Collapsed"
+                                              FilteringEnabled="False"
+                                              AutomationProperties.AutomationId="Assets.Image.Preview" />
+
+                  <Grid x:Name="ShadowkeyPanel" Grid.Row="0" Visibility="Collapsed" RowSpacing="8">
                     <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto" />
+                      <RowDefinition Height="Auto" />
                       <RowDefinition Height="*" />
                       <RowDefinition Height="Auto" />
-                      <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-
-                    <Grid Grid.Row="0">
-                      <FontIcon
-                        FontSize="24"
-                        Glyph="{x:Bind PlaceholderGlyph, Mode=OneWay}"
-                        Opacity="0.45"
-                        Visibility="{x:Bind PlaceholderVisibility, Mode=OneWay}" />
-                      <Image
-                        Width="{x:Bind ThumbnailWidth, Mode=OneWay}"
-                        Height="{x:Bind ThumbnailHeight, Mode=OneWay}"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center"
-                        Source="{x:Bind Thumbnail, Mode=OneWay}"
-                        Stretch="None" />
-                    </Grid>
-
-                    <TextBlock
-                      Grid.Row="1"
-                      FontSize="11"
-                      MaxLines="1"
-                      Text="{x:Bind DisplayName}"
-                      TextTrimming="CharacterEllipsis" />
-                    <TextBlock
-                      Grid.Row="2"
-                      FontSize="10"
-                      Opacity="0.6"
-                      Text="{x:Bind Caption, Mode=OneWay}"
-                      TextTrimming="CharacterEllipsis" />
+                    <ListView x:Name="ShadowkeySlots" Grid.Row="0" MaxHeight="170"
+                              SelectionMode="Single" SelectionChanged="ShadowkeySlots_SelectionChanged"
+                              live:RuntimeLocalization.Uid="Shadowkey_Slots"
+                              AutomationProperties.AutomationId="Assets.Shadowkey.Slots">
+                      <ListView.ItemTemplate>
+                        <DataTemplate>
+                          <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock Text="{Binding Index}" MinWidth="36" />
+                            <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                          </StackPanel>
+                        </DataTemplate>
+                      </ListView.ItemTemplate>
+                    </ListView>
+                    <ctk:WrapPanel Grid.Row="1" Orientation="Horizontal" HorizontalSpacing="12" VerticalSpacing="8">
+                      <NumberBox x:Name="ShadowkeyFrame" Minimum="0" Maximum="0" Value="0" SmallChange="1"
+                                 IsEnabled="False" SpinButtonPlacementMode="Inline" Width="150"
+                                 live:RuntimeLocalization.Uid="Shadowkey_Frame"
+                                 ValueChanged="ShadowkeyOption_ValueChanged"
+                                 AutomationProperties.AutomationId="Assets.Shadowkey.Frame" />
+                      <NumberBox x:Name="ShadowkeySkin" Minimum="0" Maximum="0" Value="0" SmallChange="1"
+                                 IsEnabled="False" SpinButtonPlacementMode="Inline" Width="150"
+                                 live:RuntimeLocalization.Uid="Shadowkey_Skin"
+                                 ValueChanged="ShadowkeyOption_ValueChanged"
+                                 AutomationProperties.AutomationId="Assets.Shadowkey.Skin" />
+                      <CheckBox x:Name="ShadowkeyMagenta" IsChecked="False" IsEnabled="False"
+                                VerticalAlignment="Bottom" live:RuntimeLocalization.Uid="Shadowkey_Magenta"
+                                Checked="ShadowkeyMagenta_Changed" Unchecked="ShadowkeyMagenta_Changed"
+                                AutomationProperties.AutomationId="Assets.Shadowkey.MagentaKey" />
+                    </ctk:WrapPanel>
+                    <native:NativeScenePreview x:Name="ShadowkeyNativePreview" Grid.Row="2" MinHeight="240"
+                                               AutomationPrefix="Assets.Shadowkey.Native" />
+                    <TextBlock x:Name="ShadowkeyStatus" Grid.Row="3" TextWrapping="Wrap"
+                               live:RuntimeLocalization.Uid="Shadowkey_Status"
+                               AutomationProperties.LiveSetting="Polite"
+                               AutomationProperties.AutomationId="Assets.Shadowkey.Status" />
                   </Grid>
-                </DataTemplate>
-              </GridView.ItemTemplate>
-            </GridView>
 
-            <!--  Sky backdrop. A classic sky is a flat scrolling image, not geometry, so it sits
-                  BEHIND the 3D surface rather than going through the native NIF sky pass.  -->
-            <Image
-              x:Name="SkyBackdropImage"
-              Grid.Row="0"
-              Grid.Column="1"
-              Margin="8,0,0,0"
-              Stretch="UniformToFill"
-              Visibility="Collapsed" />
+                  <!--  Sky backdrop. A classic sky is a flat scrolling image, not geometry, so it sits
+                        BEHIND the 3D surface rather than going through the native NIF sky pass.  -->
+                  <Image
+                    x:Name="SkyBackdropImage"
+                    Grid.Row="0"
+                    Stretch="UniformToFill"
+                    Visibility="Collapsed" />
 
-            <!--  Mesh preview. x:Load="False" keeps this SECOND GPU surface uncreated until a mesh
-                  is actually selected; creating it eagerly is the top resource risk in this tab.  -->
-            <local:BethesdaSceneViewerControl
-              x:Name="MeshSceneViewer"
-              x:Load="False"
-              Grid.Row="0"
-              Grid.Column="1"
-              Margin="8,0,0,0" />
+                  <!--  Mesh preview. x:Load="False" keeps this SECOND GPU surface uncreated until a mesh
+                        is actually selected; creating it eagerly is the top resource risk in this tab.  -->
+                  <local:BethesdaSceneViewerControl
+                    x:Name="MeshSceneViewer"
+                    x:Load="False"
+                    Grid.Row="0" />
 
-            <!--  Video surface. No GPU device of its own: frames are decoded here and written into
-                  one WriteableBitmap, so this is just an Image.  -->
-            <Image
-              x:Name="VideoPreviewImage"
-              Grid.Row="0"
-              Grid.Column="1"
-              Margin="8,0,0,0"
-              HorizontalAlignment="Center"
-              VerticalAlignment="Center"
-              Stretch="Uniform"
-              Visibility="Collapsed" />
+                  <!--  Video surface. No GPU device of its own: frames are decoded here and written into
+                        one WriteableBitmap, so this is just an Image.  -->
+                  <Image
+                    x:Name="VideoPreviewImage"
+                    Grid.Row="0"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Stretch="Uniform"
+                    Visibility="Collapsed" />
 
-            <!--  Media transport. Drives whichever of audio/video is currently selected.  -->
-            <Grid
-              x:Name="AudioTransportPanel"
-              Grid.Row="1"
-              Grid.Column="1"
-              Margin="8,8,0,0"
-              Visibility="Collapsed">
-              <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-              </Grid.ColumnDefinitions>
+                  <!--  Native video surface. An admitted Arena FLC/CEL plays through Shared's decoded
+                        bridge and the stock transport. Stretch-aligned so its ActualWidth/Height are the
+                        pane; Shared sizes the pixel-perfect presenter box inside it.  -->
+                  <playback:NativeMediaPreview
+                    x:Name="NativeVideoPreview"
+                    Grid.Row="0"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch"
+                    IsAudioOnly="False"
+                    Visibility="Collapsed"
+                    AutomationProperties.AutomationId="Assets.Video.Playback" />
 
-              <Button
-                x:Name="AudioPlayPauseButton"
-                Grid.Column="0"
-                AutomationProperties.Name="Play or pause the selected sound"
-                ToolTipService.ToolTip="Play / pause"
-                Click="AudioPlayPause_Click">
-                <FontIcon x:Name="AudioPlayPauseIcon" Glyph="&#xE768;" FontSize="14" />
-              </Button>
-              <Button
-                x:Name="AudioStopButton"
-                Grid.Column="1"
-                Margin="4,0,0,0"
-                AutomationProperties.Name="Stop playback"
-                ToolTipService.ToolTip="Stop"
-                Click="AudioStop_Click">
-                <FontIcon Glyph="&#xE71A;" FontSize="14" />
-              </Button>
-              <Slider
-                x:Name="AudioPositionSlider"
-                Grid.Column="2"
-                Margin="8,0,8,0"
-                VerticalAlignment="Center"
-                AutomationProperties.Name="Playback position"
-                Maximum="1000"
-                Minimum="0"
-                StepFrequency="1"
-                ValueChanged="AudioPosition_ValueChanged" />
-              <TextBlock
-                x:Name="AudioStatusText"
-                Grid.Column="3"
-                VerticalAlignment="Center"
-                Style="{StaticResource TabSubtitleStyle}"
-                Text="" />
-            </Grid>
+                  <StackPanel x:Name="NativeAudioPanel" Grid.Row="1" Margin="0,8,0,0"
+                              Spacing="4" Visibility="Collapsed">
+                    <playback:NativeMediaPreview x:Name="NativeAudioPreview" IsAudioOnly="True"
+                                                 Height="72" Volume="0.8"
+                                                 AutomationProperties.AutomationId="Assets.Audio.Playback" />
+                    <TextBlock x:Name="NativeAudioStatus" TextWrapping="Wrap"
+                               AutomationProperties.AutomationId="Assets.Audio.Status"
+                               Style="{StaticResource TabSubtitleStyle}" />
+                  </StackPanel>
 
-            <TextBlock
-              x:Name="AssetGalleryStatusText"
-              Grid.Row="2"
-              Grid.Column="1"
-              Margin="8,8,0,0"
-              Style="{StaticResource TabSubtitleStyle}"
-              Text="" />
+                  <!--  The existing frame-based video preview retains its own transport.  -->
+                  <Grid
+                    x:Name="AudioTransportPanel"
+                    Grid.Row="1"
+                    Margin="0,8,0,0"
+                    Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="Auto" />
+                      <ColumnDefinition Width="*" />
+                      <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <Button
+                      x:Name="AudioPlayPauseButton"
+                      Grid.Column="0"
+                      AutomationProperties.Name="Play or pause the selected movie"
+                      ToolTipService.ToolTip="Play / pause"
+                      Click="AudioPlayPause_Click">
+                      <FontIcon x:Name="AudioPlayPauseIcon" Glyph="&#xE768;" FontSize="14" />
+                    </Button>
+                    <Button
+                      x:Name="AudioStopButton"
+                      Grid.Column="1"
+                      Margin="4,0,0,0"
+                      AutomationProperties.Name="Stop playback"
+                      ToolTipService.ToolTip="Stop"
+                      Click="AudioStop_Click">
+                      <FontIcon Glyph="&#xE71A;" FontSize="14" />
+                    </Button>
+                    <Slider
+                      x:Name="AudioPositionSlider"
+                      Grid.Column="2"
+                      Margin="8,0,8,0"
+                      VerticalAlignment="Center"
+                      AutomationProperties.Name="Playback position"
+                      Maximum="1000"
+                      Minimum="0"
+                      StepFrequency="1"
+                      ValueChanged="AudioPosition_ValueChanged" />
+                    <TextBlock
+                      x:Name="AudioStatusText"
+                      Grid.Column="3"
+                      VerticalAlignment="Center"
+                      Style="{StaticResource TabSubtitleStyle}"
+                      Text="" />
+                  </Grid>
+
+                  <!--  Frame selector for multi-frame pictures (six-direction FRM, TEXTURE sets).  -->
+                  <StackPanel x:Name="ImageFramePanel" Grid.Row="1" Margin="0,8,0,0"
+                              Orientation="Horizontal" Spacing="8" Visibility="Collapsed">
+                    <NumberBox x:Name="ImageFrame" Minimum="0" Maximum="0" Value="0" SmallChange="1"
+                               SpinButtonPlacementMode="Inline" Width="150"
+                               live:RuntimeLocalization.Uid="AssetPreview_Frame"
+                               ValueChanged="ImageFrame_ValueChanged"
+                               AutomationProperties.AutomationId="Assets.Image.Frame" />
+                  </StackPanel>
+
+                  <TextBlock
+                    x:Name="AssetPreviewStatusText"
+                    Grid.Row="2"
+                    Margin="0,8,0,0"
+                    TextWrapping="Wrap"
+                    Style="{StaticResource TabSubtitleStyle}"
+                    AutomationProperties.LiveSetting="Polite"
+                    live:RuntimeLocalization.Uid="AssetPreview_Status" />
+                </Grid>
+              </layout:CollapsiblePanel.PanelContent>
+            </layout:CollapsiblePanel>
+
+            <StackPanel Grid.Row="1" Grid.ColumnSpan="5" Margin="0,8,0,0" Spacing="6">
+              <ctk:WrapPanel x:Name="AssetExportCommands" Orientation="Horizontal" HorizontalSpacing="8" VerticalSpacing="8">
+                <Button live:RuntimeLocalization.Uid="AssetExport_SelectAll" Click="SelectAllAssets_Click" AutomationProperties.AutomationId="Assets.SelectAll" />
+                <Button live:RuntimeLocalization.Uid="AssetExport_SelectNone" Click="ClearAssetSelection_Click" AutomationProperties.AutomationId="Assets.SelectNone" />
+                <Button x:Name="ExtractSelectedButton" live:RuntimeLocalization.Uid="AssetExport_Original" Click="ExtractSelected_Click" AutomationProperties.AutomationId="Assets.Extract" />
+                <Button x:Name="ConvertSelectedDdxButton" live:RuntimeLocalization.Uid="AssetExport_Ddx" Click="ConvertSelectedDdx_Click" AutomationProperties.AutomationId="Assets.ConvertDdx" />
+                <Button x:Name="CancelAssetExportButton" live:RuntimeLocalization.Uid="AssetExport_Cancel" Click="CancelAssetExport_Click" IsEnabled="False" />
+                <CheckBox x:Name="AssetExportOverwrite" live:RuntimeLocalization.Uid="AssetExport_ConfirmOverwrite" IsChecked="False" />
+              </ctk:WrapPanel>
+              <TextBox x:Name="AssetExportStatus" live:RuntimeLocalization.Uid="AssetExport_Status" Visibility="Collapsed" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="110" BorderThickness="0" />
+            </StackPanel>
           </Grid>
         </controls:TabViewItem>
 

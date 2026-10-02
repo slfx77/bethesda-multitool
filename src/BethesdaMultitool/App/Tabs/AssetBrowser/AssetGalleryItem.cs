@@ -1,116 +1,120 @@
-// Tile shape and the device-pixel sizing rule ported from JimmyPCTool / AweMultitool
-// (https://github.com/slfx77/JimmyPCTool, MIT licence) — src/AweMultitool/App/Tabs/CanvasGalleryItem.cs.
-// Retargeted from that project's CanvasRef to this repo's AssetNode.
-
 using System.ComponentModel;
-using System.Runtime.CompilerServices;
+using System.Diagnostics.CodeAnalysis;
 using BethesdaMultitool.Core.AssetBrowse;
-using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Slfx77.Multitool.Core.Localization;
+using Slfx77.Multitool.WinUI.Images;
 
 namespace BethesdaMultitool;
 
 /// <summary>
-///     One tile in the asset gallery. <see cref="Thumbnail" /> binds one-way and arrives later, so
-///     <see cref="SetThumbnail" /> is UI-thread-only — raising the change from a background
-///     continuation throws.
+///     Adapts an original Bethesda leaf node of any kind to the shared tile without owning checks,
+///     artwork or source lifetime. Picture kinds request a decoded thumbnail; every other kind shows
+///     its kind glyph and never asks the worker for artwork.
 /// </summary>
-public sealed class AssetGalleryItem : INotifyPropertyChanged
+internal sealed class AssetGalleryItem : ThumbnailItem<AssetNode>, IDisposable
 {
-    private bool _broken;
-    private ImageSource? _thumbnail;
+    private IStringCatalog _catalog;
+    private Action<AssetNode, bool>? _setChecked;
+    private AssetImageInfo? _imageInfo;
 
-    /// <summary>The asset this tile stands for.</summary>
-    public required AssetNode Node { get; init; }
-
-    /// <summary>File name, shown under the tile.</summary>
-    public string DisplayName => Node.Name;
-
-    /// <summary>Path within the source, for the tooltip and the accessible name.</summary>
-    public string VirtualPath => Node.VirtualPath;
-
-    /// <summary>Size, and the geometry once decoded.</summary>
-    public string Caption { get; private set; } = string.Empty;
-
-    public ImageSource? Thumbnail
+    /// <summary>Borrows one exact node and a current-source command gate, observing its existing check mirror.</summary>
+    /// <param name="node">The immutable source occurrence; its label is never an identity.</param>
+    /// <param name="catalog">The window's current display catalog.</param>
+    /// <param name="setChecked">The UI owner's generation-checked command entry point.</param>
+    [SetsRequiredMembers]
+    internal AssetGalleryItem(AssetNode node, IStringCatalog catalog, Action<AssetNode, bool> setChecked)
     {
-        get => _thumbnail;
-        private set
+        Reference = node;
+        DisplayName = node.Name;
+        _catalog = catalog;
+        _setChecked = setChecked;
+        node.PropertyChanged += NodePropertyChanged;
+        PropertyChanged += TilePropertyChanged;
+        RefreshMetadata(catalog);
+    }
+
+    /// <summary>The exact original node retained by both native layouts.</summary>
+    internal AssetNode Node => Reference;
+    /// <summary>What the asset is, with its full decoded size and frame count once a picture is decoded, then its size on disk.</summary>
+    public override string Caption => _imageInfo switch
+    {
+        null => _catalog.Format("AssetGallery_KindAndBytes", KindLabel, Node.Size),
+        { FrameCount: > 1 } info => _catalog.Format("AssetGallery_KindFramesAndBytes", KindLabel, info.Width, info.Height,
+            info.FrameCount, Node.Size),
+        var info => _catalog.Format("AssetGallery_KindSizeAndBytes", KindLabel, info.Width, info.Height, Node.Size)
+    };
+    /// <summary>The current-language name of the node's kind, for every kind the tree lists.</summary>
+    private string KindLabel => _catalog.GetString(AssetKindLabels.CaptionKey(Node.Kind));
+    /// <summary>Only picture kinds ask the worker for artwork; every other kind keeps its glyph without a decode attempt.</summary>
+    public override bool CanRequestThumbnail => AssetThumbnailSource.CanRender(Node);
+    /// <summary>A Segoe Fluent Icons glyph naming the kind, shown until (or instead of) decoded artwork.</summary>
+    public override string NoArtworkGlyph => Node.Kind switch
+    {
+        AssetNodeKind.Video => "",
+        AssetNodeKind.Audio => "",
+        AssetNodeKind.Model => "",
+        AssetNodeKind.Map => "",
+        AssetNodeKind.Archive => "",
+        AssetNodeKind.Plugin => "",
+        AssetNodeKind.Text => "",
+        AssetNodeKind.Save => "",
+        AssetNodeKind.Raw => "",
+        _ => base.NoArtworkGlyph
+    };
+    /// <summary>The source-relative path and size shown in the native compact row.</summary>
+    public override string ListCaption => Node.VirtualPath + " - " + Caption;
+    /// <summary>No provenance badge is fabricated from a display label or path.</summary>
+    public override string Badge => string.Empty;
+    /// <summary>Export checks are supplied by the existing source selection.</summary>
+    public override bool CanCheck => _setChecked is not null;
+    /// <summary>The source node's check mirror; commands pass through the browser's current-source gate.</summary>
+    public override bool IsChecked
+    {
+        get => Node.IsChecked == true;
+        set
         {
-            _thumbnail = value;
-            OnPropertyChanged();
-            OnPropertyChanged(nameof(PlaceholderVisibility));
+            if (value == IsChecked) return;
+            _setChecked?.Invoke(Node, value);
+            NotifyCheckStateChanged();
         }
     }
+    /// <summary>Full untruncated row metadata exposed by Shared tooltips and accessibility help in both modes.</summary>
+    public override string Metadata => _catalog.Format("AssetGallery_Metadata", DisplayName, Node.VirtualPath, KindLabel, Caption);
 
-    /// <summary>Shown until a thumbnail arrives, and permanently for a tile that would not decode.</summary>
-    public Visibility PlaceholderVisibility => _thumbnail is null ? Visibility.Visible : Visibility.Collapsed;
-
-    /// <summary>A hollow glyph for "still loading", a filled one for "cannot decode".</summary>
-    public string PlaceholderGlyph => _broken ? "" : "";
-
-    /// <summary>
-    ///     Size to draw the thumbnail at, in DIPs, so one thumbnail pixel covers exactly one device
-    ///     pixel.
-    ///     <para>
-    ///         Binding these rather than capping the element at a fixed size is what keeps the art
-    ///         sharp. <see cref="ThumbnailScaler" /> has already scaled by a WHOLE number; letting
-    ///         layout fit the result into a fixed box would scale it again by a fraction and turn
-    ///         every 8×8 glyph of Daggerfall's font soft.
-    ///     </para>
-    /// </summary>
-    public double ThumbnailWidth { get; private set; }
-
-    public double ThumbnailHeight { get; private set; }
-
-    /// <summary>
-    ///     Whether the gallery currently has this tile realized. The loader reads it to skip work for
-    ///     tiles that scrolled away, and re-checks it before applying a result. UI thread only.
-    /// </summary>
-    internal bool IsRealized { get; set; }
-
-    /// <summary>Whether this tile has already been queued in the current session.</summary>
-    internal bool IsRequested { get; set; }
-
-    public event PropertyChangedEventHandler? PropertyChanged;
-
-    /// <summary>Attaches a decoded thumbnail. UI thread only.</summary>
-    /// <param name="source">The bitmap, or null when the asset could not be decoded.</param>
-    /// <param name="deviceScale">Device pixels per DIP, from the tile's <c>XamlRoot</c>.</param>
-    internal void SetThumbnail(WriteableBitmap? source, double deviceScale)
+    /// <summary>Refreshes only display strings, retaining artwork, original identity, checks and focus.</summary>
+    /// <param name="catalog">The replacement current-language catalog.</param>
+    internal void Refresh(IStringCatalog catalog)
     {
-        _broken = source is null;
-
-        if (source is not null && deviceScale > 0)
-        {
-            ThumbnailWidth = source.PixelWidth / deviceScale;
-            ThumbnailHeight = source.PixelHeight / deviceScale;
-            OnPropertyChanged(nameof(ThumbnailWidth));
-            OnPropertyChanged(nameof(ThumbnailHeight));
-        }
-
-        Thumbnail = source;
-        OnPropertyChanged(nameof(PlaceholderGlyph));
+        _catalog = catalog;
+        RefreshMetadata(catalog);
     }
 
-    /// <summary>Sets the caption once the real geometry is known. UI thread only.</summary>
-    internal void SetCaption(string caption)
+    /// <summary>Forwards the source-wide check owner's committed mirror change to both shared native templates.</summary>
+    /// <param name="sender">The original source node.</param>
+    /// <param name="args">The changed mirror property.</param>
+    private void NodePropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
-        Caption = caption;
-        OnPropertyChanged(nameof(Caption));
+        if (args.PropertyName == nameof(AssetNode.IsChecked)) NotifyCheckStateChanged();
     }
 
-    /// <summary>Drops the thumbnail so a new session starts clean.</summary>
-    internal void Reset()
+    /// <summary>Retains what the worker decoded (full size, frames) after recycling without retaining a native bitmap.</summary>
+    /// <param name="sender">This adapter's shared visual state.</param>
+    /// <param name="args">The changed visual property.</param>
+    private void TilePropertyChanged(object? sender, PropertyChangedEventArgs args)
     {
-        _broken = false;
-        IsRequested = false;
-        Thumbnail = null;
+        if (args.PropertyName != nameof(Thumbnail) || Thumbnail is not WriteableBitmap || Node.ImageInfo is not { } info) return;
+        _imageInfo = info;
+        RefreshMetadata();
     }
 
-    private void OnPropertyChanged([CallerMemberName] string? name = null)
+    /// <summary>Detaches the source mirror and command owner before dropping the realized bitmap.</summary>
+    public void Dispose()
     {
-        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        Node.PropertyChanged -= NodePropertyChanged;
+        PropertyChanged -= TilePropertyChanged;
+        _setChecked = null;
+        IsRealized = false;
+        Reset();
     }
 }

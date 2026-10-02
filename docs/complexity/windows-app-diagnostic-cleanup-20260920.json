@@ -1,0 +1,234 @@
+{
+  "schema": "bmt-windows-app-diagnostic-cleanup-review/v1",
+  "createdUtc": "2026-09-21T03:31:23.061329+00:00",
+  "baseCommit": "f6290ffe6da503078242b8cc7cb4ce25de739ff3",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "appliedPatchSha256": "871bb4f4a4280dd7fa082a478d7bcc9056d412e72375cd4294c9fba2979d01e9",
+  "scope": "Nine inherited Windows App diagnostics in six files. Eight changed method declarations plus the nested frame-handler lambda and the MainWindow diagnostic annotation. Only the local diagnostic delta is complexity-reviewed; existing codecs/domain algorithms/framework work and unrelated lifecycle code are not re-reviewed.",
+  "status": "applied_source_review_only_windows_revalidation_pending",
+  "hashConvention": {
+    "source": "UTF-8, optional BOM removed, CRLF/CR normalized to LF; no trimming.",
+    "declaration": "Exact Tree-sitter declaration/expression including its body, excluding preceding XML comments/trailing whitespace.",
+    "signature": "Declaration start through body/arrow start, trailing whitespace removed.",
+    "body": "Exact body/arrow bytes."
+  },
+  "diagnostics": {
+    "S1244": 4,
+    "S108": 1,
+    "S6966": 1,
+    "CA1001": 1,
+    "CA1068": 1,
+    "S3358": 1
+  },
+  "files": [
+    {
+      "path": "src/BethesdaMultitool/App/Controls/DialogueLipInspector.cs",
+      "sourceSha256Lf": "4bb489727d4c41191deb61ee8b93b48fa4b8abff4e899ccbbcc83f77336276e2",
+      "previousSourceSha256Lf": "0c4c402c3cf2c8d6be0c2835367458512d1795c59d8eb08720e38172b83dd6c9",
+      "callables": [
+        {
+          "name": "DialogueLipInspector.AddTimeline",
+          "kind": "method_declaration",
+          "line": 89,
+          "endLine": 126,
+          "declarationSha256Lf": "89f65f0958f7d7a687fd349a7f2d57e461c8af2c12875717d4958484f93658a0",
+          "signatureSha256Lf": "385aae876ca3eca0ca8988397fd3ff7e40afa9d4d00408cba963e4259898a9c8",
+          "bodySha256Lf": "e3f44d81f416b8dcad5c9c25ac953c8054112a660b6eb3e244dc649e9e97ed58",
+          "review": "Exact comparison only: normalized.Equals(args.NewValue) follows the existing finite guard. Signed zero equality is retained; fractional input normalization and reentrant ValueChanged return remain unchanged. Delta O(1); existing layout, localization and frame-list work remain delegated.",
+          "deltaTimeBound": "O(1)",
+          "deltaSpaceBound": "O(1); no new retained state or payload allocation."
+        },
+        {
+          "name": "DialogueLipInspector.AddTimeline.ValueChanged",
+          "kind": "lambda_expression",
+          "line": 115,
+          "endLine": 121,
+          "declarationSha256Lf": "32eab211fa97f7a60e6a5a9db2b3fad46ccf73438b3381300b8d8c70da3891a1",
+          "signatureSha256Lf": "771c729fc394378268eb82a03a050bef48d7cfb9cef629ea7f7ecccc275e3fc5",
+          "bodySha256Lf": "e6be4aa6751801fce45c6c21e783c53fb8481bb3c078946a1873d0e10684382f",
+          "review": "Finite-only exact Double.Equals preserves equality and the frame-normalization return; no tolerance is introduced.",
+          "deltaTimeBound": "O(1)",
+          "deltaSpaceBound": "O(1); existing closure unchanged."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Controls/DialogueViewsControl.cs",
+      "sourceSha256Lf": "35298d8b49710ae94d547640e73f6ebae7ff2a6a43efd2d2b9a3f988e45ed9a1",
+      "previousSourceSha256Lf": "d400d327f8aa8824a0ca2a92e63075bd3c6bf04ad2a02315aaa1a3e0c13d48bb",
+      "callables": [
+        {
+          "name": "DialogueViewsControl.LoadPathAsync",
+          "kind": "method_declaration",
+          "line": 109,
+          "endLine": 138,
+          "declarationSha256Lf": "517f88a42dd8bd0894e7950242ddfd83444aa3264f654cff143ed30a653b645d",
+          "signatureSha256Lf": "fe56a0f866a49362fd29d738f352894795aed506ccff56d3177df40b44e39b39",
+          "bodySha256Lf": "395df0985cca85c6d1f34ec49a1a6152d83f4faa9679209f9c1b1072ea8b100f",
+          "review": "The single synchronous Cancel remains before replacing _loading. Narrow S6966 pragma documents that inserting an await there would permit a newer load to publish first. The canceled catch now contains its intent comment and no redundant return; it executes the same finally and completes at the same point. Generation/owner guards, background parse, control enablement and error behavior are unchanged. Delta O(1); callback/reader waits remain delegated and unmeasured.",
+          "deltaTimeBound": "O(1)",
+          "deltaSpaceBound": "O(1); no new retained state or payload allocation."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/MainWindow.xaml.cs",
+      "sourceSha256Lf": "7b6976fb9d6f56d9b854b4ed7e26aac519f67ffff5a2c6ebc157ad00265815e8",
+      "previousSourceSha256Lf": "f9984e9dcf197754bf89ac2269648229c7cd289160f44eae6d480a9a977c0980",
+      "callables": [],
+      "typeAnnotation": {
+        "line": 19,
+        "endLine": 21,
+        "sha256Lf": "430e66132837984bbb197bc1d837ab54f71cd92364b2dabc8dd2607d02fe1b64",
+        "rule": "CA1001",
+        "review": "Type-local suppression documents existing manual WinUI async close ownership. No disposal interface, destructor, retry, release order, event callback or constructor behavior changes. Native retirement failure retains graphics/chrome/localization/HWND through the existing proof gate.",
+        "runtimeDelta": "None; diagnostic metadata only."
+      }
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/Explore/ExploreTab.xaml.cs",
+      "sourceSha256Lf": "60a36e5b6446a78fd546f5206003044dbd84c3440b90c3fcc4debaf618dd58d9",
+      "previousSourceSha256Lf": "db9a2eb3a326db051b8dccf3f7317267e28e29b2cccfabe2743bffa9d22ed397",
+      "callables": [
+        {
+          "name": "ExploreTab.OpenSourceAsync",
+          "kind": "method_declaration",
+          "line": 150,
+          "endLine": 218,
+          "declarationSha256Lf": "6a96fb44ec22fd98530125e66891e9c0d272b4d8f301ef937032f758a4502c5f",
+          "signatureSha256Lf": "ad998e01bdbc2decf8ce8475a7d9bf8a5a7027f4fdeaa9dbb5d173aa4e0e91e9",
+          "bodySha256Lf": "e151e45d4f80704571d315419d65677c5111ff330dd5b0a26a4865d9eac2591d",
+          "review": "Only actual argument order at private LoadRecordsAsync invocation changes; same path, autoOpen and token objects. All source generation, gate, selection/load-order and error branches remain unchanged. Delta O(1); existing opening work remains delegated.",
+          "deltaTimeBound": "O(1)",
+          "deltaSpaceBound": "O(1); no new retained state or payload allocation."
+        },
+        {
+          "name": "ExploreTab.RecordSource_SelectionChanged",
+          "kind": "method_declaration",
+          "line": 237,
+          "endLine": 265,
+          "declarationSha256Lf": "32bdcce4ecdb5e56a78f29ec918d0bb27bce905891090911033165c72a6010f1",
+          "signatureSha256Lf": "3a0ee4ba0fffc9553b09876eda709cf000744367d8ddc4cdb32e47653a82b1c0",
+          "bodySha256Lf": "29d4381ebc95c6c60367272f7c0b9f3fec14e4eaf7bf42472bec47e3c4631088",
+          "review": "Only actual argument order and explicit names change; same path, false autoOpen and token. Existing gate/clear/load/update/finally ownership order is retained. Delta O(1); source work remains delegated.",
+          "deltaTimeBound": "O(1)",
+          "deltaSpaceBound": "O(1); no new retained state or payload allocation."
+        },
+        {
+          "name": "ExploreTab.LoadRecordsAsync",
+          "kind": "method_declaration",
+          "line": 271,
+          "endLine": 280,
+          "declarationSha256Lf": "53b780f84e77fec74ae15ca8281420b84875a10aedef159f1a9fa9388fd119ad",
+          "signatureSha256Lf": "8c4971a46683b48cdd5b8cf126270815548e9959b4b03d8961c0e205c75b79ec",
+          "bodySha256Lf": "6d9edbbdea262cd924b148daa77ad5de800d25228d2edacc5fc7737f593fa80f",
+          "review": "Cancellation token moves to the final private parameter; both callers updated and downstream DataBrowser.LoadExploreSourceAsync arguments unchanged. XML parameter order matches. Delta O(1); record-analysis cost remains delegated.",
+          "deltaTimeBound": "O(1)",
+          "deltaSpaceBound": "O(1); no new retained state or payload allocation."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/SingleFile/SingleFileTab.ActorDetails.cs",
+      "sourceSha256Lf": "e224926f88dd76d31ec008f672ccd820cfb5938e9bfd9c358f2422829062976c",
+      "previousSourceSha256Lf": "c87b8da0ffa820d9035a33245be485e174fa3c42fef53db15d595c3db0fc7141",
+      "callables": [
+        {
+          "name": "SingleFileTab.UpdateActorDetails",
+          "kind": "method_declaration",
+          "line": 37,
+          "endLine": 59,
+          "declarationSha256Lf": "09f5c12f3ee1a72213650dc44a2f1b7dc5ff706e644c6ae6e583a5f60d641fbc",
+          "signatureSha256Lf": "a01f7d9f4857e60b03a85bed93f48dcfbca8bff6be0be22c97118464425d81d4",
+          "bodySha256Lf": "4c959c41173768e8d6a11f9a74615e8028cc6bcba6aa55176dffa772904354bf",
+          "review": "Exact truncation equality uses Double.Equals. Existing previewLevel-null short circuit excludes nonfinite level values before the comparison. Integral admission and cached generation/seed/actor decisions are unchanged. Delta O(1); existing inspection/formatting/scene work remains delegated.",
+          "deltaTimeBound": "O(1)",
+          "deltaSpaceBound": "O(1); no new retained state or payload allocation."
+        },
+        {
+          "name": "SingleFileTab.ActorInventoryGenerate_Click",
+          "kind": "method_declaration",
+          "line": 113,
+          "endLine": 147,
+          "declarationSha256Lf": "d8baca0644d952b064b0e858f51819dd7865283b9cf083f89be30adfeedd7386",
+          "signatureSha256Lf": "00cf897354694c8c7cf554a5ad1312f012bc64df330f91dccaabbaeaf9411597",
+          "bodySha256Lf": "a6cbd91d02763a85aaddc329d4c7bc701f9419988c9f449c256801c2ab05d4e2",
+          "review": "Both truncation equalities use Double.Equals after existing IsFinite/range short circuits. Exact level and uint seed admission stays unchanged; no epsilon or additional generation/renderer reload occurs. Delta O(1); existing domain/async work remains delegated.",
+          "deltaTimeBound": "O(1)",
+          "deltaSpaceBound": "O(1); no new retained state or payload allocation."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/SingleFile/SingleFileTab.xaml.cs",
+      "sourceSha256Lf": "91710948ad586fa93b2965455e903990d1d5804fc257fdee0976901696d5c5e5",
+      "previousSourceSha256Lf": "e613a30820f82236d646a8f63502efff20816538fd153fca5b49280c089acf74",
+      "callables": [
+        {
+          "name": "SingleFileTab.ConfigureSubTabsForFileType",
+          "kind": "method_declaration",
+          "line": 246,
+          "endLine": 297,
+          "declarationSha256Lf": "2d41bfa1e3927121a4a7197d5c1d542e3cac721ffd552b214a4ff51ef4a302b2",
+          "signatureSha256Lf": "7f8d8cf4655518a830a0f7a6d770635d5c0c0a34ff8f65125e4e8f5185095f22",
+          "bodySha256Lf": "e4a2f06359dadd3597d1a0f5d059308ac752a20e16d29b1351619e4a7cf076b1",
+          "review": "Nested ternary becomes Explore-first, otherwise Recovery, otherwise Analysis if/else. The same one policy executes lazily and returns IReadOnlyList<AnalysisSubTab>; subsequent retained-pane rebuilding is untouched. Selection delta O(1); existing tab/framework work remains delegated.",
+          "deltaTimeBound": "O(1)",
+          "deltaSpaceBound": "O(1); no new retained state or payload allocation."
+        }
+      ]
+    }
+  ],
+  "behaviorReview": {
+    "S1244": "Four exact Double comparisons use Equals. DialogueLip has an immediate IsFinite guard, and its normalized value is finite. Actor UpdateActorDetails short-circuits on previewLevel null for nonfinite input. Generate level/seed guards short-circuit on IsFinite before equality. Thus Equals agrees with the original comparison on all reachable inputs; signed zeros remain equal. No epsilon, integral admission or cached selection policy changed.",
+    "S6966": "Narrow pragma retains synchronous cancellation before new CTS ownership is published. A naive await inserted there permits a newer load to publish ownership during suspension; this artifact does not change the transition or move callbacks to another thread. Synchronous reset/unload semantics are retained.",
+    "S108": "Canceled work has an intentional comment-only catch; the existing finally runs and the method naturally completes. The first cleanup return was redundant (S3626) and has been removed without changing control flow or obsolete-result status.",
+    "CA1001": "Type-local suppression documents the existing asynchronous WinUI Closing owner and proof-gated native retirement. No new public IDisposable path, callback, release, retry or constructor behavior is introduced.",
+    "CA1068": "Only the private Explore LoadRecordsAsync signature and its two same-class callers change argument order, with XML parameter order adjusted. The downstream DataBrowser.LoadExploreSourceAsync call remains unchanged.",
+    "S3358": "Equivalent Explore-first, then Recovery, then Analysis policy if/else chain. Only the selected policy executes; no eager alternate evaluation or pane selection behavior changes."
+  },
+  "verification": {
+    "method": "Read-only source/control-flow/API review and exact candidate/application source hashes. Tree-sitter selected declaration extraction; independent completion_scope_review found no concrete semantic/API blocker. No builds/tests/GUI performed by this reviewer.",
+    "allAppliedFilesMatchReviewedCandidate": false,
+    "caseCountChange": 0,
+    "testsAdded": 0,
+    "sourceContractAssertionsAdded": 0,
+    "windowsAnalyzerRerun": "Parent Windows build51972 passed with6warnings, including new S3626 from the original cleanup return. Root removed that redundant return; next analyzer run pending."
+  },
+  "suppressions": [
+    {
+      "scope": "One existing _loading.Cancel call in DialogueViewsControl.LoadPathAsync",
+      "rule": "S6966",
+      "reason": "Preserve synchronous cancellation before owner replacement; no suspended transition or callback-thread change."
+    },
+    {
+      "scope": "MainWindow type only",
+      "rule": "CA1001",
+      "reason": "Existing proof-gated asynchronous WinUI close owner; a new synchronous Dispose path would introduce a second lifetime entry point."
+    }
+  ],
+  "limits": [
+    "This source review does not establish interactive GUI, cancellation race, native failure injection, current Windows build or release acceptance.",
+    "The MainWindow diagnostic annotation does not repair or newly validate constructor-failure cleanup; it does not change existing lifetime behavior.",
+    "No numerical epsilon, codec/data interpretation, dialogue behavior, selected actor/inventory policy, Shared source or dependency change is included."
+  ],
+  "relatedReceipts": [
+    "shadowkey-native-preview-ui-20260920.json"
+  ],
+  "diagnosticFollowup": {
+    "reviewedUtc": "2026-09-21T04:00:33.543750+00:00",
+    "previousDialogueSourceSha256Lf": "526865b9d0349be6b786ba5f44ba81214cdd80e09a5820fd6fe5928872203c04",
+    "scope": "Only canceled-catch redundant return replaced by intent comment. Original nine-diagnostic artifact hash remains historical; this final applied source hash records the follow-up. No scope expansion or new suppression.",
+    "review": "No later statements exist after the existing finally; return and natural completion have the same observable path. Delta time/space remains O(1).",
+    "validation": "Source-only; no build/test/GUI performed by this reviewer."
+  },
+  "rootExecutionEvidence": {
+    "receipt": "docs/validation/shadowkey-native-preview-20260920.md",
+    "publishReceipt": "docs/validation/publish-20260920.md",
+    "portableTests": "152 Windows and 152 Ubuntu WSL, zero skips; Linux executes Windows-built portable assemblies. Two Windows accessibility cases pass.",
+    "windowsPublish": "Corrected publish passed, 580.279 seconds, three inherited WIN2D0001 warnings, zero application analyzer diagnostics. Seven source/PDB audits and unchanged 36-input freeze.",
+    "nativeExecution": "Earlier native fern opaque/keyed and arrow captures passed. Two actual published fern captures match accepted PNG/RGBA exactly; two repeat refusals, animated decline and explicit CLI help pass.",
+    "remaining": "Interactive GUI, native cancellation/cleanup-failure injection, Linux source build/publish, readable Shared notice sidecars and complete release acceptance remain open.",
+    "boundary": "Historical source-review status/claims above describe the reviewer at creation; this root execution evidence records later checks. Exact source and binary boundaries remain in the linked receipts."
+  }
+}

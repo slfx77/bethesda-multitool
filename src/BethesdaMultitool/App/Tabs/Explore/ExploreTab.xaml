@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="BethesdaMultitool.ExploreTab"
+  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:live="using:BethesdaMultitool.Localization"
+  xmlns:local="using:BethesdaMultitool"
+  xmlns:shared="using:Slfx77.Multitool.WinUI.Controls"
+  xmlns:browsing="using:Slfx77.Multitool.WinUI.Browsing">
+  <shared:ExploreShell x:Name="WorkspaceShell" Margin="12,8,12,8" SelectedViewChanged="View_SelectionChanged">
+    <shared:ExploreShell.SourceHeader>
+      <browsing:SourceToolbar x:Name="WorkspaceSourceToolbar" Margin="0,0,0,8">
+        <browsing:SourceToolbar.ContextContent>
+          <StackPanel>
+            <TextBlock x:Name="RecordSourceSummary" TextWrapping="Wrap" Visibility="Collapsed" />
+            <InfoBar x:Name="WorkspaceStatus" IsClosable="True" />
+          </StackPanel>
+        </browsing:SourceToolbar.ContextContent>
+      </browsing:SourceToolbar>
+    </shared:ExploreShell.SourceHeader>
+    <shared:ExploreShell.WorkspaceContent>
+    <Grid>
+      <local:SingleFileTab x:Name="DataBrowser" />
+      <local:AssetBrowserTab x:Name="AssetsBrowser" Visibility="Collapsed" />
+      <TextBlock x:Name="RecordPlaceholder" live:RuntimeLocalization.Uid="Explore_Empty"
+        HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" MaxWidth="600" />
+    </Grid>
+    </shared:ExploreShell.WorkspaceContent>
+  </shared:ExploreShell>
+</UserControl>

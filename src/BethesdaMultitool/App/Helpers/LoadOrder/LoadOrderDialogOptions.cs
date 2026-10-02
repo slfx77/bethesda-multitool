@@ -11,4 +11,6 @@ internal sealed record LoadOrderDialogOptions
     public string? SubtitlePlaceholder { get; init; }
     public string? SubtitleCsvPath { get; init; }
     public string? PrimaryFilePath { get; init; }
+    /// <summary>Discovered primary or supplementary plugins offered without selecting or merging them automatically.</summary>
+    public IReadOnlyList<string> RecordCandidates { get; init; } = [];
 }

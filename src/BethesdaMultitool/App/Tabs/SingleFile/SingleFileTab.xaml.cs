@@ -32,8 +32,9 @@ namespace BethesdaMultitool;
 ///     - SingleFileTab.TreeBuilder.cs: ESM browser tree building and filtering
 ///     - SingleFileTab.Helpers.cs: Helper/utility methods
 /// </summary>
-public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettingsDrawer
+public sealed partial class SingleFileTab : UserControl, IDisposable, IAsyncDisposable
 {
+    private Task? _disposeTask;
     #region Properties
 
 #pragma warning disable CA1822, S2325
@@ -44,12 +45,62 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     #region IDisposable
 
-    public void Dispose()
+    /// <summary>Starts observed asynchronous cleanup for existing synchronous owners.</summary>
+    public void Dispose() => _ = DisposeAndReportAsync();
+
+    /// <summary>Releases dialogue's native inputs before disposing record and scene owners.</summary>
+    /// <returns>The same owner-cleanup operation for every caller.</returns>
+    public ValueTask DisposeAsync()
     {
-        DisposeNpcViewerResources();
-        _searchDebounceToken?.Dispose();
-        _tasks.Dispose();
-        _session.Dispose();
+        if (_disposeTask is null)
+        {
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _disposeTask = completion.Task;
+            _ = CompleteDisposalAsync(completion);
+        }
+        return new ValueTask(_disposeTask);
+    }
+
+    /// <summary>Publishes one cleanup result after the retained task is visible to reentrant disposal callers.</summary>
+    /// <param name="completion">The already-published completion marker shared by every disposal caller.</param>
+    private async Task CompleteDisposalAsync(TaskCompletionSource completion)
+    {
+        try
+        {
+            await DisposeCoreAsync();
+            completion.SetResult();
+        }
+        catch (Exception exception)
+        {
+            completion.SetException(exception);
+        }
+    }
+
+    /// <summary>Observes cleanup failures from the legacy synchronous interface.</summary>
+    private async Task DisposeAndReportAsync()
+    {
+        try { await DisposeAsync(); }
+        catch (Exception exception) { Logger.Instance.Warn("[SingleFile] Teardown failed: {0}", exception); }
+    }
+
+    /// <summary>Attempts every owner even if another source, preview or worker fails during cleanup.</summary>
+    private async Task DisposeCoreAsync()
+    {
+        List<Exception>? failures = null;
+        try { await DialogueAudioPanel.DisposeAsync(); }
+        catch (Exception exception) { (failures ??= []).Add(exception); }
+        try { DisposeNpcViewerResources(); }
+        catch (Exception exception) { (failures ??= []).Add(exception); }
+        try { _searchDebounceToken?.Dispose(); }
+        catch (Exception exception) { (failures ??= []).Add(exception); }
+        try { _tasks.Dispose(); }
+        catch (Exception exception) { (failures ??= []).Add(exception); }
+        try { _session.Dispose(); }
+        catch (Exception exception) { (failures ??= []).Add(exception); }
+        if (failures is { Count: > 0 })
+        {
+            throw new AggregateException("Record and preview owner cleanup failed.", failures);
+        }
     }
 
     #endregion
@@ -192,11 +243,26 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     ///         falls back to Summary when it does not.
     ///     </para>
     /// </summary>
+    private bool _configuringSubTabs;
+
     private void ConfigureSubTabsForFileType(AnalysisFileType fileType)
+    {
+        _configuringSubTabs = true;
+        try { ConfigureSubTabsCore(fileType); }
+        finally { _configuringSubTabs = false; }
+    }
+
+    private void ConfigureSubTabsCore(AnalysisFileType fileType)
     {
         var previous = SubTabOf(SubTabView.SelectedItem as Microsoft.UI.Xaml.Controls.TabViewItem)
                        ?? AnalysisSubTab.Summary;
-        var visibleTabs = AnalysisSubTabPolicy.VisibleFor(fileType);
+        IReadOnlyList<AnalysisSubTab> visibleTabs;
+        if (_exploreHost)
+            visibleTabs = ExplorePanePolicy.ForExplore(fileType, _exploreMaps);
+        else if (_recoveryHost)
+            visibleTabs = ExplorePanePolicy.ForRecovery(fileType);
+        else
+            visibleTabs = AnalysisSubTabPolicy.VisibleFor(fileType);
         var visibleItems = visibleTabs.Select(SubTabItem).ToArray();
         var selectedItem = SubTabView.SelectedItem as Microsoft.UI.Xaml.Controls.TabViewItem;
         var retainSelected = selectedItem is not null &&
@@ -235,7 +301,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             }
         }
 
-        TrySelectSubTab(AnalysisSubTabPolicy.Fallback(previous, fileType));
+        if (visibleTabs.Count > 0)
+            TrySelectSubTab(visibleTabs.Contains(previous) ? previous : visibleTabs[0]);
     }
 
     /// <summary>The TabViewItem backing a policy sub-tab.</summary>
@@ -275,6 +342,10 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     /// </summary>
     private void TrySelectSubTab(AnalysisSubTab tab)
     {
+        if (!_configuringSubTabs && _exploreHost && tab is not (AnalysisSubTab.RawView or AnalysisSubTab.Coverage) &&
+            AnalysisSubTabPolicy.VisibleFor(_session.FileType).Contains(tab) &&
+            _exploreMaps != (tab == AnalysisSubTab.World))
+            ShowExploreMaps(tab == AnalysisSubTab.World);
         var item = SubTabItem(tab);
         if (!SubTabView.TabItems.Contains(item))
         {
@@ -282,6 +353,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
         }
 
         SubTabView.SelectedItem = item;
+        if (_exploreHost && !_configuringSubTabs) ExploreMapSelected?.Invoke(this, tab == AnalysisSubTab.World);
 
         // Clearing and rebuilding TabItems can leave SelectedItem pointing at the same
         // TabViewItem instance. Reassigning that instance does not necessarily raise
@@ -351,6 +423,9 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
     private async void SingleFileTab_Loaded(object sender, RoutedEventArgs e)
     {
         Loaded -= SingleFileTab_Loaded;
+
+        // Workspace hosts receive launch arguments from their owning source selector.
+        if (_exploreHost || _recoveryHost) return;
 
         if (!_dependencyCheckDone)
         {
@@ -448,7 +523,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             }
 
             await _tasks.RunExclusiveAsync("populate-npcs", PopulateNpcBrowserAsync);
-            if (!_session.NpcBrowserPopulated || _npcBrowserService is null)
+            if (!_session.NpcBrowserPopulated || (_npcBrowserService is null && _actorInspector is null))
             {
                 log.Warn(
                     "[AutoOpen] actor selector='{0}' outcome=failed detail=NPC browser population did not succeed.",
@@ -659,6 +734,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     private async void SingleFileTab_Unloaded(object sender, RoutedEventArgs e)
     {
+        // Explore owns shutdown and source replacement; presentation changes must retain its document.
+        if (_exploreHost) return;
         // Quiesce background populates before tearing down the session state they read from.
         await _tasks.CancelAllAndDrainAsync();
         await CancelNpcViewerLoadAndDrainAsync();
@@ -693,8 +770,15 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     private async void AnalyzeButton_Click(object sender, RoutedEventArgs e)
     {
+        await AnalyzeCurrentSourceAsync(CancellationToken.None);
+    }
+
+    /// <summary>Runs analysis serially; cancellation prevents publication of a superseded source.</summary>
+    private async Task AnalyzeCurrentSourceAsync(CancellationToken cancellationToken)
+    {
         var filePath = MinidumpPathTextBox.Text;
         if (string.IsNullOrEmpty(filePath)) return;
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             // Save selected tab before disabling — SelectedItem may not be readable while disabled
@@ -704,6 +788,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             // The phase gate stops NEW populates; this stops the OLD session's in-flight ones
             // before their state is torn down and reopened below.
             await _tasks.CancelAllAndDrainAsync();
+            await CancelNpcViewerLoadAndDrainAsync();
+            cancellationToken.ThrowIfCancellationRequested();
 
             _carvedFiles.ReplaceAll([]);
             _allCarvedFiles.Clear();
@@ -716,6 +802,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             // be a DIRECTORY; FileTypeDetector recognizes both shapes.
             if (!File.Exists(filePath) && !Directory.Exists(filePath))
             {
+                if (_exploreHost) throw new FileNotFoundException($"Not found: {filePath}", filePath);
                 await ShowDialogAsync("Analysis Failed", $"Not found: {filePath}");
                 return;
             }
@@ -723,16 +810,17 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             var fileType = FileTypeDetector.Detect(filePath);
             if (fileType == AnalysisFileType.Unknown)
             {
+                if (_exploreHost) throw new NotSupportedException($"Unknown file type: {filePath}");
                 await ShowDialogAsync("Analysis Failed", $"Unknown file type: {filePath}");
                 return;
             }
 
-            StatusTextBlock.Text = fileType switch
+            MainWindow.Instance?.SetLocalizedStatus(fileType switch
             {
-                AnalysisFileType.EsmFile => Strings.Status_StartingEsmAnalysis,
-                AnalysisFileType.SaveFile => "Parsing save file...",
-                _ => Strings.Status_StartingAnalysis
-            };
+                AnalysisFileType.EsmFile => "Status_StartingEsmAnalysis",
+                AnalysisFileType.SaveFile => "Status_ParsingSave",
+                _ => "Status_StartingAnalysis"
+            });
 
             ResetAnalysisProgress();
             var progress = new Progress<AnalysisProgress>(p => DispatcherQueue.TryEnqueue(() =>
@@ -741,7 +829,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 SetAnalysisProgress(fileType == AnalysisFileType.Minidump
                     ? p.PercentComplete * 0.8
                     : p.PercentComplete);
-                StatusTextBlock.Text = SingleFileAnalysisHelper.ResolvePhaseText(p, fileType);
+                var message = SingleFileAnalysisHelper.ResolvePhaseMessage(p, fileType);
+                MainWindow.Instance?.SetLocalizedStatus(message.Key, message.Arguments);
             }));
 
             var profile = fileType == AnalysisFileType.EsmFile ? new EsmLoadProfile() : null;
@@ -749,6 +838,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 ? await RunFileAnalysisWithArtifactsAsync(filePath, fileType, progress)
                 : await profile.TimeAsync("Analyze", () =>
                     RunFileAnalysisWithArtifactsAsync(filePath, fileType, progress));
+
+            cancellationToken.ThrowIfCancellationRequested();
 
             _analysisResult = artifacts.Result;
 
@@ -823,6 +914,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 await RunSemanticParsePipelineAsync(artifacts.EsmFileBuffer, profile, refreshCarvedFiles: false);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
+
             Core.Diagnostics.Logger.Instance.Debug(
                 "[Analyze] after parse: semanticResult={0} records={1} browsable={2}",
                 _session.SemanticResult != null,
@@ -833,7 +926,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             // disposed the previous LoadOrder — entries staged earlier would have been wiped) and
             // BEFORE AutoPopulateCurrentTabAsync (populates read _session.LoadOrder at populate
             // time, so the first build sees the merged view without a double rebuild).
-            await ApplyPendingLoadOrderAsync(filePath);
+            await ApplyPendingLoadOrderAsync(filePath, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (fileType != AnalysisFileType.SaveFile)
             {
@@ -890,8 +984,15 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
                 await RunCoverageAnalysisAsync();
             }
 
-            StatusTextBlock.Text = SingleFileAnalysisHelper.BuildCompletionStatus(_session, _allCarvedFiles);
+            var completionMessage = SingleFileAnalysisHelper.BuildCompletionMessage(_session, _allCarvedFiles);
+            MainWindow.Instance?.SetLocalizedStatus(completionMessage.Key, completionMessage.Arguments);
             profile?.Log(filePath);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            _pendingClassicResult?.Dispose();
+            _pendingClassicResult = null;
+            throw;
         }
         catch (Exception ex)
         {
@@ -899,7 +1000,8 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
             // already open, the window closing — otherwise leaves a failed analysis with no trace
             // anywhere, which reads as the run silently doing nothing.
             Core.Diagnostics.Logger.Instance.Error(
-                "[Analyze] FAILED for {0}: {1}: {2}", filePath, ex.GetType().Name, ex.Message);
+                "[Analyze] FAILED for {0}: {1}", filePath, ex);
+            if (_exploreHost) throw;
             await ShowDialogAsync("Analysis Failed", $"{ex.GetType().Name}: {ex.Message}\n\n{ex.StackTrace}",
                 true);
         }
@@ -993,14 +1095,7 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     #endregion
 
-    #region Settings Drawer
-
-    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
-    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
-
-    #endregion
-
-    #region Results ListView Events
+#region Results ListView Events
 
     private void ResultsListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -1056,6 +1151,13 @@ public sealed partial class SingleFileTab : UserControl, IDisposable, IHasSettin
 
     private void MinidumpPathTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
+        // Explore owns source replacement and draining. WinUI can deliver this notification
+        // after analysis has already started for a programmatically assigned path.
+        if (_exploreHost)
+        {
+            UpdateButtonStates();
+            return;
+        }
         var currentPath = MinidumpPathTextBox.Text;
         if (currentPath != _lastInputPath && FileTypeDetector.IsSupportedSource(currentPath))
         {

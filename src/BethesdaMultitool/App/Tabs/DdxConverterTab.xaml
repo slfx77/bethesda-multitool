@@ -4,36 +4,45 @@
   x:Class="BethesdaMultitool.DdxConverterTab"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:live="using:BethesdaMultitool.Localization"
+  xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
   xmlns:local="using:BethesdaMultitool">
 
   <Grid VerticalAlignment="Stretch">
-    <!--  Settings drawer  -->
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="*" MinWidth="400" />
+      <ColumnDefinition Width="8" />
+      <ColumnDefinition Width="280" MinWidth="220" />
+    </Grid.ColumnDefinitions>
+    <!--  Options for this workflow remain visible beside its inputs.  -->
     <Border
-      x:Name="SettingsDrawer"
-      Style="{StaticResource SettingsDrawerBorderStyle}">
+      x:Name="ToolOptionsPanel" Grid.Column="2" Width="Auto" HorizontalAlignment="Stretch"
+      Style="{StaticResource ToolOptionsBorderStyle}">
       <ScrollViewer VerticalScrollBarVisibility="Auto">
         <StackPanel Spacing="16">
-          <TextBlock Text="Settings" Style="{StaticResource SubtitleTextBlockStyle}" />
+          <TextBlock live:RuntimeLocalization.Uid="Workflow_Options" Style="{StaticResource SubtitleTextBlockStyle}" />
           <StackPanel Spacing="4">
             <TextBlock Text="Output" FontWeight="SemiBold" FontSize="13"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             <CheckBox
               x:Name="PreserveStructureCheckBox"
-              x:Uid="Checkbox_PreserveFolderStructure"
+              live:RuntimeLocalization.Uid="Checkbox_PreserveFolderStructure"
               MinWidth="0"
               IsChecked="True" />
             <CheckBox
               x:Name="OverwriteExistingCheckBox"
-              x:Uid="Checkbox_OverwriteExisting"
+              live:RuntimeLocalization.Uid="Checkbox_OverwriteExisting"
               MinWidth="0" />
             <CheckBox
               x:Name="VerboseOutputCheckBox"
-              x:Uid="Checkbox_VerboseOutput"
+              live:RuntimeLocalization.Uid="Checkbox_VerboseOutput"
               MinWidth="0" />
           </StackPanel>
         </StackPanel>
       </ScrollViewer>
     </Border>
+
+    <toolkit:GridSplitter Grid.Column="1" Style="{StaticResource MultitoolColumnSplitterStyle}" />
 
     <!--  Main content  -->
     <Grid Padding="16"
@@ -54,21 +63,21 @@
         </Grid.ColumnDefinitions>
         <StackPanel Style="{StaticResource TabHeaderStackPanelStyle}">
           <TextBlock
-            x:Uid="Header_DdxConverter"
+            live:RuntimeLocalization.Uid="Header_DdxConverter"
             AutomationProperties.HeadingLevel="Level1"
             Style="{StaticResource SubtitleTextBlockStyle}" />
           <TextBlock
-            x:Uid="Subtitle_DdxConvBy"
+            live:RuntimeLocalization.Uid="Subtitle_DdxConvBy"
             Style="{StaticResource TabSubtitleStyle}" />
         </StackPanel>
         <StackPanel
           Grid.Column="1"
           Style="{StaticResource SelectButtonsPanelStyle}">
           <Button
-            x:Uid="Button_SelectAll"
+            live:RuntimeLocalization.Uid="Button_SelectAll"
             Click="SelectAllButton_Click" />
           <Button
-            x:Uid="Button_SelectNone"
+            live:RuntimeLocalization.Uid="Button_SelectNone"
             Click="SelectNoneButton_Click" />
         </StackPanel>
       </Grid>
@@ -104,7 +113,7 @@
               Click="SortByFilePath_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
-                <TextBlock x:Uid="Col_FilePath" FontWeight="SemiBold" />
+                <TextBlock live:RuntimeLocalization.Uid="Col_FilePath" FontWeight="SemiBold" />
                 <FontIcon
                   x:Name="FilePathSortIcon"
                   Style="{StaticResource SortIconStyle}" />
@@ -117,7 +126,7 @@
               Click="SortBySize_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
-                <TextBlock x:Uid="Col_Size" FontWeight="SemiBold" />
+                <TextBlock live:RuntimeLocalization.Uid="Col_Size" FontWeight="SemiBold" />
                 <FontIcon
                   x:Name="SizeSortIcon"
                   Style="{StaticResource SortIconStyle}" />
@@ -130,7 +139,7 @@
               Click="SortByFormat_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
-                <TextBlock x:Uid="Col_Format" FontWeight="SemiBold" />
+                <TextBlock live:RuntimeLocalization.Uid="Col_Format" FontWeight="SemiBold" />
                 <FontIcon
                   x:Name="FormatSortIcon"
                   Style="{StaticResource SortIconStyle}" />
@@ -143,7 +152,7 @@
               Click="SortByStatus_Click">
               <StackPanel Orientation="Horizontal"
                           Spacing="4">
-                <TextBlock x:Uid="Col_Status" FontWeight="SemiBold" />
+                <TextBlock live:RuntimeLocalization.Uid="Col_Status" FontWeight="SemiBold" />
                 <FontIcon
                   x:Name="StatusSortIcon"
                   Style="{StaticResource SortIconStyle}" />
@@ -224,27 +233,27 @@
         <!-- Input Directory -->
         <TextBlock
           x:Name="DdxInputDirectoryLabel"
-          x:Uid="Label_InputDirectory"
+          live:RuntimeLocalization.Uid="Label_InputDirectory"
           Grid.Row="0"
           Grid.Column="0"
           Style="{StaticResource IoLabelStyle}" />
         <TextBox
           x:Name="InputDirectoryTextBox"
-          x:Uid="Input_DdxInputDir"
+          live:RuntimeLocalization.Uid="Input_DdxInputDir"
           Grid.Row="0"
           Grid.Column="1"
           Style="{StaticResource IoTextBoxStyle}"
           AutomationProperties.LabeledBy="{Binding ElementName=DdxInputDirectoryLabel}"
           TextChanged="InputDirectoryTextBox_TextChanged" />
         <Button
-          x:Uid="Button_Browse"
+          live:RuntimeLocalization.Uid="Button_Browse"
           Grid.Row="0"
           Grid.Column="2"
           AutomationProperties.Name="Browse for input directory"
           Click="BrowseInputButton_Click" />
         <Button
           x:Name="ConvertButton"
-          x:Uid="Button_Convert"
+          live:RuntimeLocalization.Uid="Button_Convert"
           Grid.Row="0"
           Grid.Column="3"
           MinWidth="120"
@@ -256,27 +265,27 @@
         <!-- Output Directory -->
         <TextBlock
           x:Name="DdxOutputDirectoryLabel"
-          x:Uid="Label_OutputDirectory"
+          live:RuntimeLocalization.Uid="Label_OutputDirectory"
           Grid.Row="1"
           Grid.Column="0"
           Style="{StaticResource IoLabelStyle}" />
         <TextBox
           x:Name="OutputDirectoryTextBox"
-          x:Uid="Input_ConvertOutputDir"
+          live:RuntimeLocalization.Uid="Input_ConvertOutputDir"
           Grid.Row="1"
           Grid.Column="1"
           Style="{StaticResource IoTextBoxStyle}"
           AutomationProperties.LabeledBy="{Binding ElementName=DdxOutputDirectoryLabel}"
           TextChanged="OutputDirectoryTextBox_TextChanged" />
         <Button
-          x:Uid="Button_Browse"
+          live:RuntimeLocalization.Uid="Button_Browse"
           Grid.Row="1"
           Grid.Column="2"
           AutomationProperties.Name="Browse for output directory"
           Click="BrowseOutputButton_Click" />
         <Button
           x:Name="CancelButton"
-          x:Uid="Button_Cancel"
+          live:RuntimeLocalization.Uid="Button_Cancel"
           Grid.Row="1"
           Grid.Column="3"
           Margin="8,0,0,0"

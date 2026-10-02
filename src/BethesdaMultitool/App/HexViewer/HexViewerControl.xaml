@@ -8,9 +8,12 @@
 
   <Grid>
     <Grid.ColumnDefinitions>
-      <ColumnDefinition Width="*" />
-      <ColumnDefinition Width="120" />
+      <ColumnDefinition Width="*" MinWidth="240" />
+      <ColumnDefinition Width="8" />
+      <ColumnDefinition Width="120" MinWidth="100" />
     </Grid.ColumnDefinitions>
+
+    <ctk:GridSplitter Grid.Column="1" Style="{StaticResource MultitoolColumnSplitterStyle}" />
 
     <!--  Main Hex View  -->
     <Grid Grid.Column="0">
@@ -357,8 +360,7 @@
 
     <!--  Minimap Panel - always dark like hex editor  -->
     <Border
-      Grid.Column="1"
-      Margin="4,0,0,0"
+      Grid.Column="2"
       Background="#FF1E1E1E"
       BorderThickness="0"
       CornerRadius="4">

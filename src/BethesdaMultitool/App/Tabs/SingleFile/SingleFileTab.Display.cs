@@ -1,4 +1,4 @@
-﻿using System.Collections.ObjectModel;
+using System.Collections.ObjectModel;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Localization;
@@ -77,7 +77,7 @@ public sealed partial class SingleFileTab
         var coverage = _session.CoverageResult;
         if (coverage == null) return;
 
-        CoverageSummaryText.Text = ResultsFormatter.BuildCoverageSummaryText(coverage);
+        RuntimeLocalization.SetRaw(CoverageSummaryText, TextBlock.TextProperty, ResultsFormatter.BuildCoverageSummaryText(coverage));
         CoverageClassificationText.Text = ResultsFormatter.BuildCoverageClassificationText(coverage);
 
         // Coverage data is populated — swap empty-state placeholder for content.
@@ -235,6 +235,7 @@ public sealed partial class SingleFileTab
 
         // Buttons (must be last — UpdateButtonStates reads _pipelinePhase)
         UpdateButtonStates();
+        BusyChanged?.Invoke(this, isBusy);
     }
 
     #endregion
@@ -492,7 +493,7 @@ public sealed partial class SingleFileTab
     {
         DataBrowserPlaceholder.Visibility = Visibility.Visible;
         DataBrowserContent.Visibility = Visibility.Collapsed;
-        ParseStatusText.Text = Strings.Empty_RunAnalysisForEsm;
+        RuntimeLocalization.SetText(ParseStatusText, "Empty_RunAnalysisForEsm");
         EsmTreeView.RootNodes.Clear();
         _flatListBuilt = false;
         _esmBrowserTree = null;
@@ -507,7 +508,7 @@ public sealed partial class SingleFileTab
         EsmSearchBox.Text = "";
         EsmSortComboBox.SelectedIndex = 0;
         PropertyPanel.Children.Clear();
-        SelectedRecordTitle.Text = Strings.Empty_SelectARecord;
+        RuntimeLocalization.SetText(SelectedRecordTitle, "Empty_SelectARecord");
         GoToOffsetButton.Visibility = Visibility.Collapsed;
         ViewWorldspaceButton.Visibility = Visibility.Collapsed;
         ViewNpcButton.Visibility = Visibility.Collapsed;
@@ -523,7 +524,7 @@ public sealed partial class SingleFileTab
 
     private void ResetCoverageTab()
     {
-        CoverageSummaryText.Text = "Run analysis to see coverage data.";
+        RuntimeLocalization.SetRaw(CoverageSummaryText, TextBlock.TextProperty, "Run analysis to see coverage data.");
         CoverageClassificationText.Text = "";
         CoverageGapListView.ItemsSource = null;
         _coverageGapSortColumn = CoverageGapSortColumn.Index;
@@ -567,7 +568,7 @@ public sealed partial class SingleFileTab
 
         if (browserNode.NodeType == "Record")
         {
-            SelectedRecordTitle.Text = browserNode.DisplayName;
+            RuntimeLocalization.SetRaw(SelectedRecordTitle, TextBlock.TextProperty, browserNode.DisplayName);
             BuildPropertyPanel(browserNode.Properties);
 
             if (browserNode.FileOffset.HasValue && browserNode.FileOffset.Value > 0)
@@ -595,7 +596,7 @@ public sealed partial class SingleFileTab
         }
         else
         {
-            SelectedRecordTitle.Text = browserNode.DisplayName;
+            RuntimeLocalization.SetRaw(SelectedRecordTitle, TextBlock.TextProperty, browserNode.DisplayName);
             PropertyPanel.Children.Clear();
             GoToOffsetButton.Visibility = Visibility.Collapsed;
             ViewWorldspaceButton.Visibility = Visibility.Collapsed;

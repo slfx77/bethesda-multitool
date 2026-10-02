@@ -8,7 +8,7 @@ namespace BethesdaMultitool;
 
 /// <summary>
 ///     Plays a movie onto a <see cref="WriteableBitmap" />, presenting the same
-///     transport shape as <see cref="AssetAudioPlayer" /> so one set of controls drives either.
+///     play/pause/seek shape consumed by the existing frame-video transport.
 ///     <para>
 ///         The repository's decoders supply RGBA frames, either predecoded or on demand.
 ///         Playback uses a timer writing

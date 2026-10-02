@@ -70,14 +70,14 @@ public static class DependencyChecker
     }
 
     /// <summary>
-    ///     Checks all dependencies required by the Texture Tools tab.
+    ///     Checks all dependencies required by the DDX to DDS Converter tab.
     ///     DDXConv is now compiled-in, so no external dependencies are needed.
     /// </summary>
     public static TabDependencyResult CheckDdxConverterDependencies()
     {
         return new TabDependencyResult
         {
-            TabName = "Texture Tools",
+            TabName = Localization.Strings.Get("Header_DdxConverter.Text"),
             Dependencies = [] // DDXConv is compiled-in, no external dependencies
         };
     }

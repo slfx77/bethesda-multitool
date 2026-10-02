@@ -1,0 +1,1007 @@
+{
+  "schema": "bmt-shadowkey-native-preview-ui-source-review/v1",
+  "createdUtc": "2026-09-21T02:36:59.828595+00:00",
+  "baseCommit": "f6290ffe6da503078242b8cc7cb4ce25de739ff3",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "scope": "Applied Shadowkey native pack-slot UI delta: changed/new App callables in browser, window and Explore ownership, with changed XAML/resource/project manifests hashed. Core catalog/decoder costs are referenced, not re-reviewed; unchanged application callables, generated XAML/property members, Shared implementations and legacy rendering paths are outside callable coverage.",
+  "status": "source_review_only_applied_gui_unvalidated",
+  "hashConvention": {
+    "source": "SHA-256 of UTF-8 source after optional BOM removal and CRLF/CR to LF normalization; no trimming.",
+    "declaration": "Exact Tree-sitter declaration/expression byte span including body and excluding preceding XML comments/trailing whitespace.",
+    "signature": "Declaration start through body/accessor-list start with trailing whitespace removed; for lambda expressions this includes authored parameter/arrow tokens before the body.",
+    "body": "Exact body/block/arrow-expression/accessor-list bytes. Auto-property accessor syntax is hashed but generated get/set methods are not separate authored callables."
+  },
+  "variables": {
+    "S": "Catalog slot count, at most 4096 under the Core source reader.",
+    "Q": "Pending preview requests in the serialized browser task chain; no fixed admission-count cap.",
+    "C": "Pending source-close requests; no fixed admission-count cap.",
+    "V/I": "Vertices/indices in the selected normalized frame. Current Shadowkey adapter unrolls triangle corners and admits one static mesh/material/image.",
+    "P": "Owned encoded PNG bytes and decoded pixels for the selected skin; source/normalization costs are reviewed by the separate Core receipt.",
+    "L": "Displayed path/name/diagnostic text length; formatting and logging may process O(L) text.",
+    "R": "Total realized framework items/bindings affected by list/gallery/tree clearing; framework rendering/layout costs are not asserted constant.",
+    "W": "Predecessor completion, cancellation callbacks, I/O, shared preparation, GPU retirement and dispatcher scheduling. Wall-clock wait has no finite deadline guarantee.",
+    "D": "Selected Core catalog.Prepare work, including record parse, normalization and PNG encoding.",
+    "N": "Shared NativeScenePresenter preparation/adoption/clear/disposal work at the pinned contract; not a local O(1) operation.",
+    "resourceBudgetMeaning": "Numerical payload allowances below exclude managed headers, retained source/evaluator graphs, codec scratch, descriptors, swap chains, driver storage and unrelated application viewers."
+  },
+  "costProfiles": {
+    "constant": {
+      "time": "O(1) local fixed-size state/reference work; called framework callbacks are separate.",
+      "space": "O(1) local state."
+    },
+    "activity": {
+      "time": "O(1) local forwarding; delegated Shared activity/capture cancellation is not measured.",
+      "space": "O(1) local state; retains the existing presenter/camera."
+    },
+    "configure": {
+      "time": "Fixed number of owner/control constructions and bindings; delegated Shared localization/inspection setup and framework layout are separate.",
+      "space": "O(1) application owner references plus Shared retained controls/bindings; no catalog decode or GLB serialization."
+    },
+    "queue": {
+      "time": "O(1) local enqueue/publication; synchronous cancellation invokes registered predecessor callbacks whose cost is delegated.",
+      "space": "O(1) task/closure/token registration per request; O(Q) pending request state globally."
+    },
+    "select": {
+      "time": "O(1) local selection work plus O(R) framework clear/rebinding, O(L) status formatting and queued Core OpenAsync work.",
+      "space": "O(1) local references per request; O(S) catalog/UI references and bounded Core input copies are delegated."
+    },
+    "prepare": {
+      "time": "O(1) identity/options/camera capture plus O(L) status formatting and enqueue. Actual D is off-thread and serialized.",
+      "space": "O(1) immutable selection, retained camera reference and closure per request."
+    },
+    "adopt": {
+      "time": "D + selected-scene bounds measurement + N; fixed local identity/range/status steps. Includes W; not bounded by a timeout.",
+      "space": "Selected scene/image ownership plus bounded pose/preparation payloads and O(1) local state; predecessor native state is cleared before replacement work."
+    },
+    "run": {
+      "time": "Predecessor W + N(clear) + current callback cost, or cancellation cleanup. Only one request body prepares/adopts at a time.",
+      "space": "O(1) state per queued request, O(Q) chain globally; callbacks may retain catalog, snapshot, selection and camera references until settlement."
+    },
+    "clear": {
+      "time": "O(R) control reset + pending-chain W + N(clear); captured cancellation callbacks are additional delegated work.",
+      "space": "O(1) local captured identities; source ownership is retained until successful native clearing."
+    },
+    "dispose": {
+      "time": "Fixed local stages plus settling C/Q chains, cancellation callbacks, N(dispose) and existing owner retirement. W has no timeout guarantee.",
+      "space": "O(1) application stage/error slots, excluding original exception objects, delegated owners and existing pending chains."
+    },
+    "status": {
+      "time": "O(L) diagnostic/status formatting and delegated logging or localization-binding refresh.",
+      "space": "O(L) formatted text/diagnostic retention where allocated."
+    },
+    "guard": {
+      "time": "O(1) exact reference/scalar/type checks, or exception construction on rejection.",
+      "space": "O(1), excluding runtime exception/stack storage."
+    },
+    "measure": {
+      "time": "For this admitted static, one-node mesh: O(V + I) validation/rest sampling/indexed bounds work, plus fixed structural checks. Shared general scene algorithms are not re-reviewed here.",
+      "space": "O(V) pose numeric scratch plus source/evaluator/presentation bookkeeping. Explicit pose bank payload allowance is 128 MiB; it is not a total heap cap."
+    },
+    "camera": {
+      "time": "O(1) fixed Vector3/scalar shared camera mathematics.",
+      "space": "O(1) camera/lens/limit objects; original source basis and units remain unchanged."
+    },
+    "attach_delta": {
+      "time": "O(1) added disposed pre-admission guard; inherited attach/lease/tree/gallery costs remain outside this delta bound.",
+      "space": "O(1) added guard; inherited attached source/thumbnail ownership unchanged."
+    },
+    "legacy_selection_delta": {
+      "time": "O(1) added branch plus SelectShadowkeyPack cost; inherited sibling gallery/media/map/sky work remains outside this delta bound.",
+      "space": "O(1) added branch; downstream preview/catalog ownership described separately."
+    },
+    "source_close_start": {
+      "time": "O(1) generation/gate/result publication; one observed queued close runs after its predecessor.",
+      "space": "O(1) task/completion state per close, O(C) pending close chain globally."
+    },
+    "source_close_run": {
+      "time": "Predecessor W + ClearShadowkeySourceAsync + inherited source/UI/media cleanup. Serial execution prevents an older close touching a new source.",
+      "space": "O(1) close continuation state plus inherited control/owner cleanup; old source fields remain retained when native clear fails."
+    },
+    "constructor_delta": {
+      "time": "Fixed added WindowWorkflowServices/Direct3D12Graphics/preview-owner setup; inherited InitializeComponent and startup work is outside the delta bound.",
+      "space": "One window graphics owner and workflow-services object plus configure-category Shared controls/bindings."
+    },
+    "navigation_delta": {
+      "time": "O(1) added activity forwarding; inherited navigation/tree/map/view switching is outside the delta bound.",
+      "space": "O(1) added state; retained native presentation is not rebuilt on navigation."
+    },
+    "close_window": {
+      "time": "Await existing shutdown W, then fixed proof/status/Close checks. Failed native retirement retains the window; no disposal retry.",
+      "space": "O(1) local state plus prerequisites intentionally retained on failure."
+    },
+    "publish_dispose": {
+      "time": "O(1) prepublication and idempotent repeated-call lookup; the one observed disposal continuation delegates retirement.",
+      "space": "One retained task/completion pair per control instance; repeated callers do not add cleanup tasks."
+    },
+    "reset": {
+      "time": "Fixed property assignments plus O(R) framework list/control clearing and binding work; no catalog decode is requested by this method.",
+      "space": "O(1) local state; drops retained catalog/selection/camera references without copying source payloads."
+    },
+    "catalog_open": {
+      "time": "Core OpenAsync bounded archive/VFS read and catalog parse cost, then fixed identity checks plus O(R) list binding; see the separate Core receipt.",
+      "space": "Detached bounded pack/index/names data and O(S) entry references plus O(1) callback state; Core owns the temporary read lease."
+    },
+    "core_prepare": {
+      "time": "D: synchronous selected-record parse and existing normalization/PNG work, executed in Task.Run; no UI/native adoption occurs inside this worker callback.",
+      "space": "Core-owned parsed record and selected normalized scene/image storage; see the Core source receipt for bounded input and output amplification."
+    }
+  },
+  "files": [
+    {
+      "path": "src/BethesdaMultitool/App/MainWindow.xaml.cs",
+      "sourceSha256Lf": "7b6976fb9d6f56d9b854b4ed7e26aac519f67ffff5a2c6ebc157ad00265815e8",
+      "sourceBytesLf": 17936,
+      "selection": "All new authored declarations in new files; existing declarations whose exact AST bytes differ from the base commit, plus all lambdas nested in those selected declarations.",
+      "callables": [
+        {
+          "name": "MainWindow.ctor",
+          "kind": "constructor_declaration",
+          "line": 42,
+          "endLine": 125,
+          "declarationSha256Lf": "2ea5c019c62581d14f9cffec27b76f969a82286abd13403d2f05beeaf22e1264",
+          "signatureSha256Lf": "324e9ac2d659389aa87b2e3f52a1aeffff3151d067c0881ac5c7b1485b22ad91",
+          "bodySha256Lf": "55e4ce7d696ca66e5b9d6e116603158ac1ea9e326099a6019a93397b582935d0",
+          "costProfile": "constructor_delta",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "MainWindow.CompleteCloseAsync",
+          "kind": "method_declaration",
+          "line": 147,
+          "endLine": 162,
+          "declarationSha256Lf": "8adfc3a1637b5f4fb8a6cd66d2e0eb19b3cf84c1d37489b65f082d8a08cebbb8",
+          "signatureSha256Lf": "ceb29288e472a30572ac4c509f25c950c10beb0aef887b84b56767528238be6a",
+          "bodySha256Lf": "42985c37d8779ab455296736168c410c7d494ae9fc9876d1156ae2df1d862145",
+          "costProfile": "close_window",
+          "review": "Failed native retirement leaves graphics non-null and the disabled window retained with localized status; no second Dispose call is represented as a retry."
+        },
+        {
+          "name": "MainWindow.DisposeWindowOwnersAsync",
+          "kind": "method_declaration",
+          "line": 178,
+          "endLine": 209,
+          "declarationSha256Lf": "469cfa8b61159597904cc7ebec3b87c5aef4e1cecd2cf0d93465333a457fe49d",
+          "signatureSha256Lf": "9dca18d7a8bd56a8c837a21b6d0962b90db4023a44b7fce40de947c2df753638",
+          "bodySha256Lf": "21e1df2b7491f5f4a8405d173ae313e7f87e4ad347b9cb2c1326400fb8777b81",
+          "costProfile": "dispose",
+          "review": "Graphics disposal requires Explore.NativeResourcesRetired; a failed proof or graphics disposal prevents localization and HWND teardown."
+        },
+        {
+          "name": "MainWindow.ReportNativeWorkflowFailure",
+          "kind": "method_declaration",
+          "line": 214,
+          "endLine": 217,
+          "declarationSha256Lf": "c9e636f1b03c42dc5626bbd82e1152968d6f33b565f4fbbbdce515f3a26487c0",
+          "signatureSha256Lf": "bbb2446eef49a23a212adf7972d12de5c731552b8c5de543683e64075c2cdbe1",
+          "bodySha256Lf": "df71616ef79ae261afd301b6266a4f123e7cee8f9a0f2ac2c36dde374abb1053",
+          "costProfile": "status",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "MainWindow.NavView_SelectionChanged",
+          "kind": "method_declaration",
+          "line": 319,
+          "endLine": 385,
+          "declarationSha256Lf": "fbd96d21e81d87893c500fc5f5306446271197ea1e47ff14596eacb80cc70202",
+          "signatureSha256Lf": "33bfc9dda9f7ffc11e94164536201808c74d1da5a7b0a7e83c7b3c940d359b9d",
+          "bodySha256Lf": "8404cfd508f97c29af0ce198155cf5848d7cca1e87a9dbf24eeb5012e2d02efe",
+          "costProfile": "navigation_delta",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/Explore/ExploreTab.xaml.cs",
+      "sourceSha256Lf": "60a36e5b6446a78fd546f5206003044dbd84c3440b90c3fcc4debaf618dd58d9",
+      "sourceBytesLf": 21121,
+      "selection": "All new authored declarations in new files; existing declarations whose exact AST bytes differ from the base commit, plus all lambdas nested in those selected declarations.",
+      "callables": [
+        {
+          "name": "ExploreTab.EnableShadowkeyPreview",
+          "kind": "method_declaration",
+          "line": 67,
+          "endLine": 72,
+          "declarationSha256Lf": "79029a54a9d48d6c788570e1a0dcce9f5b04f8b0d68937da7e2e55d3ca43dab2",
+          "signatureSha256Lf": "dc1b39bca8f7f18c99b94f3182db8b98b1b5953d8d8cf16cf7e06a8f5be7f471",
+          "bodySha256Lf": "48237bc537badda6f36fa0da62707762fc0bd55020e09bebe78342cf4d285860",
+          "costProfile": "configure",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "ExploreTab.NativeResourcesRetired",
+          "kind": "property_declaration",
+          "line": 75,
+          "endLine": 75,
+          "declarationSha256Lf": "e5a485fee4ca1c5463c782c86d7c48c5c3f51e57776d86a5f1cdc37694c0d886",
+          "signatureSha256Lf": "297960e871dca95bbe4b873b87dab8f847d47002e0cc7c1d5c025160cdc4c158",
+          "bodySha256Lf": "a13bf64ccb5f92f21f98304b6b1298a42e22191bf09dd0155d5ccb83a8f114ad",
+          "costProfile": "constant",
+          "review": "Constant forwarding to the browser's actual retirement proof."
+        },
+        {
+          "name": "ExploreTab.SetPresentationActive",
+          "kind": "method_declaration",
+          "line": 79,
+          "endLine": 84,
+          "declarationSha256Lf": "2c2dc177ef93aa09983a55b0bddf33ceb44155b9642c7e1558493a961bf161ca",
+          "signatureSha256Lf": "2ee4ced7ec3e65b83a6b5e18d96e6d2670905e356455c2ec489116d4a0e9f0ae",
+          "bodySha256Lf": "fe74322925a433425c789463fbae1500671613e3bd38a711a8fd8724770fe1c0",
+          "costProfile": "activity",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "ExploreTab.UpdateView",
+          "kind": "method_declaration",
+          "line": 302,
+          "endLine": 315,
+          "declarationSha256Lf": "3b4169c98d7e94319525fe589d347fcffec12314babce8cddc39ab8a522e42c4",
+          "signatureSha256Lf": "deabda722f17a5db6601f1db513ea5b9a7c40facdcb6a51a2d4dbce3a0d298cf",
+          "bodySha256Lf": "f0f4009ac5f92b8b63bd2a5895df87a3ff970318895b6c2329095c0bcb6f947a",
+          "costProfile": "navigation_delta",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "ExploreTab.DisposeAsync",
+          "kind": "method_declaration",
+          "line": 347,
+          "endLine": 354,
+          "declarationSha256Lf": "de0d6ac3ea0b3f94ec8bb9bb64542ef267add0b11d7b61919c4af584428cc409",
+          "signatureSha256Lf": "6a51fef450b9c4acb4c9cb7b5483a952ea1b2d4c8a4ef43adcee1894e76a4b86",
+          "bodySha256Lf": "9f89dbe8a5f3b714743790b9d2ed5fc23c40878f6e06840ab8f05dfb491078c7",
+          "costProfile": "publish_dispose",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "ExploreTab.DisposeExploreObservedAsync",
+          "kind": "method_declaration",
+          "line": 359,
+          "endLine": 363,
+          "declarationSha256Lf": "1a33679183f84299b8449f076fa739636833d3c2d9b0488df4988e1ffbb8752d",
+          "signatureSha256Lf": "4caf777b4a29574778b8fc465f1329946b243b801bee07f7e9dfba5acab1a839",
+          "bodySha256Lf": "8400a18c209a41104699ee07f9adb7b1671084cbeee67dcd793b9817b027b572",
+          "costProfile": "dispose",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "ExploreTab.DisposeCoreAsync",
+          "kind": "method_declaration",
+          "line": 367,
+          "endLine": 404,
+          "declarationSha256Lf": "f0be8581507faf45082b69fe1b599606670e5c54b1bf5cedc782994939c482d4",
+          "signatureSha256Lf": "27a7be2b7b9c2d89acfdd6002134cb7ec1ec735b02633735c8943eaf0bee13dc",
+          "bodySha256Lf": "e10c1c2fe051260c1b5ac7aff5b46c146c73a62f2f3dcedc681e5e8c21caa88e",
+          "costProfile": "dispose",
+          "review": "Cancels opening and acquires the existing source gate before viewer retirement; native proof gates BrowserSession disposal. Data and Recovery remain separate owners."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.xaml.cs",
+      "sourceSha256Lf": "6c38cccca0eced29201431c0f03a19bfbf38e773860372622e3821f5588cd36a",
+      "sourceBytesLf": 37819,
+      "selection": "All new authored declarations in new files; existing declarations whose exact AST bytes differ from the base commit, plus all lambdas nested in those selected declarations.",
+      "callables": [
+        {
+          "name": "AssetBrowserTab.AssetTreeView_SelectionChanged",
+          "kind": "method_declaration",
+          "line": 273,
+          "endLine": 288,
+          "declarationSha256Lf": "665addfcd2f21053c2e853a3c4e059feebfa74e1ce1dbceedd4dca40c1ce6917",
+          "signatureSha256Lf": "557d1dd578cbfba478fdc398222d3689f27ab36238f1b69642068f33f2a4ad8d",
+          "bodySha256Lf": "27fdb022f060a345215358eef2979ee57547e98f2304a6974655cc6d321d3c41",
+          "costProfile": "legacy_selection_delta",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.CloseSourceAsync",
+          "kind": "method_declaration",
+          "line": 768,
+          "endLine": 778,
+          "declarationSha256Lf": "b41bcb520ee121026be003d58b8643a2b848481052d3a229e6efc13de0d914f9",
+          "signatureSha256Lf": "e2765e685249b59965ed924dca244adf1c29b0ddb0f88c5b067d2459380558c0",
+          "bodySha256Lf": "fa444a7a4c5a3533ca3668b95ad994c831db0750b91dd64df78e222ba706c804",
+          "costProfile": "source_close_start",
+          "review": "Claims generation/gate and publishes the close task before invoking an observer; each caller receives its own generation while closes execute in order."
+        },
+        {
+          "name": "AssetBrowserTab.CloseSourceObservedAsync",
+          "kind": "method_declaration",
+          "line": 785,
+          "endLine": 795,
+          "declarationSha256Lf": "8d510e9eee472c38b986e009606b55405708e5bb470864c200afef11b3135428",
+          "signatureSha256Lf": "5ffcfd1f8daca5e840ed02ae4fe83e7b8f4bd2858d15be2e6e39f384ffcd198c",
+          "bodySha256Lf": "f4748c21899df20949f587c534adb6e48ade67f7f8a8db4a1552cd777e31bb72",
+          "costProfile": "source_close_run",
+          "review": "A failed predecessor is propagated, not silently retried. Later attachment cannot overtake unfinished retirement."
+        },
+        {
+          "name": "AssetBrowserTab.CloseSourceCoreAsync",
+          "kind": "method_declaration",
+          "line": 800,
+          "endLine": 869,
+          "declarationSha256Lf": "0806872e747eeb32edfbf1806457f5602f4e30dd132af9a6ecd2a5ab384d302c",
+          "signatureSha256Lf": "8b75560968af3adf29868b414f83492d1f29bab93b213bd8a473931badd30889",
+          "bodySha256Lf": "585256f2155386abe210604cca60513aa99bff5ff87a79e8d498a72b2e5bf0a2",
+          "costProfile": "source_close_run",
+          "review": "Native request drain/clear precedes reading and clearing source-owner fields. Captured lease/session/standalone ownership remains in fields if native clearing fails. The inherited media/UI cleanup is not rewritten by this review."
+        },
+        {
+          "name": "AssetBrowserTab.DisposeAsync",
+          "kind": "method_declaration",
+          "line": 879,
+          "endLine": 886,
+          "declarationSha256Lf": "c6a47676c490255b9a7bf6bddefc0a207b4a924c634ea86fd9f804459414b161",
+          "signatureSha256Lf": "6a51fef450b9c4acb4c9cb7b5483a952ea1b2d4c8a4ef43adcee1894e76a4b86",
+          "bodySha256Lf": "3884ee67e8e4c72b922dc84ffdd5969fe25c77b644d155518c2ba7e8cc4f7890",
+          "costProfile": "publish_dispose",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.DisposeAssetBrowserObservedAsync",
+          "kind": "method_declaration",
+          "line": 891,
+          "endLine": 895,
+          "declarationSha256Lf": "d74b862ed19a3df84ba746a836a0477b447002566d7a1eddf743033c66819796",
+          "signatureSha256Lf": "d0764ca80d1c14b77cd3a53ae0991b3eef30f67f925872fdccac1ceed7a33571",
+          "bodySha256Lf": "8400a18c209a41104699ee07f9adb7b1671084cbeee67dcd793b9817b027b572",
+          "costProfile": "dispose",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.DisposeCoreAsync",
+          "kind": "method_declaration",
+          "line": 910,
+          "endLine": 947,
+          "declarationSha256Lf": "16315a463167adf36456ff9e00dff9c74183db01a612d27f560a07ac9541a429",
+          "signatureSha256Lf": "27a7be2b7b9c2d89acfdd6002134cb7ec1ec735b02633735c8943eaf0bee13dc",
+          "bodySha256Lf": "294667504494f0f68b9c58505ca6ba609ce37c907579811d96313aa0eb6e1d89",
+          "costProfile": "dispose",
+          "review": "Independent try/catch stages prevent synchronous legacy cleanup failure skipping native retirement. A previously faulted source-close chain is reset only after actual native retirement proves source prerequisites may be released; original errors remain aggregated."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.Explore.cs",
+      "sourceSha256Lf": "65e02f27b636230b11466ae76eeedda311f949ae1ee9c9b3f2c100e767ddf8fa",
+      "sourceBytesLf": 4730,
+      "selection": "All new authored declarations in new files; existing declarations whose exact AST bytes differ from the base commit, plus all lambdas nested in those selected declarations.",
+      "callables": [
+        {
+          "name": "AssetBrowserTab.AttachWorkspaceSourceAsync",
+          "kind": "method_declaration",
+          "line": 48,
+          "endLine": 86,
+          "declarationSha256Lf": "7f857475f56a577be0f54bbaf6c75ac7c8ef11f7fd46c92fd56a7b1e37e10e11",
+          "signatureSha256Lf": "d705e26b395f188ae899588ae07bb652eea8c63b644e39396af2ee1705e1325f",
+          "bodySha256Lf": "ef0eda04e7c016f9dffe105ec267dfd0240757d8bff06e4a89ad4487b4a90e81",
+          "costProfile": "attach_delta",
+          "review": "Early disposed guard runs before source validation/lease acquisition/close queue; the existing post-await source-generation check remains."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.Selection.cs",
+      "sourceSha256Lf": "20995599c6e2475d02f5dc7dd3cee343042d5c64053594f5d6287e6873c4694c",
+      "sourceBytesLf": 2149,
+      "selection": "All new authored declarations in new files; existing declarations whose exact AST bytes differ from the base commit, plus all lambdas nested in those selected declarations.",
+      "callables": [
+        {
+          "name": "AssetBrowserTab.CurrentAssetSelection",
+          "kind": "property_declaration",
+          "line": 11,
+          "endLine": 14,
+          "declarationSha256Lf": "6fc90e72a0654c29df4c9e9392c2e8275ca617c3840539b811dc08fcae03c923",
+          "signatureSha256Lf": "57eb10886f495e2c1bf8e40d195ade7c92c61b99c4904bd29d9e482261318ecf",
+          "bodySha256Lf": "3acaf9129f9c4b19cc4663d662dea8409e4b244d70c06a8b4206394456bea649",
+          "costProfile": "guard",
+          "review": "Adds the synchronous closing gate to existing source/snapshot/session validation, retaining export-tree check authority."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.Shadowkey.cs",
+      "sourceSha256Lf": "684c39a5efc4d48027af4b3436eadef5bf0437785b3246e1f5169f258d9227b0",
+      "sourceBytesLf": 22694,
+      "selection": "All new authored declarations in new files; existing declarations whose exact AST bytes differ from the base commit, plus all lambdas nested in those selected declarations.",
+      "callables": [
+        {
+          "name": "AssetBrowserTab.NativeResourcesRetired",
+          "kind": "property_declaration",
+          "line": 31,
+          "endLine": 31,
+          "declarationSha256Lf": "f588a1f6ab8588acf37bbd7028aea10b4d84e6cd29d55d9193a9918113b92fc3",
+          "signatureSha256Lf": "e9f55cc205606446d537ad7c1883ef582db406bde4b4cf4c18e57f0ca7e2511f",
+          "bodySha256Lf": "7741228d600b35e6ccfbc00a722a6b2619024c450115ce90e11aeabbce587e56",
+          "costProfile": "constant",
+          "review": "Auto-property, initialized true; generated accessors have constant field semantics and are not separate authored callables."
+        },
+        {
+          "name": "AssetBrowserTab.EnableShadowkeyPreview",
+          "kind": "method_declaration",
+          "line": 36,
+          "endLine": 47,
+          "declarationSha256Lf": "b98235b7e5d61eb2ef7c000398c5f6a262076656b87896c7e8f443ed9ce36d96",
+          "signatureSha256Lf": "9c2bc3319c3e54744ca80b2fa661837217934aec3ffe535a1561feacd9f1efff",
+          "bodySha256Lf": "7ecbb593065591ae2174c9fba33bfecce5ac343b937bb1ec6712e42f172ad36a",
+          "costProfile": "configure",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.SetShadowkeyPresentationActive",
+          "kind": "method_declaration",
+          "line": 51,
+          "endLine": 55,
+          "declarationSha256Lf": "425b5ce710b04d01b63a85394d308f0f7c78e3f7f643201525c888e1027b1f58",
+          "signatureSha256Lf": "f0fe4f620f2b2c12a3cc68db95b605517d3147ca3533c1b82ebacc53f880faea",
+          "bodySha256Lf": "01c43a87d575dc8011060626a2816ecc0caacfdf330c331c6437c99628a6b5af",
+          "costProfile": "activity",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.SelectShadowkeyPack",
+          "kind": "method_declaration",
+          "line": 60,
+          "endLine": 89,
+          "declarationSha256Lf": "830c1ae4aa40d5753e839bbb1e0af014f6b0ea6d272f2e1f1bb0c481473e5640",
+          "signatureSha256Lf": "bcc7994ff01c880c152e6a83a69fc2524467f125a9b7d2fa7ee722df90c6260e",
+          "bodySha256Lf": "571d84b72bd92a16151ff61a2180cc09024dcc061c6eea176c218f15bee5b26b",
+          "costProfile": "select",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.SelectShadowkeyPack.lambda1",
+          "kind": "lambda_expression",
+          "line": 67,
+          "endLine": 67,
+          "declarationSha256Lf": "4a062ac1f0c15e57c658732884eeb40292ad9973cdd9270018801e36f91f6abb",
+          "signatureSha256Lf": "d7a43ad0b2b16f3506432d7c465d0c8a1e6cac7f8421a2bdfaf6a4fa1b4ab999",
+          "bodySha256Lf": "b8a01c4b7151658ee21905d62f3a11d9b54edeb69afcf8ea2843f05756b7912f",
+          "costProfile": "constant",
+          "review": "Authored callback within AssetBrowserTab.SelectShadowkeyPack; caller tracks/drains its Task where asynchronous. No independent resource ownership transfer."
+        },
+        {
+          "name": "AssetBrowserTab.SelectShadowkeyPack.lambda2",
+          "kind": "lambda_expression",
+          "line": 78,
+          "endLine": 87,
+          "declarationSha256Lf": "f85c68cc6e3d9205a83fab7a59396002e223263467f2d0713f229f4fe5025885",
+          "signatureSha256Lf": "122f28b86ef1a1ee2990bd2c92340b078f08bd713c88cf15cf5f8a7444725e72",
+          "bodySha256Lf": "e39c40f259d90424e4c7334e0d0235eaf48495ee19ebd610143b673c9aa26ac3",
+          "costProfile": "catalog_open",
+          "review": "Authored callback within AssetBrowserTab.SelectShadowkeyPack; caller tracks/drains its Task where asynchronous. No independent resource ownership transfer."
+        },
+        {
+          "name": "AssetBrowserTab.ResetShadowkeyCatalog",
+          "kind": "method_declaration",
+          "line": 92,
+          "endLine": 108,
+          "declarationSha256Lf": "8f877daf4730e2c8d8412990ecfb0ff281bd95758b0efb9743d5bebf887119b5",
+          "signatureSha256Lf": "6116461b227f7213e98c0b9fe6859968631a5f8c197bc6e44609b4036de4ad86",
+          "bodySha256Lf": "c3ffd94be5a07005289f37691ab564b621c2a69d413041948c98e147f4f82fda",
+          "costProfile": "reset",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.ShadowkeySlots_SelectionChanged",
+          "kind": "method_declaration",
+          "line": 113,
+          "endLine": 132,
+          "declarationSha256Lf": "53911979a667926bfe3329cda6fad3fccc2106f01ac6be8ea8da31e78278ea80",
+          "signatureSha256Lf": "6caa3789b78b7191f8e8b6d3d4712c93a7444beba0d6dc7921252a912319a09c",
+          "bodySha256Lf": "e8881c8fbaac82cdb2e153d28d15d12d3d0d96e0047d5040fd1ae7be49d2468d",
+          "costProfile": "prepare",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.ShadowkeySlots_SelectionChanged.lambda1",
+          "kind": "lambda_expression",
+          "line": 119,
+          "endLine": 119,
+          "declarationSha256Lf": "4a062ac1f0c15e57c658732884eeb40292ad9973cdd9270018801e36f91f6abb",
+          "signatureSha256Lf": "d7a43ad0b2b16f3506432d7c465d0c8a1e6cac7f8421a2bdfaf6a4fa1b4ab999",
+          "bodySha256Lf": "b8a01c4b7151658ee21905d62f3a11d9b54edeb69afcf8ea2843f05756b7912f",
+          "costProfile": "constant",
+          "review": "Authored callback within AssetBrowserTab.ShadowkeySlots_SelectionChanged; caller tracks/drains its Task where asynchronous. No independent resource ownership transfer."
+        },
+        {
+          "name": "AssetBrowserTab.ShadowkeyOption_ValueChanged",
+          "kind": "method_declaration",
+          "line": 137,
+          "endLine": 138,
+          "declarationSha256Lf": "fb4892e28c9c7aec3155c83c37d646b4b92ba3f75a69e1e1f55e5d3026c3c490",
+          "signatureSha256Lf": "1ba329229eb571d5ba37c0f900b770e19ce0cb848be55b047b549076976761b2",
+          "bodySha256Lf": "cb635cf944373f59b267d788e1b3e20c528aa90824736f19923528a3d05bb743",
+          "costProfile": "prepare",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.ShadowkeyMagenta_Changed",
+          "kind": "method_declaration",
+          "line": 143,
+          "endLine": 143,
+          "declarationSha256Lf": "16eb8cbce457a7fad126f657996f440f01f16be357b35bdb31ffee6b47d8143f",
+          "signatureSha256Lf": "33c7ca5dd3b2b3b1a3365177632b05c67ad8a5f444029f1189c46f73824bf2fc",
+          "bodySha256Lf": "a06387474b6c55dbc19a8c262a982e9cd4177724ee066458bb56ce58c547c0eb",
+          "costProfile": "prepare",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.PrepareShadowkeySelection",
+          "kind": "method_declaration",
+          "line": 146,
+          "endLine": 182,
+          "declarationSha256Lf": "e3c789ff6b94b5a9f904f4b9ce9c3d3ca7030a30a061fa77a7c6c2634c1de4c7",
+          "signatureSha256Lf": "0392bf3740d6f2429bba1f36926f2c7b794ac1982ffa00898de8ae2258e7e7b2",
+          "bodySha256Lf": "eee4cffc9b9e7e1804c5a2d0da44df0890e7ee4caa2cfb5f249dc9121d40e95a",
+          "costProfile": "prepare",
+          "review": "Rejects nonfinite/fractional indices and foreign entry references; catches source retirement before enqueue. Same catalog+slot captures shared camera before cancel; distinct slot/catalog frames anew."
+        },
+        {
+          "name": "AssetBrowserTab.PrepareShadowkeySelection.lambda1",
+          "kind": "lambda_expression",
+          "line": 158,
+          "endLine": 158,
+          "declarationSha256Lf": "4a062ac1f0c15e57c658732884eeb40292ad9973cdd9270018801e36f91f6abb",
+          "signatureSha256Lf": "d7a43ad0b2b16f3506432d7c465d0c8a1e6cac7f8421a2bdfaf6a4fa1b4ab999",
+          "bodySha256Lf": "b8a01c4b7151658ee21905d62f3a11d9b54edeb69afcf8ea2843f05756b7912f",
+          "costProfile": "constant",
+          "review": "Authored callback within AssetBrowserTab.PrepareShadowkeySelection; caller tracks/drains its Task where asynchronous. No independent resource ownership transfer."
+        },
+        {
+          "name": "AssetBrowserTab.PrepareShadowkeySelection.lambda2",
+          "kind": "lambda_expression",
+          "line": 168,
+          "endLine": 168,
+          "declarationSha256Lf": "4a062ac1f0c15e57c658732884eeb40292ad9973cdd9270018801e36f91f6abb",
+          "signatureSha256Lf": "d7a43ad0b2b16f3506432d7c465d0c8a1e6cac7f8421a2bdfaf6a4fa1b4ab999",
+          "bodySha256Lf": "b8a01c4b7151658ee21905d62f3a11d9b54edeb69afcf8ea2843f05756b7912f",
+          "costProfile": "constant",
+          "review": "Authored callback within AssetBrowserTab.PrepareShadowkeySelection; caller tracks/drains its Task where asynchronous. No independent resource ownership transfer."
+        },
+        {
+          "name": "AssetBrowserTab.PrepareShadowkeySelection.lambda3",
+          "kind": "lambda_expression",
+          "line": 180,
+          "endLine": 181,
+          "declarationSha256Lf": "96121e94bf8f5e8e3fba58abbcb0a1f113082e214824cbc888deb9409717cffe",
+          "signatureSha256Lf": "a9467c042fe4296467dde43a402a547d91738062690b5797bb7baeab4cf19ffe",
+          "bodySha256Lf": "d6ca808463716bd0587edf25d231864e9e0196a0a39a6878c2efcdbfe755906f",
+          "costProfile": "prepare",
+          "review": "Authored callback within AssetBrowserTab.PrepareShadowkeySelection; caller tracks/drains its Task where asynchronous. No independent resource ownership transfer."
+        },
+        {
+          "name": "AssetBrowserTab.AdoptShadowkeyAsync",
+          "kind": "method_declaration",
+          "line": 191,
+          "endLine": 226,
+          "declarationSha256Lf": "c015cee479cd0c14bdd9194ad5832061bafca1e06af1c6b0afa9d22d60f49d0e",
+          "signatureSha256Lf": "ea6236159256b74d48b2c3641f51285fc05ed1d30540015db3c03549b29eb296",
+          "bodySha256Lf": "cb0695bf22830400870a5bde782f9fa8a71c91ff3fc7aed9289203b7611e95b9",
+          "costProfile": "adopt",
+          "review": "Catalog preparation and scene measurement run in Task.Run; UI identity is rechecked before native factory publication and after adoption. A true TryShow result is adoption, not proof of a rendered frame."
+        },
+        {
+          "name": "AssetBrowserTab.AdoptShadowkeyAsync.lambda1",
+          "kind": "lambda_expression",
+          "line": 195,
+          "endLine": 195,
+          "declarationSha256Lf": "8ff02b4c5ca2472467881e9d19edb8dfcbde889c6e2912d9bb4447a132c084f7",
+          "signatureSha256Lf": "b1f7303dc5ce75f2b496883b68d900f81d5a8eebca4b980142bade02f0ee77c5",
+          "bodySha256Lf": "42c8d582940fd5f0930fe84321b515f5d4ac92f67241758b7be740d536bbbf4d",
+          "costProfile": "core_prepare",
+          "review": "Authored callback within AssetBrowserTab.AdoptShadowkeyAsync; caller tracks/drains its Task where asynchronous. No independent resource ownership transfer."
+        },
+        {
+          "name": "AssetBrowserTab.AdoptShadowkeyAsync.lambda2",
+          "kind": "lambda_expression",
+          "line": 209,
+          "endLine": 214,
+          "declarationSha256Lf": "02ec5fd94e00dcb61ac965c701c8f2c09815d9303430d7b7a008abb87d31b87f",
+          "signatureSha256Lf": "be60e0612fb36f6081ae9c466e1c60316e2de3ac35d88ea035b096816c003aab",
+          "bodySha256Lf": "3070703de22e111d028d42a147f607f6f49748a3909bc87225ea4ebf8199a213",
+          "costProfile": "measure",
+          "review": "Authored callback within AssetBrowserTab.AdoptShadowkeyAsync; caller tracks/drains its Task where asynchronous. No independent resource ownership transfer."
+        },
+        {
+          "name": "AssetBrowserTab.AdoptShadowkeyAsync.lambda3",
+          "kind": "lambda_expression",
+          "line": 211,
+          "endLine": 211,
+          "declarationSha256Lf": "8bd627b0ccc559cb9404f2531abd80d0b0e77758b249dc21ed2cc8116582491f",
+          "signatureSha256Lf": "b1f7303dc5ce75f2b496883b68d900f81d5a8eebca4b980142bade02f0ee77c5",
+          "bodySha256Lf": "3579410d7a0d42736cea8b6a6a01e78528eb04d1c3b3b8cb00787dde5a928212",
+          "costProfile": "measure",
+          "review": "Authored callback within AssetBrowserTab.AdoptShadowkeyAsync; caller tracks/drains its Task where asynchronous. No independent resource ownership transfer."
+        },
+        {
+          "name": "AssetBrowserTab.SetShadowkeyRanges",
+          "kind": "method_declaration",
+          "line": 231,
+          "endLine": 238,
+          "declarationSha256Lf": "2ad71350622c5efebc32d9a759315684ec187f9f916781221dbf8156ec3784f8",
+          "signatureSha256Lf": "cac9baab004752ab85264fcad1aa5fe2850016036357f0f18691b1f3fe036606",
+          "bodySha256Lf": "bba36d91250c20aa2aad5b8cd9172990aefa663d518e0f034bb87cf12c820975",
+          "costProfile": "constant",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.QueueShadowkey",
+          "kind": "method_declaration",
+          "line": 243,
+          "endLine": 254,
+          "declarationSha256Lf": "c889c2eee4f2f2b0afb1cb865be8d2230f092e1ed10d7a5cde4dbe1677cc1665",
+          "signatureSha256Lf": "b864dac49e104eb79e40bbb96de15575b2aa30ad54314aef25c08fff4d79a8ef",
+          "bodySha256Lf": "a9a68fd6d96aa4db267d5b762bc263d293015cdf1e9d4acb99d0092dce3ebf9a",
+          "costProfile": "queue",
+          "review": "Publishes revision/token/task before predecessor cancellation; predecessor CTS is disposed only after the exact preceding task settles. No fixed queue-length admission limit."
+        },
+        {
+          "name": "AssetBrowserTab.RunShadowkeyAsync",
+          "kind": "method_declaration",
+          "line": 263,
+          "endLine": 298,
+          "declarationSha256Lf": "36cbd13a37c72afc63ea84d9c934270909dde15fc91ac0e3c271b561379cf1c6",
+          "signatureSha256Lf": "2087023cb998cd8ef72da0a4e58f08b2340c54b8f579cf7558669d142c1cafad",
+          "bodySha256Lf": "ef0d04d67d30ec8643471eea964208474aeb770d22bb5dc527f843d876d23269",
+          "costProfile": "run",
+          "review": "Initial yield publishes the task before callbacks. Predecessor/reporting failures are observed and do not poison subsequent requests. Unsupported/canceled/failed operations clear native presentation before later work."
+        },
+        {
+          "name": "AssetBrowserTab.ClearShadowkeyAfterFailureAsync",
+          "kind": "method_declaration",
+          "line": 302,
+          "endLine": 306,
+          "declarationSha256Lf": "812744be3a4f20334e2584ff3e7086b29686a848b5122167ad8f3b31bc3e325f",
+          "signatureSha256Lf": "14ff4c2b31e00603a0c4881e235e2eb17cd467268e9a01dd5667cf5fd6fc9a85",
+          "bodySha256Lf": "229ea3bf8a18d15de327e10b5a3e8c0163c86c5c18cdd19423881b62c8a5f416",
+          "costProfile": "clear",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.ReportShadowkeyFailure",
+          "kind": "method_declaration",
+          "line": 310,
+          "endLine": 318,
+          "declarationSha256Lf": "c1b4fd6935b52520717d22c1a2357029fe4281bddc1f2665fb5a172bfa233e75",
+          "signatureSha256Lf": "afc338d015c1994bb554fa350b78c31e06c8dd2756b9032a03fc828b10d846a3",
+          "bodySha256Lf": "a26c6b0a0a46d399c1a978e8fedc1530276cb9345931d5f9d6fe19a9736e9bdd",
+          "costProfile": "status",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.RequireShadowkeyCurrent",
+          "kind": "method_declaration",
+          "line": 325,
+          "endLine": 331,
+          "declarationSha256Lf": "98170fc6354751e65ca04619b4d9cab4a4d1aa8e8114dd532d63446e33ce38ea",
+          "signatureSha256Lf": "b4d740353437f53ae786cbc26771d96e681853dac3dd13f3b1319ab7c5c04c2d",
+          "bodySha256Lf": "2598681f2dcc31ba24032c0940dbb716baf7588ffa91fd360e2ad600f14d8e86",
+          "costProfile": "guard",
+          "review": "New or changed local integration; delegated costs and ownership are defined by its cost profile."
+        },
+        {
+          "name": "AssetBrowserTab.RequireShadowkeySelection",
+          "kind": "method_declaration",
+          "line": 338,
+          "endLine": 345,
+          "declarationSha256Lf": "1e86c597b7bb6b1b53cfabb531a6e1c151660705ddf2a1b914cad8905adf6635",
+          "signatureSha256Lf": "08e4a99ea964344886525a18b8b702048b202c481d3538d4ef9b288b8babfa4e",
+          "bodySha256Lf": "7887b7c8b4ced9698476609d154b0abff9b2be3fd3e6be2aacc13326045c649d",
+          "costProfile": "guard",
+          "review": "Rejects stale snapshot, source generation, queue revision, catalog reference, immutable selection reference and selected slot."
+        },
+        {
+          "name": "AssetBrowserTab.ShadowkeyPresentationFailed",
+          "kind": "method_declaration",
+          "line": 352,
+          "endLine": 364,
+          "declarationSha256Lf": "8ec3ce0a0646ecf2b043708f3942fc0b3af672a1e11787fca871cc11d241d3bd",
+          "signatureSha256Lf": "1857ced6e7b06045053cc92071f61eebfe81248926948b2bda4e06b88ef6fca4",
+          "bodySha256Lf": "78b62a2fe230057d76cb987e5d4f5deb92c8858c444099a860e5c1d327aeb3b3",
+          "costProfile": "queue",
+          "review": "Only the exact adopted selection/source/request may queue observed clearing; global native failure callback logs without publishing stale user-facing status."
+        },
+        {
+          "name": "AssetBrowserTab.ShadowkeyPresentationFailed.lambda1",
+          "kind": "lambda_expression",
+          "line": 359,
+          "endLine": 363,
+          "declarationSha256Lf": "3e5f2de46a9e364523208ee9d7902e0cc6817c786f771bbbcd31fe55e6645205",
+          "signatureSha256Lf": "d7a43ad0b2b16f3506432d7c465d0c8a1e6cac7f8421a2bdfaf6a4fa1b4ab999",
+          "bodySha256Lf": "06e9e95707e04eb18dcddb30f4de2719c46e97b0f161a126b44d5d777cfb0af2",
+          "costProfile": "status",
+          "review": "Authored callback within AssetBrowserTab.ShadowkeyPresentationFailed; caller tracks/drains its Task where asynchronous. No independent resource ownership transfer."
+        },
+        {
+          "name": "AssetBrowserTab.ClearShadowkeySourceAsync",
+          "kind": "method_declaration",
+          "line": 368,
+          "endLine": 379,
+          "declarationSha256Lf": "ceebb3ba8a0fcac0313afd85d8f84e489811478d5f11de755f7fb25566caf0ec",
+          "signatureSha256Lf": "6c312c37a1316ad82093d8f9f1f22312ee3712ccd47b6a2a68372f6216500f2c",
+          "bodySha256Lf": "f4c9f86903cb5935c5bfa728387188a765d3dccb348501e9d3684f85f025eef8",
+          "costProfile": "clear",
+          "review": "Captures exact task and CTS while the closing gate prevents new admissions; waits that work and shared clear before disposing only the captured token owner."
+        },
+        {
+          "name": "AssetBrowserTab.DisposeShadowkeyAsync",
+          "kind": "method_declaration",
+          "line": 383,
+          "endLine": 414,
+          "declarationSha256Lf": "24d72f611eb42b58a1f450abb6c14b47894fabbc68a486e251671600ec7f59c2",
+          "signatureSha256Lf": "8939d15bce0b905a90962e9f69285fcb89ecec333903a441f7cfc9a1e9a44515",
+          "bodySha256Lf": "57d06f169bfc81c5ff18472e83f70a6ffeccda8a227da1e8f7aa927e3b32e85f",
+          "costProfile": "dispose",
+          "review": "Always attempts shared presenter disposal after settling all caller tasks; NativeResourcesRetired becomes true only after that disposal succeeds. Failed partial configuration stays unproven."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Helpers/ShadowkeyNativePresentation.cs",
+      "sourceSha256Lf": "dd52f71ef0f8611eebdf887e6c722e4002bfd3cf1a24e6f12c2e0465f794d2a0",
+      "sourceBytesLf": 3364,
+      "selection": "All new authored declarations in new files; existing declarations whose exact AST bytes differ from the base commit, plus all lambdas nested in those selected declarations.",
+      "callables": [
+        {
+          "name": "ShadowkeyNativePresentation.Create",
+          "kind": "method_declaration",
+          "line": 19,
+          "endLine": 30,
+          "declarationSha256Lf": "1ba3b1eb50c5d09f90b9d70fb65fa73f14547335783ebe1c32bbaa17c2398a33",
+          "signatureSha256Lf": "8f7fe1de940d5a69e7726ef3933e9bab3102b8ea8a389c8a4079d2f15e2278f7",
+          "bodySha256Lf": "31d9eebe28a2ca5cdc579de27f94c186d6df88ae61628c06112b0d6c52376cea",
+          "costProfile": "measure",
+          "review": "Uses the exact SceneDocument and immutable selection object. No GLB writer/importer; rejects unexpected animation tracks and measures indexed rest geometry."
+        },
+        {
+          "name": "ShadowkeyNativePresentation.Frame",
+          "kind": "method_declaration",
+          "line": 36,
+          "endLine": 48,
+          "declarationSha256Lf": "96257c03aa28b8d35d826164027d8d101000bcdb3188edaaf69aa7a330a83b14",
+          "signatureSha256Lf": "feddf652c5da71a04292ab58ccf160446dd659eaef561debb76bfe0574f6af10",
+          "bodySha256Lf": "f51f088e716495d284144b696dae3ffaee516741efa6334eeb9cc0c95804252b",
+          "costProfile": "camera",
+          "review": "Uses the existing right-handed Y-up scene without another basis conversion or inferred game-unit scale."
+        }
+      ]
+    }
+  ],
+  "nonCallableManifests": [
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.xaml",
+      "sourceSha256Lf": "091553e7f8d7c9169bb510c375361ec01be646bd6ef918ba0584b1e8211fa130",
+      "sourceBytesLf": 23631,
+      "xmlParse": "passed"
+    },
+    {
+      "path": "src/BethesdaMultitool/Strings/en-US/Resources.resw",
+      "sourceSha256Lf": "c3a9083ed269006a1d31f04358e080b3cc542dfa86c890b176a3054dbc62a53b",
+      "sourceBytesLf": 58019,
+      "xmlParse": "passed"
+    },
+    {
+      "path": "src/BethesdaMultitool/BethesdaMultitool.csproj",
+      "sourceSha256Lf": "5ac9115eb5c85513e6910bdd5bef61fc4b6b47f692aa04e23f9b5a243a6ea45e",
+      "sourceBytesLf": 16972,
+      "xmlParse": "passed"
+    }
+  ],
+  "sharedApiReferences": [
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12/Scenes/NativeScenePresenter.cs",
+      "sourceSha256Lf": "f17365e48763542c355c90a810b7a87a85fa40174c892e75d60de37cd4466f87"
+    },
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12/Scenes/NativeScenePreparationOptions.cs",
+      "sourceSha256Lf": "3ef82b53df59b67da1c62cdd670f98a3d47e33a6d6566dfc5f08f72007798e61"
+    },
+    {
+      "path": "shared/Multitool.Shared/src/Slfx77.Multitool.WinUI.Direct3D12/Scenes/NativeSceneLimits.cs",
+      "sourceSha256Lf": "071855347d11b1be1c37c6d7863b6cea9375ec8c35c034d78761306ec9fb7cf7"
+    }
+  ],
+  "resourceBounds": {
+    "catalog": {
+      "maximumSlots": 4096,
+      "maximumPackBytes": 33554432,
+      "maximumIndexBytes": 32772,
+      "maximumNamesBytes": 1048576,
+      "authority": "Core ShadowkeyPackPreviewSource; see separate Core source receipt. The UI does not copy payloads per list row or open one file per synthetic slot."
+    },
+    "ui": {
+      "retainedPreviewControls": 1,
+      "windowGraphicsOwners": 1,
+      "defaultFrame": 0,
+      "defaultSkin": 0,
+      "magentaKeyDefault": false,
+      "listMaximumHeightDips": 170,
+      "minimumNativeHeightDips": 240,
+      "pendingPreviewRequestCountCap": null,
+      "pendingCloseRequestCountCap": null,
+      "queueMeaning": "Bodies are serialized, but canceled pending continuations are not removed from the chain. Queue memory is O(Q+C) plus referenced catalogs/scenes and delegated work; no total process ceiling is claimed."
+    },
+    "localPoseNumericPayloadBytes": 134217728,
+    "sharedCpuPayload": {
+      "completeSamplePairsBytes": 268435456,
+      "perEncodedImageBytes": 16777216,
+      "retainedRgbaBytes": 268435456
+    },
+    "sharedGpuPayload": {
+      "geometryAndIndexBytes": 268435456,
+      "textureAndStagingBytes": 536870912,
+      "depthBytes": 134217728
+    },
+    "sharedInspectionCounts": {
+      "targets": 16384,
+      "primitiveInstances": 65536,
+      "triangles": 2000000,
+      "results": 16384,
+      "history": 64,
+      "collisionTriangles": 2000000
+    },
+    "notIncluded": "These independent payload allowances are not a process-memory cap. Source/evaluator graphs, managed headers, framework item realization, PNG scratch, descriptors, swap-chain/driver allocation, logging and other viewers remain outside them."
+  },
+  "lifecycleReview": [
+    "All mutation/adoption and native retirement use the owning UI synchronization context. Task.Run is limited to detached catalog.Prepare and exact-document measurement.",
+    "Opening acquires a Core read lease; the browser retains its source lease through native clearing. Shared acquires the exact catalog.Snapshot for adopted input; no unrelated current source is substituted.",
+    "Source, generation, request revision, catalog reference, immutable selection reference and slot are checked before asynchronous results may publish.",
+    "Source-close tasks publish before callbacks and serialize field access. Every caller increments generation synchronously; the existing attachment check rejects earlier concurrent callers.",
+    "The closing gate blocks tree/export-check/slot/option and late-failure admission. Clear captures the exact cancellation/task owners; it cannot dispose a replacement CTS.",
+    "Disposed attachment is rejected before lease acquisition and before appending the close chain. Existing Explore source gate drains its open operation before browser disposal.",
+    "Browser and Explore disposal publish one retained completion before callbacks. Independent stages ensure synchronous unrelated cleanup errors do not skip shared native retirement.",
+    "Failed native clearing retains old source fields. A later successful presenter disposal permits source release without retrying failed Shared disposal; errors remain aggregated. Failed presenter/graphics retirement keeps source/graphics/localization/HWND prerequisites.",
+    "Same-slot frame/skin/key recomposition captures Shared camera before cancellation. A distinct catalog/slot resets framing. Navigation changes presentation activity without recreating the source or inventing playback.",
+    "Selecting models.huge cancels/hides legacy mesh; existing audio/video/map handling hides incompatible sibling previews and cancels sky/video work. Tree nodes and checked export identities remain original VFS entries.",
+    "Unrepresented animation timing stays declined by Core; the helper also rejects unexpected scene animation tracks. Ready status means adopted, not actual frame acknowledgement.",
+    "The pinned Shared presenter returns its same terminal failed disposal task on repeat calls. No automatic release retry, second presenter or reconstructed native owner is claimed as recovery."
+  ],
+  "verification": {
+    "method": "Read-only applied-source/API review, Tree-sitter AST declaration/body extraction with the grammar limitation documented below, XML/resource-key checks and JSON/hash verification. No compiler, test runner, GUI, renderer or benchmark invoked by this review.",
+    "coverage": {
+      "constructor_declaration": 1,
+      "method_declaration": 39,
+      "property_declaration": 3,
+      "lambda_expression": 10,
+      "total": 53
+    },
+    "parserReportedLeaves": [
+      {
+        "file": "src/BethesdaMultitool/App/MainWindow.xaml.cs",
+        "line": 177,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "List<Exception> failures = [];"
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/Explore/ExploreTab.xaml.cs",
+        "line": 373,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "catch (Exception exception) { (failures ??= []).Add(exception); }"
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/Explore/ExploreTab.xaml.cs",
+        "line": 377,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "catch (Exception exception) { (failures ??= []).Add(exception); }"
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/Explore/ExploreTab.xaml.cs",
+        "line": 383,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "catch (Exception exception) { (failures ??= []).Add(exception); }"
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/Explore/ExploreTab.xaml.cs",
+        "line": 385,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "catch (Exception exception) { (failures ??= []).Add(exception); }"
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/Explore/ExploreTab.xaml.cs",
+        "line": 387,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "catch (Exception exception) { (failures ??= []).Add(exception); }"
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/Explore/ExploreTab.xaml.cs",
+        "line": 391,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "catch (Exception exception) { (failures ??= []).Add(exception); }"
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/Explore/ExploreTab.xaml.cs",
+        "line": 395,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "(failures ??= []).Add(new InvalidOperationException("
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.xaml.cs",
+        "line": 39,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "private readonly ObservableCollection<AssetGalleryItem> _gallery = [];"
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.xaml.cs",
+        "line": 700,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "var groups = result is null ? [] : RecordBrowserModel.Build(result.Records);"
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.xaml.cs",
+        "line": 913,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "List<Exception> failures = [];"
+      },
+      {
+        "file": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.Shadowkey.cs",
+        "line": 386,
+        "nodeType": "identifier",
+        "text": "",
+        "context": "List<Exception> failures = [];"
+      }
+    ],
+    "sourceContractTests": "Separate agent-owned tests; no test result is asserted by this receipt.",
+    "windowsCompilation": "Pending root-owned build at receipt creation; not accepted here.",
+    "renderedGuiAcceptance": "UNRUN: actual native frame/pixels, resize/DPI, slot/skin/key changes, camera interaction, Data/Maps/Assets/Recovery navigation, rapid source replacement and shutdown/failure injection remain acceptance gates.",
+    "priorBatchBoundary": "Root's f6290ffe third-batch 54 Windows + 54 Linux results precede this UI integration and are not evidence that this Windows UI compiled or rendered.",
+    "grammarNotes": "The installed C# grammar reports has_error on 12 zero-width identifier leaves at valid empty collection expressions ([]), including unchanged baseline code. They are not is_error/is_missing nodes. Every reported leaf was checked against its source line; declaration/signature/body spans are complete. This is syntax extraction with an explicit grammar limitation, not compilation acceptance."
+  },
+  "limits": [
+    "No measured timing, peak-memory, UI accessibility/live-language behavior or release acceptance is established.",
+    "Whole-process shutdown forced by OS/process termination is not proven safe by the ordinary cancelable window-close gate.",
+    "Core/Shared implementation complexity and generated XAML bindings require their own receipts; this artifact hashes those references without claiming their complete re-review.",
+    "M2.1 and the full four-tool migration plan remain open."
+  ],
+  "relatedReceipts": [
+    "docs/complexity/shadowkey-pack-preview-source-20260920.json",
+    "docs/shadowkey-pack-native-preview.md"
+  ],
+  "analyzerFollowup": {
+    "scope": "After first Windows build, replace truncate/equality integer admission with double.IsInteger (finite integral values only); move the existing cancellation token to the final RunShadowkeyAsync parameter and update its sole caller. No queue/ownership policy change. Recompilation pending.",
+    "changedCallables": [
+      "AssetBrowserTab.PrepareShadowkeySelection",
+      "AssetBrowserTab.QueueShadowkey",
+      "AssetBrowserTab.RunShadowkeyAsync"
+    ]
+  },
+  "diagnosticCleanupFollowup": {
+    "appliedPatchSha256": "871bb4f4a4280dd7fa082a478d7bcc9056d412e72375cd4294c9fba2979d01e9",
+    "reviewedUtc": "2026-09-21T03:31:23.010042+00:00",
+    "scope": "Refresh only MainWindow/Explore whole-source hashes and existing selected native-ownership declaration line indices. Existing selected ownership declarations are byte-identical. MainWindow type-local CA1001 annotation and separate Explore token-order/caller delta are reviewed in the linked diagnostic receipt, not added to this native-preview callable coverage.",
+    "files": [
+      {
+        "path": "src/BethesdaMultitool/App/MainWindow.xaml.cs",
+        "previousSourceSha256Lf": "f9984e9dcf197754bf89ac2269648229c7cd289160f44eae6d480a9a977c0980",
+        "currentSourceSha256Lf": "7b6976fb9d6f56d9b854b4ed7e26aac519f67ffff5a2c6ebc157ad00265815e8",
+        "selectedOwnershipDeclarationsUnchanged": true
+      },
+      {
+        "path": "src/BethesdaMultitool/App/Tabs/Explore/ExploreTab.xaml.cs",
+        "previousSourceSha256Lf": "db9a2eb3a326db051b8dccf3f7317267e28e29b2cccfabe2743bffa9d22ed397",
+        "currentSourceSha256Lf": "60a36e5b6446a78fd546f5206003044dbd84c3440b90c3fcc4debaf618dd58d9",
+        "selectedOwnershipDeclarationsUnchanged": true
+      }
+    ],
+    "relatedReceipt": "windows-app-diagnostic-cleanup-20260920.json"
+  },
+  "rootExecutionEvidence": {
+    "receipt": "docs/validation/shadowkey-native-preview-20260920.md",
+    "publishReceipt": "docs/validation/publish-20260920.md",
+    "portableTests": "152 Windows and 152 Ubuntu WSL, zero skips; Linux executes Windows-built portable assemblies. Two Windows accessibility cases pass.",
+    "windowsPublish": "Corrected publish passed, 580.279 seconds, three inherited WIN2D0001 warnings, zero application analyzer diagnostics. Seven source/PDB audits and unchanged 36-input freeze.",
+    "nativeExecution": "Earlier native fern opaque/keyed and arrow captures passed. Two actual published fern captures match accepted PNG/RGBA exactly; two repeat refusals, animated decline and explicit CLI help pass.",
+    "remaining": "Interactive GUI, native cancellation/cleanup-failure injection, Linux source build/publish, readable Shared notice sidecars and complete release acceptance remain open.",
+    "boundary": "Historical source-review status/claims above describe the reviewer at creation; this root execution evidence records later checks. Exact source and binary boundaries remain in the linked receipts."
+  }
+}

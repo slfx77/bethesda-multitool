@@ -1,295 +1,103 @@
 <?xml version="1.0" encoding="utf-8"?>
-
-<Window
-  x:Class="BethesdaMultitool.MainWindow"
-  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-  xmlns:tabs="using:BethesdaMultitool"
-  Title="Bethesda Multitool">
-
-  <Grid KeyboardAcceleratorPlacementMode="Hidden">
-    <!--  Global keyboard shortcuts. F1 opens the cheat-sheet dialog, available anywhere.
-          KeyboardAcceleratorPlacementMode="Hidden" on this root Grid suppresses WinUI's
-          automatic "(F1)" hint from being injected into every descendant's tooltip — the
-          cheat-sheet dialog covers discovery instead.  -->
-    <Grid.KeyboardAccelerators>
-      <KeyboardAccelerator Key="F1" Invoked="F1_ShortcutsDialog_Invoked" />
-    </Grid.KeyboardAccelerators>
-
-    <!--  Navigation View with hamburger menu - fills entire window  -->
-    <NavigationView
-      x:Name="NavView"
-      Background="Transparent"
-      IsBackButtonVisible="Collapsed"
-      IsPaneToggleButtonVisible="True"
-      IsSettingsVisible="False"
-      IsTitleBarAutoPaddingEnabled="True"
-      OpenPaneLength="200"
-      PaneDisplayMode="LeftCompact"
-      ItemInvoked="NavView_ItemInvoked"
-      SelectionChanged="NavView_SelectionChanged">
-
-      <!--  Make NavigationView content area transparent so Mica shows in title bar  -->
-      <NavigationView.Resources>
-      </NavigationView.Resources>
-
-      <NavigationView.MenuItems>
-        <NavigationViewItemHeader x:Uid="NavHeader_Explore" />
-
-        <!--  Data Explorer  -->
-        <NavigationViewItem
-          x:Uid="Nav_SingleFile"
-          IsSelected="True"
-          Tag="SingleFile">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE8A5;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
-        <!--  Asset Browser  -->
-        <NavigationViewItem
-          x:Uid="Nav_AssetBrowser"
-          Tag="AssetBrowser">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE8B7;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
-        <NavigationViewItemSeparator />
-
-        <NavigationViewItemHeader x:Uid="NavHeader_Assets" />
-
-        <!--  Archive Browser  -->
-        <NavigationViewItem
-          x:Uid="Nav_BsaExtractor"
-          Tag="BsaExtractor">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE7B8;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
-        <!--  Model Tools  -->
-        <NavigationViewItem
-          x:Uid="Nav_NifConverter"
-          Tag="NifConverter">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xF158;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
-        <NavigationViewItemSeparator />
-
-        <!--  Recovery tools: each tracks its own opened file, independent of the explorers.  -->
-        <NavigationViewItemHeader x:Uid="NavHeader_Recovery" />
-
-        <!--  Game Repacker  -->
-        <NavigationViewItem
-          x:Uid="Nav_Repacker"
-          Tag="Repacker">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE777;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
-        <!--  Texture Tools (DDX conversion)  -->
-        <NavigationViewItem
-          x:Uid="Nav_DdxConverter"
-          Tag="DdxConverter">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xEB9F;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
-        <!--  DMP to ESM Converter  -->
-        <NavigationViewItem
-          x:Uid="Nav_DmpToEsmConverter"
-          Tag="DmpToEsmConverter">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE74E;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-
-        <NavigationViewItemSeparator />
-
-        <NavigationViewItemHeader x:Uid="NavHeader_MemoryDumps" />
-
-        <!--  Batch Dump Analysis  -->
-        <NavigationViewItem
-          x:Uid="Nav_BatchMode"
-          Tag="BatchMode">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE8B7;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-      </NavigationView.MenuItems>
-
-      <NavigationView.FooterMenuItems>
-        <!--  Diagnostics: live cache/queue/memory stats (meta-functionality → footer)  -->
-        <NavigationViewItem
-          x:Uid="Nav_Diagnostics"
-          Tag="Diagnostics">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE9D9;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-        <NavigationViewItem
-          x:Name="SettingsNavItem"
-          Content="Settings"
-          SelectsOnInvoked="False"
-          Tag="Settings">
-          <NavigationViewItem.Icon>
-            <FontIcon Glyph="&#xE713;" />
-          </NavigationViewItem.Icon>
-        </NavigationViewItem>
-      </NavigationView.FooterMenuItems>
-
-      <!--  Main content area  -->
-      <Grid Background="Transparent">
-        <Grid.RowDefinitions>
-          <RowDefinition Height="32" />
-          <!--  Window controls area (title bar)  -->
-          <RowDefinition Height="*" />
-          <!--  Content  -->
-          <RowDefinition Height="Auto" />
-          <!--  Status bar  -->
-        </Grid.RowDefinitions>
-
-        <!--  Tab content with rounded corners at top-left and bottom-left  -->
-        <Border
-          Grid.Row="1"
-          Background="{ThemeResource LayerOnMicaBaseAltFillColorDefaultBrush}"
-          CornerRadius="8,0,0,8">
-          <Grid VerticalAlignment="Stretch">
-            <tabs:SingleFileTab
-              x:Name="SingleFileTabContent"
-              VerticalAlignment="Stretch"
-              Visibility="Visible" />
-            <tabs:AssetBrowserTab
-              x:Name="AssetBrowserTabContent"
-              VerticalAlignment="Stretch"
-              Visibility="Collapsed" />
-            <tabs:BatchModeTab
-              x:Name="BatchModeTabContent"
-              VerticalAlignment="Stretch"
-              Visibility="Collapsed" />
-            <tabs:NifConverterTab
-              x:Name="NifConverterTabContent"
-              VerticalAlignment="Stretch"
-              Visibility="Collapsed" />
-            <tabs:DdxConverterTab
-              x:Name="DdxConverterTabContent"
-              VerticalAlignment="Stretch"
-              Visibility="Collapsed" />
-            <tabs:BsaExtractorTab
-              x:Name="BsaExtractorTabContent"
-              VerticalAlignment="Stretch"
-              Visibility="Collapsed" />
-            <tabs:RepackerTab
-              x:Name="RepackerTabContent"
-              VerticalAlignment="Stretch"
-              Visibility="Collapsed" />
-            <tabs:DmpToEsmConverterTab
-              x:Name="DmpToEsmConverterTabContent"
-              VerticalAlignment="Stretch"
-              Visibility="Collapsed" />
-            <tabs:DiagnosticsTab
-              x:Name="DiagnosticsTabContent"
-              VerticalAlignment="Stretch"
-              Visibility="Collapsed" />
-          </Grid>
-        </Border>
-
-        <!--  Status bar (same transparent Mica as title bar)  -->
-        <Grid
-          Grid.Row="2"
-          Height="24"
-          Padding="15,0,16,0"
-          Background="Transparent">
-          <TextBlock
-            x:Name="GlobalStatusTextBlock"
-            VerticalAlignment="Center"
-            FontSize="12"
-            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-            Text="" />
-        </Grid>
-      </Grid>
-    </NavigationView>
-
-    <!--  Title bar drag region — rendered AFTER NavigationView so it sits above the
-          NavView chrome and the back/forward buttons remain hit-testable. The transparent
-          Background still allows the NavView visuals to show through, but clicks on this
-          strip route to AppTitleBar's children (Back/Forward buttons) instead of being
-          swallowed by the NavView header. Interactive controls are auto-excluded from
-          the drag region by WinUI.  -->
-    <Grid
-      x:Name="AppTitleBar"
-      Height="32"
-      Margin="48,0,0,0"
-      HorizontalAlignment="Stretch"
-      VerticalAlignment="Top"
-      Background="Transparent">
-      <StackPanel
-        Orientation="Horizontal"
-        VerticalAlignment="Center">
-        <Image
-          Width="16"
-          Height="16"
-          Margin="8,1,8,0"
-          VerticalAlignment="Center"
-          Source="ms-appx:///Assets/AppIcon.png" />
-        <TextBlock
-          x:Name="AppTitleText"
-          x:Uid="AppTitle"
-          VerticalAlignment="Center"
-          FontSize="12" />
-
-        <!--  Nav buttons: inside the title bar so WinUI auto-excludes them from drag  -->
-        <StackPanel
-          x:Name="NavButtonPanel"
-          Orientation="Horizontal"
-          Margin="12,0,0,0"
-          Visibility="Collapsed">
-          <Button
-            x:Name="NavBackButton"
-            Width="28" Height="24" Padding="0"
-            VerticalAlignment="Center"
-            IsEnabled="False"
-            Click="NavBack_Click"
-            ToolTipService.ToolTip="Back (Alt+Left)"
-            AutomationProperties.Name="Back"
-            AutomationProperties.HelpText="Go back to the previously viewed tab (Alt+Left)"
-            Background="Transparent" BorderBrush="Transparent">
-            <FontIcon Glyph="&#xE72B;" FontSize="11" />
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:live="using:BethesdaMultitool.Localization" xmlns:tabs="using:BethesdaMultitool" x:Class="BethesdaMultitool.MainWindow" Title="Bethesda Multitool" xmlns:shell="using:Slfx77.Multitool.WinUI.Shell">
+  <Grid x:Name="WindowRoot">
+    <!-- The help shortcut sits in the native caption region beside the system buttons, not in a passthrough area:
+         pointer hover, press and tap arrive through the window's non-client input source and are mirrored onto this
+         button, so the caption buttons and the shortcut share one native hover state machine. Keyboard focus, F1,
+         Space/Enter and UI Automation still use the ordinary button. Width, height and position follow the native
+         caption metrics in code. It is declared first so keyboard focus reaches it before the workspace, and drawn
+         above the shell by its ZIndex. -->
+    <Button x:Name="HelpShortcutsButton" Canvas.ZIndex="1" AutomationProperties.Name="Keyboard shortcuts"
+            AutomationProperties.HelpText="Show keyboard shortcuts (F1)" ToolTipService.ToolTip="Keyboard shortcuts (F1)"
+            MinWidth="0" MinHeight="0" Padding="0" Margin="0" CornerRadius="0"
+            HorizontalAlignment="Right" VerticalAlignment="Top" HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+            IsHitTestVisible="False" Click="HelpShortcuts_Click" UseSystemFocusVisuals="True"
+            Background="Transparent" BorderBrush="Transparent" BorderThickness="0">
+      <FontIcon Glyph="" FontFamily="{ThemeResource SymbolThemeFontFamily}" FontSize="14"/>
+    </Button>
+  <shell:ApplicationShell x:Name="ApplicationFrame" Title="Bethesda Multitool" KeyboardAcceleratorPlacementMode="Hidden">
+    <shell:ApplicationShell.Resources>
+      <!-- Construction fallback; code keeps this native drag reservation equal to the overlaid help shortcut so title content never runs under it. -->
+      <x:Double x:Key="TitleBarMinDragRegionWidth">48</x:Double>
+    </shell:ApplicationShell.Resources>
+    <shell:ApplicationShell.IconSource>
+      <BitmapIconSource UriSource="ms-appx:///Assets/AppIcon.png" ShowAsMonochrome="False"/>
+    </shell:ApplicationShell.IconSource>
+    <shell:ApplicationShell.ToolItems>
+      <NavigationViewItemSeparator/>
+      <NavigationViewItemHeader live:RuntimeLocalization.Uid="NavHeader_Assets"/>
+      <NavigationViewItem live:RuntimeLocalization.Uid="Nav_BsaExtractor" Tag="BsaExtractor">
+        <NavigationViewItem.Icon>
+          <FontIcon Glyph=""/>
+        </NavigationViewItem.Icon>
+      </NavigationViewItem>
+      <NavigationViewItem live:RuntimeLocalization.Uid="Nav_NifConverter" Tag="NifConverter">
+        <NavigationViewItem.Icon>
+          <FontIcon Glyph=""/>
+        </NavigationViewItem.Icon>
+      </NavigationViewItem>
+      <NavigationViewItemSeparator/>
+      <NavigationViewItemHeader live:RuntimeLocalization.Uid="NavHeader_Recovery"/>
+      <NavigationViewItem live:RuntimeLocalization.Uid="Explore_CarverNavigation" Tag="RecoveryFile">
+        <NavigationViewItem.Icon>
+          <FontIcon Glyph=""/>
+        </NavigationViewItem.Icon>
+      </NavigationViewItem>
+      <NavigationViewItem live:RuntimeLocalization.Uid="Nav_Repacker" Tag="Repacker">
+        <NavigationViewItem.Icon>
+          <FontIcon Glyph=""/>
+        </NavigationViewItem.Icon>
+      </NavigationViewItem>
+      <NavigationViewItem live:RuntimeLocalization.Uid="Nav_DdxConverter" Tag="DdxConverter">
+        <NavigationViewItem.Icon>
+          <FontIcon Glyph=""/>
+        </NavigationViewItem.Icon>
+      </NavigationViewItem>
+      <NavigationViewItem live:RuntimeLocalization.Uid="Nav_DmpToEsmConverter" Tag="DmpToEsmConverter">
+        <NavigationViewItem.Icon>
+          <FontIcon Glyph=""/>
+        </NavigationViewItem.Icon>
+      </NavigationViewItem>
+      <NavigationViewItem live:RuntimeLocalization.Uid="Nav_BatchMode" Tag="BatchMode">
+        <NavigationViewItem.Icon>
+          <FontIcon Glyph=""/>
+        </NavigationViewItem.Icon>
+      </NavigationViewItem>
+    </shell:ApplicationShell.ToolItems>
+    <shell:ApplicationShell.FooterItems>
+      <NavigationViewItem live:RuntimeLocalization.Uid="Nav_Diagnostics" Tag="Diagnostics">
+        <NavigationViewItem.Icon>
+          <FontIcon Glyph=""/>
+        </NavigationViewItem.Icon>
+      </NavigationViewItem>
+    </shell:ApplicationShell.FooterItems>
+    <shell:ApplicationShell.KeyboardAccelerators>
+      <KeyboardAccelerator Key="F1" Invoked="F1_ShortcutsDialog_Invoked"/>
+    </shell:ApplicationShell.KeyboardAccelerators>
+    <shell:ApplicationShell.TitleActions>
+        <StackPanel x:Name="NavButtonPanel" Orientation="Horizontal" Visibility="Collapsed">
+          <Button x:Name="NavBackButton" Width="28" Height="24" Padding="0" VerticalAlignment="Center" IsEnabled="False" Click="NavBack_Click" ToolTipService.ToolTip="Back (Alt+Left)" AutomationProperties.Name="Back" AutomationProperties.HelpText="Go back to the previously viewed tab (Alt+Left)" Background="Transparent" BorderBrush="Transparent">
+            <FontIcon Glyph="" FontSize="11"/>
           </Button>
-          <Button
-            x:Name="NavForwardButton"
-            Width="28" Height="24" Padding="0" Margin="2,0,0,0"
-            VerticalAlignment="Center"
-            IsEnabled="False"
-            Click="NavForward_Click"
-            ToolTipService.ToolTip="Forward (Alt+Right)"
-            AutomationProperties.Name="Forward"
-            AutomationProperties.HelpText="Go forward to the next tab in navigation history (Alt+Right)"
-            Background="Transparent" BorderBrush="Transparent">
-            <FontIcon Glyph="&#xE72A;" FontSize="11" />
+          <Button x:Name="NavForwardButton" Width="28" Height="24" Padding="0" Margin="2,0,0,0" VerticalAlignment="Center" IsEnabled="False" Click="NavForward_Click" ToolTipService.ToolTip="Forward (Alt+Right)" AutomationProperties.Name="Forward" AutomationProperties.HelpText="Go forward to the next tab in navigation history (Alt+Right)" Background="Transparent" BorderBrush="Transparent">
+            <FontIcon Glyph="" FontSize="11"/>
           </Button>
         </StackPanel>
-
-        <!--  Help: the visible twin of the F1 accelerator (same shortcuts dialog). A sibling of
-              NavButtonPanel, not a child, so it stays visible when the nav buttons are hidden.
-              Inside the title bar, so WinUI auto-excludes it from the drag region like Back/Forward.  -->
-        <Button
-          x:Name="HelpShortcutsButton"
-          Width="28" Height="24" Padding="0" Margin="8,0,0,0"
-          VerticalAlignment="Center"
-          Click="HelpShortcuts_Click"
-          ToolTipService.ToolTip="Keyboard shortcuts (F1)"
-          AutomationProperties.Name="Keyboard shortcuts"
-          AutomationProperties.HelpText="Show the keyboard shortcuts cheat sheet (F1)"
-          Background="Transparent" BorderBrush="Transparent">
-          <FontIcon Glyph="&#xE897;" FontSize="11" />
-        </Button>
-      </StackPanel>
-    </Grid>
+    </shell:ApplicationShell.TitleActions>
+    <shell:ApplicationShell.Workspace>
+      <Grid VerticalAlignment="Stretch">
+        <tabs:ExploreTab x:Name="ExploreTabContent" VerticalAlignment="Stretch" Visibility="Visible"/>
+        <tabs:SingleFileTab x:Name="RecoveryFileTabContent" VerticalAlignment="Stretch" Visibility="Collapsed"/>
+        <tabs:BatchModeTab x:Name="BatchModeTabContent" VerticalAlignment="Stretch" Visibility="Collapsed"/>
+        <tabs:NifConverterTab x:Name="NifConverterTabContent" VerticalAlignment="Stretch" Visibility="Collapsed"/>
+        <tabs:DdxConverterTab x:Name="DdxConverterTabContent" VerticalAlignment="Stretch" Visibility="Collapsed"/>
+        <tabs:BsaExtractorTab x:Name="BsaExtractorTabContent" VerticalAlignment="Stretch" Visibility="Collapsed"/>
+        <tabs:RepackerTab x:Name="RepackerTabContent" VerticalAlignment="Stretch" Visibility="Collapsed"/>
+        <tabs:DmpToEsmConverterTab x:Name="DmpToEsmConverterTabContent" VerticalAlignment="Stretch" Visibility="Collapsed"/>
+        <tabs:DiagnosticsTab x:Name="DiagnosticsTabContent" VerticalAlignment="Stretch" Visibility="Collapsed"/>
+        <tabs:ApplicationSettingsTab x:Name="SettingsTabContent" VerticalAlignment="Stretch" Visibility="Collapsed"/>
+      </Grid>
+    </shell:ApplicationShell.Workspace>
+  </shell:ApplicationShell>
   </Grid>
 </Window>

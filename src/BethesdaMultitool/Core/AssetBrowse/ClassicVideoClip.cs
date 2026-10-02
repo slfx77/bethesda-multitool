@@ -168,12 +168,30 @@ internal sealed class ClassicVideoClip : IVideoFrameSource
                 return null;
             }
 
-            return FlicFile.IsFlic(bytes)
-                ? FromFlic(FlicFile.Parse(bytes, node.Name))
-                : FromVid(DaggerfallVidFile.Parse(bytes, node.Name));
+            return TryOpenBytes(bytes, node.Name);
         }
         catch (Exception e) when (e is InvalidDataException or NotSupportedException
                                       or IOException or ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>Preserves the classic content decoder decision over the caller's already-read winning bytes.</summary>
+    /// <param name="bytes">Borrowed bytes, stable until this synchronous legacy decode returns.</param>
+    /// <param name="name">The selected source label used by existing codec diagnostics.</param>
+    /// <returns>Detached classic frames, or null on the same unsupported/malformed-content failures as before.</returns>
+    /// <remarks>This is the existing permissive path: its whole-frame materialization and lack of mid-parse cancellation are unchanged.</remarks>
+    internal static ClassicVideoClip? TryOpenBytes(byte[] bytes, string name)
+    {
+        if (bytes.Length == 0) { return null; }
+        try
+        {
+            return FlicFile.IsFlic(bytes)
+                ? FromFlic(FlicFile.Parse(bytes, name))
+                : FromVid(DaggerfallVidFile.Parse(bytes, name));
+        }
+        catch (Exception failure) when (failure is InvalidDataException or NotSupportedException or IOException or ArgumentException)
         {
             return null;
         }

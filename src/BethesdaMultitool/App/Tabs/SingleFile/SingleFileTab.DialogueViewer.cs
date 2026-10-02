@@ -1,4 +1,4 @@
-﻿using BethesdaMultitool.Core.EsmView.Dialogue;
+using BethesdaMultitool.Core.EsmView.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Dialogue;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Quest;
@@ -18,15 +18,17 @@ public sealed partial class SingleFileTab
 
     private void ResetDialogueViewer()
     {
+        DialogueViewsSidecar.Reset();
+        DialogueAudioPanel.ResetResponse();
         DialogueViewerPlaceholder.Visibility = Visibility.Visible;
         DialogueViewerContent.Visibility = Visibility.Collapsed;
         DialogueViewerProgressBar.Visibility = Visibility.Collapsed;
-        DialogueViewerStatusText.Text = Strings.Empty_RunAnalysisForDialogues;
+        RuntimeLocalization.SetText(DialogueViewerStatusText, "Empty_RunAnalysisForDialogues");
         DialoguePickerTree.RootNodes.Clear();
         DialogueConversationPanel.Children.Clear();
         DialogueChoicesPanel.Children.Clear();
         DialogueChoicesHeader.Visibility = Visibility.Collapsed;
-        DialogueHeaderText.Text = Strings.Empty_SelectDialogueTopic;
+        RuntimeLocalization.SetText(DialogueHeaderText, "Empty_SelectDialogueTopic");
         DialogueBrowseMode.SelectedIndex = 0;
         DialogueSearchBox.Text = "";
         _dialoguePickerByQuest = true;
@@ -112,14 +114,16 @@ public sealed partial class SingleFileTab
             // writing into the (possibly reopened) session.
             cancellationToken.ThrowIfCancellationRequested();
 
-            var result = _session.SemanticResult;
+            var selectedView = await GetSelectedLoadOrderViewAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = selectedView?.Records ?? _session.SemanticResult;
             if (result?.DialogueTree == null)
             {
-                DialogueViewerStatusText.Text = Strings.Status_NoDialogueData;
+                RuntimeLocalization.SetText(DialogueViewerStatusText, "Status_NoDialogueData");
                 return;
             }
 
-            DialogueViewerStatusText.Text = Strings.Status_BuildingDialogueViewer;
+            RuntimeLocalization.SetText(DialogueViewerStatusText, "Status_BuildingDialogueViewer");
 
             _session.DialogueTree = result.DialogueTree;
 
@@ -159,7 +163,7 @@ public sealed partial class SingleFileTab
 
     private string? ResolveQuestVariable(uint questFormId, uint varIndex)
     {
-        var quests = _session.SemanticResult?.Quests;
+        var quests = _session.EffectiveRecords?.Quests;
         if (quests == null)
         {
             return null;
@@ -408,7 +412,8 @@ public sealed partial class SingleFileTab
             promptSourceInfo,
             onResponseSelected,
             _selectedResponseNode,
-            topicDetailPanel);
+            topicDetailPanel,
+            buildAudioControls: BuildDialogueAudioControls);
 
         foreach (var element in elements)
         {
@@ -707,7 +712,7 @@ public sealed partial class SingleFileTab
             DialogueConversationPanel.Children.Clear();
             DialogueChoicesPanel.Children.Clear();
             DialogueChoicesHeader.Visibility = Visibility.Collapsed;
-            DialogueHeaderText.Text = Strings.Empty_SelectDialogueTopic;
+            RuntimeLocalization.SetText(DialogueHeaderText, "Empty_SelectDialogueTopic");
         };
         DialogueChoicesPanel.Children.Add(returnButton);
     }

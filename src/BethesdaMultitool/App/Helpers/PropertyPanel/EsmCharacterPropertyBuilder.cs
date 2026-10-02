@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Enums;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
@@ -22,19 +23,26 @@ internal static class EsmCharacterPropertyBuilder
     internal static void AddActorBaseStats(
         List<EsmPropertyEntry> properties,
         ActorBaseSubrecord stats,
-        bool isNpc)
+        bool isNpc,
+        BethesdaGame game = BethesdaGame.Unknown)
     {
-        // Common fields (both NPC and Creature)
-        var gender = (stats.Flags & 1) == 1 ? "Female" : "Male";
-        properties.Add(new EsmPropertyEntry { Name = "Gender", Value = gender, Category = "Characteristics" });
+        // FO3/FNV CREA bit 0 is Biped, not gender. Preserve other game paths.
+        if (game != BethesdaGame.Unknown &&
+            (isNpc || game is not (BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas)))
+        {
+            var gender = (stats.Flags & 1) == 1 ? "Female" : "Male";
+            properties.Add(new EsmPropertyEntry { Name = "Gender", Value = gender, Category = "Characteristics" });
+        }
+        var actorFlags = FlagRegistry.GetActorBaseFlags(game, isNpc ? "NPC_" : "CREA");
         properties.Add(new EsmPropertyEntry
         {
             Name = "Actor Flags",
-            Value = FlagRegistry.DecodeFlagNamesWithHex(stats.Flags, FlagRegistry.ActorBaseFlags),
+            Value = actorFlags.Length == 0 ? $"0x{stats.Flags:X8}"
+                : FlagRegistry.DecodeFlagNamesWithHex(stats.Flags, actorFlags),
             Category = "Characteristics"
         });
         properties.Add(new EsmPropertyEntry
-            { Name = "Level", Value = stats.Level.ToString(), Category = "Attributes" });
+            { Name = "Level (encoded)", Value = stats.Level.ToString(), Category = "Attributes" });
         properties.Add(new EsmPropertyEntry
             { Name = "Calc Min Level", Value = stats.CalcMin.ToString(), Category = "Attributes" });
         properties.Add(new EsmPropertyEntry
@@ -327,14 +335,11 @@ internal static class EsmCharacterPropertyBuilder
 
         var str = npc.SpecialStats[0];
         var end = npc.SpecialStats[2];
-        var lck = npc.SpecialStats[6];
-        var level = npc.Stats.Level;
         var fatigueBase = npc.Stats.FatigueBase;
 
-        var baseHealth = end * 5 + 50;
-        var calcHealth = baseHealth + level * 10;
+        var baseHealth = Core.Actors.ActorStatisticsService.Format(Core.Actors.ActorStatisticsService.StoredHealth(npc));
         var calcFatigue = fatigueBase + (str + end) * 10;
-        var critChance = (float)lck;
+        var critChance = Core.Actors.ActorStatisticsService.Format(Core.Actors.ActorStatisticsService.CriticalChance());
         var meleeDamage = str * 0.5f;
         var unarmedDamage = 0.5f + str * 0.1f;
         var poisonResist = (end - 1) * 5;
@@ -342,7 +347,7 @@ internal static class EsmCharacterPropertyBuilder
 
         properties.Add(new EsmPropertyEntry
         {
-            Name = "Health", Value = $"{calcHealth} (Base: {baseHealth} + Level\u00d710)", Category = "Derived Stats"
+            Name = "Base Health", Value = baseHealth, Category = "Stored Stats"
         });
         properties.Add(new EsmPropertyEntry
         {
@@ -350,7 +355,7 @@ internal static class EsmCharacterPropertyBuilder
             Category = "Derived Stats"
         });
         properties.Add(new EsmPropertyEntry
-            { Name = "Critical Chance", Value = $"{critChance:F0}%", Category = "Derived Stats" });
+            { Name = "Critical Chance", Value = critChance, Category = "Runtime Stats" });
         properties.Add(new EsmPropertyEntry
             { Name = "Melee Damage", Value = $"{meleeDamage:F1}", Category = "Derived Stats" });
         properties.Add(new EsmPropertyEntry

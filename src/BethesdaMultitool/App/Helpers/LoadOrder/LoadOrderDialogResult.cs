@@ -10,8 +10,9 @@ internal enum LoadOrderDialogAction
     ClearAll
 }
 
-/// <summary>Result of the load-order picker dialog: the chosen action plus the edited entries and subtitle path.</summary>
+/// <summary>Result of the load-order picker dialog, including the chosen primary source when offered.</summary>
 internal sealed record LoadOrderDialogResult(
     LoadOrderDialogAction Action,
     ObservableCollection<LoadOrderEntry> Entries,
-    string? SubtitleCsvPath);
+    string? SubtitleCsvPath,
+    string? PrimaryFilePath = null);

@@ -89,10 +89,10 @@
     <value>Model Tools</value>
   </data>
   <data name="Nav_DdxConverter.Content" xml:space="preserve">
-    <value>Texture Tools</value>
+    <value>DDX to DDS Converter</value>
   </data>
   <data name="Nav_BsaExtractor.Content" xml:space="preserve">
-    <value>Archive Browser</value>
+    <value>Archive Extractor</value>
   </data>
   <data name="Nav_Repacker.Content" xml:space="preserve">
     <value>Game Repacker</value>
@@ -639,7 +639,7 @@
 
   <!-- ===== DdxConverterTab (x:Uid) ===== -->
   <data name="Header_DdxConverter.Text" xml:space="preserve">
-    <value>Texture Tools</value>
+    <value>DDX to DDS Converter</value>
   </data>
   <data name="Subtitle_DdxConvBy.Text" xml:space="preserve">
     <value>Uses DDXConv by kran27</value>
@@ -694,7 +694,7 @@
 
   <!-- ===== BsaExtractorTab (x:Uid) ===== -->
   <data name="Header_BsaExtractor.Text" xml:space="preserve">
-    <value>Archive Browser</value>
+    <value>Archive Extractor</value>
   </data>
   <data name="Subtitle_BsaExtractor.Text" xml:space="preserve">
     <value>Extract files from Bethesda archives — BSA and BA2 (PC and Xbox 360).</value>
@@ -849,4 +849,335 @@
     <value>Processed</value>
   </data>
 
+  <data name="Explore_Navigation.Content" xml:space="preserve"><value>Explore</value></data>
+  <data name="Explore_CarverNavigation.Content" xml:space="preserve"><value>File Carver</value></data>
+  <data name="Explore_SourcePath.PlaceholderText" xml:space="preserve"><value>Open a folder, archive, plugin, dump, or save</value></data>
+  <data name="Explore_SourcePath.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Explore source</value></data>
+  <data name="Explore_Open.Content" xml:space="preserve"><value>Open</value></data>
+  <data name="Explore_OpenFile.Text" xml:space="preserve"><value>Open file or archive...</value></data>
+  <data name="Explore_OpenFolder.Text" xml:space="preserve"><value>Open folder or game install...</value></data>
+  <data name="Explore_Reload.Content" xml:space="preserve"><value>Reload</value></data>
+  <data name="Explore_Cancel.Content" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Explore_Data.Text" xml:space="preserve"><value>Data</value></data>
+  <data name="Explore_Maps.Text" xml:space="preserve"><value>Maps</value></data>
+  <data name="Explore_Assets.Text" xml:space="preserve"><value>Assets</value></data>
+  <data name="Explore_RecordSource.PlaceholderText" xml:space="preserve"><value>Choose a plugin for Data and Maps</value></data>
+  <data name="Explore_RecordSource.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Primary record source</value></data>
+  <data name="Explore_Empty.Text" xml:space="preserve"><value>Open a source to explore its records and maps.</value></data>
+  <data name="Explore_Opening" xml:space="preserve"><value>Opening source...</value></data>
+  <data name="Explore_ChoosePlugin" xml:space="preserve"><value>Choose a primary plugin in Load Order to populate Data and Maps. Assets are ready to browse.</value></data>
+  <data name="Explore_NoRecords" xml:space="preserve"><value>This source has no recognized record file. Its assets are available in Assets.</value></data>
+  <data name="Explore_LoadCanceled" xml:space="preserve"><value>Loading canceled. You can reload or open another source.</value></data>
+  <data name="Explore_RecordsCanceled" xml:space="preserve"><value>Record loading canceled.</value></data>
+  <data name="Explore_LoadingRecords" xml:space="preserve"><value>Loading records...</value></data>
+  <data name="Workflow_Options.Text" xml:space="preserve"><value>Options</value></data>
+  <data name="Settings_Navigation.Content" xml:space="preserve"><value>Settings</value></data>
+  <data name="Settings_Title.Text" xml:space="preserve"><value>Settings</value></data>
+  <data name="Settings_Description.Text" xml:space="preserve"><value>Application appearance and language. Each tool shows its own processing options beside its inputs.</value></data>
+  <data name="Settings_Theme.Header" xml:space="preserve"><value>Theme</value></data>
+  <data name="Settings_Theme.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Application theme</value></data>
+  <data name="Settings_Language.Header" xml:space="preserve"><value>Language</value></data>
+  <data name="Settings_Language.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Application language</value></data>
+  <data name="Settings_System.Content" xml:space="preserve"><value>Use system setting</value></data>
+  <data name="Settings_Light.Content" xml:space="preserve"><value>Light</value></data>
+  <data name="Settings_Dark.Content" xml:space="preserve"><value>Dark</value></data>
+  <data name="Settings_English.Content" xml:space="preserve"><value>English (United States)</value></data>
+  <data name="Settings_LanguageHelp.Text" xml:space="preserve"><value>English (United States) is currently available. System languages without a translation use English. Changes update this window immediately. Pseudo-localization expands English text for layout testing; it is not a translation.</value></data>
+  <data name="Settings_LoadFailed" xml:space="preserve"><value>Could not load preferences: {0}. The saved file has been preserved.</value></data>
+  <data name="Settings_SaveFailed" xml:space="preserve"><value>Could not save preferences: {0}</value></data>
+  <data name="DialogueViews_Title" xml:space="preserve"><value>Creation Kit dialogue views</value></data>
+  <data name="DialogueViews_Open" xml:space="preserve"><value>Open XML or ZIP</value></data>
+  <data name="DialogueViews_Folder" xml:space="preserve"><value>Open sidecar folder</value></data>
+  <data name="DialogueViews_Description" xml:space="preserve"><value>Optional authored diagrams. Record links may be stale or refer to a different plugin load order.</value></data>
+  <data name="DialogueViews_Loaded" xml:space="preserve"><value>Loaded {0} diagram(s). Links use the FormIDs authored in the sidecar.</value></data>
+  <data name="DialogueViews_Unresolved" xml:space="preserve"><value>Sidecar reference {0} is unresolved in the opened record set.</value></data>
+  <data name="AssetExport_Original.Content" xml:space="preserve"><value>Extract selected</value></data>
+  <data name="AssetExport_Ddx.Content" xml:space="preserve"><value>Convert selected DDX</value></data>
+  <data name="AssetExport_SelectAll.Content" xml:space="preserve"><value>Select all</value></data>
+  <data name="AssetExport_SelectNone.Content" xml:space="preserve"><value>Clear selection</value></data>
+  <data name="AssetExport_Cancel.Content" xml:space="preserve"><value>Cancel export</value></data>
+  <data name="AssetExport_Empty" xml:space="preserve"><value>Check files or folders before exporting.</value></data>
+  <data name="AssetExport_Progress" xml:space="preserve"><value>{0} exported, {1} failed. Source: {2}</value></data>
+  <data name="AssetExport_Canceled" xml:space="preserve"><value>Export canceled. Completed outputs were retained.</value></data>
+  <data name="AssetExport_ConfirmOverwrite.Content" xml:space="preserve"><value>Replace existing outputs</value></data>
+  <data name="AssetExport_Status.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Asset export status</value></data>
+  <data name="ActorDetails_StatisticsList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Actor statistics</value></data>
+  <data name="ActorDetails_InventoryList.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Actor inventory</value></data>
+  <data name="ActorDetails_Display.Header" xml:space="preserve"><value>Display</value></data>
+  <data name="ActorDetails_Statistics.Header" xml:space="preserve"><value>Statistics</value></data>
+  <data name="ActorDetails_Inventory.Header" xml:space="preserve"><value>Inventory</value></data>
+  <data name="ActorDetails_AuthoredHelp.Text" xml:space="preserve"><value>Stored values</value></data>
+  <data name="ActorDetails_CandidateHelp.Text" xml:space="preserve"><value>Inventory declarations and eligible leveled candidates. Chance, global values, and random selection can change the actual in-game inventory.</value></data>
+  <data name="ActorDetails_NoInventory.Text" xml:space="preserve"><value>No inventory entries are available for this selection.</value></data>
+  <data name="ActorDetails_NoMeshes" xml:space="preserve"><value>Statistics and inventory are available. Configure mesh archives to enable the 3D preview.</value></data>
+  <data name="ActorInventory_Authored" xml:space="preserve"><value>Authored</value></data>
+  <data name="ActorInventory_Inherited" xml:space="preserve"><value>Inherited</value></data>
+  <data name="ActorInventory_Candidate" xml:space="preserve"><value>Eligible candidate</value></data>
+  <data name="ActorInventory_Cycle" xml:space="preserve"><value>Cyclic list reference</value></data>
+  <data name="ActorInventory_TemplateCycle" xml:space="preserve"><value>Inventory template references contain a cycle.</value></data>
+  <data name="ActorInventory_TemplateUnresolved" xml:space="preserve"><value>The inventory template is missing or requires an unresolved actor selection.</value></data>
+  <data name="ActorInventory_Truncated" xml:space="preserve"><value>This preview reached its depth or row limit. Open the source records to inspect the remaining entries.</value></data>
+  <data name="ActorInventory_CountOverflow" xml:space="preserve"><value>A nested item count exceeded the supported range and was omitted.</value></data>
+  <data name="ActorInventory_LevelRequired" xml:space="preserve"><value>Enter a preview level to see eligible leveled-list candidates.</value></data>
+  <data name="ActorInventory_Count" xml:space="preserve"><value>Count: {0}</value></data>
+  <data name="ActorInventory_Source" xml:space="preserve"><value>Actor source: {0}</value></data>
+  <data name="ActorInventory_Level" xml:space="preserve"><value>Required level: {0}</value></data>
+  <data name="ActorInventory_Chance" xml:space="preserve"><value>Chance none: {0}%</value></data>
+  <data name="ActorInventory_Flags" xml:space="preserve"><value>List flags: {0}</value></data>
+  <data name="ActorInventory_Global" xml:space="preserve"><value>Chance global: {0}</value></data>
+  <data name="ActorInventory_Owner" xml:space="preserve"><value>Owner: {0}</value></data>
+  <data name="ActorInventory_Condition" xml:space="preserve"><value>Condition: {0}</value></data>
+  <data name="ActorStat_Flags" xml:space="preserve"><value>Flags</value></data>
+  <data name="ActorStat_Level" xml:space="preserve"><value>Level</value></data>
+  <data name="ActorStat_MinimumLevel" xml:space="preserve"><value>Minimum calculated level</value></data>
+  <data name="ActorStat_MaximumLevel" xml:space="preserve"><value>Maximum calculated level</value></data>
+  <data name="ActorStat_Fatigue" xml:space="preserve"><value>Base fatigue</value></data>
+  <data name="ActorStat_BarterGold" xml:space="preserve"><value>Barter gold</value></data>
+  <data name="ActorStat_Speed" xml:space="preserve"><value>Speed multiplier</value></data>
+  <data name="ActorStat_Karma" xml:space="preserve"><value>Karma</value></data>
+  <data name="ActorStat_Disposition" xml:space="preserve"><value>Base disposition</value></data>
+  <data name="ActorStat_TemplateFlags" xml:space="preserve"><value>Template flags</value></data>
+  <data name="ActorStat_BaseHealth" xml:space="preserve"><value>Base health</value></data>
+  <data name="ActorStat_Height" xml:space="preserve"><value>Height</value></data>
+  <data name="ActorStat_Weight" xml:space="preserve"><value>Weight</value></data>
+  <data name="ActorStat_Race" xml:space="preserve"><value>Race</value></data>
+  <data name="ActorStat_Class" xml:space="preserve"><value>Class</value></data>
+  <data name="ActorStat_Voice" xml:space="preserve"><value>Voice type</value></data>
+  <data name="ActorStat_Template" xml:space="preserve"><value>Template</value></data>
+  <data name="ActorStat_CombatStyle" xml:space="preserve"><value>Combat style</value></data>
+  <data name="ActorStat_Strength" xml:space="preserve"><value>Strength</value></data>
+  <data name="ActorStat_Perception" xml:space="preserve"><value>Perception</value></data>
+  <data name="ActorStat_Endurance" xml:space="preserve"><value>Endurance</value></data>
+  <data name="ActorStat_Charisma" xml:space="preserve"><value>Charisma</value></data>
+  <data name="ActorStat_Intelligence" xml:space="preserve"><value>Intelligence</value></data>
+  <data name="ActorStat_Agility" xml:space="preserve"><value>Agility</value></data>
+  <data name="ActorStat_Luck" xml:space="preserve"><value>Luck</value></data>
+  <data name="ActorStat_CreatureType" xml:space="preserve"><value>Creature type</value></data>
+  <data name="ActorStat_CombatSkill" xml:space="preserve"><value>Combat skill</value></data>
+  <data name="ActorStat_MagicSkill" xml:space="preserve"><value>Magic skill</value></data>
+  <data name="ActorStat_StealthSkill" xml:space="preserve"><value>Stealth skill</value></data>
+  <data name="ActorStat_AttackDamage" xml:space="preserve"><value>Attack damage</value></data>
+  <data name="ActorStat_Health" xml:space="preserve"><value>Authored health</value></data>
+  <data name="ActorStat_LevelEncoded" xml:space="preserve"><value>Level (encoded)</value></data>
+  <data name="ActorStat_LevelMultiplier" xml:space="preserve"><value>Player level multiplier</value></data>
+  <data name="ActorStat_TemplateFlagNames" xml:space="preserve"><value>Template groups</value></data>
+  <data name="ActorStat_Scale" xml:space="preserve"><value>Scale</value></data>
+  <data name="DialogueAudio_Plugin" xml:space="preserve">
+    <value>Original plugin</value>
+  </data>
+  <data name="DialogueAudio_Voice" xml:space="preserve">
+    <value>Voice type</value>
+  </data>
+  <data name="DialogueAudio_AllVoices" xml:space="preserve">
+    <value>All voices</value>
+  </data>
+  <data name="DialogueAudio_Find" xml:space="preserve">
+    <value>Find audio</value>
+  </data>
+  <data name="DialogueAudio_Play" xml:space="preserve">
+    <value>Play</value>
+  </data>
+  <data name="DialogueAudio_Pause" xml:space="preserve">
+    <value>Pause</value>
+  </data>
+  <data name="DialogueAudio_Resume" xml:space="preserve">
+    <value>Resume</value>
+  </data>
+  <data name="DialogueAudio_ChooseResponse" xml:space="preserve">
+    <value>Select a dialogue response to resolve its audio.</value>
+  </data>
+  <data name="DialogueAudio_Title" xml:space="preserve">
+    <value>Dialogue audio</value>
+  </data>
+  <data name="DialogueAudio_Identity" xml:space="preserve">
+    <value>Original INFO {0}, response {1}</value>
+  </data>
+  <data name="DialogueAudio_Loading" xml:space="preserve">
+    <value>Reading voice identities...</value>
+  </data>
+  <data name="DialogueAudio_PluginRequired" xml:space="preserve">
+    <value>Enter the original plugin filename. This record does not provide a verified plugin binding.</value>
+  </data>
+  <data name="DialogueAudio_SourceRequired" xml:space="preserve">
+    <value>Open the source folder or archive in Explore to resolve dialogue audio.</value>
+  </data>
+  <data name="DialogueAudio_Missing" xml:space="preserve">
+    <value>No matching audio is available for this identity.</value>
+  </data>
+  <data name="DialogueAudio_Resolved" xml:space="preserve">
+    <value>One audio match. Select Play to begin playback.</value>
+  </data>
+  <data name="DialogueAudio_Ambiguous" xml:space="preserve">
+    <value>{0} audio matches remain. Select a voice and source explicitly.</value>
+  </data>
+  <data name="DialogueAudio_ReadFailed" xml:space="preserve">
+    <value>Audio is unreadable or exceeds the 64 MiB preview limit.</value>
+  </data>
+  <data name="DialogueAudio_ProvenanceChanged" xml:space="preserve">
+    <value>The cataloged source did not supply these bytes. Refresh the source before playback.</value>
+  </data>
+  <data name="DialogueAudio_Response" xml:space="preserve">
+    <value>Audio: response {0}</value>
+  </data>
+  <data name="DialogueViews_CoordinatesTooLarge" xml:space="preserve">
+    <value>This diagram's coordinate span cannot be displayed. The original XML remains available for inspection.</value>
+  </data>
+  <data name="DialogueViews_DiagramSummary" xml:space="preserve">
+    <value>{0} nodes; {1} links; {2} links have missing diagram endpoints.</value>
+  </data>
+  <data name="DialogueAudio_Matches" xml:space="preserve">
+    <value>Matching voice sources</value>
+  </data>
+  <data name="DialogueAudio_Position" xml:space="preserve">
+    <value>Dialogue playback position</value>
+  </data>
+  <data name="DialogueViews_Documents" xml:space="preserve">
+    <value>Dialogue diagrams</value>
+  </data>
+  <data name="DialogueAudio_InspectLip" xml:space="preserve">
+    <value>Inspect LIP</value>
+  </data>
+  <data name="DialogueLip_Title" xml:space="preserve"><value>LIP source samples</value></data>
+  <data name="DialogueLip_Close" xml:space="preserve"><value>Close</value></data>
+  <data name="DialogueLip_Source" xml:space="preserve"><value>Source: {0}&#10;Voice: {1}</value></data>
+  <data name="DialogueLip_SourceUnavailable" xml:space="preserve"><value>This source does not provide Bethesda voice files.</value></data>
+  <data name="DialogueLip_Missing" xml:space="preserve"><value>No same-stem LIP companion was found for this voice file.</value></data>
+  <data name="DialogueLip_Ambiguous" xml:space="preserve"><value>{0} LIP companions remain. No source was chosen automatically. Showing up to 16 catalog identities.</value></data>
+  <data name="DialogueLip_Companion" xml:space="preserve"><value>LIP: {0}&#10;Provenance: {1}</value></data>
+  <data name="DialogueLip_ReadFailed" xml:space="preserve"><value>LIP inspection could not decode this file: {0}</value></data>
+  <data name="DialogueLip_SizeLimit" xml:space="preserve"><value>The companion size is unknown or exceeds the 5 MiB inspection limit.</value></data>
+  <data name="DialogueLip_Unreadable" xml:space="preserve"><value>The companion could not be read within the inspection limit.</value></data>
+  <data name="DialogueLip_ProvenanceChanged" xml:space="preserve"><value>The bytes do not match the cataloged path, source and size. Refresh the source before inspection.</value></data>
+  <data name="DialogueLip_Metadata" xml:space="preserve"><value>Revision 1, compressed little endian&#10;{0} frames; {1} tracks; {2} Hz; starting frame {3}&#10;Encoded bytes: {4}; declared size: {5}</value></data>
+  <data name="DialogueLip_RawWeights" xml:space="preserve"><value>These are raw stored weights. Times are relative to the first sample. Audio alignment and actor morph settings are not applied.</value></data>
+  <data name="DialogueLip_Empty" xml:space="preserve"><value>This file contains no sample frames.</value></data>
+  <data name="DialogueLip_Frame" xml:space="preserve"><value>Frame index</value></data>
+  <data name="DialogueLip_Time" xml:space="preserve"><value>{0:F6} seconds from the first sample</value></data>
+  <data name="DialogueLip_Values" xml:space="preserve"><value>Stored weights for the selected frame</value></data>
+  <data name="DialogueLip_TrackValue" xml:space="preserve"><value>{0}: {1}/{2} = {3}</value></data>
+  <data name="ActorInventory_Seed.Header" xml:space="preserve"><value>Inventory preview seed</value></data>
+  <data name="ActorInventory_Seed.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Inventory preview seed</value></data>
+  <data name="ActorInventory_Generate.Content" xml:space="preserve"><value>Generate preview</value></data>
+  <data name="ActorInventory_AuthoredButton.Content" xml:space="preserve"><value>Show authored inventory</value></data>
+  <data name="ActorInventory_Assumptions.Header" xml:space="preserve"><value>Preview assumptions</value></data>
+  <data name="ActorInventory_AssumptionsText.Text" xml:space="preserve"><value>The supplied level applies to every item list. Use All ignores level. Other lists use the highest eligible tier or all lower tiers as authored. Chance uses parsed global values. Entry order and the seed make results repeatable. Ownership comes from the parent declaration. Actor scaling, scripts, live game randomness, entry ownership overrides, and game-setting level cutoffs are not applied. Equipment uses the generated items that have supported models. Batch export requires authored mode.</value></data>
+  <data name="ActorInventory_ModeAuthored" xml:space="preserve"><value>Inventory declarations and eligible leveled candidates. Select Generate preview to apply an explicit seed.</value></data>
+  <data name="ActorInventory_ModeGenerated" xml:space="preserve"><value>Generated seed {0}, preview level {1}: {2} concrete item stacks.</value></data>
+  <data name="ActorInventory_SeedRequired" xml:space="preserve"><value>Enter a whole-number seed from 0 through 4294967295.</value></data>
+  <data name="ActorInventory_GenerationFailed" xml:space="preserve"><value>Inventory generation failed: {0}</value></data>
+  <data name="ActorInventory_BatchUnavailable" xml:space="preserve"><value>Show authored inventory before a batch export. This generated result belongs to the selected actor.</value></data>
+  <data name="ActorInventory_Generated" xml:space="preserve"><value>Generated preview item</value></data>
+  <data name="ActorInventory_Leveled" xml:space="preserve"><value>Leveled declaration</value></data>
+  <data name="ActorInventory_Unresolved" xml:space="preserve"><value>Missing or unsupported item record</value></data>
+  <data name="ActorInventory_InvalidCount" xml:space="preserve"><value>Nonpositive item count</value></data>
+  <data name="ActorInventory_UnsupportedList" xml:space="preserve"><value>Unsupported leveled-list family</value></data>
+  <data name="ActorInventory_UnsupportedFlags" xml:space="preserve"><value>Unsupported leveled-list flags</value></data>
+  <data name="ActorInventory_GlobalUnresolved" xml:space="preserve"><value>The chance global is missing from this source.</value></data>
+  <data name="ActorInventory_InvalidChance" xml:space="preserve"><value>The chance value is nonfinite or outside 0–100.</value></data>
+  <data name="ActorInventory_NoEligible" xml:space="preserve"><value>No eligible entries at this preview level</value></data>
+  <data name="ActorInventory_ChanceNone" xml:space="preserve"><value>The preview rolled no item</value></data>
+  <data name="ActorInventory_ResolvedChance" xml:space="preserve"><value>Resolved chance none: {0}%</value></data>
+  <data name="ActorInventory_PreviewLevel.Text" xml:space="preserve"><value>Preview level:</value></data>
+  <data name="ActorInventory_PreviewLevelInput.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Optional for authored inspection. Generated inventory requires a whole-number level and applies it directly to every item list without actor scaling.</value></data>
+  <data name="Settings_Pseudo.Content" xml:space="preserve"><value>Pseudo-localization (layout test)</value></data>
+  <data name="Settings_ApplyFailed" xml:space="preserve"><value>Could not apply display language: {0}</value></data>
+  <data name="Viewer_SelectNpc" xml:space="preserve"><value>Select an NPC to view</value></data>
+  <data name="Viewer_SelectNif" xml:space="preserve"><value>Selected mesh will be shown here</value></data>
+  <data name="Viewer_LoadingModel" xml:space="preserve"><value>Loading model...</value></data>
+  <data name="Viewer_LoadingCompatibility" xml:space="preserve"><value>Loading compatibility model...</value></data>
+  <data name="Viewer_BuildingCompatibility" xml:space="preserve"><value>Building compatibility model...</value></data>
+  <data name="Viewer_FatalError" xml:space="preserve"><value>Mesh viewer error: {0}</value></data>
+  <data name="Status_RuntimeAssets" xml:space="preserve"><value>Runtime assets detected ({0} total files)</value></data>
+  <data name="Status_FinalizingEsm" xml:space="preserve"><value>Finalizing ESM load...</value></data>
+  <data name="Status_ExternalPhase" xml:space="preserve"><value>{0}...</value></data>
+  <data name="Status_SaveLoaded" xml:space="preserve"><value>Save file loaded — {0:N0} changed forms</value></data>
+  <data name="Status_ParsingSave" xml:space="preserve"><value>Parsing save file...</value></data>
+  <data name="Data_ResizePanes.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Resize the record tree and fields panels</value></data>
+  <data name="AssetAudio_NotPlayable" xml:space="preserve"><value>Not a playable sound</value></data>
+  <data name="AssetAudio_Format" xml:space="preserve"><value>{0:N0} Hz · {1}-bit</value></data>
+  <data name="DialogueAudio_UnsupportedContainer" xml:space="preserve"><value>This voice container cannot be played by the native preview.</value></data>
+  <data name="ActorAssets_Use" xml:space="preserve"><value>Asset · {0}</value></data>
+  <data name="Shadowkey_Skin.Header" xml:space="preserve"><value>Skin (zero-based)</value></data>
+  <data name="AssetKind_Map" xml:space="preserve"><value>Map</value></data>
+  <data name="AssetGallery_Metadata" xml:space="preserve"><value>Name: {0}
+Path: {1}
+Type: {2}
+{3}</value></data>
+  <data name="AssetKind_Model" xml:space="preserve"><value>Model</value></data>
+  <data name="LoadOrder_PrimaryPlugin" xml:space="preserve"><value>Primary plugin</value></data>
+  <data name="Shadowkey_Ready" xml:space="preserve"><value>Slot {0} · frame {1} · skin {2}</value></data>
+  <data name="AssetKind_Archive" xml:space="preserve"><value>Archive</value></data>
+  <data name="Shadowkey_SelectSlot" xml:space="preserve"><value>Select a model slot. The pack contains {0:N0} slots.</value></data>
+  <data name="AssetPreview_ImageFormat" xml:space="preserve"><value>{0:N0} × {1:N0} pixels</value></data>
+  <data name="AssetPreview_Status.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Asset preview status</value></data>
+  <data name="Shadowkey_Frame.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Shadowkey frame, zero-based</value></data>
+  <data name="AssetGallery_View.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Assets in the selected folder</value></data>
+  <data name="LoadOrder_ChoosePrimaryPlugin" xml:space="preserve"><value>Select a primary plugin</value></data>
+  <data name="Assets_ResizePreview.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Resize the preview panel</value></data>
+  <data name="WindowResources_CloseBlocked.Text" xml:space="preserve"><value>A preview could not finish closing. The window remains open to protect its resources. See the diagnostic log.</value></data>
+  <data name="Shadowkey_Preparing" xml:space="preserve"><value>Preparing slot {0}...</value></data>
+  <data name="AssetGallery_Bytes" xml:space="preserve"><value>{0:N0} bytes</value></data>
+  <data name="AssetPreview_Decoding" xml:space="preserve"><value>Decoding {0}...</value></data>
+  <data name="AssetPreview_NoPreview" xml:space="preserve"><value>{0}: {1}; no preview</value></data>
+  <data name="LoadOrder_AddDiscoveredPlugin" xml:space="preserve"><value>Add selected supplementary plugin</value></data>
+  <data name="AssetTypeFilter_Saves" xml:space="preserve"><value>Saves</value></data>
+  <data name="AssetPreview_ImageFrames" xml:space="preserve"><value>{0:N0} × {1:N0} pixels; frame {2:N0} of {3:N0} (zero-based)</value></data>
+  <data name="LoadOrder_AddSelected" xml:space="preserve"><value>Add</value></data>
+  <data name="AssetKind_Texture" xml:space="preserve"><value>Texture</value></data>
+  <data name="LoadOrder_NoSupplementaryFiles" xml:space="preserve"><value>No supplementary files added.</value></data>
+  <data name="Shadowkey_Magenta.Content" xml:space="preserve"><value>Treat magenta as transparent</value></data>
+  <data name="AssetPreview_ShownInMaps" xml:space="preserve"><value>{0}: shown in the Maps view</value></data>
+  <data name="AssetGallery_CacheClearFailed" xml:space="preserve"><value>Could not clear the thumbnail cache.</value></data>
+  <data name="AssetPreview_TooLarge" xml:space="preserve"><value>{0}: too large to preview ({1:N0} × {2:N0})</value></data>
+  <data name="HelpShortcuts.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Keyboard shortcuts (F1)</value></data>
+  <data name="AssetGallery_SettingsFailed" xml:space="preserve"><value>The view preference could not be saved or restored.</value></data>
+  <data name="AssetGallery_ClearThumbnailCache.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Clear thumbnail cache</value></data>
+  <data name="LoadOrder_ClearAll" xml:space="preserve"><value>Clear All</value></data>
+  <data name="AssetPreview_Frame.Header" xml:space="preserve"><value>Frame (zero-based)</value></data>
+  <data name="AssetGallery_NoPreview" xml:space="preserve"><value>No preview is available for this asset.</value></data>
+  <data name="Shadowkey_NativeUnavailable" xml:space="preserve"><value>The native preview could not present this slot. See the diagnostic log.</value></data>
+  <data name="LoadOrder_AddFiles" xml:space="preserve"><value>Add Files...</value></data>
+  <data name="AssetKind_Audio" xml:space="preserve"><value>Audio</value></data>
+  <data name="LoadOrder_SubtitleCsv" xml:space="preserve"><value>Subtitles CSV (provides dialogue text, speaker, quest names for memory dumps):</value></data>
+  <data name="Shadowkey_Magenta.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Optional color-key hypothesis. Off preserves opaque source colors; this is not an established game rule.</value></data>
+  <data name="Assets_ResizeTree.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Resize the asset tree panel</value></data>
+  <data name="LoadOrder_Title" xml:space="preserve"><value>Load Order</value></data>
+  <data name="LoadOrder_ExploreIntro" xml:space="preserve"><value>Choose the primary plugin and any supplementary files. Files later in the list override records from earlier files.</value></data>
+  <data name="AssetGallery_CacheCleared" xml:space="preserve"><value>Stored thumbnails cleared. Browsing may store new thumbnails.</value></data>
+  <data name="AssetGallery_KindSizeAndBytes" xml:space="preserve"><value>{0}; {1:N0} × {2:N0} pixels; {3:N0} bytes</value></data>
+  <data name="AssetGallery_ClearThumbnailCache.Content" xml:space="preserve"><value>Clear thumbnail cache</value></data>
+  <data name="Shadowkey_Slots.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Shadowkey model pack slots</value></data>
+  <data name="AssetPreview_Frame.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Preview frame, zero-based</value></data>
+  <data name="AssetGallery_KindAndBytes" xml:space="preserve"><value>{0}; {1:N0} bytes</value></data>
+  <data name="AssetKind_Sprite" xml:space="preserve"><value>Sprite</value></data>
+  <data name="HelpShortcuts.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Keyboard shortcuts</value></data>
+  <data name="AssetGallery_KindFramesAndBytes" xml:space="preserve"><value>{0}; {1:N0} × {2:N0} pixels; {3:N0} frames; {4:N0} bytes</value></data>
+  <data name="Explore_LoadOrder.Content" xml:space="preserve"><value>Load Order...</value></data>
+  <data name="AssetGallery_CacheClearing" xml:space="preserve"><value>Clearing thumbnail cache...</value></data>
+  <data name="AssetKind_Text" xml:space="preserve"><value>Text</value></data>
+  <data name="Assets_TreePanel" xml:space="preserve"><value>Asset tree</value></data>
+  <data name="Shadowkey_Frame.Header" xml:space="preserve"><value>Frame (zero-based)</value></data>
+  <data name="LoadOrder_Apply" xml:space="preserve"><value>Apply</value></data>
+  <data name="LoadOrder_ChooseSupplementaryPlugin" xml:space="preserve"><value>Select a plugin to add</value></data>
+  <data name="LoadOrder_DiscoveredPlugins" xml:space="preserve"><value>Discovered supplementary plugins</value></data>
+  <data name="LoadOrder_SubtitlePlaceholder" xml:space="preserve"><value>Path to transcriber CSV export</value></data>
+  <data name="Shadowkey_Failed" xml:space="preserve"><value>Model preview failed: {0}</value></data>
+  <data name="HelpShortcuts.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.HelpText" xml:space="preserve"><value>Show keyboard shortcuts (F1)</value></data>
+  <data name="Shadowkey_Status.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Shadowkey model preview status</value></data>
+  <data name="AssetKind_Save" xml:space="preserve"><value>Save</value></data>
+  <data name="AssetKind_Folder" xml:space="preserve"><value>Folder</value></data>
+  <data name="AssetGallery_ClearThumbnailCache.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve"><value>Clear stored DDS/DDX thumbnails. Current previews stay open. Browsing may store new thumbnails.</value></data>
+  <data name="AssetPreview_Empty.Text" xml:space="preserve"><value>Select an asset to preview it.</value></data>
+  <data name="Shadowkey_WholeNumbers" xml:space="preserve"><value>Choose whole-number frame and skin indices.</value></data>
+  <data name="Assets_PreviewPanel" xml:space="preserve"><value>Preview</value></data>
+  <data name="AssetTypeFilter_TreeStatus" xml:space="preserve"><value>{0}: {1:N0} of {2:N0} file(s) match the type filter</value></data>
+  <data name="Shadowkey_Opening" xml:space="preserve"><value>Opening model pack: {0}</value></data>
+  <data name="ShadowkeyNative_CloseBlocked.Text" xml:space="preserve"><value>The native preview could not finish closing. The window remains open to protect its resources. See the diagnostic log.</value></data>
+  <data name="AssetKind_Plugin" xml:space="preserve"><value>Plugin</value></data>
+  <data name="Shadowkey_Unsupported" xml:space="preserve"><value>Slot {0} cannot be previewed: {1}</value></data>
+  <data name="AssetKind_Raw" xml:space="preserve"><value>Other</value></data>
+  <data name="Shadowkey_Skin.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve"><value>Shadowkey alternative skin, zero-based</value></data>
+  <data name="AssetGallery_Counts" xml:space="preserve"><value>{0:N0} of {1:N0} file(s) shown; {2:N0} excluded by the type filter</value></data>
+  <data name="Assets_OpenArchive.Content" xml:space="preserve"><value>Open archive</value></data>
+  <data name="AssetKind_Video" xml:space="preserve"><value>Video</value></data>
 </root>

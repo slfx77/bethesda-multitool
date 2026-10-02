@@ -1,0 +1,1412 @@
+{
+  "schema": "bmt-ui-gallery-flc-dds-adoption-source-review/v1",
+  "createdUtc": "2026-09-21T17:20:45.316706+00:00",
+  "baseCommit": "5caf8ee36acfcbdff0668743c1fe27c2c74c9ceb",
+  "sharedPin": "20e4e2c0fb2d304ed60c05e48d8c97a9a730b684",
+  "status": "applied_source_review_only_validation_pending",
+  "scope": "TB1 gallery/cache observability, strict FLC decoder and original parity tests, DDS/DDX-only persistence integration and contextual clear. All new/changed named production declarations and new/changed authored lambdas in composed files. Auto-property/generated record/XAML callables and unchanged legacy declarations are not separate claims. Later FLC native Stage A and PSP bounds excluded.",
+  "hashConvention": {
+    "source": "SHA256 UTF-8 after optional BOM removal and CRLF/CR to LF normalization, no trimming.",
+    "declaration": "Exact Tree-sitter declaration/expression span excluding preceding XML comments/trailing whitespace.",
+    "signature": "Start through block/arrow/accessor/lambda-body start, trailing whitespace removed.",
+    "body": "Exact block, arrow expression, accessor list or lambda body bytes."
+  },
+  "variables": {
+    "N": "Current direct-folder node count, no fixed folder cap.",
+    "V": "Visible rows<=N.",
+    "M": "Largest retained collection/hash-table capacity; browser collections can retain largest visited-folder capacity across sources.",
+    "T": "Nodes in existing source-wide check index.",
+    "L": "Text/path/metadata characters and output length.",
+    "Q": "Query length.",
+    "S": "Sum of current name/path searchable characters.",
+    "H": "Node parent depth.",
+    "B": "Winning detached DDS bytes, representable int.MaxValue ceiling.",
+    "C": "Resident Shared cache entries, BMT<=2048 per source.",
+    "E": "Strict FLC encoded bytes, default<=64MiB.",
+    "P": "Strict FLC canvas pixels, default<=4194304.",
+    "F": "Actual FLC picture blocks including ring, default<=4097.",
+    "K": "Actual palette allocations, including superseded palettes, charged1024 each."
+  },
+  "costProfiles": {
+    "constant": {
+      "time": "O(1) local scalar/reference work; delegated callbacks, lock waits and exception construction are additional.",
+      "space": "O(1) local state."
+    },
+    "text": {
+      "time": "O(L) formatting/concatenation and delegated localization/property notifications.",
+      "space": "O(L) display strings, no source/pixel copy."
+    },
+    "projection_init": {
+      "time": "O(Q) query inspection on an empty source; no source/file enumeration.",
+      "space": "O(Q) retained query and constant empty-controller references."
+    },
+    "projection_folder": {
+      "time": "Expected O(N + S*Q) direct-child membership, eligibility and literal substring filtering; no recursion or I/O. Hash collision caveat applies.",
+      "space": "O(N) arrays/reference sets; retained capacity can remain O(M), the largest visited folder."
+    },
+    "projection_query": {
+      "time": "O(N + S*Q) conservative literal substring cost, or O(N+Q) for blank query; observers/layout additional.",
+      "space": "O(V) candidate visible references; original folder references remain retained; fixed two-field array per searched item."
+    },
+    "visible": {
+      "time": "O(V) reference scan plus expected constant local membership gates where used.",
+      "space": "O(1) locals."
+    },
+    "check": {
+      "time": "Expected constant local gates plus existing shared leaf/ancestor check propagation up to tree height and notifications.",
+      "space": "Local constant state plus delegated changed-ancestor notification storage."
+    },
+    "release": {
+      "time": "O(M+N) reference collection clearing, row detachment/reset and delegated notifications.",
+      "space": "Constant locals; capacity may remain O(M) until containing owner collection."
+    },
+    "tile": {
+      "time": "O(L) metadata preparation and fixed subscription changes.",
+      "space": "O(L) display text plus fixed borrowed node/catalog/command references; no bitmap allocation here."
+    },
+    "loader_init": {
+      "time": "Constant local configuration/registration; no persistent-storage I/O in construction.",
+      "space": "Constant wrapper/delegates before source start; later queue/cache/decoder costs separate."
+    },
+    "loader_begin": {
+      "time": "Constant admission/captured-delegate creation plus Shared session startup; one source start per wrapper.",
+      "space": "One original session closure and Shared bounded queue/cache; no extra source lease."
+    },
+    "loader_request": {
+      "time": "Delegated Shared current/realization admission and queue/cache work; dictionary/LRU costs normally expected constant.",
+      "space": "Shared512 pending requests; BMT2048 memory entries/64MiB estimated bytes per source, excluding in-flight decode/native pixels."
+    },
+    "loader_retire": {
+      "time": "Constant local await/identity work plus actual cancellation, active decoder/queue drain and cache release; no hard elapsed-time bound.",
+      "space": "Existing worker/cache/source references retained through successful drain; failed result stays owned/observable."
+    },
+    "gallery_init": {
+      "time": "Fixed subscriptions plus asynchronous existing settings initialization.",
+      "space": "Constant retained control/language/task references; no thumbnail payload I/O."
+    },
+    "settings": {
+      "time": "Path setup and delegated asynchronous settings read/accepted writes; filesystem latency unbounded here.",
+      "space": "Existing settings/controller/task storage; no new settings payload policy."
+    },
+    "gallery_show": {
+      "time": "Projection cost plus expected O(N) adapters and O(N*L) aggregate text formatting; prior-folder O(M) cleanup; native notifications additional.",
+      "space": "O(N) adapters/text and O(V) visible references; dictionary capacity can retain O(M) across sources."
+    },
+    "gallery_sync": {
+      "time": "Expected O(V) node-to-adapter mapping/comparison and O(V) focus scan; at mostV add notifications when changed.",
+      "space": "O(V) temporary array and visible references; hidden current-folder adapters remain retained."
+    },
+    "gallery_query": {
+      "time": "Projection filtering plus gallery synchronization/status costs; no source or preview replacement.",
+      "space": "O(V) visible reference churn; full folder adapters/checks retained."
+    },
+    "language": {
+      "time": "O(N*L) aggregate retained-row metadata refresh and notifications.",
+      "space": "O(N*L) cumulative replacement string allocations; images/checks/focus retained."
+    },
+    "gallery_dispose": {
+      "time": "Waits settings initialization/writes then presentation cleanup only after loader proof; callback/I/O latency delegated.",
+      "space": "Constant task bookkeeping; failed loader deliberately retains gallery/source prerequisites."
+    },
+    "attach_delta": {
+      "time": "Added loader/projection composition and gallery population; inherited source-wide tree/check indexing remains additive.",
+      "space": "Added wrapper/projection/observer references and folder state; original snapshot lease reused."
+    },
+    "close_delta": {
+      "time": "Added exact loader drain and gallery cleanup before inherited source release; native/decoder waits have no fixed latency.",
+      "space": "Original source lease/session/loader remains retained until all required local prerequisites succeed."
+    },
+    "dispose_delta": {
+      "time": "Added clear-worker cancel/full-task drain, independent loader retirement, and gallery/settings disposal; inherited staged owner costs additive.",
+      "space": "Fixed added task references/stage-failure list; failed worker/native prerequisites remain retained locally."
+    },
+    "observe": {
+      "time": "Constant local gated snapshot/arithmetic plus Shared registry statistics traversal; this BMT wrapper begins at mostone source. Constructor registration delegates existing registry participant/name traversal costs.",
+      "space": "Constant history/delegate state plus existing registry registration; no second cache, pixels or source lease."
+    },
+    "trim": {
+      "time": "Constant local snapshot plus actual Shared eviction work O(C) worst-case for this one cache, subject to hash-table costs.",
+      "space": "Constant local state plus delegated session snapshot; returns actual estimated removed bytes."
+    },
+    "observe_retire": {
+      "time": "Constant identity/zero-residency check and checked counter aggregation plus one actual statistics query.",
+      "space": "Constant scalar history; drops callbacks only after successful exact-owner retirement."
+    },
+    "flc_parse": {
+      "time": "Strict profile O(E + F*P +1024*K) controls, canvas writes/snapshots and ring comparison; legacy null-limit path retains inherited admission/costs.",
+      "space": "Strict logical allowance charges5P working/futureRGBA, P per actual frame including ring and1024 per palette allocation. Default256MiB excludes object/list capacity, caller encoded storage and Shared/native retained sample copies."
+    },
+    "flc_palette": {
+      "time": "Fixed256-entry palette work plus packet reads; strict mode requires full proven COLOR_256 semantics.",
+      "space": "1024-byte palette charged before creation; constant temporary state."
+    },
+    "flc_full": {
+      "time": "O(encoded packet controls + P) checked strict RLE writes for one canvas.",
+      "space": "Constant helper state writing caller canvas; no new canvas here."
+    },
+    "flc_delta": {
+      "time": "O(encoded controls/packets + bounded pixel writes) per strict frame; malformed/unknown controls decline.",
+      "space": "Constant helper state; mutates only current owned canvas."
+    },
+    "flc_video": {
+      "time": "O(P) synchronous conversion under decoder gate, cancellation per row and before cursor commit.",
+      "space": "One reusable4P RGBA buffer and constant result wrapper; retained Shared sample copies separate."
+    },
+    "flc_position": {
+      "time": "Constant integer arithmetic/admission under gate; wait may include current O(P) conversion.",
+      "space": "Constant result/cursor state; absent audio writes no samples."
+    },
+    "flc_dispose": {
+      "time": "Constant local transition after current conversion drains; optional input retirement awaited once outside gate with external latency.",
+      "space": "One terminal task/owner; local arrays released, failed/canceled input owner retained without implicit retry."
+    },
+    "dds_render": {
+      "time": "O(H) original-tree walk + actual VFS read + optional O(B+L) key; hit reads/copies cached pixels, miss delegates DDS/scaler work.",
+      "space": "Winning detached B bytes plus optional64KiB key, inherited decoder/scaler output/workspace and returned thumbnail.64MiB persistence admission is not a read/decode heap cap."
+    },
+    "dds_read": {
+      "time": "Delegated first-readable VFS resolution/read including failed upper-layer attempts; no hard I/O/cancellation latency introduced.",
+      "space": "Winning B-byte array, representable ceiling int.MaxValue, plus VFS workspace; no64MiB read cap or second read."
+    },
+    "dds_decode": {
+      "time": "Inherited DDS/DDX decoder cost from encoded bytes and authored dimensions/mips; no new algorithm or bound.",
+      "space": "Inherited decoder/output buffers; existing narrow failure policy retained."
+    },
+    "dds_key": {
+      "time": "O(L) normalization/strict UTF-8 sizing and encoding plus O(B) hash only for B<=64MiB and complete key<=64KiB.",
+      "space": "Bounded identity stream/field/key copies and O(L) normalized strings; hashes the same winning source bytes."
+    },
+    "dispatch_delta": {
+      "time": "Added constant DDS branch plus producer cost; otherwise unchanged texture/sprite decoder and scaler work.",
+      "space": "No independent source/cache ownership; sprite companion/palette path remains inherited."
+    },
+    "disk_clear": {
+      "time": "Delegated Shared optional initialization plus O(D) immediate file enumeration/deletion across16 shards, where D includes any extraneous files. Entry quotas do not bound arbitrary directory contents; no hard filesystem latency. Cancellation checked per shard/file.",
+      "space": "Existing512MiB/16384-entry quota metadata plus streaming path strings and filesystem iterator state; directory scan count is separate from those quotas. No new cache implementation."
+    },
+    "clear_start": {
+      "time": "Constant admission/task publication then existing asynchronous job start; concurrent repeated click declines.",
+      "space": "One published current completion/job; no storage I/O during UI construction."
+    },
+    "clear_work": {
+      "time": "Delegated disk clear worker plus O(L) localized status/fixed UI changes; complete worker and continuation awaited.",
+      "space": "Constant operation/UI state plus Shared storage bookkeeping; source/preview/memory cache retained."
+    }
+  },
+  "hashTableCaveat": "Dictionary/HashSet estimates are expected/amortized. Worst-case collisions make a local operation O(N/M), or O(T) in existing source index; repeated outer operations multiply that work. No deterministic constant-time hashing claim.",
+  "costBoundary": "Authored operations/allocations exclude arbitrary observers/native layout, allocator/GC overhead, filesystem latency and Shared/native retained copies. UI filtering has no fixed folder cap or measured latency here. Shared cache-clear quotas bound owned entries/storage, not extraneous files encountered by immediate enumeration.",
+  "files": [
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/AssetGalleryProjection.cs",
+      "sourceSha256Lf": "158fe3f2bebec3070700c4306479ac9a00c582ee84c333b97e37ed4eb5cd0ebe",
+      "originalSourceSha256Lf": null,
+      "sourceBytesLf": 5725,
+      "callables": [
+        {
+          "name": "lambda@12",
+          "kind": "lambda_expression",
+          "line": 12,
+          "endLine": 12,
+          "declarationSha256Lf": "0fe4d4d0f3cc72595cf5dc335c203bb80df9cbc658c84e79d09cad4dbba67f79",
+          "signatureSha256Lf": "cba17f3348f632b243f74ae3240bbc9acc72b09e510eb00d710f31e0647daf3d",
+          "bodySha256Lf": "5a87db586462b4ce6a077f13e02488900a18f5ef3719983b8342b529953c0145",
+          "costProfile": "constant",
+          "review": "Nested expression cost; enclosing method owns iteration/lifetime. Worker DDS profile applies only to DDS branch; sprite costs stay inherited."
+        },
+        {
+          "name": "AssetGalleryProjection",
+          "kind": "constructor_declaration",
+          "line": 19,
+          "endLine": 24,
+          "declarationSha256Lf": "9cd3c2561bd671607220118a67965dd5908f6661e31dcf888abc07b09a9ddcfa",
+          "signatureSha256Lf": "e037b6180343f074652e25f1951fb2320714eea29133b155779bd46167d62aa5",
+          "bodySha256Lf": "4547f87a2e2e2e3c3a431d862901d4120408f0229732be0e60af4d0fcecb1e00",
+          "costProfile": "projection_init",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "VisibleItems",
+          "kind": "property_declaration",
+          "line": 29,
+          "endLine": 29,
+          "declarationSha256Lf": "68f5a7617f3dbdc007b902101e7cdb39a3686b2e2ed330918590aebbff0d3cd3",
+          "signatureSha256Lf": "dee4b2b5ab41ceb7844393bf2fb6601a84bb84381f11dce707093ff0d5533d41",
+          "bodySha256Lf": "64d46d2d5910732fd5c7bc6e976ab82e9b21039fbf13bd749b404a75f8e9ebbb",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "VisibleFocus",
+          "kind": "property_declaration",
+          "line": 35,
+          "endLine": 35,
+          "declarationSha256Lf": "8594284cebd5b67ec5b302732aaf85c1045daac62dc1c4be0a7a9c8b1355c730",
+          "signatureSha256Lf": "13eaf060b83fbe9f9f29af801ace41f6e9fa7f5bcf0e267c37146f1c8119a17d",
+          "bodySha256Lf": "7c1262b9dde2d83b23dc696f3609e1b2da8955ef3ffb59753f624347988cac43",
+          "costProfile": "visible",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "IsCurrent",
+          "kind": "property_declaration",
+          "line": 39,
+          "endLine": 39,
+          "declarationSha256Lf": "b1bc857495dbeb224439bacbc2d6bc272aa67ed8f74f473ed566cb0894bdb36b",
+          "signatureSha256Lf": "aa01d8e1aa57910fd130835d910ff71b3864fa8e80a055fb300aed323d956c5b",
+          "bodySha256Lf": "5db702e010ee865326a06e1190eed6c0e459b63a464aa2b21e77942b6b745a52",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "TryShowFolder",
+          "kind": "method_declaration",
+          "line": 44,
+          "endLine": 59,
+          "declarationSha256Lf": "e8faaf5f873e2c6de2e6af1c04be5accf9718901c233ca96d3e052fe0a587852",
+          "signatureSha256Lf": "44ed8b1d1498753076714f9488d010a4b4aba6b18a1552d725141b05f814b7f9",
+          "bodySha256Lf": "7193f7a40cf3ccbaba8e440c6c400e09e37ae438f72d226824d2f285f00a7b8e",
+          "costProfile": "projection_folder",
+          "review": "Original direct children and builder order only; source-wide checks and exact node identity remain authoritative. Same folder preserves adapters/focus."
+        },
+        {
+          "name": "lambda@49",
+          "kind": "lambda_expression",
+          "line": 49,
+          "endLine": 50,
+          "declarationSha256Lf": "18af826b3861a35470fc01d69b18de7ef46301f9d78c756f56de3da2a0fb4d0f",
+          "signatureSha256Lf": "cfbc806a12939dc704329fb0d7aa72c27f57a4ef5f7b4cc5c368729d615cc485",
+          "bodySha256Lf": "69230aa86bfad1e3ce426f25794776f0a03e65b6722ff1059f8d34a76ee39216",
+          "costProfile": "constant",
+          "review": "Nested expression cost; enclosing method owns iteration/lifetime. Worker DDS profile applies only to DDS branch; sprite costs stay inherited."
+        },
+        {
+          "name": "lambda@55",
+          "kind": "lambda_expression",
+          "line": 55,
+          "endLine": 55,
+          "declarationSha256Lf": "12f647e39c23a9d691e452e0b38d1909c9f656df70f08d0542e3b6336983f0a0",
+          "signatureSha256Lf": "cfbc806a12939dc704329fb0d7aa72c27f57a4ef5f7b4cc5c368729d615cc485",
+          "bodySha256Lf": "86cb312587b87e062c9cd7a3d557db79c0c0078fb8acf0b3b9a4825273d49d2d",
+          "costProfile": "constant",
+          "review": "Nested expression cost; enclosing method owns iteration/lifetime. Worker DDS profile applies only to DDS branch; sprite costs stay inherited."
+        },
+        {
+          "name": "TrySetQuery",
+          "kind": "method_declaration",
+          "line": 64,
+          "endLine": 69,
+          "declarationSha256Lf": "9fc5884a835937ad822b1c31269099f91666b40060c6bcd588c18e862c8d59c0",
+          "signatureSha256Lf": "55774198473c20d15e4a8caa08e44cce79e2183be90a3abdd5183d6695ba3a2a",
+          "bodySha256Lf": "cbc74b4250a85a5d2a53e0608c3bb1a0b11f49b9d28f120dd48770c76c4e802d",
+          "costProfile": "projection_query",
+          "review": "Shared literal ordinal-ignore-case filtering preserves hidden check state and original occurrence objects."
+        },
+        {
+          "name": "TryFocus",
+          "kind": "method_declaration",
+          "line": 74,
+          "endLine": 79,
+          "declarationSha256Lf": "f1d9e0905910d740e70f3bb0b846905f0b3e46267ce0b4784fb3746a7d38096e",
+          "signatureSha256Lf": "c4472b8ddc3929a036cfaca97bda0b8eaeb47dc8116d9a0b1d2a64f4a591617a",
+          "bodySha256Lf": "3ccd8285b30d91694438dd16d0dbef4092a49f296eb2c4cc41438f503dc17717",
+          "costProfile": "visible",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "TrySetChecked",
+          "kind": "method_declaration",
+          "line": 85,
+          "endLine": 90,
+          "declarationSha256Lf": "31444494ed9c6bf94f7b92dc7c5b59413f6abacb7f8ea33ff4e112b040b0aa65",
+          "signatureSha256Lf": "9aee0a5e18608b1311a9851fbcc584048962108a47b540a82994f1f710f28368",
+          "bodySha256Lf": "429b1d7ebe60f72df77ef1976e76aa6c53360e8be03f5baab1cfa85173fa19e8",
+          "costProfile": "check",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "Dispose",
+          "kind": "method_declaration",
+          "line": 93,
+          "endLine": 103,
+          "declarationSha256Lf": "c05cf86d153f3bcdeca5f93268345bf38df43afee090c89777ace4f1cbd1574e",
+          "signatureSha256Lf": "6b9508761cab86c4eb6676cff18b8c9f69d025c1903bf0f6f3cda86f194cfed4",
+          "bodySha256Lf": "3fd21a4e0c4ab00a3452308d2115b3eaf16bb5d5784c9eb5061012208679e353",
+          "costProfile": "release",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetGalleryItem.cs",
+      "sourceSha256Lf": "9eeb69f6bf4bc362f42619113fd98b11e44cd7ae27266be16078b42ee4ee5090",
+      "originalSourceSha256Lf": "0ce8d77492aa410a3f30d4ff317cb91c09efd26a640028f52145dbbaca6c2848",
+      "sourceBytesLf": 4590,
+      "callables": [
+        {
+          "name": "AssetGalleryItem",
+          "kind": "constructor_declaration",
+          "line": 22,
+          "endLine": 32,
+          "declarationSha256Lf": "dfbd5d5868583a22e137315372bd026c17ac160fe2369cdb7122cb61fdc7e541",
+          "signatureSha256Lf": "14a7ccbc63ebb10b021ec7c48a9d667e6f479a463ee87b35c7142603a31bd6af",
+          "bodySha256Lf": "fed2bbea441e499d4a06fd4327f1810ab407088c34537dbf4c63da6f6bbd0f4a",
+          "costProfile": "tile",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "Node",
+          "kind": "property_declaration",
+          "line": 35,
+          "endLine": 35,
+          "declarationSha256Lf": "9e9d04ca47257c7315aa7c046f23bd2f2224b40936de4fca695d6f461d1e33c1",
+          "signatureSha256Lf": "c7e1a5cdcd86e7a2c089e44c9a2cdfe3da856d36761f25726d7745ff5e0e65c0",
+          "bodySha256Lf": "f2ea669679db2429f2b3f0d342ab91d8fb459f02bc652ea7cbdb835764bafc1f",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "Caption",
+          "kind": "property_declaration",
+          "line": 37,
+          "endLine": 38,
+          "declarationSha256Lf": "b3e16b781c013d1efd8f39d6f238fad41ac2bcff4b0ffb8b59c38f6f4dfd0d6d",
+          "signatureSha256Lf": "2220fc151e50cdea9c5fb0ceb313548674672259b9e41ff446ba9c01219efe59",
+          "bodySha256Lf": "3a8564b82571dd2678dc9c2f5a55f2a2415611a01eca694227c68ba20f2f8d03",
+          "costProfile": "text",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "ListCaption",
+          "kind": "property_declaration",
+          "line": 40,
+          "endLine": 40,
+          "declarationSha256Lf": "1d8d3610c3423209560c476cacab1e12f7cb81f6f14072d39d57c85a57f22f0a",
+          "signatureSha256Lf": "498bda0c7f04ed8c1055ee131556c2f2b6418998ae76478b26ffe9a6d2f2b3c3",
+          "bodySha256Lf": "056da6a1b1e99e858c12b6145860df2eb02aa4d521a33a3700ee2ac61305a418",
+          "costProfile": "text",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "Badge",
+          "kind": "property_declaration",
+          "line": 42,
+          "endLine": 42,
+          "declarationSha256Lf": "0b8c1d6cf3afc15aa4abc7530d9018101c775a9b6fac6d06e426819039afa5c4",
+          "signatureSha256Lf": "bf395404184084694fc724d0b5da40cd3a5b5a37af13795c2a3ebda31c7b8694",
+          "bodySha256Lf": "08358e840b523c784f8b6987518f067b6c0e5c31b37717a6577c42549d153e5a",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "CanCheck",
+          "kind": "property_declaration",
+          "line": 44,
+          "endLine": 44,
+          "declarationSha256Lf": "fc1e9fcc0c80778e4abe404109fd04d1518c678c35c9281ca21577ac47110902",
+          "signatureSha256Lf": "2ab4458d91c89badbe2fd504ac3ebd4b853ff89bd54071322506662a220d8f19",
+          "bodySha256Lf": "3f786d0ec1b2083648d41787cfea4b78ca596be0bbfe233dde7ca39528bd95b1",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "IsChecked",
+          "kind": "property_declaration",
+          "line": 46,
+          "endLine": 50,
+          "declarationSha256Lf": "289cc2cc2c034d78b547be134fb2167ed7775e99b5d62d511357690ae569c55d",
+          "signatureSha256Lf": "f24c3bb694ab8f1f7ca73321e5d27a9729154f7a5e6952070e90ef994f2b74d3",
+          "bodySha256Lf": "cb3faae6ccf1f99d563b34a2049d7e6433c6d2641aae252c5126fda6b7fcc62c",
+          "costProfile": "check",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "Metadata",
+          "kind": "property_declaration",
+          "line": 52,
+          "endLine": 53,
+          "declarationSha256Lf": "b3c714f21f0c66a816abda5fc03096c657a13bec02cdcfad01c5f5f1e2c2c197",
+          "signatureSha256Lf": "b6495c828fc38cb0294878ee18a2ca0a2559c3eb7f4b3e22f1e3b4fe51336eb2",
+          "bodySha256Lf": "5f887c4a7aabae160fa310a032a151f48922096baf58f4c77d6dfcba615fd96b",
+          "costProfile": "text",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "Refresh",
+          "kind": "method_declaration",
+          "line": 57,
+          "endLine": 61,
+          "declarationSha256Lf": "144d3fa9c5fa52d54c5f74c790b205324707d77daaa6c8a8718ed6172d42b9fa",
+          "signatureSha256Lf": "d2de9eb25adec8e3e042c8e99fc8aa17303203b1a61e4cbdf020da4ab4bb9f5f",
+          "bodySha256Lf": "1b7ab21c8b1847327bcabcefe89512fcd16b0ca6a8e659830b2026b08bd7fb2a",
+          "costProfile": "text",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "NodePropertyChanged",
+          "kind": "method_declaration",
+          "line": 66,
+          "endLine": 69,
+          "declarationSha256Lf": "ffc15bde0551aced3cfeb8ebd8b4ff3d9038213bc17cbc9ba1651ab54b2f294a",
+          "signatureSha256Lf": "f31a62161bf5ca40a183d45a6c93c7735a13dbcb86dfe9705236e452a6829f8e",
+          "bodySha256Lf": "37e1a1be322e6d4e195fb17552cd4da07835d9a570870ee29449ee790df6488f",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "TilePropertyChanged",
+          "kind": "method_declaration",
+          "line": 74,
+          "endLine": 80,
+          "declarationSha256Lf": "401fafe3e7fde9e60fdc20486eeae9db2e22224a1b024c66a67f7b6298894091",
+          "signatureSha256Lf": "d50ba7348e97e8fb2c595e86120c3ddcfd11b71409c4f3a5161cdef8df777ec4",
+          "bodySha256Lf": "cd61541f7077d3b7b3de844364618b5688bdcda8afa3bf00ebb1bd5c1e545e70",
+          "costProfile": "text",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "Dispose",
+          "kind": "method_declaration",
+          "line": 83,
+          "endLine": 90,
+          "declarationSha256Lf": "3bbfef87d627177f4cceca8e612c5c762f3a90abe34e9f973613bd92cba1a550",
+          "signatureSha256Lf": "6b9508761cab86c4eb6676cff18b8c9f69d025c1903bf0f6f3cda86f194cfed4",
+          "bodySha256Lf": "38626a52319902c1da9d2211136aa988c0154975d754a6adee565f39cce04f8b",
+          "costProfile": "release",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetThumbnailLoader.cs",
+      "sourceSha256Lf": "47453bdf064985ff7182e597777244fbd89eb4e729fcbb74c0caf0b6e8b4a5a4",
+      "originalSourceSha256Lf": "cee9baf23832a08c9a66cf65454feee9d3e53db3d0feb761479ad5cf55d84f58",
+      "sourceBytesLf": 4373,
+      "callables": [
+        {
+          "name": "ClearPersistentThumbnailCache",
+          "kind": "method_declaration",
+          "line": 26,
+          "endLine": 27,
+          "declarationSha256Lf": "f0f8fb4fc5b1d80b7db68023881ac4884e4721595622ee3a3ed61745ee34cb11",
+          "signatureSha256Lf": "1953c7aeef99fccb8f4d6fea1f58edc6849be5b7f41319d45ec97c913f092734",
+          "bodySha256Lf": "91265ca212f95b8d7c659cb0c822a8abe148a87f7922addf06e96ffd90741ec1",
+          "costProfile": "disk_clear",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "AssetThumbnailLoader",
+          "kind": "constructor_declaration",
+          "line": 34,
+          "endLine": 43,
+          "declarationSha256Lf": "7ced66da00991936d6504ce15646426bc4227d981d7900d762adf3202377315d",
+          "signatureSha256Lf": "59dff8d06fa15206a42b9073b31da0c7ac6e013cab906ea1724e90f311c70c94",
+          "bodySha256Lf": "79f600f0571adb85da464b82b8b2b62cacb5d289e9761c48278063bccb62a163",
+          "costProfile": "loader_init",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "lambda@42",
+          "kind": "lambda_expression",
+          "line": 42,
+          "endLine": 42,
+          "declarationSha256Lf": "208e08f71417b39d66f95a9cf42fd49a9c6663a1476daa741e0897dcfcc44b72",
+          "signatureSha256Lf": "b1f7303dc5ce75f2b496883b68d900f81d5a8eebca4b980142bade02f0ee77c5",
+          "bodySha256Lf": "7fb25053ba7baaa68f6936a626e3540a3c4733ef83dc78687e89ad0c01d8b327",
+          "costProfile": "observe",
+          "review": "Nested expression cost; enclosing method owns iteration/lifetime. Worker DDS profile applies only to DDS branch; sprite costs stay inherited."
+        },
+        {
+          "name": "BeginSession",
+          "kind": "method_declaration",
+          "line": 48,
+          "endLine": 59,
+          "declarationSha256Lf": "5d1c81d719076be2f4079d4c53d472c1a7c1fb165ba0438cd1be8811b098ed80",
+          "signatureSha256Lf": "f8ef840e2279dff7f7776b48c4050d6714bb1c644f5f252f010b36d5b0d7c971",
+          "bodySha256Lf": "4c7a3c8494ffdf872e81afb5c681730196c9b36f4cf4b1a5479456f52af40a86",
+          "costProfile": "loader_begin",
+          "review": "Stores one captured source decoder after browser has stored the wrapper; source snapshot token feeds Shared work. One source start only."
+        },
+        {
+          "name": "lambda@52",
+          "kind": "lambda_expression",
+          "line": 52,
+          "endLine": 58,
+          "declarationSha256Lf": "d930c315235ed0646e08e6f46bc6b7f9a610a6a80143951e4bcb3fc7d982948d",
+          "signatureSha256Lf": "7cdd111f2d27c82b4847df96964fd802b4edee8e5ea869c93611dd4b0740f7ce",
+          "bodySha256Lf": "0314f33e315dff28741f86ac7ecf90a795140b45c51959bbb1f8da04f3736013",
+          "costProfile": "dds_render",
+          "review": "Nested expression cost; enclosing method owns iteration/lifetime. Worker DDS profile applies only to DDS branch; sprite costs stay inherited."
+        },
+        {
+          "name": "Request",
+          "kind": "method_declaration",
+          "line": 63,
+          "endLine": 63,
+          "declarationSha256Lf": "c1d2bc3b3b5b50f6724648692effc22956aaa400cb9eb7c3795a9cfa02172a91",
+          "signatureSha256Lf": "038d789fd43090a6c2f9141450d0e952cd8576aeb02542853daeaf7a8364c4b9",
+          "bodySha256Lf": "dc04f3aef5db3fefabf1839e228f520f50b893e7e8076e1a80925e837d628ca9",
+          "costProfile": "loader_request",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "DisposeAsync",
+          "kind": "method_declaration",
+          "line": 67,
+          "endLine": 71,
+          "declarationSha256Lf": "94034ed88d07bd9e3f788d3afba1f1af0f79f5ae3ba9e0db085b4a0784e29e35",
+          "signatureSha256Lf": "ec6ad0c244fed9049ac8531adabcd94b6fc5ad4a62974ee0bcd695febc47e23a",
+          "bodySha256Lf": "c4d1ab7edff87cf4df8b6164b4053dc898d7af39ff36ae7738199eab53673f5a",
+          "costProfile": "loader_retire",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.Gallery.cs",
+      "sourceSha256Lf": "aad48cc4cb09b88574c75edd0b991505e95c5564a2f14f4d93a32449a4d4219b",
+      "originalSourceSha256Lf": null,
+      "sourceBytesLf": 10930,
+      "callables": [
+        {
+          "name": "InitializeGallery",
+          "kind": "method_declaration",
+          "line": 24,
+          "endLine": 34,
+          "declarationSha256Lf": "947d6db833b88c08680ad7a92838615f9d8d498574139c1d4804258e6071071a",
+          "signatureSha256Lf": "67b6bfa61b00d476313c234b3872d158bea980da7cb8f87986d6c7c96d559aa3",
+          "bodySha256Lf": "86e36020c6491783dca281a723a53cfb8529d3cbb7b163dc3259a9ca7a91f09f",
+          "costProfile": "gallery_init",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "InitializeGallerySettingsAsync",
+          "kind": "method_declaration",
+          "line": 39,
+          "endLine": 51,
+          "declarationSha256Lf": "5043ff39809aa2ce4c1167da8a943b17d92c948c83be5b28485486e1b0a1dab7",
+          "signatureSha256Lf": "bd0127d8355460b833b9d6ccca82ac6c790ad5db2c1252d9ca5267c50834ec2d",
+          "bodySha256Lf": "0bc3e9d8a6c3ee76f8bd7442553e35010b8e4361639735b8e5a6dd7f2789689c",
+          "costProfile": "settings",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "AttachGallerySource",
+          "kind": "method_declaration",
+          "line": 54,
+          "endLine": 57,
+          "declarationSha256Lf": "e993b668c5ac8d7c77ffeb1429340b202b7abc323ccb9bd4a6376156aa73301f",
+          "signatureSha256Lf": "cdc9f9352acaf1eaca20296c328ff8d2de096c84faa52fa32ca1580d1b0e1cf8",
+          "bodySha256Lf": "df10aee8c1c2dbd20a67f90aea85d5226b97bbc1cc8b40f92f02c60d405e80b2",
+          "costProfile": "projection_init",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "ShowGallery",
+          "kind": "method_declaration",
+          "line": 61,
+          "endLine": 72,
+          "declarationSha256Lf": "ef5933af29664095f3238ea04b49213f8d45301a57c16f73fb94e852b39cc05c",
+          "signatureSha256Lf": "681846b7e2ec4d2249f056b362b7e821497b4a5bd1e91746ad7b149a10fd4c9f",
+          "bodySha256Lf": "39095221c1778141a06a94cf61e7003c751bdb8ad0ec057e2bb78299fadb1926",
+          "costProfile": "gallery_show",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "SynchronizeGallery",
+          "kind": "method_declaration",
+          "line": 75,
+          "endLine": 90,
+          "declarationSha256Lf": "f5fa158889b19df99885eeda96c472332fe5438202bb0cbf89ee7a37e86f3976",
+          "signatureSha256Lf": "5f9925d3b25bd8118339ae8de5008356a2a0e80d4423a3129e2725aff28ea7cc",
+          "bodySha256Lf": "c7c2b162ea7f9d2959f9e9d2d906addf7d13212587c421f9d060eee7d1fd7d94",
+          "costProfile": "gallery_sync",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "lambda@78",
+          "kind": "lambda_expression",
+          "line": 78,
+          "endLine": 78,
+          "declarationSha256Lf": "81dbe1aedae9d1c609c9e19e66409371eddb33ecbd29b4570b055f15e22f6112",
+          "signatureSha256Lf": "cfbc806a12939dc704329fb0d7aa72c27f57a4ef5f7b4cc5c368729d615cc485",
+          "bodySha256Lf": "474974a3521409720a641dd0f340323fc00858bb4463a7578cdc61b2ed78a3eb",
+          "costProfile": "constant",
+          "review": "Nested expression cost; enclosing method owns iteration/lifetime. Worker DDS profile applies only to DDS branch; sprite costs stay inherited."
+        },
+        {
+          "name": "GallerySearchChanged",
+          "kind": "method_declaration",
+          "line": 95,
+          "endLine": 100,
+          "declarationSha256Lf": "1cab4a6bd4f16b5dd9ec9fe316bb6ee828406b5313b7e31e1533222d052ef46e",
+          "signatureSha256Lf": "db9090145d8e20e4d02cebad6e26b1438dd69c814731c770087a2d8f9ec97f21",
+          "bodySha256Lf": "cc4b5c13432b7866aa62fc8529c3cbfbc64e2c83c04c7f3d74b3090b32a27b62",
+          "costProfile": "gallery_query",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "GallerySelectionChanged",
+          "kind": "method_declaration",
+          "line": 105,
+          "endLine": 109,
+          "declarationSha256Lf": "89be6aa845801e17a16583249e38d5eb7481cb51290e75e2179db7b483a1e57f",
+          "signatureSha256Lf": "7a0c361f8b2bd82f4ad12a9d88c43e209abcec109f46477ba4e6a86987b071d7",
+          "bodySha256Lf": "82e15b5515770c0d468b05e519f0d957661faa6ef65576ee4f5a2271135ad52b",
+          "costProfile": "visible",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "SetGalleryChecked",
+          "kind": "method_declaration",
+          "line": 114,
+          "endLine": 117,
+          "declarationSha256Lf": "630ab2b1ed381eeee4c831943a9d59903bd7b772e25d64e4aa06afd960198843",
+          "signatureSha256Lf": "ab5b9d79a5354407399359d4acaacd429475a07e97b290d8f2dda3ed2118463f",
+          "bodySha256Lf": "e3728a7c55b8ab3481d5d91b0a8771c51225c9ba0d0ca2224952707c8b61cbc4",
+          "costProfile": "check",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "GalleryThumbnailRequested",
+          "kind": "method_declaration",
+          "line": 122,
+          "endLine": 126,
+          "declarationSha256Lf": "04def0cacc23820b50acb9f7d7ff0b615903c15640887c385674da0e1e8407b1",
+          "signatureSha256Lf": "44504d239f0e45b0fa391e938f3183886bc161a457e80bd6677ee8f7e02a4dfb",
+          "bodySha256Lf": "3db8380b76d52acd3cf6a593df45d64c125dc1ca98f048590b1739a5bbfce888",
+          "costProfile": "loader_request",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "GalleryLanguageChanged",
+          "kind": "method_declaration",
+          "line": 131,
+          "endLine": 136,
+          "declarationSha256Lf": "102a03ef6990cca4c27daab153b2c17bb3c971eac17cd7dae92c1fab3e2599e1",
+          "signatureSha256Lf": "8946d3d9f717ce59d61156ac1fd1a18cb6bfbc8a6ca3db279375133f99685abf",
+          "bodySha256Lf": "fb26b5509c0389641a486fee686572d4376d17937b812935dfdc8e8c5b1cc3a1",
+          "costProfile": "language",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "GallerySettingsFailed",
+          "kind": "method_declaration",
+          "line": 141,
+          "endLine": 147,
+          "declarationSha256Lf": "e55bafe994bed9ae61902f67445a919e4cf15599e15318b8f3e864e49cd669b0",
+          "signatureSha256Lf": "ca49e90a17e1363bc2418829dce130f90263f1e3edeae36b408253440a79a0f8",
+          "bodySha256Lf": "c21fe7d5b2f3c2dfe079ab6ab6ef0b4e5b28994b43d92b8278e1863690091dc3",
+          "costProfile": "text",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "UpdateGalleryStatus",
+          "kind": "method_declaration",
+          "line": 150,
+          "endLine": 158,
+          "declarationSha256Lf": "2c92d442c92bad627aed9a291044b83f57bb5af0db3cb821e59af4f206f038c6",
+          "signatureSha256Lf": "d59a82d4380ed1652f2ea85cc66453d7815a0db9c1b456ff1a7028e4b1799284",
+          "bodySha256Lf": "9223453ba98f78134b112dbd79615fd467c2f20c9ee80d52272c9e358acb1e82",
+          "costProfile": "text",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "ReleaseGalleryTiles",
+          "kind": "method_declaration",
+          "line": 161,
+          "endLine": 171,
+          "declarationSha256Lf": "b561f3fcf0ea2a9fb3ab86b3eec8bb808a148f28da83de5205364202b5ba9191",
+          "signatureSha256Lf": "d09930c458eefd2ebbcc3611d3525603be71b9e95c77c4c04504c67e9a029a88",
+          "bodySha256Lf": "7749b440a32420dfce1c7b28f7e9ad9d8f53cb2f9c4ddffe6bedec0524d1dfb1",
+          "costProfile": "release",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "RetireGalleryLoaderAsync",
+          "kind": "method_declaration",
+          "line": 175,
+          "endLine": 181,
+          "declarationSha256Lf": "a91d73bd5bc966a28b2908fd7f74f6986df3ddf35a4738244bc5b24884c04e59",
+          "signatureSha256Lf": "37763704b0703b93743009e3693e3b787ddb4bdcdfcecc01f3c58db693801306",
+          "bodySha256Lf": "a75fe7639d59f7ba7e7541c5c29466d64939e7550bbfce7dd9316a50617965f2",
+          "costProfile": "loader_retire",
+          "review": "Sets _loader null only after exact captured loader retirement and observer completion succeed."
+        },
+        {
+          "name": "ClearGallerySource",
+          "kind": "method_declaration",
+          "line": 184,
+          "endLine": 189,
+          "declarationSha256Lf": "25ea67dd7c90a7d674df8be5b1dd94b5ce506c269e59ae6c203a528010cb2704",
+          "signatureSha256Lf": "ad30261f55589de730a378757870e178d4c036825d8e83c5bd4ef5cf575324cc",
+          "bodySha256Lf": "751530ab430cf1caf8b9d40291065eb7eb705508c7882a0164678b0a96bc8e43",
+          "costProfile": "release",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "DisposeGalleryAsync",
+          "kind": "method_declaration",
+          "line": 193,
+          "endLine": 220,
+          "declarationSha256Lf": "2689058b8867c59e2eb1f30a30187c51fc246c1eae53037b6bc2c21443e5fafa",
+          "signatureSha256Lf": "778a49f771a4712ddcbde5eb9a1c9533a94f6757d97f07f2c2888948e01dbacf",
+          "bodySha256Lf": "d95bb82151166d44f74c229753680c3eed8b4bfaced294cca4fe1d24ec14ab9d",
+          "costProfile": "gallery_dispose",
+          "review": "Retains gallery/source/observer when loader remains; outer window prerequisite gap is separately recorded as a concrete finding below."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.xaml.cs",
+      "sourceSha256Lf": "9e1274751144aebd420c95ceb9e62783a9ceb0ace6fc06700052b12877784fc7",
+      "originalSourceSha256Lf": "6c38cccca0eced29201431c0f03a19bfbf38e773860372622e3821f5588cd36a",
+      "sourceBytesLf": 36456,
+      "callables": [
+        {
+          "name": "AssetBrowserTab",
+          "kind": "constructor_declaration",
+          "line": 58,
+          "endLine": 68,
+          "declarationSha256Lf": "aef9b1b134cd72230d15a87b6ee20678537ea294b265c9ae82e884d1c90f88ca",
+          "signatureSha256Lf": "b11fb443dfa8b82aba65007a337f50ed46434b44cc434d6eb78373824d293f23",
+          "bodySha256Lf": "81f0dc51460271048e3e99968ddeec694f69c4f1e439c41328528b79493d0e82",
+          "costProfile": "gallery_init",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "CloseSourceCoreAsync",
+          "kind": "method_declaration",
+          "line": 735,
+          "endLine": 803,
+          "declarationSha256Lf": "8161e610eaaaf329e50b96774980e20977b1d079f39e2ff5f9621e17676155bc",
+          "signatureSha256Lf": "8b75560968af3adf29868b414f83492d1f29bab93b213bd8a473931badd30889",
+          "bodySha256Lf": "60c0e4c228592386d600162b98126a60267a40c61dbaf33e622eaf3fc1d5bd6c",
+          "costProfile": "close_delta",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "DisposeCoreAsync",
+          "kind": "method_declaration",
+          "line": 844,
+          "endLine": 889,
+          "declarationSha256Lf": "54dcc045056fdfe959a2fac78629d2892f00565a52f78dcc2540329dc784b110",
+          "signatureSha256Lf": "27a7be2b7b9c2d89acfdd6002134cb7ec1ec735b02633735c8943eaf0bee13dc",
+          "bodySha256Lf": "5e938bc8d596454052ebeff29c9d5b7e3488a7f956572600ad5dc13943397492",
+          "costProfile": "dispose_delta",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.Explore.cs",
+      "sourceSha256Lf": "57445363c747bdb2fdd58e4130084a7f97fdacf867e707530978f6623decd452",
+      "originalSourceSha256Lf": "65e02f27b636230b11466ae76eeedda311f949ae1ee9c9b3f2c100e767ddf8fa",
+      "sourceBytesLf": 4775,
+      "callables": [
+        {
+          "name": "AttachWorkspaceSourceAsync",
+          "kind": "method_declaration",
+          "line": 48,
+          "endLine": 87,
+          "declarationSha256Lf": "9cc7c2935bb78d69acc1c75966db9e4feb239f49876a729f383d92238dc1915f",
+          "signatureSha256Lf": "d705e26b395f188ae899588ae07bb652eea8c63b644e39396af2ee1705e1325f",
+          "bodySha256Lf": "a6eceaf527e10ae873a83045eb0b295b1198ec2e23c0cdb6229bc3d4d5c9b3d5",
+          "costProfile": "attach_delta",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ThumbnailCacheObservation.cs",
+      "sourceSha256Lf": "7cdaa1da838ed92e0fd3b0390ff8a3ee5d6b2bb16813c555f5c8bd8fb5f15d9c",
+      "originalSourceSha256Lf": null,
+      "sourceBytesLf": 6011,
+      "callables": [
+        {
+          "name": "ThumbnailCacheObservation",
+          "kind": "constructor_declaration",
+          "line": 20,
+          "endLine": 24,
+          "declarationSha256Lf": "02ab07a3b617de2b95c9e9b578786f972caf1d77b5dab8d1010ecdd244288f24",
+          "signatureSha256Lf": "0226de3e1bbe09205a6ec5c4a2d3a48f4fff571bbbdfeeff923f979c4edabbc4",
+          "bodySha256Lf": "7e2094f04aa73b3351a413fe9c829fcaaf90a70863a5285f0da112aac7052c96",
+          "costProfile": "observe",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "ResourceName",
+          "kind": "property_declaration",
+          "line": 27,
+          "endLine": 27,
+          "declarationSha256Lf": "7b7b45fd76e522d5ad97748b3abc49bc8ca4a7669f7874115837d33fe10b7e40",
+          "signatureSha256Lf": "96069f0da88b978322fe4c3edab4fd826a25d4934be2a809bfdbe1607cb7494d",
+          "bodySha256Lf": "f2fe91983d96126dafd3d585e5becf451bb2cbcb49c2a827135a58a526b29f76",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "Category",
+          "kind": "property_declaration",
+          "line": 29,
+          "endLine": 29,
+          "declarationSha256Lf": "ff17c47853756849d2aeb0321a4d182f095fc41856849c888470ddb1dade2a18",
+          "signatureSha256Lf": "a9b319456b08c01a2de8aca31aaedee1c10c34e10bc6d78aa0591236c24b5130",
+          "bodySha256Lf": "cd23266ef4eceda7a2be33cddfd45ceb72eacae652af4008debc524aa7d1c84b",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "TrimPriority",
+          "kind": "property_declaration",
+          "line": 31,
+          "endLine": 31,
+          "declarationSha256Lf": "1f0feab143dc04e5eda1a0602655315826d3872616e2c1bd7958c00745aafa2a",
+          "signatureSha256Lf": "bd8a3fa2f66966c5ab02a2b26eff772d9425a1baa525f02189f82fb21e3be7f1",
+          "bodySha256Lf": "8fd29ade632ccea85d6336f17d8da6a73b3a95ad042fead3bc04f7b4d464c23e",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "TrimAffinity",
+          "kind": "property_declaration",
+          "line": 33,
+          "endLine": 33,
+          "declarationSha256Lf": "376367b9ea285e01c1148b2165b8e4bb8ab5e74f30d4013d856b8468ecb78a29",
+          "signatureSha256Lf": "b60afb512bbad0de132cb906027aa77cebe341b82606004aad1370394741fbfd",
+          "bodySha256Lf": "ad8a58027555be737194673fd2c358e7c8dc15412d73b6c4d76f604cedda9c8b",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "Attach",
+          "kind": "method_declaration",
+          "line": 39,
+          "endLine": 50,
+          "declarationSha256Lf": "7eb9df2008f5820b7090848e4517d6ebd2ba09c3a37efa2b2927709cb1adaa4b",
+          "signatureSha256Lf": "1a5a881fc9605033876a83d83215779176c99cccb99160e8707c34a820f14bce",
+          "bodySha256Lf": "670a53ca12842c89b64738462c8c2e924526b5a759a9b0ef5515aec0c5199ace",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "CompleteRetirement",
+          "kind": "method_declaration",
+          "line": 55,
+          "endLine": 70,
+          "declarationSha256Lf": "33ada4049f3d72b33ed8dbc6abc30ed60c039b6ea9ef43d8d3b16c5788f3a5a8",
+          "signatureSha256Lf": "ad9f36a1ae95e1a71b24aa16a785bc7eab13096e68e205555a89fb29adf3a43c",
+          "bodySha256Lf": "e51b6252fb998944786933a5a7255b08099217a98a32ec7fb98956185ceddcf7",
+          "costProfile": "observe_retire",
+          "review": "Calls real statistics outside gate; zero resident count/bytes and exact identity precede checked scalar-history commit."
+        },
+        {
+          "name": "GetStats",
+          "kind": "method_declaration",
+          "line": 74,
+          "endLine": 86,
+          "declarationSha256Lf": "24b57fa523cb7805606ce41a8ce70b988652971e0647ccabaf32d455a1cc9208",
+          "signatureSha256Lf": "8421de5be57bdf63c5eb4424c2456cf7f7c5f3a7aae07ef187a48ceb812affe2",
+          "bodySha256Lf": "54c7147e5ba1d4fa089e41345ebd8d976fac221a9fa99760849632c1b5e43ac2",
+          "costProfile": "observe",
+          "review": "Individual underlying counters are atomic; the combined snapshot is not transactional. No invented counters."
+        },
+        {
+          "name": "Trim",
+          "kind": "method_declaration",
+          "line": 91,
+          "endLine": 96,
+          "declarationSha256Lf": "e4ed12645df23a15c359295f18607dc643bcc09a79d7e1ba6a539f5f3c8a2ac5",
+          "signatureSha256Lf": "20a787c1d98c93b011a1d0f74cdfb915e84977e4c3b83fadca97bebcacfe0c9c",
+          "bodySha256Lf": "d29b7f27393ee4f702f06974ffd952db809f674c0391e94cc4a93b6bf82e4e89",
+          "costProfile": "trim",
+          "review": "Delegates existing half/zero pressure target to actual Shared cache; concurrent producers can refill afterward."
+        },
+        {
+          "name": "Dispose",
+          "kind": "method_declaration",
+          "line": 100,
+          "endLine": 112,
+          "declarationSha256Lf": "adfe9a84a1f65c6167887fd6afa197cc3a355292cf2c9dd91ef352abdd8f901c",
+          "signatureSha256Lf": "6b9508761cab86c4eb6676cff18b8c9f69d025c1903bf0f6f3cda86f194cfed4",
+          "bodySha256Lf": "68d8bc6a979f982f178cbf9321ef1dcc744e0d5939c15ba303c42ffeadd0b522",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Xngine/Flic/FlicFile.cs",
+      "sourceSha256Lf": "98f5a7f8ec778d20964c7d79a7b91eec155740e6212b43da8b1b168eb125ec85",
+      "originalSourceSha256Lf": "446f964f0b7eebcdcbf5acb8651dd5c586665cfd18fbb75e9c7b9bee413c1d42",
+      "sourceBytesLf": 25188,
+      "callables": [
+        {
+          "name": "FlicFile",
+          "kind": "constructor_declaration",
+          "line": 47,
+          "endLine": 61,
+          "declarationSha256Lf": "7d09719b08e5dc4fc33f008618ba63d539c5092c18bd5cfa58b4f1147f47b0cb",
+          "signatureSha256Lf": "a24d5d8797a92b6c0f764493fc4b0d9839467098982e7b8d8f876ee6a5712b75",
+          "bodySha256Lf": "fad51e463da5da462359d24c3a1c48e6c1c25aee9d6629f6ca73e60a4f9350dd",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "SecondsPerFrame",
+          "kind": "property_declaration",
+          "line": 79,
+          "endLine": 79,
+          "declarationSha256Lf": "cea1bb184b7a754b66205e7f454b1f597bb5371d8b23fa90d16568cc9f9de759",
+          "signatureSha256Lf": "d5c50dbd797bda80d8ad4aa5c3bf0c7823418686fc9a626e2ece366ab0646d4f",
+          "bodySha256Lf": "d040df48e03a091feb31cba484242fe20938369d838b44cbdaabbc3548606185",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "Parse",
+          "kind": "method_declaration",
+          "line": 103,
+          "endLine": 103,
+          "declarationSha256Lf": "abd04439e13bec0c8eb0243bf18d5d07ab789143f04e30c7b6b6ed255f416bef",
+          "signatureSha256Lf": "e2b78db61ef3d0f12bd41d04469ba6b3bf80b74e870910eab2c6dcb1fba9eaaf",
+          "bodySha256Lf": "b52426ecfbe725576b68339c027a1600ee7e2cbeea4d74a0a2b1b5985e3f7b59",
+          "costProfile": "flc_parse",
+          "review": "Legacy dispatch uses null limits/default token; new strict-only admission does not replace existing production playback."
+        },
+        {
+          "name": "ParseBounded",
+          "kind": "method_declaration",
+          "line": 111,
+          "endLine": 117,
+          "declarationSha256Lf": "6d7fcb1ded72e675f5a98c5996c36240e7bf88ae24b0eecbbd999a54ec65acff",
+          "signatureSha256Lf": "f49ef9b846049d40399a31a38668f6dee808e57f7e52645e5de6092edf0c47ed",
+          "bodySha256Lf": "71186f7e942a6af4dd0d43eb068ab45fa4fbd3c5eb6dbe592fa1736238daae7b",
+          "costProfile": "flc_parse",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "ParseCore",
+          "kind": "method_declaration",
+          "line": 120,
+          "endLine": 311,
+          "declarationSha256Lf": "a5bdbafdfe35ee2b218758e815ab6561fd1150c90464f8b717e673a162541068",
+          "signatureSha256Lf": "a837cef363eb649bc909242b037463f35d2c0ecaf6b7a42c65c4c2ea4d601a02",
+          "bodySha256Lf": "de9a11103f4f0865950c54b814ef95287690bd0c52f5f98b7b61fbb1c923fc4e",
+          "costProfile": "flc_parse",
+          "review": "Counts actual picture blocks, charges every frame/palette, checks strict boundaries/full palette/exact ring. Prefix/PSTAMP/holds retain admitted semantics."
+        },
+        {
+          "name": "AdmitBytes",
+          "kind": "method_declaration",
+          "line": 314,
+          "endLine": 321,
+          "declarationSha256Lf": "57c77e8f7032bc5445247ee84cb6337fa5f316e94a8bb2cbcd8fbb83f2c6d3d8",
+          "signatureSha256Lf": "929cc2f10db6f5ef5d53a12e572d9a7dc7854b72f69e48fd35827a7208df0e3d",
+          "bodySha256Lf": "e430261c0472d0a279e3f015b9386dd0e2501493f85658a946460359c0f31591",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "ReadPalette",
+          "kind": "method_declaration",
+          "line": 337,
+          "endLine": 353,
+          "declarationSha256Lf": "b459a84264e60269034ea1f538b9c7b6d2ac96d3be675f62a29899fdf1e29238",
+          "signatureSha256Lf": "2f4f4734450a6c6f8904ca52a81e0fae4fd30da460a398166323eff67137f84a",
+          "bodySha256Lf": "7a304dea5665a33b59be700f2c348396519941cdfb198de7f5b39c9a2821be2c",
+          "costProfile": "flc_palette",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "DecodeFullFrame",
+          "kind": "method_declaration",
+          "line": 361,
+          "endLine": 428,
+          "declarationSha256Lf": "a0987993e27dff1f52e42996a774673b8c1dbdeab1ae8133a9b254f3989d2eda",
+          "signatureSha256Lf": "c50be5e2eb190c20c0f80baaeca7e0c6116a71d641c676a5a3ae9b4629d099df",
+          "bodySha256Lf": "215c52c652d02365bb0792159b58d9607b32cc172ed2168d89bc83abe9837059",
+          "costProfile": "flc_full",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "DecodeDeltaFrame",
+          "kind": "method_declaration",
+          "line": 437,
+          "endLine": 564,
+          "declarationSha256Lf": "283058f580b96a4af5c10efa0881468c30aaf6113a6de1d477c4cea9d4fe2380",
+          "signatureSha256Lf": "a9410221194c4acb8c3d9d24ba8ce831b43534276348cbbec9794b4da3932651",
+          "bodySha256Lf": "1dddec72d5fd1c1ea2af7932eac43af552aa4f87f26721be32076865ee7bc47b",
+          "costProfile": "flc_delta",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Xngine/Flic/FlicDecodedMediaDecoder.cs",
+      "sourceSha256Lf": "352b83c7649ede5964b42bb63431dc715d7c848e7fad9887f67297428e0440f5",
+      "originalSourceSha256Lf": null,
+      "sourceBytesLf": 8726,
+      "callables": [
+        {
+          "name": "FlicDecodedMediaDecoder",
+          "kind": "constructor_declaration",
+          "line": 28,
+          "endLine": 48,
+          "declarationSha256Lf": "f1164cd93334e12170dc26b355301d443845a79dc44205e008025c5c0039ec32",
+          "signatureSha256Lf": "5bad47f87a4ac7c8dccbddcf955c31d1aa1a85851c14ad751746512a313bfbda",
+          "bodySha256Lf": "b7707e7e0daabbd624fde103aa999eb953e351fa869cf1a532d60101f91e489b",
+          "costProfile": "flc_parse",
+          "review": "Retained input transfers only after parse/descriptors/RGBA allocation/final cancellation succeed."
+        },
+        {
+          "name": "ReadVideoAsync",
+          "kind": "method_declaration",
+          "line": 58,
+          "endLine": 86,
+          "declarationSha256Lf": "13e0c1ec5fdcae0fd1c3350d4d6614d77686980280f550c832a08621300d5268",
+          "signatureSha256Lf": "ffd451ab1449147ae6b026638c42c309c6b00519e1bebb81812af9e2361dfb5c",
+          "bodySha256Lf": "4b8605ff49ba963e64d2660ee0e54aac2c918506b5560b694f45199a83869c37",
+          "costProfile": "flc_video",
+          "review": "Borrowed bytes expire on next call; row/final cancellation leaves cursor unchanged. Shared session owns retained copies."
+        },
+        {
+          "name": "ReadAudioAsync",
+          "kind": "method_declaration",
+          "line": 92,
+          "endLine": 102,
+          "declarationSha256Lf": "60becfdce6572ac717b45499bfb7b041c1e79686dc2697555b8fbb7517ad6b63",
+          "signatureSha256Lf": "cf369a9504fe2e1cee04592f0f12ef68e809e5cf6c139d0cd8bcba6e9adda460",
+          "bodySha256Lf": "f989717e78b12a1be64340985cd1a4ee4623f3d0be4323d8a3b2343f65d3c5f9",
+          "costProfile": "flc_position",
+          "review": "No audio track, no sample writes, no video advance."
+        },
+        {
+          "name": "SeekAsync",
+          "kind": "method_declaration",
+          "line": 108,
+          "endLine": 126,
+          "declarationSha256Lf": "4e7324900218421a073a931259e3564df117d2e93c7deedd7f18128cd8b4cb0c",
+          "signatureSha256Lf": "25f346b87deb5e8d36e6c4d493653831a5f268689df71ed65e2259592170bd71",
+          "bodySha256Lf": "45b03e9235230823152e6b5d082a8aa50b4cba6096fef060d3f6025cb4c41a7e",
+          "costProfile": "flc_position",
+          "review": "Exact unsigned-ms integer ticks, floor to frame boundary and clamp EOF; fixed track, explicit seek0 for replay."
+        },
+        {
+          "name": "DisposeAsync",
+          "kind": "method_declaration",
+          "line": 130,
+          "endLine": 146,
+          "declarationSha256Lf": "7a416ca3dcd46f577f85443617ca12ba580cf5fbb083428e6a79aaebf9e1f417",
+          "signatureSha256Lf": "6a51fef450b9c4acb4c9cb7b5483a952ea1b2d4c8a4ef43adcee1894e76a4b86",
+          "bodySha256Lf": "8b6f266affbdd078e02243007beb6a63866085d76873f6bad6644b7acd12ab91",
+          "costProfile": "flc_dispose",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "RetireInputAsync",
+          "kind": "method_declaration",
+          "line": 151,
+          "endLine": 164,
+          "declarationSha256Lf": "23e3413e6a17063bb758758f62db35d01a60742530e8b7d33a79e4f92e601955",
+          "signatureSha256Lf": "a8348e17f8965360ae93a0875e4297e112d4e82f7ec41f394081acfa877af97c",
+          "bodySha256Lf": "3dd230bde90056bb3386a051ea32d3e371d5d35890cf77f29d3ad22db3ebb679",
+          "costProfile": "flc_dispose",
+          "review": "Optional prerequisite awaited once outside gate; failure/cancellation retains owner and original terminal task without retry."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Xngine/Flic/FlicDecodeLimits.cs",
+      "sourceSha256Lf": "f04b691a94c0712e18c0899581a3dcc5aac27474146a1addda6f8be0fe2b6a3c",
+      "originalSourceSha256Lf": null,
+      "sourceBytesLf": 1849,
+      "callables": [
+        {
+          "name": "Validate",
+          "kind": "method_declaration",
+          "line": 18,
+          "endLine": 26,
+          "declarationSha256Lf": "5521dec77714a509a04beec2e303634f4695b7a0a1990c0e55ac5789c0fda7b6",
+          "signatureSha256Lf": "6cb1cf94b8998fe398e191abf253308176744f2203eab8be20886f525bef13f8",
+          "bodySha256Lf": "f139586137ba2c16461cf17d2a8e3b6e6b27d1de613ab494de3b1feb947920da",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/DdsThumbnailProducer.cs",
+      "sourceSha256Lf": "73f54101b054e19d22c3732c78a6c31a6152408a1c9ecb2b9dec9c5887210e86",
+      "originalSourceSha256Lf": null,
+      "sourceBytesLf": 9299,
+      "callables": [
+        {
+          "name": "DdsThumbnailProducer",
+          "kind": "constructor_declaration",
+          "line": 22,
+          "endLine": 23,
+          "declarationSha256Lf": "8bd47e697e58f03de62e59f6ac0ea9ff8b7e5bd16f0393bc2829aa01fd4814c6",
+          "signatureSha256Lf": "1daf12a14cdd2b78ebd431190d92308cb1edaf503f323bfac3df12e891529ef1",
+          "bodySha256Lf": "8096bd65b75622da7e4d0575435a2951712a9702f888511c187a1dee5bdb5c77",
+          "costProfile": "constant",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "TryRender",
+          "kind": "method_declaration",
+          "line": 33,
+          "endLine": 89,
+          "declarationSha256Lf": "f56a3080cd5c9eafae2b8d9162cbe6c455cc214ca49cced49aab9187ab568f83",
+          "signatureSha256Lf": "bf658f4a90ea93c278d779edcd8fca47ebc6d2c1d300d4cef465ba1d814487bb",
+          "bodySha256Lf": "42106262061aef6efa9db9f02277c4e281222a8aaa62e24dc4ebf3e0a3d2bf5e",
+          "costProfile": "dds_render",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "TryRead",
+          "kind": "method_declaration",
+          "line": 95,
+          "endLine": 107,
+          "declarationSha256Lf": "f5b9c054fac252f0b1fa83a0d14d80e4cccaece195c7c27f5e944009c95c9e85",
+          "signatureSha256Lf": "e9f19a7e75fb065d6e6cfc55d795edde2aee80c832850b96564da1b2a67504c0",
+          "bodySha256Lf": "2971a0514897416787faa200218af49927f779828d9995bfda84501d29303535",
+          "costProfile": "dds_read",
+          "review": "Uses actual readable provenance returned with bytes, never upper-layer stat identity. int.MaxValue avoids introducing smaller-cap lower-layer substitution."
+        },
+        {
+          "name": "TryDecode",
+          "kind": "method_declaration",
+          "line": 112,
+          "endLine": 122,
+          "declarationSha256Lf": "031cc20bbed6d6a5c84a01a663dc6c66276bfbcd37a3c37b89190b4f1ff29b02",
+          "signatureSha256Lf": "4bfa88ed37a35f1ca5e70eac8fc5fa1195127c3c9ce33e5e1d821e9208c77bfe",
+          "bodySha256Lf": "18862942dd98cc1cf996182bbada22abf16b759a07101ab40c1a51aaec503b0d",
+          "costProfile": "dds_decode",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        },
+        {
+          "name": "TryCreateKey",
+          "kind": "method_declaration",
+          "line": 131,
+          "endLine": 174,
+          "declarationSha256Lf": "ec1a4b9190d942bd2b745c265cf2362928f6074c464ec2cc3cda36742d0a4889",
+          "signatureSha256Lf": "e3748c00565daef9284f4c588b646277e932f0c4d5d207f1dbf25dcf5053474c",
+          "bodySha256Lf": "20df1bf848121e8b1966ed10751a39f6d2d75dd80483ef3c50ae5312575ee35c",
+          "costProfile": "dds_key",
+          "review": "Length-prefixed recipe/root/merged occurrence/actual winning source+path+size+SHA/pixels/finite scale; no label/opening GUID/generation or fabricated archive ordinal."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/AssetThumbnailSource.cs",
+      "sourceSha256Lf": "5cd7e682e69e7d7ba731bb34d346dad22ce590f0f5d34e35695bce836615fbee",
+      "originalSourceSha256Lf": "13e1bc404ba3c7c7f9db0878e21fb7d9bfa2836ce9f9a16c743771c7ed06cc9d",
+      "sourceBytesLf": 5790,
+      "callables": [
+        {
+          "name": "TryRender",
+          "kind": "method_declaration",
+          "line": 42,
+          "endLine": 70,
+          "declarationSha256Lf": "b3ef2bd533ce2ab5f847557d67ae25dbe74a6af84d472f060fc219f8c1c70cd4",
+          "signatureSha256Lf": "59d7e1e2d3a6645153c632fa648692c824adcde5ff9d0b2eaaed248078456e43",
+          "bodySha256Lf": "92c7135e1aa504917231dc339829ed9b812d740a84fdb52172f9ae94aac483d4",
+          "costProfile": "dispatch_delta",
+          "review": "Authored local operations use the stated profile; delegated costs and retained ownership are explicit below."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.ThumbnailCache.cs",
+      "sourceSha256Lf": "6496c68fe683d7e4c0e372afa905b74c4464b9f792c357b3433718e65b3939be",
+      "originalSourceSha256Lf": null,
+      "sourceBytesLf": 3291,
+      "callables": [
+        {
+          "name": "ClearThumbnailCache_Click",
+          "kind": "method_declaration",
+          "line": 18,
+          "endLine": 28,
+          "declarationSha256Lf": "f0678e71962e494141f854fbb70f0cb548767aa93080abdba746fb003bd035b5",
+          "signatureSha256Lf": "9e0121ca92aa84e62cbb0df892202f5ccfc5a587c655a1c25978ddb748c7b9f5",
+          "bodySha256Lf": "7cc092dda966906facfec9698d7201c09de6bc0376a1aea73a75866168dd6390",
+          "costProfile": "clear_start",
+          "review": "Publishes full-operation task before callbacks; same application cache owner, not a new cache."
+        },
+        {
+          "name": "ObserveThumbnailCacheClearAsync",
+          "kind": "method_declaration",
+          "line": 33,
+          "endLine": 44,
+          "declarationSha256Lf": "e271d338a29a8c0fd0e62d02c9f78e0432d1a4cc7c8f0f5119aaa160bebaecd3",
+          "signatureSha256Lf": "c0f1b18c7df5c9c959d2f37e5a8cefbc4f46bf64b48ab9cc517876a1015097bf",
+          "bodySha256Lf": "530e475e8e0faa891b9a2516aba86dbaa01ac66d699131d0929caeb526efca6e",
+          "costProfile": "clear_work",
+          "review": "Retains completion across storage and UI continuation; shutdown awaits even unexpected current UI failures."
+        },
+        {
+          "name": "ClearThumbnailCacheAsync",
+          "kind": "method_declaration",
+          "line": 48,
+          "endLine": 81,
+          "declarationSha256Lf": "5b3b8ee49f3281e76aba0fef7b028565dd05ec87381b6c5623a0d7d3659782e5",
+          "signatureSha256Lf": "07adf3ec67477967a46b1f026c58ac997c892c9540f485e0acd8e44a4e6d6b1a",
+          "bodySha256Lf": "86e600d4f40eba444172676d883b8de72b616869cd6a91d38f1f5b9a12fbb24b",
+          "costProfile": "clear_work",
+          "review": "Does not change source, visible previews or memory cache; producers may store after clear, matching text."
+        },
+        {
+          "name": "lambda@56",
+          "kind": "lambda_expression",
+          "line": 56,
+          "endLine": 63,
+          "declarationSha256Lf": "56bfa03f0142502e97461ba1f8bb0b20fbcf8245471a1373068d83e6f53a9793",
+          "signatureSha256Lf": "db768d3c64ca2c305e318970beea74f9057fe96fd516f38eee30558513b6820e",
+          "bodySha256Lf": "f581ee18a2a2381523d0d4d40f58d720de669a3d1bb1170beafaf5032eb4766b",
+          "costProfile": "text",
+          "review": "Nested expression cost; enclosing method owns iteration/lifetime. Worker DDS profile applies only to DDS branch; sprite costs stay inherited."
+        }
+      ]
+    }
+  ],
+  "composedFiles": [
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/AssetGalleryProjection.cs",
+      "sourceSha256Lf": "158fe3f2bebec3070700c4306479ac9a00c582ee84c333b97e37ed4eb5cd0ebe",
+      "role": "production"
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetGalleryItem.cs",
+      "sourceSha256Lf": "9eeb69f6bf4bc362f42619113fd98b11e44cd7ae27266be16078b42ee4ee5090",
+      "role": "production"
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetThumbnailLoader.cs",
+      "sourceSha256Lf": "47453bdf064985ff7182e597777244fbd89eb4e729fcbb74c0caf0b6e8b4a5a4",
+      "role": "production"
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.Gallery.cs",
+      "sourceSha256Lf": "aad48cc4cb09b88574c75edd0b991505e95c5564a2f14f4d93a32449a4d4219b",
+      "role": "production"
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.xaml.cs",
+      "sourceSha256Lf": "9e1274751144aebd420c95ceb9e62783a9ceb0ace6fc06700052b12877784fc7",
+      "role": "production"
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.Explore.cs",
+      "sourceSha256Lf": "57445363c747bdb2fdd58e4130084a7f97fdacf867e707530978f6623decd452",
+      "role": "production"
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.xaml",
+      "sourceSha256Lf": "f39b29ca0e9361666afa6835c7c4875c32a81051bbebd185d571e1a8db54bd16",
+      "role": "presentation_resource"
+    },
+    {
+      "path": "src/BethesdaMultitool/Strings/en-US/Resources.resw",
+      "sourceSha256Lf": "d9325d18ec02a6a45f2c0db48c68caef7d7bdb10cf83d570e1053aa7ed9744c3",
+      "role": "presentation_resource"
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/AssetBrowse/AssetGalleryProjectionTests.cs",
+      "sourceSha256Lf": "70e3b7aafaaeb65473810806841537296837d4c50550e67eb012d99eb7906574",
+      "role": "behavioral_test"
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/ThumbnailCacheObservation.cs",
+      "sourceSha256Lf": "7cdaa1da838ed92e0fd3b0390ff8a3ee5d6b2bb16813c555f5c8bd8fb5f15d9c",
+      "role": "production"
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/AssetBrowse/ThumbnailCacheObservationTests.cs",
+      "sourceSha256Lf": "b3cddd6a31fdd94a0402f2067a14154ef3d90ed7544b3a85841cdd06a69ca7b4",
+      "role": "behavioral_test"
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Xngine/Flic/FlicFile.cs",
+      "sourceSha256Lf": "98f5a7f8ec778d20964c7d79a7b91eec155740e6212b43da8b1b168eb125ec85",
+      "role": "production"
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Xngine/Flic/FlicDecodedMediaDecoder.cs",
+      "sourceSha256Lf": "352b83c7649ede5964b42bb63431dc715d7c848e7fad9887f67297428e0440f5",
+      "role": "production"
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/Formats/Xngine/Flic/FlicDecodedMediaDecoderTests.cs",
+      "sourceSha256Lf": "aa5ca031f8ea5c1cc70c509ffad8717491dad7f1704dba19e4d9ea277f0ea6a3",
+      "role": "behavioral_test"
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Xngine/Flic/FlicDecodeLimits.cs",
+      "sourceSha256Lf": "f04b691a94c0712e18c0899581a3dcc5aac27474146a1addda6f8be0fe2b6a3c",
+      "role": "production"
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/Formats/Xngine/Flic/FlicMediaFixture.cs",
+      "sourceSha256Lf": "7c854ce6cf93da07b7ea1310eabd51d51d707f80624e12cb3f7dcb31b0584681",
+      "role": "behavioral_test"
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/DdsThumbnailProducer.cs",
+      "sourceSha256Lf": "73f54101b054e19d22c3732c78a6c31a6152408a1c9ecb2b9dec9c5887210e86",
+      "role": "production"
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/AssetThumbnailSource.cs",
+      "sourceSha256Lf": "5cd7e682e69e7d7ba731bb34d346dad22ce590f0f5d34e35695bce836615fbee",
+      "role": "production"
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/AssetBrowse/DdsThumbnailProducerTests.cs",
+      "sourceSha256Lf": "770d5cf897d3f401371d673f0fd00932e0ae08c7bf24bd839700411aff37bce4",
+      "role": "behavioral_test"
+    },
+    {
+      "path": "src/BethesdaMultitool/App/Tabs/AssetBrowser/AssetBrowserTab.ThumbnailCache.cs",
+      "sourceSha256Lf": "6496c68fe683d7e4c0e372afa905b74c4464b9f792c357b3433718e65b3939be",
+      "role": "production"
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/Formats/Xngine/Flic/FlicDecodedMediaDecoderRetailTests.cs",
+      "sourceSha256Lf": "c64eeb7b230627d0278b1f0763e2af6fbbfca70c302e2db0915fb4af42f87c6f",
+      "role": "behavioral_test"
+    }
+  ],
+  "ownershipReview": [
+    "Snapshot/lease and original node/tile identity gate publication. Display labels, same paths in another source and recycled generations do not substitute ownership.",
+    "Local close waits native clear and exact thumbnail drain before releasing source fields/lease. Shutdown attempts thumbnail drain independently of native failure. Failed loader remains owned and observed.",
+    "Memory pressure queries/trims actual Shared caches outside observer gate; only successful zero-resident retirement transfers true counters to scalar history. Failed owner prevents replacement/unregistration.",
+    "Settings initialization and accepted writes are drained. Cache clear retains its full task before callbacks and is canceled/drained at shutdown, using the same application512MiB owner.",
+    "DDS64MiB gates only persistence after one actual winning VFS read. Oversized/incomplete identities decode uncached from those same bytes; key<=64KiB. No source payload persisted. Sprite companion path unchanged.",
+    "Strict FLC256MiB logical allocation budget includes working canvas/futureRGBA, every picture including ring and superseded palettes. Object/list overhead, caller encoded bytes, optional owner and Shared/native copies remain additional.",
+    "FLC input owner transfers only on constructor success. Synchronous gated conversion drains before one terminal asynchronous owner retirement; failed/canceled retirement retains owner and task without retry.",
+    "Legacy classic-video dispatch/timers remain unchanged. Later native playback and full sprite/artwork/poster/waveform/portrait persistence are not accepted by this slice."
+  ],
+  "findings": [
+    {
+      "severity": "required_followup",
+      "issue": "Applied outer window/source prerequisite covers only Shadowkey NativeResourcesRetired. A failed thumbnail loader retained by AssetBrowser can still allow Explore BrowserSession and MainWindow graphics/localization/chrome/HWND disposal.",
+      "evidence": "AssetBrowser RetireGalleryLoaderAsync retains _loader after failure; DisposeGalleryAsync retains its view. Explore DisposeCoreAsync and MainWindow DisposeWindowOwnersAsync/CompleteCloseAsync consult native-only proof.",
+      "qualification": "Ordinary decode and cancellation-callback failures are caught by NewestFirstWorker; no common malformed-file trigger or runtime crash is claimed. The gap applies to a genuinely failed retained session/worker/observer retirement contract.",
+      "proposal": "Ignored gallery-retirement-window-20260921 patch adds separate WindowResourcesRetired = NativeResourcesRetired && _loader is null and uses it at outer prerequisites; review/source hashes in a separate receipt, not silently included here."
+    }
+  ],
+  "validation": {
+    "composedFilesMatchAppliedLf": 21,
+    "namedProductionCallables": 81,
+    "newOrChangedLambdas": 7,
+    "reviewedCallables": 88,
+    "scope": "Source/AST/candidate composition only; source freezes/interrupted and resumed portable builds remain separate root evidence. No new build/test/GUI/performance result claimed."
+  },
+  "remainingGates": [
+    "Normal analyzer portable/Windows compilation and424+2 filtered cases on both runtimes.",
+    "Actual List/Thumbnail/filter/check/focus/scroll/DPI/localization accessibility and source replacement/cancellation/shutdown.",
+    "Controlled worker/native/settings retirement failure injection; apply and validate outer prerequisite correction after freeze.",
+    "Persistent hit/invalidation/clear UI behavior and measured cost; full media/portrait/sprite cache work remains.",
+    "FLC native/GUI consumer acceptance and final publish/notices/native smoke/platform/release gates."
+  ]
+}

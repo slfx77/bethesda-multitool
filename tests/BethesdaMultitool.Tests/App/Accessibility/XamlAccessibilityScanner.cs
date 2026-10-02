@@ -103,6 +103,14 @@ internal static class XamlAccessibilityScanner
 
         if (HasAttribute(element, "x:Uid")) return true;
 
+        // RuntimeLocalization.Uid is this application's live-language equivalent of x:Uid. It binds the
+        // same Resources.resw keys through the shared LocalizationController, which resolves a ".Content"
+        // key onto ContentProperty and an ".AutomationProperties.Name" key onto the automation name. A
+        // control carrying it is named at runtime exactly as an x:Uid control is named at load, so it is
+        // not an accessibility gap. Compile-time x:Uid cannot be used where the language changes without
+        // reloading the view, which is why these controls moved.
+        if (HasAttribute(element, "RuntimeLocalization.Uid")) return true;
+
         // Content-bearing controls can derive their accessible name from Content.
         if (element.Name.LocalName is "Button" or "CheckBox" or "ToggleButton" or "RadioButton"
                 or "HyperlinkButton" or "DropDownButton" or "SplitButton" or "RepeatButton"

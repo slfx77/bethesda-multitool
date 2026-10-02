@@ -9,6 +9,7 @@ using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Extraction;
 using BethesdaMultitool.Core.Formats.Esm;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Inspection;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.SaveGame;
@@ -26,8 +27,8 @@ namespace BethesdaMultitool;
 /// </summary>
 public sealed partial class SingleFileTab
 {
-    // Monotonic floor for AnalysisProgressBar: the multi-phase load (scan → BA2 localization → typed
-    // parse → coverage) and DMP's ×0.8 scaling report through DIFFERENT sinks whose per-phase
+    // Monotonic floor for AnalysisProgressBar: the multi-phase load (scan â†’ BA2 localization â†’ typed
+    // parse â†’ coverage) and DMP's Ã—0.8 scaling report through DIFFERENT sinks whose per-phase
     // percentages restart low, which made the bar visibly jump backwards. All writers go through
     // SetAnalysisProgress so the bar only ever advances until the next operation resets it.
     private double _analysisProgressFloor;
@@ -92,7 +93,7 @@ public sealed partial class SingleFileTab
                 PcFriendly = true,
                 GenerateEsmReports = true
             };
-            ResetAnalysisProgress(); // extraction is its own operation — restart the monotonic floor
+            ResetAnalysisProgress(); // extraction is its own operation â€” restart the monotonic floor
             var progress = new Progress<ExtractionProgress>(p => DispatcherQueue.TryEnqueue(() =>
             {
                 AnalysisProgressBar.IsIndeterminate = false;
@@ -181,7 +182,7 @@ public sealed partial class SingleFileTab
 
         ParseProgressBar.Visibility = Visibility.Visible;
         ParseProgressBar.IsIndeterminate = true;
-        ParseStatusText.Text = "Building save records tree...";
+        RuntimeLocalization.SetRaw(ParseStatusText, TextBlock.TextProperty, "Building save records tree...");
         StatusTextBlock.Text = "Building save records tree...";
 
         try
@@ -232,7 +233,7 @@ public sealed partial class SingleFileTab
         {
             ParseProgressBar.Visibility = Visibility.Collapsed;
             ParseProgressBar.IsIndeterminate = false;
-            ParseStatusText.Text = "";
+            RuntimeLocalization.SetRaw(ParseStatusText, TextBlock.TextProperty, "");
             StatusTextBlock.Text = "";
         }
     }
@@ -341,9 +342,9 @@ public sealed partial class SingleFileTab
         bool refreshCarvedFiles = true)
     {
         SetPipelinePhase(AnalysisPipelinePhase.Parsing);
-        StatusTextBlock.Text = _session.IsEsmFile
-            ? Strings.Status_ParsingEsmRecords
-            : Strings.Status_ParsingRecords;
+        MainWindow.Instance?.SetLocalizedStatus(_session.IsEsmFile
+            ? "Status_ParsingEsmRecords"
+            : "Status_ParsingRecords");
 
         var reconProgress = new Progress<(int percent, string phase)>(p =>
             DispatcherQueue.TryEnqueue(() =>
@@ -410,7 +411,7 @@ public sealed partial class SingleFileTab
         try
         {
             SetPipelinePhase(AnalysisPipelinePhase.Coverage);
-            StatusTextBlock.Text = Strings.Status_RunningCoverageAnalysis;
+            MainWindow.Instance?.SetLocalizedStatus("Status_RunningCoverageAnalysis");
             SetAnalysisProgress(96);
             _session.CoverageResult = await Task.Run(() =>
                 CoverageAnalyzer.Analyze(_session.AnalysisResult!, _session.Accessor!));
@@ -424,7 +425,7 @@ public sealed partial class SingleFileTab
         }
         catch (Exception coverageEx)
         {
-            StatusTextBlock.Text = Strings.Status_CoverageAnalysisFailed(coverageEx.Message);
+            MainWindow.Instance?.SetLocalizedStatus("Status_CoverageAnalysisFailed", coverageEx.Message);
         }
     }
 
@@ -452,8 +453,7 @@ public sealed partial class SingleFileTab
 
             if (_session.SemanticResult != null)
             {
-                StatusTextBlock.Text =
-                    Strings.Status_ParsedRecords(_session.SemanticResult.TotalRecordsParsed);
+                MainWindow.Instance?.SetLocalizedStatus("Status_ParsedRecords", _session.SemanticResult.TotalRecordsParsed);
             }
         }
         catch (Exception ex)
@@ -466,7 +466,7 @@ public sealed partial class SingleFileTab
     /// <summary>
     ///     In-flight data-browser populate, for single-flighting. "View in Records" switches to the
     ///     Records tab (whose SelectionChanged auto-populate fires) and then calls
-    ///     <see cref="PopulateDataBrowserAsync" /> itself because the tree is still null — without
+    ///     <see cref="PopulateDataBrowserAsync" /> itself because the tree is still null â€” without
     ///     this, the two concurrent builds doubled seconds of work AND raced last-writer-wins on
     ///     _esmBrowserTree/_formIdNodeIndex, so the FormID index could reference nodes from the
     ///     losing tree and the navigation silently no-op'd after the wait.
@@ -492,14 +492,15 @@ public sealed partial class SingleFileTab
 
         ParseProgressBar.Visibility = Visibility.Visible;
         ParseProgressBar.IsIndeterminate = true;
-        ParseStatusText.Text = Strings.Status_BuildingDataBrowserTree;
-        StatusTextBlock.Text = Strings.Status_BuildingDataBrowserTree;
+        RuntimeLocalization.SetText(ParseStatusText, "Status_BuildingDataBrowserTree");
+        MainWindow.Instance?.SetLocalizedStatus("Status_BuildingDataBrowserTree");
 
         string? populateError = null;
 
         try
         {
             var primaryResult = _session.SemanticResult;
+            var selectedView = await GetSelectedLoadOrderViewAsync();
 
             // Snapshot UI-thread-owned state HERE: LoadOrder.Entries is a UI-mutated
             // ObservableCollection and the resolver getter enumerates it, so neither may be touched
@@ -510,17 +511,34 @@ public sealed partial class SingleFileTab
             var loadOrderEntries = _session.LoadOrder.Entries.ToList();
             var resolver = _session.EffectiveResolver ?? _session.Resolver;
             var recoverableGaps = _session.AnalysisResult?.RecoverableGapCandidates;
+            var browserSourcePath = _session.FilePath;
+            var placementSources = new List<PlacementBrowserSource>();
+            if (_session.AnalysisResult is { EsmRecords: not null } primaryAnalysis && _session.FilePath is { } sourcePath)
+            {
+                placementSources.Add(PlacementBrowserCatalog.FromSnapshot(sourcePath, _session.FileType,
+                    primaryAnalysis, primaryResult, _session.Resolver ?? Core.Formats.Esm.Export.Support.FormIdResolver.Empty));
+            }
+            if (selectedView != null)
+            {
+                foreach (var entry in loadOrderEntries.Where(e => e.SelectionEvidence != null && e.Records != null &&
+                    !Path.GetFullPath(e.FilePath).Equals(Path.GetFullPath(primaryFilePath!), StringComparison.OrdinalIgnoreCase)))
+                {
+                    placementSources.Add(PlacementBrowserCatalog.FromSnapshot(entry.FilePath, entry.FileType,
+                        new AnalysisResult { FilePath = entry.FilePath, FileSize = new FileInfo(entry.FilePath).Length,
+                            EsmRecords = entry.SelectionEvidence }, entry.Records!, entry.Resolver ?? Core.Formats.Esm.Export.Support.FormIdResolver.Empty));
+                }
+            }
 
             // Progress callback for status updates
             var progress = new Progress<string>(status =>
                 DispatcherQueue.TryEnqueue(() =>
                 {
-                    ParseStatusText.Text = status;
-                    StatusTextBlock.Text = status;
+                    RuntimeLocalization.SetText(ParseStatusText, status);
+                    MainWindow.Instance?.SetLocalizedStatus(status);
                 }));
 
             // Build the merged view + tree + lookup indexes on a background thread. The load-order
-            // merge/rebase used to run on the UI thread before the Task.Run — seconds of hard freeze
+            // merge/rebase used to run on the UI thread before the Task.Run â€” seconds of hard freeze
             // with a DLC-sized load order, doubled by the pre-single-flight double populate.
             var (tree, placements, usageIndex, factionMembers, raceLookup, semanticResult) =
                 await Task.Run(() =>
@@ -528,17 +546,20 @@ public sealed partial class SingleFileTab
                     // Merge load order records so DLC content appears in the browser. An ESM/ESP primary's
                     // MAST list anchors the slots, so entries land where its raw FormIDs already point.
                     Core.Diagnostics.Logger.Instance.Debug("[Records] step: merge");
-                    var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFilePath);
-                    var merged = loadOrderRecords != null
+                    var loadOrderRecords = selectedView == null
+                        ? LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFilePath) : null;
+                    var merged = selectedView?.Records ?? (loadOrderRecords != null
                         ? loadOrderRecords.MergeWith(primaryResult)
-                        : primaryResult;
+                        : primaryResult);
 
-                    ((IProgress<string>)progress).Report(Strings.Status_BuildingCategoryTree);
+                    ((IProgress<string>)progress).Report("Status_BuildingCategoryTree");
                     Core.Diagnostics.Logger.Instance.Debug("[Records] step: buildTree");
                     var builtTree = EsmBrowserTreeBuilder.BuildTree(merged, resolver);
+                    EsmBrowserTreeBuilder.AppendPlacements(builtTree,
+                        PlacementBrowserCatalog.Create(placementSources, selectedView), browserSourcePath);
                     EsmBrowserTreeBuilder.AppendRecoverableGapCategory(builtTree, recoverableGaps);
 
-                    // Build reverse placement index for Count (base FormID → world placements)
+                    // Build reverse placement index for Count (base FormID â†’ world placements)
                     Core.Diagnostics.Logger.Instance.Debug("[Records] step: placements");
                     var placementIndex = merged.BuildBaseToPlacementsMap();
 
@@ -546,7 +567,7 @@ public sealed partial class SingleFileTab
                     Core.Diagnostics.Logger.Instance.Debug("[Records] step: formUsage");
                     var formUsageIndex = FormUsageIndex.Build(merged);
 
-                    // Build reverse faction index (faction FormID → NPC/creature members)
+                    // Build reverse faction index (faction FormID â†’ NPC/creature members)
                     Core.Diagnostics.Logger.Instance.Debug("[Records] step: factions");
                     var factionIndex = merged.BuildFactionMembersIndex();
 
@@ -557,7 +578,7 @@ public sealed partial class SingleFileTab
                             .ToDictionary(r => r.FormId)
                         : null;
 
-                    ((IProgress<string>)progress).Report(Strings.Status_SortingRecords);
+                    ((IProgress<string>)progress).Report("Status_SortingRecords");
                     EsmBrowserTreeBuilder.SortRecordChildren(builtTree, EsmBrowserTreeBuilder.RecordSortMode.Name);
 
                     Core.Diagnostics.Logger.Instance.Debug("[Records] step: workerDone");
@@ -572,7 +593,7 @@ public sealed partial class SingleFileTab
             _raceLookup = raceLookup;
             _flatListBuilt = false;
 
-            StatusTextBlock.Text = Strings.Status_BuildingTreeView;
+            MainWindow.Instance?.SetLocalizedStatus("Status_BuildingTreeView");
 
             // Add category nodes to tree with chevrons (must be on UI thread)
             EsmTreeView.RootNodes.Clear();
@@ -586,7 +607,7 @@ public sealed partial class SingleFileTab
             Core.Diagnostics.Logger.Instance.Debug("[Records] populate COMPLETE");
             DataBrowserPlaceholder.Visibility = Visibility.Collapsed;
             DataBrowserContent.Visibility = Visibility.Visible;
-            StatusTextBlock.Text = Strings.Status_BuildingNavIndex;
+            MainWindow.Instance?.SetLocalizedStatus("Status_BuildingNavIndex");
 
             // Pre-build FormID navigation index in the background (avoids delay on first link click)
             // Tracked via _formIdBuildTask so NavigateToFormId can await it if needed.
@@ -606,9 +627,9 @@ public sealed partial class SingleFileTab
         }
         catch (Exception ex)
         {
-            // ⚠ This method was try/finally with NO catch, and the finally blanked both status
+            // âš  This method was try/finally with NO catch, and the finally blanked both status
             // lines. A populate that threw therefore left the placeholder up and the status bar
-            // empty — pixel-identical to "nothing was loaded". That is exactly how a real failure
+            // empty â€” pixel-identical to "nothing was loaded". That is exactly how a real failure
             // here went unnoticed while 9,365 parsed records sat in memory the whole time.
             Core.Diagnostics.Logger.Instance.Error(
                 "[Records] populate FAILED: {0}: {1}{2}{3}",
@@ -619,9 +640,9 @@ public sealed partial class SingleFileTab
         {
             ParseProgressBar.Visibility = Visibility.Collapsed;
             ParseProgressBar.IsIndeterminate = false;
-            ParseStatusText.Text = populateError ?? "";
+            RuntimeLocalization.SetRaw(ParseStatusText, TextBlock.TextProperty, populateError ?? "");
             // The background nav-index build owns StatusTextBlock past this method's end (it sets
-            // "Building navigation index…" above and clears it itself when done) — blanket-clearing
+            // "Building navigation indexâ€¦" above and clears it itself when done) â€” blanket-clearing
             // here erased that status instantly, leaving the long index wait with no feedback.
             if (_formIdBuildTask is null or { IsCompleted: true })
             {
@@ -658,7 +679,7 @@ public sealed partial class SingleFileTab
 
         // A classic install takes the Actors tab over entirely, exactly as the selection handler
         // does. It has to be repeated here because ConfigureSubTabsForFileType runs while the
-        // phase is still Scanning, so every SelectionChanged it raises early-returns — analyzing
+        // phase is still Scanning, so every SelectionChanged it raises early-returns â€” analyzing
         // with Actors already selected would otherwise leave the panel stale until the user
         // clicked away and back.
         if (ReferenceEquals(selectedTab, NpcBrowserTab) && TryShowClassicActors(_session.FileType))

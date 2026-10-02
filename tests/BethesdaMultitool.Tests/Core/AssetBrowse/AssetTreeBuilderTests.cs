@@ -196,6 +196,7 @@ public sealed class AssetTreeBuilderTests
         Assert.Equal(10L, leaf.Size);
     }
 
+    /// <summary>The complete eager topology retains deep paths and every wide leaf without recursive traversal.</summary>
     [Fact]
     public void Build_DeepAndWide_StaysIterative()
     {
@@ -226,9 +227,16 @@ public sealed class AssetTreeBuilderTests
         var leaf = Assert.Single(node.Children);
         Assert.Equal(AssetNodeKind.Model, leaf.Kind);
 
-        // The tristate flood and CheckedFiles walk are iterative too.
-        root.IsChecked = true;
-        Assert.Equal(20_001, root.CheckedFiles().Count());
+        // Count the completed topology without relying on the migrated check-state owner.
+        var pending = new Stack<AssetNode>();
+        pending.Push(root);
+        var leaves = 0;
+        while (pending.TryPop(out var current))
+        {
+            if (current.IsExtractable) leaves++;
+            foreach (var child in current.Children) pending.Push(child);
+        }
+        Assert.Equal(20_001, leaves);
     }
 }
 

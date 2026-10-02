@@ -1,4 +1,5 @@
-﻿using BethesdaMultitool.CLI.Rendering.Nif;
+using BethesdaMultitool.Localization;
+using BethesdaMultitool.CLI.Rendering.Nif;
 using System.Diagnostics;
 using BethesdaMultitool.CLI;
 using BethesdaMultitool.Core.Analysis;
@@ -69,7 +70,7 @@ public sealed partial class SingleFileTab
             var match = _npcBrowser.FindVisible(npc.FormId);
             if (match == null && _npcBrowser.FullList.Count > 0)
             {
-                // NPC may be filtered out — clear filters and refresh
+                // NPC may be filtered out â€” clear filters and refresh
                 NpcNamedOnlyCheckBox.IsChecked = false;
                 NpcSearchBox.Text = "";
                 RefreshNpcList();
@@ -165,6 +166,24 @@ public sealed partial class SingleFileTab
         }
 
         var isDmp = _session.FileType == AnalysisFileType.Minidump;
+        Core.Semantic.LoadOrder.LoadOrderSelectionView? selectedView = null;
+        if (!isDmp && _session.LoadOrder.Entries.Count > 0)
+        {
+            await EnsureSemanticParseAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                selectedView = await GetSelectedLoadOrderViewAsync();
+                cancellationToken.ThrowIfCancellationRequested();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                RuntimeLocalization.SetRaw(NpcBrowserStatusText, TextBlock.TextProperty,
+                    $"Load-order selection unavailable: {ex.Message}");
+                return;
+            }
+        }
+        if (_session.EffectiveRecords is { } records) _actorInspector = new Core.Actors.ActorInspector(records);
 
         if (!isDmp && (!_session.HasEsmRecords || _session.FilePath == null))
         {
@@ -183,6 +202,7 @@ public sealed partial class SingleFileTab
             NpcBrowserStatusText.Text =
                 "Configure game Data directory (with ESM + BSA files) to browse NPCs from memory dump";
             NpcBsaPathPanel.Visibility = Visibility.Visible;
+            PopulateActorsWithoutMeshes();
             return;
         }
 
@@ -204,11 +224,14 @@ public sealed partial class SingleFileTab
         {
             var esmPath = _session.FilePath!;
 
-            var bsaPaths = await NpcBrowserWorkflowService.DiscoverBsaPathsAsync(
-                esmPath,
-                _session.NpcBsaDirectory,
-                loadProgress,
-                cancellationToken);
+            var bsaPaths = !isDmp
+                ? await Task.Run(() => BethesdaMultitool.Core.Assets.AssetSourceDiscovery.Discover(
+                    _session.NpcBsaDirectory is { } configured
+                        ? Path.Combine(configured, Path.GetFileName(esmPath)) : esmPath,
+                    selectedView?.Order.Entries.Select(entry => entry.Path),
+                    includeLooseFiles: true, cancellationToken: cancellationToken), cancellationToken)
+                : await NpcBrowserWorkflowService.DiscoverBsaPathsAsync(
+                    esmPath, _session.NpcBsaDirectory, loadProgress, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             if (!bsaPaths.HasMeshes)
@@ -218,6 +241,7 @@ public sealed partial class SingleFileTab
                     ? "No meshes BSA found in configured directory. Point to a game Data directory."
                     : "No meshes BSA found alongside ESM. Configure BSA paths to browse NPCs.";
                 NpcBsaPathPanel.Visibility = Visibility.Visible;
+                PopulateActorsWithoutMeshes();
                 return;
             }
 
@@ -226,6 +250,11 @@ public sealed partial class SingleFileTab
             if (isDmp)
             {
                 service = await PopulateFromDmpAsync(bsaPaths);
+            }
+            else if (selectedView is not null)
+            {
+                service = await NpcBrowserWorkflowService.CreateFromSelectedViewAsync(
+                    selectedView, esmPath, bsaPaths, loadProgress, cancellationToken);
             }
             else
             {
@@ -256,6 +285,7 @@ public sealed partial class SingleFileTab
             {
                 NpcBrowserProgressBar.Visibility = Visibility.Collapsed;
                 NpcBrowserStatusText.Text = "Failed to initialize NPC browser.";
+                PopulateActorsWithoutMeshes();
                 return;
             }
 
@@ -295,7 +325,13 @@ public sealed partial class SingleFileTab
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             NpcBrowserProgressBar.Visibility = Visibility.Collapsed;
-            NpcBrowserStatusText.Text = $"Error: {ex.Message}";
+            if (selectedView is not null)
+            {
+                PopulateActorsWithoutMeshes();
+                RuntimeLocalization.SetRaw(NpcBrowserStatusText, TextBlock.TextProperty,
+                    $"Mesh preview: Unavailable. {ex.Message}");
+            }
+            else { NpcBrowserStatusText.Text = $"Error: {ex.Message}"; }
         }
     }
 
@@ -385,6 +421,8 @@ public sealed partial class SingleFileTab
                 assetsDir,
                 CoreWebView2HostResourceAccessKind.Allow);
 
+            NpcModelViewer.CoreWebView2.NavigationCompleted += async (_, _) =>
+                await CompatibilityViewerLocalization.RefreshAsync(NpcModelViewer, "Viewer_SelectNpc");
             NpcModelViewer.CoreWebView2.Navigate(
 #pragma warning disable S1075 // URIs should not be hardcoded
                 "https://npc-viewer-assets/npc-viewer.html"
@@ -551,7 +589,6 @@ public sealed partial class SingleFileTab
         CancelNpcRenderOptionDebounce();
 
         if (NpcListView.SelectedItem is not NpcListItem npc ||
-            _npcBrowserService == null ||
             !IsActorInCurrentFamily(npc))
         {
             var emptyGeneration = unchecked(++_npcViewerLoadGeneration);
@@ -569,6 +606,12 @@ public sealed partial class SingleFileTab
         }
 
         ApplyNpcSelectionState(_npcBrowser.Select(npc));
+        if (_npcBrowserService is null)
+        {
+            await CancelNpcViewerLoadAndDrainAsync();
+            NpcSceneViewer.ClearScene();
+            return;
+        }
 
         var load = LoadNpcIntoViewerAsync(npc);
         _npcViewerLoadTask = load;
@@ -591,17 +634,18 @@ public sealed partial class SingleFileTab
         _npcSelectionState = state;
         NpcDetailName.Text = state.Name;
         NpcDetailInfo.Text = state.DetailText;
+        UpdateActorDetails();
         RefreshNpcInteractionState();
     }
 
     private void RefreshNpcInteractionState()
     {
         var interactionAvailable =
-            _npcBrowserService is not null &&
+            (_npcBrowserService is not null || _actorInspector is not null) &&
             _npcBatchCts is null &&
             !_npcFileOperationInProgress;
         var actorFileActionsAvailable =
-            interactionAvailable &&
+            interactionAvailable && _npcBrowserService is not null &&
             _npcRenderOptionDebounce is null &&
             _npcViewerLoadTask is not { IsCompleted: false };
         var npcBatchSelectionAvailable =
@@ -618,15 +662,21 @@ public sealed partial class SingleFileTab
         NpcDeselectAllButton.IsEnabled = npcBatchSelectionAvailable;
 
         NpcFullBodyCheckBox.IsEnabled =
-            interactionAvailable && _npcSelectionState.CanToggleHumanoidOptions;
+            interactionAvailable && _npcBrowserService is not null && _npcSelectionState.CanToggleHumanoidOptions;
         NpcArmorCheckBox.IsEnabled =
-            interactionAvailable && _npcSelectionState.CanToggleHumanoidOptions;
+            interactionAvailable && _npcBrowserService is not null && _npcSelectionState.CanToggleHumanoidOptions;
         NpcWeaponCheckBox.IsEnabled =
-            interactionAvailable && _npcSelectionState.CanToggleHumanoidOptions;
+            interactionAvailable && _npcBrowserService is not null && _npcSelectionState.CanToggleHumanoidOptions;
         NpcIdlePoseCheckBox.IsEnabled =
-            interactionAvailable && _npcSelectionState.CanToggleHumanoidOptions;
+            interactionAvailable && _npcBrowserService is not null && _npcSelectionState.CanToggleHumanoidOptions;
         NpcPreviewPlayerLevelNumberBox.IsEnabled =
-            interactionAvailable && _npcSelectionState.CanToggleHumanoidOptions;
+            interactionAvailable && NpcListView.SelectedItem is NpcListItem;
+        if (ActorInventoryGenerateButton is not null)
+        {
+            ActorInventoryGenerateButton.IsEnabled = interactionAvailable && CanGenerateActorInventory();
+            ActorInventorySeedNumberBox.IsEnabled = ActorInventoryGenerateButton.IsEnabled;
+            ActorInventoryAuthoredButton.IsEnabled = interactionAvailable && _actorGeneratedInspection is not null;
+        }
 
         var softwareRenderAvailable = actorFileActionsAvailable && _npcSelectionState.CanRenderPng;
         NpcPerspectiveComboBox.IsEnabled = softwareRenderAvailable;
@@ -769,7 +819,7 @@ public sealed partial class SingleFileTab
                     {
                         try
                         {
-                            await NpcModelViewer.ExecuteScriptAsync("setStatus('Building compatibility model...')");
+                            await NpcModelViewer.ExecuteScriptAsync("setLocalizedStatus('Viewer_BuildingCompatibility')");
                             var glbBytes = await Task.Run(
                                 () => service.ExportViewerSceneToGlb(scene),
                                 cancellationToken);
@@ -843,6 +893,8 @@ public sealed partial class SingleFileTab
         NumberBox sender,
         NumberBoxValueChangedEventArgs args)
     {
+        UpdateActorDetails();
+        RefreshNpcInteractionState();
         await ReloadNpcAfterRenderOptionChangeAsync();
     }
 
@@ -1010,6 +1062,11 @@ public sealed partial class SingleFileTab
 
     private async void NpcBatchExportGlb_Click(object sender, RoutedEventArgs e)
     {
+        if (_actorGeneratedInspection is not null)
+        {
+            RuntimeLocalization.SetText(NpcBatchStatusText, "ActorInventory_BatchUnavailable");
+            return;
+        }
         if (_npcBrowser.ActorKind != NpcActorKind.Npc)
         {
             NpcBatchStatusText.Text = "Batch operations are currently available for NPCs only.";
@@ -1036,6 +1093,11 @@ public sealed partial class SingleFileTab
 
     private async void NpcBatchRenderPng_Click(object sender, RoutedEventArgs e)
     {
+        if (_actorGeneratedInspection is not null)
+        {
+            RuntimeLocalization.SetText(NpcBatchStatusText, "ActorInventory_BatchUnavailable");
+            return;
+        }
         if (_npcBrowser.ActorKind != NpcActorKind.Npc)
         {
             NpcBatchStatusText.Text = "Batch operations are currently available for NPCs only.";
@@ -1130,6 +1192,7 @@ public sealed partial class SingleFileTab
     {
         var npcBatchAvailable = enabled &&
                                 _npcBrowserService is not null &&
+                                _actorGeneratedInspection is null &&
                                 _npcBrowser.ActorKind == NpcActorKind.Npc;
         NpcBatchExportGlbButton.IsEnabled = npcBatchAvailable;
         NpcBatchRenderPngButton.IsEnabled = npcBatchAvailable;
@@ -1257,12 +1320,13 @@ public sealed partial class SingleFileTab
 
     private NpcRenderOptions BuildNpcRenderOptions()
     {
-        return NpcBrowserController.BuildRenderOptions(
+        var options = NpcBrowserController.BuildRenderOptions(
             NpcFullBodyCheckBox.IsChecked == true,
             NpcArmorCheckBox.IsChecked == true,
             NpcWeaponCheckBox.IsChecked == true,
             NpcIdlePoseCheckBox.IsChecked == true,
             NpcPreviewPlayerLevelNumberBox.Value);
+        return options with { Generation = _actorGeneratedInspection?.Generation };
     }
 
     private CameraConfig BuildCameraConfig()
@@ -1519,6 +1583,9 @@ public sealed partial class SingleFileTab
 
     private void ResetNpcBrowser()
     {
+        _actorInspector = null;
+        _actorDisplayedInspection = null;
+        ClearActorInventoryGeneration();
         _npcBatchCts?.Cancel();
         _npcBatchCts?.Dispose();
         _npcBatchCts = null;

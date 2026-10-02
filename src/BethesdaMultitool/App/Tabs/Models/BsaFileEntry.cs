@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Bsa.Index;
 using BethesdaMultitool.Core.Formats.Bsa;
 using Microsoft.UI;
 using Microsoft.UI.Xaml.Media;
+using ArchiveEntry = BethesdaMultitool.Core.Formats.Archives.ArchiveEntry;
 
 namespace BethesdaMultitool;
 
@@ -28,7 +29,7 @@ public sealed class BsaFileEntry : INotifyPropertyChanged
     private static SolidColorBrush RedBrush => _redBrush ??= new SolidColorBrush(Colors.OrangeRed);
 
     /// <summary>Backing archive entry — a BSA or a BA2 file, resolved by <see cref="ArchiveReader" />.</summary>
-    public required ArchiveReader.ArchiveEntry Record { get; init; }
+    public required ArchiveEntry Record { get; init; }
 
     public string FullPath => Record.FullPath;
     public string FileName => Record.Name;

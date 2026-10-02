@@ -7,10 +7,8 @@ namespace BethesdaMultitool.Core.AssetBrowse;
 ///     <see cref="Vfs.IGameFileSystem" /> enumeration. Identity members (<see cref="Name" />,
 ///     <see cref="VirtualPath" />, <see cref="Kind" />, <see cref="Size" />, the tree shape) are
 ///     immutable once <see cref="AssetTreeBuilder" /> finishes; the only mutable state is the
-///     tristate <see cref="IsChecked" />, whose changes flood the subtree and recompute ancestors
-///     (mixed → null), raising <see cref="PropertyChanged" /> only on nodes whose value actually
-///     changed. All traversal is iterative, so deep chains never consume stack. Not thread-safe:
-///     mutate from one thread (the GUI's dispatcher) only.
+///     tristate <see cref="IsChecked" /> display mirror updated by <see cref="AssetTreeSelection" />.
+///     Shared checks own propagation and export selection. Not thread-safe: use the GUI dispatcher.
 /// </summary>
 public sealed class AssetNode : INotifyPropertyChanged
 {
@@ -19,6 +17,7 @@ public sealed class AssetNode : INotifyPropertyChanged
     private readonly List<AssetNode> _children = [];
     private bool? _isChecked = false;
 
+    /// <summary>Creates one builder-owned immutable identity with an initially unchecked display value.</summary>
     internal AssetNode(string name, string virtualPath, AssetNodeKind kind, long size)
     {
         Name = name;
@@ -29,6 +28,14 @@ public sealed class AssetNode : INotifyPropertyChanged
 
     /// <summary>Display name (file or folder segment; the builder's label for the root).</summary>
     public string Name { get; }
+
+    /// <summary>
+    ///     The decoded picture's full size and frame count, published by the thumbnail worker once it has
+    ///     decoded this node, or null before that (and for nodes that are not pictures). Written before the
+    ///     worker hands its artwork to the dispatcher and read by the presenting thread after that artwork
+    ///     arrives, so no change notification is raised for it.
+    /// </summary>
+    public AssetImageInfo? ImageInfo { get; internal set; }
 
     /// <summary>Normalized VFS path (backslash separators); empty for the root.</summary>
     public string VirtualPath { get; }
@@ -55,49 +62,11 @@ public sealed class AssetNode : INotifyPropertyChanged
     /// <summary>Whether the node has payload bytes to extract (everything except folders).</summary>
     public bool IsExtractable => Kind != AssetNodeKind.Folder;
 
-    /// <summary>
-    ///     Tristate check state: true/false when the subtree is uniform, null when mixed. Assigning
-    ///     a definite value floods the whole subtree and recomputes every ancestor on the path to
-    ///     the root; assigning null (the indeterminate stop of a tristate checkbox cycle) is
-    ///     coerced to false, clearing the subtree. Only nodes whose value actually changed raise
-    ///     <see cref="PropertyChanged" />.
-    /// </summary>
-    // S4275 reads the setter as ignoring its field, but SetChecked is what writes _isChecked — here
-    // and on every descendant and ancestor, which is the whole point of a tristate tree node.
-#pragma warning disable S4275
-    public bool? IsChecked
-    {
-        get => _isChecked;
-        set => SetChecked(value ?? false);
-    }
-#pragma warning restore S4275
+    /// <summary>The shared controller's last committed display state; null means mixed.</summary>
+    public bool? IsChecked => _isChecked;
 
-    /// <summary>Raised for <see cref="IsChecked" /> only — everything else is immutable.</summary>
+    /// <summary>Raised for changed check-state display values only.</summary>
     public event PropertyChangedEventHandler? PropertyChanged;
-
-    /// <summary>
-    ///     Depth-first (in <see cref="Children" /> order) enumeration of the checked non-folder
-    ///     nodes in this subtree, self included — exactly what an extract of this node should write.
-    /// </summary>
-    public IEnumerable<AssetNode> CheckedFiles()
-    {
-        var stack = new Stack<AssetNode>();
-        stack.Push(this);
-        while (stack.Count > 0)
-        {
-            var node = stack.Pop();
-            if (node.Kind != AssetNodeKind.Folder && node._isChecked == true)
-            {
-                yield return node;
-            }
-
-            // Push in reverse so the traversal preserves Children order.
-            for (var i = node._children.Count - 1; i >= 0; i--)
-            {
-                stack.Push(node._children[i]);
-            }
-        }
-    }
 
     /// <summary>Attaches a child (builder only; the tree shape is frozen after the build).</summary>
     internal void AddChild(AssetNode child)
@@ -112,6 +81,7 @@ public sealed class AssetNode : INotifyPropertyChanged
         _children.Sort(CompareChildren);
     }
 
+    /// <summary>Orders folders before leaves, then names deterministically with a case-sensitive tie break.</summary>
     private static int CompareChildren(AssetNode a, AssetNode b)
     {
         var aIsFolder = a.Kind == AssetNodeKind.Folder;
@@ -124,68 +94,12 @@ public sealed class AssetNode : INotifyPropertyChanged
         return byName != 0 ? byName : string.CompareOrdinal(a.Name, b.Name);
     }
 
-    private void SetChecked(bool value)
+    /// <summary>Copies a final shared state without recursive propagation or a second selection owner.</summary>
+    /// <param name="value">The shared controller's committed state.</param>
+    internal void SetCheckState(bool? value)
     {
-        // Flood the subtree iteratively — deep chains must not consume stack.
-        var stack = new Stack<AssetNode>();
-        stack.Push(this);
-        while (stack.Count > 0)
-        {
-            var node = stack.Pop();
-            node.SetCheckedCore(value);
-            foreach (var child in node._children)
-            {
-                stack.Push(child);
-            }
-        }
-
-        // Recompute ancestors. An unchanged ancestor ends the walk: its parent's inputs are
-        // exactly its children's values, and only this path was touched, so everything above
-        // is unchanged too (the class invariant keeps folder values consistent at all times).
-        for (var ancestor = Parent; ancestor is not null; ancestor = ancestor.Parent)
-        {
-            if (!ancestor.SetCheckedCore(ancestor.ComputeFromChildren()))
-            {
-                break;
-            }
-        }
-    }
-
-    /// <summary>Sets the raw value; raises and reports true only when it changed.</summary>
-    private bool SetCheckedCore(bool? value)
-    {
-        if (_isChecked == value)
-        {
-            return false;
-        }
-
+        if (_isChecked == value) return;
         _isChecked = value;
         PropertyChanged?.Invoke(this, IsCheckedChangedArgs);
-        return true;
-    }
-
-    /// <summary>Aggregate of the children: uniform → that value, any mix or mixed child → null.</summary>
-    private bool? ComputeFromChildren()
-    {
-        if (_children.Count == 0)
-        {
-            return _isChecked;
-        }
-
-        var first = _children[0]._isChecked;
-        if (first is null)
-        {
-            return null;
-        }
-
-        for (var i = 1; i < _children.Count; i++)
-        {
-            if (_children[i]._isChecked != first)
-            {
-                return null;
-            }
-        }
-
-        return first;
     }
 }

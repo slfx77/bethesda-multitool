@@ -1,4 +1,4 @@
-﻿using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -15,6 +15,9 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Ui;
 using BethesdaMultitool.Core.WorldData;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
+using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Semantic.LoadOrder;
 
 namespace BethesdaMultitool;
 
@@ -99,6 +102,7 @@ public sealed partial class SingleFileTab
                     return false;
                 }
 
+                worldData.AssetRecords = WorldAssetRecordCatalog.Unavailable("SaveOverlay");
                 worldData.AdditionalDataPaths = CollectLoadOrderPaths();
                 ApplyWorldMapData(worldData);
                 return false;
@@ -116,10 +120,12 @@ public sealed partial class SingleFileTab
                 }
             }
 
-            var semantic = _session.SemanticResult;
+            var selectedView = await GetSelectedLoadOrderViewAsync();
+            cancellationToken.ThrowIfCancellationRequested();
+            var semantic = selectedView?.Records ?? _session.SemanticResult;
             if (semantic == null)
             {
-                WorldMapStatusText.Text = Strings.Status_NoWorldData;
+                RuntimeLocalization.SetText(WorldMapStatusText, "Status_NoWorldData");
                 return false;
             }
 
@@ -135,13 +141,23 @@ public sealed partial class SingleFileTab
             var isSaveFile = _session.IsSaveFile;
             var filePath = _session.FilePath;
             var useMasterTerrain = _useMasterTerrainPreview;
+            var primaryScan = _session.AnalysisResult?.EsmRecords;
 
-            WorldMapStatusText.Text = Strings.Status_BuildingWorldIndex;
+            RuntimeLocalization.SetText(WorldMapStatusText, "Status_BuildingWorldIndex");
 
             // Merge the load order + build world data on a background thread.
             var esmWorldData = await Task.Run(() =>
             {
-                var records = semantic;
+                var actorSelection = selectedView;
+                if (actorSelection is null && isEsmFile && loadOrderEntries.Count == 0 &&
+                    primaryScan is not null &&
+                    semantic.Game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas)
+                {
+                    var order = PrimaryPluginOrder.Create(filePath!, [], PluginLoadOrder.ReadMasters);
+                    actorSelection = LoadOrderSelectionView.FromParsedSources(order,
+                        [(order.Entries[0], semantic, primaryScan)]);
+                }
+                var records = actorSelection?.Records ?? semantic;
 
                 // Snapshot the primary's own worldspaces AND cells before merging supplementary
                 // Load-Order records. A DMP must show only the worldspaces + cells it captured;
@@ -153,7 +169,8 @@ public sealed partial class SingleFileTab
 
                 // Merge load order records so DLC worldspaces appear on the map. An ESM/ESP primary's
                 // MAST list anchors the slots, so entries land where its raw FormIDs already point.
-                var loadOrderRecords = LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFilePath);
+                var loadOrderRecords = selectedView == null
+                    ? LoadOrder.BuildMergedRecordsFrom(loadOrderEntries, primaryFilePath) : null;
                 if (loadOrderRecords != null)
                 {
                     // Precedence is type-aware: an opened ESM/ESP is the base the Load Order layers on
@@ -212,7 +229,15 @@ public sealed partial class SingleFileTab
                     }
                 }
 
-                return WorldMapOverlayBuilder.BuildFromRecords(records, filePath);
+                var world = WorldMapOverlayBuilder.BuildFromRecords(records, filePath);
+                world.AssetRecords = actorSelection is not null
+                    ? WorldAssetRecordCatalog.Selected(actorSelection)
+                    : WorldAssetRecordCatalog.Unavailable(isEsmFile ? "StoredRecords" : isSaveFile ? "SaveOverlay" :
+                        useMasterTerrain ? "CapturedWithMasterPreview" : "Captured");
+                if (actorSelection is not null)
+                    world.ActorCatalog = new WorldActorCatalog(NpcAppearanceResolver.Build(
+                        actorSelection.Order, actorSelection.Index, cancellationToken));
+                return world;
             });
             cancellationToken.ThrowIfCancellationRequested();
             if (!IsCurrentWorldMapLoad(loadGeneration))
@@ -586,17 +611,21 @@ public sealed partial class SingleFileTab
         Grid.SetColumn(expandIcon, 0);
         mainGrid.Children.Add(expandIcon);
 
-        var nameText = new TextBlock
+        var nameButton = new HyperlinkButton
         {
-            Text = prop.Name,
+            Content = prop.Name,
             FontSize = 12,
             FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
             Padding = new Thickness(0, 3, 16, 2),
-            IsTextSelectionEnabled = true
+            MinWidth = 0,
+            MinHeight = 0,
+            HorizontalAlignment = HorizontalAlignment.Left
         };
-        Grid.SetRow(nameText, currentRow);
-        Grid.SetColumn(nameText, 1);
-        mainGrid.Children.Add(nameText);
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(nameButton, $"{prop.Name}: {prop.Value}");
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetAutomationId(nameButton, $"Maps.Inspection.Expand.{prop.Name}");
+        Grid.SetRow(nameButton, currentRow);
+        Grid.SetColumn(nameButton, 1);
+        mainGrid.Children.Add(nameButton);
 
         var countText = new TextBlock
         {
@@ -623,7 +652,7 @@ public sealed partial class SingleFileTab
         // Toggle expand/collapse on header click
         var capturedIcon = expandIcon;
         var capturedSubItems = subItemsGrid;
-        nameText.Tapped += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
+        nameButton.Click += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
         expandIcon.Tapped += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
         countText.Tapped += (_, _) => ToggleExpandSection(capturedIcon, capturedSubItems);
 
@@ -660,13 +689,12 @@ public sealed partial class SingleFileTab
                 MaxWidth = 200
             };
 
+            Action? navigate = null;
             // Cell navigation links (linked cells, door destinations)
             if (sub.CellNavigationFormId is > 0)
             {
-                subName.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                    Microsoft.UI.Colors.CornflowerBlue);
                 var capturedFormId = sub.CellNavigationFormId.Value;
-                subName.Tapped += (_, _) => NavigateToCellInWorldMap(capturedFormId);
+                navigate = () => NavigateToCellInWorldMap(capturedFormId);
             }
             // In-map navigation to a placed reference
             else
@@ -679,21 +707,48 @@ public sealed partial class SingleFileTab
                         .FirstOrDefault(o => o.FormId == targetFormId);
                     if (placedObj != null)
                     {
-                        subName.Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(
-                            Microsoft.UI.Colors.CornflowerBlue);
                         var capturedObj = placedObj;
-                        subName.Tapped += (_, _) =>
+                        navigate = () =>
                         {
-                            WorldMapControl?.NavigateToObjectInOverview(capturedObj);
-                            WorldMap_InspectObject(null, capturedObj);
+                            if (WorldViewModeComboBox.SelectedIndex == 1)
+                            {
+                                WorldView3DControl.NavigateToObject(capturedObj);
+                                WorldMap_InspectObject(WorldView3DControl, capturedObj);
+                            }
+                            else
+                            {
+                                WorldMapControl?.NavigateToObjectInOverview(capturedObj);
+                                WorldMap_InspectObject(WorldMapControl, capturedObj);
+                            }
                         };
                     }
                 }
             }
 
-            Grid.SetRow(subName, subRow);
-            Grid.SetColumn(subName, 0);
-            subItemsGrid.Children.Add(subName);
+            FrameworkElement nameElement = subName;
+            if (navigate is not null)
+            {
+                var nameLink = new HyperlinkButton
+                {
+                    Content = subName,
+                    Padding = subName.Padding,
+                    MinWidth = 0,
+                    MinHeight = 0,
+                    MaxWidth = subName.MaxWidth,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    HorizontalContentAlignment = HorizontalAlignment.Left
+                };
+                subName.Padding = new Thickness(0);
+                subName.IsTextSelectionEnabled = false;
+                subName.IsHitTestVisible = false;
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(nameLink, subName.Text);
+                ToolTipService.SetToolTip(nameLink, subName.Text);
+                nameLink.Click += (_, _) => navigate();
+                nameElement = nameLink;
+            }
+            Grid.SetRow(nameElement, subRow);
+            Grid.SetColumn(nameElement, 0);
+            subItemsGrid.Children.Add(nameElement);
 
             // Optional full-name column (Col2)
             if (!string.IsNullOrEmpty(sub.Col2))
@@ -864,6 +919,8 @@ public sealed partial class SingleFileTab
         if (WorldViewModeComboBox.SelectedIndex == 1)
         {
             WorldView3DControl.NavigateToCell(cell);
+            WorldView3DControl.SelectObject(null);
+            WorldMap_InspectCell(WorldView3DControl, cell);
             return;
         }
 
@@ -946,10 +1003,11 @@ public sealed partial class SingleFileTab
         ViewCellInDetailButton.Visibility = Visibility.Collapsed;
         WorldMapPlaceholder.Visibility = Visibility.Visible;
         WorldMapProgressBar.Visibility = Visibility.Collapsed;
-        WorldMapStatusText.Text = Strings.Empty_RunAnalysisForWorldMap;
+        RuntimeLocalization.SetText(WorldMapStatusText, "Empty_RunAnalysisForWorldMap");
         WorldMapContent.Visibility = Visibility.Collapsed;
         WorldMapControl.TopDownProvider = null;
         WorldMapControl?.Reset();
+        WorldView3DControl?.ResetData();
     }
 
     private void WorldViewMode_SelectionChanged(object sender, SelectionChangedEventArgs e)

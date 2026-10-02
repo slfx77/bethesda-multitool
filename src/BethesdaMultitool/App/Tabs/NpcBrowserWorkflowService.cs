@@ -7,8 +7,10 @@ using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Minidump;
+using BethesdaMultitool.Core.Semantic.LoadOrder;
 
 namespace BethesdaMultitool;
 
@@ -125,6 +127,27 @@ internal static class NpcBrowserWorkflowService
             cancellationToken), cancellationToken);
     }
 
+    /// <summary>Builds appearances from the same physical winners as selected record details.</summary>
+    internal static Task<NpcBrowserService?> CreateFromSelectedViewAsync(
+        LoadOrderSelectionView selection,
+        string primaryPath,
+        BsaDiscoveryResult bsaPaths,
+        IProgress<NpcBrowserLoadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() =>
+        {
+            progress?.Report(new NpcBrowserLoadProgress(NpcBrowserLoadStage.DecodingAppearanceRecords,
+                "Reading selected NPC appearance records..."));
+            var timer = Stopwatch.StartNew();
+            var resolver = NpcAppearanceResolver.Build(selection.Order, selection.Index, cancellationToken);
+            timer.Stop();
+            Log.Info("NPC Browser selected appearance preparation completed elapsed={0:N2} ms.", timer.Elapsed.TotalMilliseconds);
+            cancellationToken.ThrowIfCancellationRequested();
+            return NpcBrowserService.TryCreateFromResolver(resolver, primaryPath, bsaPaths, progress, cancellationToken);
+        }, cancellationToken);
+    }
+
     internal static Task<NpcBrowserService?> CreateFromDmpAsync(
         string dataDirectory,
         MemoryMappedViewAccessor accessor,
@@ -211,7 +234,8 @@ internal static class NpcBrowserWorkflowService
                         options.NoEquip,
                         options.NoWeapon,
                         options.BindPose,
-                        options.PreviewPlayerLevel);
+                        options.PreviewPlayerLevel,
+                        options.Generation);
                 timer.Stop();
                 Log.Info(
                     "NPC Browser actor-scene assembly completed formId=0x{0:X8} outcome={1} " +
@@ -278,7 +302,8 @@ internal static class NpcBrowserWorkflowService
                     spriteSize,
                     azimuth,
                     elevation,
-                    options.PreviewPlayerLevel));
+                    options.PreviewPlayerLevel,
+                    options.Generation));
 
             if (pngBytes != null)
             {
@@ -309,14 +334,3 @@ internal static class NpcBrowserWorkflowService
         return selected.Count > 0 ? selected : null;
     }
 }
-
-/// <summary>
-///     NPC render/export options, including the explicit player level used to resolve leveled
-///     equipment. A null level intentionally leaves level-dependent equipment unresolved.
-/// </summary>
-internal sealed record NpcRenderOptions(
-    bool HeadOnly,
-    bool NoEquip,
-    bool NoWeapon,
-    bool BindPose,
-    ushort? PreviewPlayerLevel = null);

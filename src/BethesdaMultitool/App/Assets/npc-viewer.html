@@ -47,12 +47,42 @@
     let currentBlobUrl = null;
     let modelLoadGeneration = 0;
     let starfieldWaterAnimationFrame = null;
+    let displayStrings = {
+      defaultKey: 'Viewer_SelectNpc',
+      Viewer_SelectNpc: 'Select an NPC to view',
+      Viewer_SelectNif: 'Select a NIF file to view',
+      Viewer_LoadingModel: 'Loading model...',
+      Viewer_LoadingCompatibility: 'Loading compatibility model...',
+      Viewer_BuildingCompatibility: 'Building compatibility model...',
+      Viewer_FatalError: 'Mesh viewer error: {0}'
+    };
+    let statusKey = displayStrings.defaultKey;
+    let statusArguments = [];
+
+    // Text-only refresh: do not touch viewer.src, camera orbit, animation or load generations.
+    function applyDisplayStrings(values) {
+      if (statusKey === displayStrings.defaultKey) statusKey = values.defaultKey;
+      displayStrings = values;
+      if (statusKey !== null) renderLocalizedStatus();
+    }
+
+    function renderLocalizedStatus() {
+      const template = displayStrings[statusKey] || statusKey;
+      status.textContent = template.replace(/\{(\d+)\}/g,
+        (placeholder, index) => index < statusArguments.length ? String(statusArguments[index]) : placeholder);
+    }
+
+    function setLocalizedStatus(key, args = []) {
+      statusKey = key;
+      statusArguments = Array.from(args);
+      renderLocalizedStatus();
+      status.classList.remove('hidden');
+    }
 
     function showFatalStatus(message) {
       const detail = message instanceof Error ? message.message : String(message);
       console.error('[Mesh Viewer] ' + detail);
-      status.textContent = 'Fatal mesh viewer error: ' + detail;
-      status.classList.remove('hidden');
+      setLocalizedStatus('Viewer_FatalError', [detail]);
     }
 
     function inspectGlbVertexLerpContract(bytes) {
@@ -357,8 +387,7 @@
 
     function loadModel(base64Glb) {
       const loadGeneration = ++modelLoadGeneration;
-      status.textContent = 'Loading model...';
-      status.classList.remove('hidden');
+      setLocalizedStatus('Viewer_LoadingModel');
 
       stopStarfieldWaterAnimation();
 
@@ -440,11 +469,12 @@
         currentBlobUrl = null;
       }
       viewer.src = '';
-      status.textContent = 'Select an NPC to view';
-      status.classList.remove('hidden');
+      setLocalizedStatus(displayStrings.defaultKey);
     }
 
     function setStatus(text) {
+      statusKey = null;
+      statusArguments = [];
       status.textContent = text;
       status.classList.remove('hidden');
     }

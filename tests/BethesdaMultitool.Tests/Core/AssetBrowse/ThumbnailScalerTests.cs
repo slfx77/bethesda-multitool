@@ -1,4 +1,4 @@
-// Cases ported from JimmyPCTool / AweMultitool (MIT) —
+// Cases ported from JimmyPCTool / AweMultitool —
 //   tests/AweMultitool.Tests/Core/Formats/Canvas/CanvasThumbnailerTests.cs — and restated for this
 //   repo's classic-catalogue sizes.
 

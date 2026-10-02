@@ -1,5 +1,5 @@
 // The WriteableBitmap half of JimmyPCTool / AweMultitool's BitmapHelper
-// (https://github.com/slfx77/JimmyPCTool, MIT licence). The arithmetic half lives in
+//. The arithmetic half lives in
 // Core/Imaging/PremultipliedBgra.cs, because App/** is excluded from this repo's net10.0 target
 // and would otherwise be untestable.
 

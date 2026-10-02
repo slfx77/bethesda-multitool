@@ -1,15 +1,22 @@
 using System.Collections.ObjectModel;
+using System.Runtime.ExceptionServices;
 using Windows.Storage.Pickers;
 using BethesdaMultitool.Core.AssetBrowse;
 using BethesdaMultitool.Core.Analysis;
 using BethesdaMultitool.Core.Concurrency;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Audio;
 using BethesdaMultitool.Core.Formats.Classic;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Imaging;
+using BethesdaMultitool.Core.Vfs;
+using BethesdaMultitool.Localization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Slfx77.Multitool.Core.Browsing;
+using Slfx77.Multitool.WinUI.Layout;
+using Slfx77.Multitool.WinUI.Playback;
 using WinRT.Interop;
 
 namespace BethesdaMultitool;
@@ -18,46 +25,67 @@ namespace BethesdaMultitool;
 ///     Browses one opened source — a loose folder, a single archive, or a whole classic game
 ///     install — as a tree, with panes for records, maps and raw assets.
 ///     <para>
-///         The tab owns exactly one <see cref="AssetBrowseSession" /> at a time and disposes the
-///         previous one when a new source is opened, because a session owns its filesystem (and
-///         therefore its archive handles and memory maps). Opening parses archive tables and walks
-///         every entry, so it runs off the UI thread.
+///         The tab retains a shared source snapshot. Independent opening creates a private browser
+///         session with the same lease policy, so replaced sources remain readable until outstanding
+///         preparation completes. Opening parses archive tables and walks entries off the UI thread.
 ///     </para>
 /// </summary>
-public sealed partial class AssetBrowserTab : UserControl, IDisposable
+public sealed partial class AssetBrowserTab : UserControl, IDisposable, IAsyncDisposable
 {
     /// <summary>Longest edge of a decoded thumbnail, in DEVICE pixels.</summary>
     private const int ThumbnailCellPixels = 96;
 
-    private readonly LatestOnlyJob _audioLoad = new();
+    private readonly NativeMediaSession _audioSession;
+    private readonly PresentationActivity _mediaActivity;
 
     private readonly ObservableCollection<AssetGalleryItem> _gallery = [];
     private readonly LatestOnlyJob _levelLoad = new();
     private readonly LatestOnlyJob _meshLoad = new();
     private readonly LatestOnlyJob _skyLoad = new();
-    private readonly ThumbnailCache _thumbnails = new ThumbnailCache().RegisterWith(ResourceRegistry.Instance);
+    private readonly ThumbnailCacheObservation _thumbnailObservation = new(ResourceRegistry.Instance);
     private readonly LatestOnlyJob _videoLoad = new();
-    private AssetAudioPlayer? _audio;
+    private readonly AssetFlicPreview _flic;
+    private long _audioSelectionVersion;
+    private long _audioFailureVersion = -1;
+    private Task? _disposeTask;
+    private BrowserSession? _standaloneSourceOwner;
     private bool _disposed;
     private AssetThumbnailLoader? _loader;
     private BethesdaSceneViewerControl? _meshViewer;
-    private (byte[] Riff, string Key)? _pendingAudio;
     private UnifiedAnalysisResult? _records;
     private AssetBrowseSession? _session;
     private int _sourceGeneration;
     private bool _suppressSeek;
     private AssetVideoPreview? _video;
+    private long _videoSelectionVersion;
+    private bool _nativeVideoShown;
+    private bool _flicDisposed;
 
     public AssetBrowserTab()
     {
         InitializeComponent();
-        AssetGalleryView.ItemsSource = _gallery;
+        var localization = MainWindow.Instance!.Localization;
+        InitializeGallery(localization);
+        InitializeTypeFilter(localization);
+        InitializePaneLayout(localization);
+        // The image surface sits inside a Shared content slot; bind its captions explicitly rather
+        // than waiting for the inherited context so they localize before the first load.
+        ImagePreview.SetLocalization(localization);
         AssetTreeView.SelectionChanged += AssetTreeView_SelectionChanged;
         RecordTreeView.SelectionChanged += RecordTreeView_SelectionChanged;
 
-        _audio = new AssetAudioPlayer(DispatcherQueue);
-        _audio.Progressed += (_, _) => UpdateTransport();
-        _audio.Failed += (_, message) => AudioStatusText.Text = message;
+        _audioSession = new NativeMediaSession(NativeAudioPreview);
+        _audioSession.Failed += AudioSession_Failed;
+        _flic = new AssetFlicPreview(NativeVideoPreview);
+        _flic.Failed += FlicPreview_Failed;
+        _mediaActivity = new PresentationActivity(AudioTransportPanel, StopHiddenPlayback);
+    }
+
+    /// <summary>Stops frame-based video when its transport is hidden, retaining the selected decoded clip.</summary>
+    private void StopHiddenPlayback()
+    {
+        if (_disposed) return;
+        _video?.Stop();
     }
 
     private async void OpenFolder_Click(object sender, RoutedEventArgs e)
@@ -146,7 +174,7 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
                 () => AssetBrowseSession.TryOpenGameArchive(path) ?? AssetBrowseSession.OpenArchive(path));
         }
 
-        AssetTreeStatusText.Text = $"Could not open: not found: {path}";
+        RuntimeLocalization.SetRaw(AssetTreeStatusText, TextBlock.TextProperty, $"Could not open: not found: {path}");
         Logger.Instance.Warn("[AssetBrowser] --asset-source not found: {0}", path);
         return Task.CompletedTask;
     }
@@ -161,7 +189,7 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         var generation = ++_sourceGeneration;
         SourcePathTextBox.Text = path;
         OpenSourceButton.IsEnabled = false;
-        AssetTreeStatusText.Text = "Opening...";
+        RuntimeLocalization.SetRaw(AssetTreeStatusText, TextBlock.TextProperty, "Opening...");
         try
         {
             var session = await Task.Run(open);
@@ -171,19 +199,19 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
                 return;
             }
 
-            CloseSource();
+            var owner = new BrowserSession();
+            try
+            {
+                await owner.ReplaceAsync(new BethesdaBrowseSource(session));
+                await AttachWorkspaceSourceAsync(owner.Current!);
+                _standaloneSourceOwner = owner;
+            }
+            catch
+            {
+                await owner.DisposeAsync();
+                throw;
+            }
             generation = _sourceGeneration;
-            _session = session;
-            SourcePathTextBox.Text = path;
-
-            // The loader's session cancels every in-flight decode, so it must be replaced with the
-            // browse session it reads through — never after it.
-            _loader = new AssetThumbnailLoader(
-                DispatcherQueue, _thumbnails, ThumbnailCellPixels, XamlRoot?.RasterizationScale ?? 1.0);
-            _loader.BeginSession(session);
-
-            ShowTree(session);
-            ShowGallery(session.Root);
             _ = LoadRecordsAsync(path, session);
         }
         catch (Exception ex)
@@ -191,7 +219,7 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
             if (!_disposed && generation == _sourceGeneration)
             {
                 AssetTreeView.RootNodes.Clear();
-                AssetTreeStatusText.Text = $"Could not open: {ex.Message}";
+                RuntimeLocalization.SetRaw(AssetTreeStatusText, TextBlock.TextProperty, $"Could not open: {ex.Message}");
             }
         }
         finally
@@ -203,60 +231,39 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         }
     }
 
+    /// <summary>
+    ///     Shows the completed source tree, registers every node for the type filter, applies a retained
+    ///     active filter before the tree is attached, and shows the adapter's cached eligible-file count.
+    /// </summary>
     private void ShowTree(AssetBrowseSession session)
     {
         AssetTreeView.RootNodes.Clear();
-        AssetTreeView.RootNodes.Add(BuildTreeNode(session.Root));
+        _treeNodes.Clear();
+        var root = BuildTreeNode(session.Root);
+        root.IsExpanded = session.FileSystem is ArchiveFileSystem;
+        RefreshKindOptions(session.Root);
+        if (_kindFilter.IsActive)
+        {
+            ApplyTreeFilter();
+        }
+        else
+        {
+            _treeVisibility = null;
+            UpdateTreeStatus();
+        }
 
-        var files = CountFiles(session.Root);
-        AssetTreeStatusText.Text = $"{session.SourceLabel} — {files:N0} file(s)";
+        AssetTreeView.RootNodes.Add(root);
+        UpdateArchiveOpenCommand();
     }
 
     /// <summary>
-    ///     Fills the gallery with the previewable files directly under <paramref name="folder" />.
-    ///     <para>
-    ///         Direct children only, deliberately: a game root holds tens of thousands of assets and
-    ///         a flattened gallery would be neither navigable nor cheap. The tree is how you choose
-    ///         scope; the gallery shows what that scope contains.
-    ///     </para>
+    ///     Admits only current fixed-tree objects before changing gallery scope or preview focus. A
+    ///     selection the gallery or the type filter mirrors silently changes nothing else.
     /// </summary>
-    private void ShowGallery(AssetNode folder)
-    {
-        foreach (var item in _gallery)
-        {
-            item.IsRealized = false;
-        }
-
-        _gallery.Clear();
-
-        var shown = 0;
-        var skipped = 0;
-        foreach (var child in folder.Children)
-        {
-            if (child.Kind == AssetNodeKind.Folder)
-            {
-                continue;
-            }
-
-            if (AssetThumbnailSource.CanRender(child))
-            {
-                _gallery.Add(new AssetGalleryItem { Node = child });
-                shown++;
-            }
-            else
-            {
-                skipped++;
-            }
-        }
-
-        AssetGalleryStatusText.Text = shown == 0 && skipped == 0
-            ? string.Empty
-            : $"{shown:N0} previewable, {skipped:N0} other";
-    }
-
     private void AssetTreeView_SelectionChanged(TreeView sender, TreeViewSelectionChangedEventArgs args)
     {
-        if (_session is null || sender.SelectedNode?.Content is not AssetNode node)
+        UpdateArchiveOpenCommand();
+        if (_mirroringTreeSelection || sender.SelectedNode?.Content is not AssetNode node || !IsCurrentAssetNode(node))
         {
             return;
         }
@@ -264,18 +271,17 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         // A file's own folder is the useful scope when a leaf is picked, so the gallery keeps
         // showing its siblings rather than emptying.
         ShowGallery(node.Kind == AssetNodeKind.Folder ? node : node.Parent ?? node);
-        ShowMeshOrGallery(node);
-        ShowAudio(node);
-        ShowVideo(node);
+        // A tree re-projection re-selects the node the preview already shows; do not decode it again.
+        if (ReferenceEquals(node, _previewNode)) return;
         ShowLevel2D(node);
-        ShowSky(node);
+        ShowPreview(node);
     }
 
     /// <summary>
-    ///     Shows a Daggerfall sky set as the backdrop behind the level view.
+    ///     Shows a Daggerfall sky set as the backdrop in the preview pane, or hides it for anything else.
     ///     <para>
     ///         Frame 0 of the first half is used. Which set maps to which region or weather is NOT
-    ///         established, so nothing here claims one — the set is whichever file was selected.
+    ///         established, so nothing here claims one: the set is whichever file was selected.
     ///     </para>
     /// </summary>
     private void ShowSky(AssetNode node)
@@ -283,24 +289,28 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         var session = _session;
         if (session is null || !ClassicSkySource.IsSky(node))
         {
+            _skyLoad.Cancel();
+            SkyBackdropImage.Source = null;
+            SkyBackdropImage.Visibility = Visibility.Collapsed;
             return;
         }
 
-        _ = _skyLoad.RunAsync(
+        _ = RunPreviewAsync(_skyLoad,
             token => ClassicSkySource.TryLoadFrame(session, node, 0, 0, token),
             texture =>
             {
                 if (texture is null)
                 {
                     SkyBackdropImage.Visibility = Visibility.Collapsed;
+                    ShowNoPreview(node);
+                    SetPreviewStatus($"{node.Name} - could not be read as a sky set");
                     return;
                 }
 
                 SkyBackdropImage.Source = AssetBitmapFactory.FromPremultipliedBgra(
                     texture.Width, texture.Height, PremultipliedBgra.FromRgba(texture.Pixels));
                 SkyBackdropImage.Visibility = Visibility.Visible;
-                AssetGalleryView.Visibility = Visibility.Collapsed;
-                AssetGalleryStatusText.Text = $"{node.Name} — sky backdrop {texture.Width}x{texture.Height}";
+                SetPreviewStatus($"{node.Name} - sky backdrop {texture.Width}x{texture.Height}");
             });
     }
 
@@ -317,16 +327,13 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         if (session is null || !AssetLevel2DSource.CanOpen(node))
         {
             _levelLoad.Cancel();
-            _skyLoad.Cancel();
-            SkyBackdropImage.Source = null;
-            SkyBackdropImage.Visibility = Visibility.Collapsed;
             Level2dMap.SetSource(null);
             Level2dMap.Visibility = Visibility.Collapsed;
             MapViewerPlaceholder.Visibility = Visibility.Visible;
             return;
         }
 
-        _ = _levelLoad.RunAsync(
+        _ = RunPreviewAsync(_levelLoad,
             token => AssetLevel2DSource.TryOpen(session, node, token),
             source =>
             {
@@ -347,17 +354,37 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
     }
 
     /// <summary>
-    ///     Opens a supported movie, or hides the video surface for anything else.
+    ///     Opens a supported movie, or hides every video surface for anything else.
     ///     <para>
-    ///         Indexed classic formats materialise their frames before playback; Bink, Smacker
-    ///         and Interplay MVE decode on demand. Opening runs off the UI thread because the
-    ///         eager formats can require substantial decoding work.
+    ///         <see cref="ClassicVideoRouting" /> makes the one routing decision: an admitted Arena
+    ///         FLC/CEL plays natively through <see cref="AssetFlicPreview" /> and the stock transport,
+    ///         while every other movie keeps the frame-timer preview and its own transport. Indexed
+    ///         classic formats materialise their frames before playback; Bink, Smacker and Interplay
+    ///         MVE decode on demand. Opening runs off the UI thread because the eager formats can
+    ///         require substantial decoding work.
     ///     </para>
     /// </summary>
     private void ShowVideo(AssetNode node)
     {
+        var version = ++_videoSelectionVersion;
         var session = _session;
-        if (session is null || !ClassicVideoClip.CanOpenAnyVideo(node))
+        var snapshot = _sourceSnapshot;
+        var route = session is null ? ClassicVideoRoute.None : ClassicVideoRouting.Select(snapshot, node);
+        if (route == ClassicVideoRoute.Native && snapshot is { } current)
+        {
+            _videoLoad.Cancel();
+            DisposeVideo();
+            VideoPreviewImage.Visibility = Visibility.Collapsed;
+            AudioTransportPanel.Visibility = Visibility.Collapsed;
+            NativeVideoPreview.Visibility = Visibility.Visible;
+            SetPreviewStatus("Decoding movie...");
+            _nativeVideoShown = true;
+            _ = ShowNativeVideoAsync(current, node, version);
+            return;
+        }
+
+        HideNativeVideo();
+        if (session is null || route != ClassicVideoRoute.Legacy)
         {
             _videoLoad.Cancel();
             DisposeVideo();
@@ -367,36 +394,148 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
 
         AudioStatusText.Text = "Decoding movie...";
         AudioTransportPanel.Visibility = Visibility.Visible;
-        _ = _videoLoad.RunAsync(
+        _ = RunPreviewAsync(_videoLoad,
             token => ClassicVideoClip.TryOpenAnyVideo(session, node, token),
-            clip =>
+            clip => ShowLegacyClip(node, clip));
+    }
+
+    /// <summary>Adopts decoded legacy frames into the frame-timer preview, or reports why there is nothing to show.</summary>
+    /// <param name="node">The selected movie leaf.</param>
+    /// <param name="clip">The decoded frames, or null when the bytes could not be read as a movie.</param>
+    private void ShowLegacyClip(AssetNode node, IVideoFrameSource? clip)
+    {
+        DisposeVideo();
+        if (clip is null || clip.FrameCount == 0)
+        {
+            AudioStatusText.Text = $"{node.Name} — could not be read as a movie";
+            VideoPreviewImage.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        _video = new AssetVideoPreview(clip);
+        if (_video.ErrorMessage is { } error)
+        {
+            DisposeVideo();
+            AudioStatusText.Text = $"{node.Name} — {error}";
+            VideoPreviewImage.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        _video.Progressed += (_, _) => UpdateTransport();
+        _video.Failed += (_, message) => AudioStatusText.Text = $"{node.Name} — {message}";
+
+        VideoPreviewImage.Source = _video.Surface;
+        VideoPreviewImage.Visibility = Visibility.Visible;
+        AudioStatusText.Text = $"{clip.Width}×{clip.Height} · {clip.FrameCount:N0} frames";
+        UpdateTransport();
+    }
+
+    /// <summary>
+    ///     Prepares and presents an admitted FLC/CEL natively, or hands a strict decline's detached
+    ///     frames to the legacy preview without reading the source again.
+    ///     <para>
+    ///         Shared re-wraps the same decoded session at another whole scale after a resize or the
+    ///         Filtering toggle; the status shows the stored geometry, which that never changes.
+    ///     </para>
+    /// </summary>
+    /// <param name="snapshot">The exact source opening that owns the selected leaf.</param>
+    /// <param name="node">The selected movie leaf.</param>
+    /// <param name="version">The selection generation allowed to publish; ShowAsync completes one dispatcher hop late.</param>
+    private async Task ShowNativeVideoAsync(BrowserSnapshot snapshot, AssetNode node, long version)
+    {
+        try
+        {
+            var prepared = await _flic.ShowAsync(snapshot, node, snapshot.CancellationToken);
+            if (prepared is null || !IsCurrentVideoSelection(snapshot, version))
             {
-                DisposeVideo();
-                if (clip is null || clip.FrameCount == 0)
-                {
-                    AudioStatusText.Text = $"{node.Name} — could not be read as a movie";
-                    VideoPreviewImage.Visibility = Visibility.Collapsed;
-                    return;
-                }
+                return;
+            }
 
-                _video = new AssetVideoPreview(clip);
-                if (_video.ErrorMessage is { } error)
-                {
-                    DisposeVideo();
-                    AudioStatusText.Text = $"{node.Name} — {error}";
-                    VideoPreviewImage.Visibility = Visibility.Collapsed;
-                    return;
-                }
+            if (prepared.LegacyClip is { } clip)
+            {
+                // Strict decline: these frames were decoded from the bytes preparation already read.
+                _nativeVideoShown = false;
+                NativeVideoPreview.Visibility = Visibility.Collapsed;
+                SetPreviewStatus(string.Empty);
+                AudioTransportPanel.Visibility = Visibility.Visible;
+                ShowLegacyClip(node, clip);
+                return;
+            }
 
-                _video.Progressed += (_, _) => UpdateTransport();
-                _video.Failed += (_, message) => AudioStatusText.Text = $"{node.Name} — {message}";
+            if (_flic.CurrentVideoFormat is { } format)
+            {
+                SetPreviewStatus($"{format.StoredWidth}×{format.StoredHeight} · {DescribeDuration(_flic.CurrentDuration)}");
+                return;
+            }
 
-                VideoPreviewImage.Source = _video.Surface;
-                VideoPreviewImage.Visibility = Visibility.Visible;
-                AssetGalleryView.Visibility = Visibility.Collapsed;
-                AudioStatusText.Text = $"{clip.Width}×{clip.Height} · {clip.FrameCount:N0} frames";
-                UpdateTransport();
-            });
+            // Neither decoder accepted the bytes: nothing is presented, so only the status remains.
+            AbandonNativeVideo();
+            SetPreviewStatus($"{node.Name} - {prepared.StrictDeclineReason ?? "could not be read as a movie"}");
+        }
+        catch (OperationCanceledException)
+        {
+            // A retired source or a replaced selection publishes nothing.
+        }
+        catch (Exception exception)
+        {
+            if (!IsCurrentVideoSelection(snapshot, version))
+            {
+                return;
+            }
+
+            AbandonNativeVideo();
+            SetPreviewStatus(exception.Message);
+        }
+    }
+
+    /// <summary>Whether a native movie result still belongs to the latest selection of the current source.</summary>
+    /// <param name="snapshot">The source opening the result was prepared from.</param>
+    /// <param name="version">The selection generation the result was started for.</param>
+    private bool IsCurrentVideoSelection(BrowserSnapshot snapshot, long version) =>
+        !_disposed && version == _videoSelectionVersion && ReferenceEquals(snapshot, _sourceSnapshot);
+
+    /// <summary>Collapses the native surface after a preparation that adopted nothing; the status line explains why.</summary>
+    private void AbandonNativeVideo()
+    {
+        _nativeVideoShown = false;
+        NativeVideoPreview.Visibility = Visibility.Collapsed;
+    }
+
+    /// <summary>Formats a movie length for the status line.</summary>
+    /// <param name="duration">The known length, or null when the decoder states none.</param>
+    private static string DescribeDuration(TimeSpan? duration) =>
+        duration is { } known ? $"{known.TotalSeconds:0.0##} s" : "unknown length";
+
+    /// <summary>Collapses the native movie surface and retires its selection when one was started.</summary>
+    private void HideNativeVideo()
+    {
+        NativeVideoPreview.Visibility = Visibility.Collapsed;
+        if (!_nativeVideoShown)
+        {
+            return;
+        }
+
+        _nativeVideoShown = false;
+        _ = ClearNativeVideoAsync();
+    }
+
+    /// <summary>Retires the native movie immediately and observes its asynchronous cleanup.</summary>
+    private async Task ClearNativeVideoAsync()
+    {
+        try { await _flic.ClearAsync(); }
+        catch (Exception exception)
+        {
+            Logger.Instance.Warn("[AssetBrowser] Movie cleanup failed: {0}", exception.Message);
+        }
+    }
+
+    /// <summary>Displays a failure reported by the native movie's current player.</summary>
+    private void FlicPreview_Failed(object? sender, string message)
+    {
+        if (!_disposed)
+        {
+            SetPreviewStatus(message);
+        }
     }
 
     private void DisposeVideo()
@@ -407,79 +546,127 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
     }
 
     /// <summary>
-    ///     Loads and plays a single-sound asset, or hides the transport for anything else.
-    ///     <para>
-    ///         Selection does NOT auto-play: the decode happens on selection so the duration is
-    ///         known, but sound only starts when the user presses play. A browser that shouts at you
-    ///         for arrow-keying down a list of 459 Daggerfall effects is not a browser.
-    ///     </para>
+    ///     Prepares the selected single-sound asset for native playback without starting it.
+    ///     Each selection retires the previous prepared input, including unsupported or failed selections.
     /// </summary>
     private void ShowAudio(AssetNode node)
     {
-        var session = _session;
-        if (session is null || !AssetAudioSource.CanPlay(node))
+        var version = ++_audioSelectionVersion;
+        AudioTransportPanel.Visibility = Visibility.Collapsed;
+        if (_sourceSnapshot is not { } snapshot || !AssetAudioSource.CanPlay(node))
         {
-            _audioLoad.Cancel();
-            _audio?.Stop();
-            AudioTransportPanel.Visibility = Visibility.Collapsed;
+            NativeAudioPanel.Visibility = Visibility.Collapsed;
+            _ = ClearAudioAsync();
             return;
         }
 
-        AudioStatusText.Text = "Loading...";
-        AudioTransportPanel.Visibility = Visibility.Visible;
-        _ = _audioLoad.RunAsync(
-            token => AssetAudioSource.TryLoad(session, node, token),
-            sound =>
-            {
-                if (sound is not { } playable)
-                {
-                    AudioStatusText.Text = "Not a playable sound";
-                    return;
-                }
-
-                _pendingAudio = (playable.Riff, $"{session.SourceLabel}|{node.VirtualPath}");
-                AudioStatusText.Text = playable.SampleRate > 0
-                    ? $"{playable.SampleRate:N0} Hz · {playable.BitsPerSample}-bit"
-                    : node.Name;
-            });
+        NativeAudioPanel.Visibility = Visibility.Visible;
+        RuntimeLocalization.SetText(NativeAudioStatus, "Status_LoadingFile");
+        _ = PrepareAudioAsync(snapshot, node, version);
     }
 
+    /// <summary>Retains the selected source through decoding and transfers its lease with the prepared native input.</summary>
+    /// <param name="snapshot">The exact source opening which owns the selected asset.</param>
+    /// <param name="node">The single-sound asset whose existing decoder and container policy are preserved.</param>
+    /// <param name="version">The selection generation allowed to update the status after preparation.</param>
+    private async Task PrepareAudioAsync(BrowserSnapshot snapshot, AssetNode node, long version)
+    {
+        var sampleRate = 0;
+        var bitsPerSample = 0;
+        try
+        {
+            await _audioSession.ReplaceAsync(async cancellationToken =>
+            {
+                BrowserLease? lease = snapshot.AcquireLease();
+                try
+                {
+                    var source = (BethesdaBrowseSource)snapshot.Source;
+                    var sound = await Task.Run(() => AssetAudioSource.TryLoad(source.Session, node, cancellationToken),
+                        cancellationToken);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (sound is not { } playable)
+                    {
+                        throw new InvalidDataException(Strings.Get("AssetAudio_NotPlayable"));
+                    }
+                    sampleRate = playable.SampleRate;
+                    bitsPerSample = playable.BitsPerSample;
+                    var input = await PreparedMediaInput.FromBytesAsync(playable.Riff,
+                        AudioContainerFormat.ExtensionFor(playable.Riff), cancellationToken, lease);
+                    lease = null;
+                    return input;
+                }
+                finally
+                {
+                    if (lease is not null)
+                    {
+                        await lease.DisposeAsync();
+                    }
+                }
+            }, autoPlay: false, cancellationToken: snapshot.CancellationToken);
+            if (_disposed || version != _audioSelectionVersion || !ReferenceEquals(snapshot, _sourceSnapshot) ||
+                _audioSession.Player is null || _audioFailureVersion == version)
+            {
+                return;
+            }
+            if (sampleRate > 0)
+            {
+                RuntimeLocalization.SetText(NativeAudioStatus, "AssetAudio_Format", sampleRate, bitsPerSample);
+            }
+            else
+            {
+                RuntimeLocalization.SetRaw(NativeAudioStatus, TextBlock.TextProperty, node.Name);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A retired source or selection cannot publish status or resume playback.
+        }
+        catch (Exception exception)
+        {
+            if (!_disposed && version == _audioSelectionVersion && ReferenceEquals(snapshot, _sourceSnapshot))
+            {
+                RuntimeLocalization.SetRaw(NativeAudioStatus, TextBlock.TextProperty, exception.Message);
+            }
+        }
+    }
+
+    /// <summary>Retires audio immediately and observes asynchronous preparation cleanup.</summary>
+    private async Task ClearAudioAsync()
+    {
+        try { await _audioSession.ClearAsync(); }
+        catch (Exception exception)
+        {
+            Logger.Instance.Warn("[AssetBrowser] Audio cleanup failed: {0}", exception.Message);
+        }
+    }
+
+    /// <summary>Displays an error from the shared session's current native player.</summary>
+    private void AudioSession_Failed(object? sender, string message)
+    {
+        if (!_disposed)
+        {
+            _audioFailureVersion = _audioSelectionVersion;
+            RuntimeLocalization.SetRaw(NativeAudioStatus, TextBlock.TextProperty, message);
+        }
+    }
+
+    /// <summary>Toggles the retained frame-based video preview while its pane is active.</summary>
     private void AudioPlayPause_Click(object sender, RoutedEventArgs e)
     {
-        if (_video is not null)
-        {
-            _video.TogglePause();
-            return;
-        }
-
-        if (_audio is null)
+        if (!_mediaActivity.IsActive)
         {
             return;
         }
-
-        if (_audio.HasSound)
-        {
-            _audio.TogglePause();
-            return;
-        }
-
-        if (_pendingAudio is { } pending)
-        {
-            _audio.Play(pending.Riff, pending.Key);
-        }
+        _video?.TogglePause();
     }
 
+    /// <summary>Stops the existing video preview and resets its first frame.</summary>
     private void AudioStop_Click(object sender, RoutedEventArgs e)
     {
-        if (_video is not null)
-        {
-            _video.Stop();
-            return;
-        }
-
-        _audio?.Stop();
+        _video?.Stop();
     }
 
+    /// <summary>Seeks the frame-based video only for an actual transport value change.</summary>
     private void AudioPosition_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
     {
         // The timer writes this slider as playback advances; only a real user drag should seek.
@@ -491,13 +678,10 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         if (_video is not null)
         {
             _video.Seek(e.NewValue / 1000.0);
-            return;
         }
-
-        _audio?.Seek(e.NewValue / 1000.0);
     }
 
-    /// <summary>Reflects whichever medium is live into the shared transport.</summary>
+    /// <summary>Reflects the frame-based video preview in its existing transport.</summary>
     private void UpdateTransport()
     {
         double fraction;
@@ -507,12 +691,6 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         {
             playing = video.IsPlaying;
             fraction = video.FrameCount > 1 ? (double)video.FrameIndex / (video.FrameCount - 1) : 0;
-        }
-        else if (_audio is { } audio)
-        {
-            playing = audio.IsPlaying;
-            var duration = audio.Duration;
-            fraction = duration > TimeSpan.Zero ? audio.Position / duration : 0;
         }
         else
         {
@@ -527,32 +705,27 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
     }
 
     /// <summary>
-    ///     Swaps the right-hand pane between the gallery and the 3D viewer, and loads the mesh off
-    ///     the UI thread.
+    ///     Asks the mesh and level probes (the only readers of a file head in routing) and loads an
+    ///     accepted mesh or level into the 3D viewer off the UI thread; a rejected node shows the
+    ///     placeholder instead.
     ///     <para>
     ///         The decode runs through <see cref="LatestOnlyJob" /> so that clicking down a list of
     ///         meshes cannot leave a slow earlier one painting over a faster later one.
     ///     </para>
     /// </summary>
-    private void ShowMeshOrGallery(AssetNode node)
+    private void ShowMeshOrLevel(AssetNode node)
     {
         var session = _session;
         var isLevel = session is not null && ClassicLevelPreviewSource.CanPreview(session, node);
         if (session is null || (!isLevel && !ClassicMeshPreviewSource.CanPreview(session, node)))
         {
-            _meshLoad.Cancel();
-            _meshViewer?.ClearScene();
-            if (_meshViewer is not null)
-            {
-                _meshViewer.Visibility = Visibility.Collapsed;
-            }
-
-            AssetGalleryView.Visibility = Visibility.Visible;
+            HideMesh();
+            ShowNoPreview(node);
             return;
         }
 
-        AssetGalleryStatusText.Text = isLevel ? $"Assembling {node.Name}..." : $"Loading {node.Name}...";
-        _ = _meshLoad.RunAsync(
+        SetPreviewStatus(isLevel ? $"Assembling {node.Name}..." : $"Loading {node.Name}...");
+        _ = RunPreviewAsync(_meshLoad,
             token => isLevel
                 ? ClassicLevelPreviewSource.TryLoad(session, node, token)
                 : ClassicMeshPreviewSource.TryLoad(session, node, token),
@@ -560,9 +733,10 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
             {
                 if (scene is null)
                 {
-                    AssetGalleryStatusText.Text = isLevel
-                        ? $"{node.Name} — resolved no geometry against the meshes beside it"
-                        : $"{node.Name} — could not be read as a mesh";
+                    ShowNoPreview(node);
+                    SetPreviewStatus(isLevel
+                        ? $"{node.Name} - resolved no geometry against the meshes beside it"
+                        : $"{node.Name} - could not be read as a mesh");
                     return;
                 }
 
@@ -570,37 +744,22 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
                 _meshViewer ??= FindName(nameof(MeshSceneViewer)) as BethesdaSceneViewerControl;
                 if (_meshViewer is null)
                 {
-                    AssetGalleryStatusText.Text = "3D viewer unavailable.";
+                    SetPreviewStatus("3D viewer unavailable.");
                     return;
                 }
 
-                AssetGalleryView.Visibility = Visibility.Collapsed;
+                // The viewer observes no ancestor visibility; a collapsed preview pane keeps it paused.
+                _meshViewer.SetPresentationActive(!_previewCollapsed);
+                AssetPreviewPlaceholder.Visibility = Visibility.Collapsed;
                 _meshViewer.Visibility = Visibility.Visible;
                 _meshViewer.SetScene(scene);
-                AssetGalleryStatusText.Text = $"{node.Name} — {scene.Nodes.Count:N0} node(s)";
+
+                // A source note states an approximation the assembler made (a Redguard placeholder drawn in
+                // its keyframe pose, for one); it is shown, never dropped.
+                SetPreviewStatus(scene.SourceNotes.Count == 0
+                    ? $"{node.Name} - {scene.Nodes.Count:N0} node(s)"
+                    : $"{node.Name} - {scene.Nodes.Count:N0} node(s) - {string.Join("; ", scene.SourceNotes)}");
             });
-    }
-
-    /// <summary>
-    ///     Queues a decode as each tile is realized, and marks recycled tiles so their in-flight
-    ///     result is dropped rather than applied to whatever the container now shows.
-    /// </summary>
-    private void AssetGalleryView_ContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
-    {
-        if (args.Item is not AssetGalleryItem item)
-        {
-            return;
-        }
-
-        if (args.InRecycleQueue)
-        {
-            item.IsRealized = false;
-            item.Reset();
-            return;
-        }
-
-        item.IsRealized = true;
-        _loader?.Request(item);
     }
 
     /// <summary>
@@ -696,9 +855,11 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         RecordStatusText.Text = RecordBrowserModel.DescribeRecord(record);
     }
 
-    private static TreeViewNode BuildTreeNode(AssetNode node)
+    /// <summary>Builds one node and its subtree, registering every instance so the type filter can reuse it.</summary>
+    private TreeViewNode BuildTreeNode(AssetNode node)
     {
         var treeNode = new TreeViewNode { Content = node };
+        _treeNodes[node] = treeNode;
         foreach (var child in node.Children)
         {
             treeNode.Children.Add(BuildTreeNode(child));
@@ -707,20 +868,55 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         return treeNode;
     }
 
-    private static int CountFiles(AssetNode node)
+    /// <summary>Revokes source admission immediately and serializes complete source retirement before another attachment.</summary>
+    /// <returns>The captured close attempt; failure retains native prerequisites and blocks later attachment.</returns>
+    public ValueTask CloseSourceAsync()
     {
-        return node.Children.Count == 0 ? 1 : node.Children.Sum(CountFiles);
+        var generation = ++_sourceGeneration;
+        _audioSelectionVersion++;
+        _shadowkeySourceClosing = true;
+        var previous = _sourceCloseWork;
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _sourceCloseWork = completion.Task;
+        _ = CloseSourceObservedAsync(previous, generation, completion);
+        return new ValueTask(completion.Task);
     }
 
-    /// <summary>Releases the open source while keeping the tab available for another source.</summary>
-    public void CloseSource()
+    /// <summary>Settles the predecessor before touching source fields, preserving each attachment's generation check.</summary>
+    /// <param name="previous">The preceding source retirement; a failed native clear is not retried implicitly.</param>
+    /// <param name="generation">The identity synchronously claimed by this close caller.</param>
+    /// <param name="completion">The already published result observed by attachment and disposal.</param>
+    /// <returns>Completion after this exact close result is published.</returns>
+    private async Task CloseSourceObservedAsync(Task previous, int generation, TaskCompletionSource completion)
     {
-        _sourceGeneration++;
-        // Loader first: it reads through the session, so tearing the session down under a running
-        // decode is what would fault.
-        _loader?.Dispose();
-        _loader = null;
-        _audioLoad.Cancel();
+        await Task.Yield();
+        try
+        {
+            await previous;
+            await CloseSourceCoreAsync(generation);
+            completion.TrySetResult();
+        }
+        catch (Exception failure) { completion.TrySetException(failure); }
+    }
+
+    /// <summary>Clears native work before releasing the old source, with parallel closes excluded by the task chain.</summary>
+    /// <param name="generation">Only this latest close may reopen source admission.</param>
+    /// <returns>Complete media and source cleanup; a native clear failure leaves owned source fields retained.</returns>
+    private async Task CloseSourceCoreAsync(int generation)
+    {
+        await ClearShadowkeySourceAsync();
+        // Retain all source fields until Shared's worker has actually stopped reading their bytes.
+        // A failed drain remains observable on this loader and must never release its prerequisite lease.
+        await RetireGalleryLoaderAsync();
+        ClearGallerySource();
+        var lease = _sourceLease;
+        var session = _session;
+        var standaloneOwner = _standaloneSourceOwner;
+        _sourceLease = null;
+        _sourceSnapshot = null;
+        _selection = null;
+        _session = null;
+        _standaloneSourceOwner = null;
         _videoLoad.Cancel();
         _levelLoad.Cancel();
         _skyLoad.Cancel();
@@ -729,15 +925,15 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         Level2dMap.SetSource(null);
         Level2dMap.Visibility = Visibility.Collapsed;
         MapViewerPlaceholder.Visibility = Visibility.Visible;
-        _audio?.Stop();
         DisposeVideo();
-        _pendingAudio = null;
+        NativeVideoPreview.Visibility = Visibility.Collapsed;
+        _nativeVideoShown = false;
+        NativeAudioPanel.Visibility = Visibility.Collapsed;
+        RuntimeLocalization.SetRaw(NativeAudioStatus, TextBlock.TextProperty, string.Empty);
         AudioTransportPanel.Visibility = Visibility.Collapsed;
-        _meshLoad.Cancel();
-        _meshViewer?.ClearScene();
-        _session?.Dispose();
-        _session = null;
-
+        HideMesh();
+        ClearPreview();
+        ClearTypeFilterSource();
         _records?.Dispose();
         _records = null;
         RecordTreeView.RootNodes.Clear();
@@ -747,32 +943,141 @@ public sealed partial class AssetBrowserTab : UserControl, IDisposable
         DataExplorerPlaceholder.Visibility = Visibility.Visible;
         RecordStatusText.Text = string.Empty;
 
-        _gallery.Clear();
         AssetTreeView.RootNodes.Clear();
-        AssetTreeStatusText.Text = "No source opened.";
+        OpenSelectedArchiveButton.IsEnabled = false;
+        RuntimeLocalization.SetRaw(AssetTreeStatusText, TextBlock.TextProperty, "No source opened.");
         AssetGalleryStatusText.Text = string.Empty;
         SourcePathTextBox.Text = string.Empty;
+        try
+        {
+            // The decoded movie session owns the FLC's source lease, so it retires before that lease below.
+            Exception? movieFailure = null;
+            try { await _flic.ClearAsync(); }
+            catch (ObjectDisposedException) when (_flicDisposed) { /* Closed after the browser retired: nothing native remains to clear. */ }
+            catch (Exception failure) { movieFailure = failure; }
+            try { await _audioSession.ClearAsync(); }
+            catch (Exception failure) when (movieFailure is not null) { throw new AggregateException(movieFailure, failure); }
+            if (movieFailure is not null) { ExceptionDispatchInfo.Capture(movieFailure).Throw(); }
+        }
+        finally
+        {
+            try
+            {
+                if (lease is not null)
+                {
+                    await lease.DisposeAsync();
+                }
+                else
+                {
+                    session?.Dispose();
+                }
+            }
+            finally
+            {
+                if (standaloneOwner is not null)
+                {
+                    await standaloneOwner.DisposeAsync();
+                }
+            }
+        }
+        if (generation == _sourceGeneration) _shadowkeySourceClosing = false;
     }
 
-    /// <summary>Releases the tab's workers, playback and rendering resources at window shutdown.</summary>
+    /// <summary>Begins asynchronous teardown for callers using the existing synchronous control contract.</summary>
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
+        _ = DisposeAndReportAsync();
+    }
 
+    /// <summary>Publishes one teardown result before callbacks can reenter native retirement.</summary>
+    /// <returns>The same complete retirement result for every caller.</returns>
+    public ValueTask DisposeAsync()
+    {
+        if (_disposeTask is not null) return new ValueTask(_disposeTask);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _disposeTask = completion.Task;
+        _ = DisposeAssetBrowserObservedAsync(completion);
+        return new ValueTask(completion.Task);
+    }
+
+    /// <summary>Observes the complete staged retirement and forwards its original failure to every caller.</summary>
+    /// <param name="completion">The already published disposal result.</param>
+    /// <returns>Completion after the retained disposal result is settled.</returns>
+    private async Task DisposeAssetBrowserObservedAsync(TaskCompletionSource completion)
+    {
+        try { await DisposeCoreAsync(); completion.TrySetResult(); }
+        catch (Exception failure) { completion.TrySetException(failure); }
+    }
+
+    /// <summary>Observes asynchronous teardown failures for synchronous disposal callers.</summary>
+    private async Task DisposeAndReportAsync()
+    {
+        try { await DisposeAsync(); }
+        catch (Exception exception)
+        {
+            Logger.Instance.Warn("[AssetBrowser] Teardown failed: {0}", exception.Message);
+        }
+    }
+
+    /// <summary>Attempts every independent cleanup stage while retaining prerequisites of an unretired native view.</summary>
+    /// <returns>Completion after caller tasks and native owners have attempted retirement.</returns>
+    /// <exception cref="AggregateException">One or more stages failed; native proof determines window/source retention.</exception>
+    private async Task DisposeCoreAsync()
+    {
         _disposed = true;
-        _audioLoad.Dispose();
-        _videoLoad.Dispose();
-        _levelLoad.Dispose();
-        _skyLoad.Dispose();
-        _meshLoad.Dispose();
-        CloseSource();
-        _audio?.Dispose();
-        _audio = null;
-        _meshViewer?.Dispose();
-        _meshViewer = null;
-        _thumbnails.Dispose();
+        List<Exception> failures = [];
+        // Cancel and drain this independent application-cache action before native/localization teardown.
+        try { _thumbnailCacheClearJob.Dispose(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { await _thumbnailCacheClearWork; }
+        catch (Exception failure) { failures.Add(failure); }
+        try { _mediaActivity.Dispose(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { _videoLoad.Dispose(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { _levelLoad.Dispose(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { _skyLoad.Dispose(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { _meshLoad.Dispose(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { _imageLoad.Dispose(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { DisposeTypeFilter(); }
+        catch (Exception failure) { failures.Add(failure); }
+        _audioSession.Failed -= AudioSession_Failed;
+        _flic.Failed -= FlicPreview_Failed;
+        try { if (_exportCancellation is { } cancellation) await cancellation.CancelAsync(); }
+        catch (Exception failure) { failures.Add(failure); }
+        // This drain is independent of native retirement: a failed native clear still cancels thumbnail work.
+        try { await RetireGalleryLoaderAsync(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { await _sourceCloseWork; }
+        catch (Exception failure) { failures.Add(failure); }
+        try { await DisposeShadowkeyAsync(); }
+        catch (Exception failure) { failures.Add(failure); }
+        if (NativeResourcesRetired)
+        {
+            // Native retirement succeeded; a prior clear failure no longer retains a native dependency.
+            _sourceCloseWork = Task.CompletedTask;
+            try { await CloseSourceAsync(); }
+            catch (Exception failure) { failures.Add(failure); }
+        }
+        try { await _audioSession.DisposeAsync(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { NativeAudioPreview.Dispose(); }
+        catch (Exception failure) { failures.Add(failure); }
+        _flicDisposed = true;
+        try { await _flic.DisposeAsync(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { NativeVideoPreview.Dispose(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { _meshViewer?.Dispose(); _meshViewer = null; }
+        catch (Exception failure) { failures.Add(failure); }
+        try { await DisposePaneLayoutAsync(); }
+        catch (Exception failure) { failures.Add(failure); }
+        try { await DisposeGalleryAsync(); }
+        catch (Exception failure) { failures.Add(failure); }
+        if (failures.Count != 0) throw new AggregateException("Asset browser retirement failed.", failures);
     }
 }

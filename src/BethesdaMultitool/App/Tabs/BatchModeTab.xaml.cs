@@ -20,7 +20,7 @@ namespace BethesdaMultitool;
 /// <summary>
 ///     Batch processing tab for multiple dump files.
 /// </summary>
-public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSettingsDrawer
+public sealed partial class BatchModeTab : UserControl, IDisposable
 {
     private readonly ObservableCollection<DumpFileEntry> _dumpFiles = [];
     private readonly Dictionary<string, CheckBox> _fileTypeCheckboxes = [];
@@ -46,8 +46,6 @@ public sealed partial class BatchModeTab : UserControl, IDisposable, IHasSetting
 #pragma warning disable CA1822, S2325
     private StatusTextHelper StatusTextBlock => new();
 #pragma warning restore CA1822, S2325
-    public void ToggleSettingsDrawer() => SettingsDrawerHelper.Toggle(SettingsDrawer);
-    public void CloseSettingsDrawer() => SettingsDrawerHelper.Close(SettingsDrawer);
 
     public void Dispose()
     {

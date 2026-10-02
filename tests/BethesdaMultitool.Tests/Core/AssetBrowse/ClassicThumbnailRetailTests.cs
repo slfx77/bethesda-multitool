@@ -96,7 +96,7 @@ public sealed class ClassicThumbnailRetailTests
                 AssetThumbnailSource.CanRender(bank),
                 $"{bank.Name} is classified as a texture but the gallery refuses to render it.");
 
-            var thumbnail = AssetThumbnailSource.TryRender(session, bank, BankTextureEdge, TestContext.Current.CancellationToken);
+            var thumbnail = AssetThumbnailSource.TryRender(session, bank, BankTextureEdge, cancellationToken: TestContext.Current.CancellationToken);
             // RgbaThumbnail is a record STRUCT, so a null test cannot narrow it.
             Assert.True(thumbnail.HasValue, $"{bank.Name} was offered a thumbnail and produced none.");
 
@@ -116,7 +116,7 @@ public sealed class ClassicThumbnailRetailTests
         using var session = OpenShadowkey();
 
         var bank = LeavesWithExtension(session, ".ztx")[0];
-        var thumbnail = AssetThumbnailSource.TryRender(session, bank, BankTextureEdge, TestContext.Current.CancellationToken);
+        var thumbnail = AssetThumbnailSource.TryRender(session, bank, BankTextureEdge, cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(thumbnail.HasValue, $"{bank.Name} produced no thumbnail.");
 
         var distinct = new HashSet<uint>();

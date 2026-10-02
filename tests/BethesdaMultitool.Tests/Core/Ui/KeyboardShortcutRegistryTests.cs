@@ -140,6 +140,24 @@ public class KeyboardShortcutRegistryTests
         Assert.Contains("Reset view", reset.Action, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    ///     The asset browser's two pane toggles are XAML accelerators scoped to the pane, so the
+    ///     registry is the only place a reader learns them. Both chords must be listed under the
+    ///     existing "Asset Browser" heading, each naming the pane it toggles.
+    /// </summary>
+    [Theory]
+    [InlineData("Ctrl+Shift+T", "asset tree")]
+    [InlineData("Ctrl+Shift+P", "preview")]
+    public void AssetBrowserGroup_DocumentsThePaneToggles(string chord, string pane)
+    {
+        var rows = KeyboardShortcutRegistry.ForGroup("Asset Browser");
+
+        var row = Assert.Single(rows, s => s.Keys == chord);
+        Assert.Contains(pane, row.Action, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("hide", row.Action, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(rows, s => s.Keys == "Ctrl+O");
+    }
+
     [Fact]
     public void HelpGroup_DocumentsF1Itself()
     {

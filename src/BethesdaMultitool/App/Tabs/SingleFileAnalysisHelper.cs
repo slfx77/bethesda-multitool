@@ -118,53 +118,69 @@ internal static class SingleFileAnalysisHelper
     /// <summary>
     ///     Resolves a human-readable status phase string from analysis progress data.
     /// </summary>
-    public static string ResolvePhaseText(AnalysisProgress p, AnalysisFileType _fileType)
+    /// <param name="p">The progress values copied into the returned argument array.</param>
+    /// <param name="_fileType">The source format determining completion wording.</param>
+    /// <returns>An invariant message key and captured display arguments.</returns>
+    public static (string Key, object?[] Arguments) ResolvePhaseMessage(AnalysisProgress p, AnalysisFileType _fileType)
     {
         return p.Phase switch
         {
             // ESM file analysis phases
-            "Loading" => Strings.Status_LoadingFile,
-            "Parsing Header" => Strings.Status_ParsingEsmHeader,
-            "Scanning Records" when p.FilesFound > 0 => Strings.Status_ScanningRecords(p.FilesFound),
-            "Scanning Records" => Strings.Status_Scanning,
-            "Building Index" => Strings.Status_BuildingIndex_Count(p.FilesFound),
-            "Mapping FormIDs" => Strings.Status_MappingFormIds,
-            "Building Memory Map" => Strings.Status_BuildingMemoryMap,
+            "Loading" => ("Status_LoadingFile", []),
+            "Parsing Header" => ("Status_ParsingEsmHeader", []),
+            "Scanning Records" when p.FilesFound > 0 => ("Status_ScanningRecords", [p.FilesFound]),
+            "Scanning Records" => ("Status_Scanning", []),
+            "Building Index" => ("Status_BuildingIndex_Count", [p.FilesFound]),
+            "Mapping FormIDs" => ("Status_MappingFormIds", []),
+            "Building Memory Map" => ("Status_BuildingMemoryMap", []),
             // Memory dump analysis phases
             "Scanning" when p.TotalBytes > 0 =>
-                Strings.Status_ScanningPercent((int)(p.BytesProcessed * 100 / p.TotalBytes), p.FilesFound),
-            "Scanning" => Strings.Status_ScanningPercent(0, p.FilesFound),
-            "Parsing" => Strings.Status_ParsingMatches(p.FilesFound),
-            "Scripts" => Strings.Status_ExtractingScripts,
+                ("Status_ScanningPercent", [(int)(p.BytesProcessed * 100 / p.TotalBytes), p.FilesFound]),
+            "Scanning" => ("Status_ScanningPercent", [0, p.FilesFound]),
+            "Parsing" => ("Status_ParsingMatches", [p.FilesFound]),
+            "Scripts" => ("Status_ExtractingScripts", []),
             "ESM Records" when p.TotalBytes > 0 =>
-                Strings.Status_ScanningEsmRecordsPercent((int)(p.BytesProcessed * 100 / p.TotalBytes)),
-            "ESM Records" => Strings.Status_ScanningForEsmRecords,
-            "LAND Records" => Strings.Status_ExtractingLandHeightmaps,
-            "REFR Records" => Strings.Status_ExtractingRefrPositions,
-            "Asset Strings" => Strings.Status_ScanningAssetStrings,
-            "Runtime EditorIDs" => Strings.Status_ExtractingRuntimeEditorIds,
-            "FormIDs" => Strings.Status_CorrelatingFormIdNames,
-            "Geometry Scan" => Strings.Status_ScanningGeometry,
-            "Texture Scan" => Strings.Status_ScanningTextures,
-            "Scene Graph" => Strings.Status_WalkingSceneGraph,
-            "Runtime Assets" => $"Runtime assets detected ({p.FilesFound} total files)",
+                ("Status_ScanningEsmRecordsPercent", [(int)(p.BytesProcessed * 100 / p.TotalBytes)]),
+            "ESM Records" => ("Status_ScanningForEsmRecords", []),
+            "LAND Records" => ("Status_ExtractingLandHeightmaps", []),
+            "REFR Records" => ("Status_ExtractingRefrPositions", []),
+            "Asset Strings" => ("Status_ScanningAssetStrings", []),
+            "Runtime EditorIDs" => ("Status_ExtractingRuntimeEditorIds", []),
+            "FormIDs" => ("Status_CorrelatingFormIdNames", []),
+            "Geometry Scan" => ("Status_ScanningGeometry", []),
+            "Texture Scan" => ("Status_ScanningTextures", []),
+            "Scene Graph" => ("Status_WalkingSceneGraph", []),
+            "Runtime Assets" => ("Status_RuntimeAssets", [p.FilesFound]),
             "Complete" or "Analysis Complete" when _fileType == AnalysisFileType.EsmFile =>
-                "Finalizing ESM load...",
-            "Complete" or "Analysis Complete" => Strings.Status_AnalysisComplete(p.FilesFound),
-            _ => $"{p.Phase}..."
+                ("Status_FinalizingEsm", []),
+            "Complete" or "Analysis Complete" => ("Status_AnalysisComplete", [p.FilesFound]),
+            _ => ("Status_ExternalPhase", [p.Phase])
         };
+    }
+
+    /// <summary>Formats the current progress snapshot using the selected display catalog.</summary>
+    /// <param name="progress">The progress snapshot.</param>
+    /// <param name="fileType">The analyzed source type.</param>
+    /// <returns>The current localized message.</returns>
+    public static string ResolvePhaseText(AnalysisProgress progress, AnalysisFileType fileType)
+    {
+        var message = ResolvePhaseMessage(progress, fileType);
+        return Strings.GetFormat(message.Key, message.Arguments);
     }
 
     /// <summary>
     ///     Builds the final status message after analysis completes.
     /// </summary>
-    public static string BuildCompletionStatus(
+    /// <param name="session">The completed source state, read only while capturing counts.</param>
+    /// <param name="allCarvedFiles">The retained source entries, never changed by this method.</param>
+    /// <returns>A resource key and captured numeric values, with no reference to mutable source state.</returns>
+    public static (string Key, object?[] Arguments) BuildCompletionMessage(
         AnalysisSessionState session, List<CarvedFileEntry> allCarvedFiles)
     {
         if (session.IsSaveFile)
         {
             var formCount = session.SaveData?.ChangedForms.Count ?? 0;
-            return $"Save file loaded \u2014 {formCount:N0} changed forms";
+            return ("Status_SaveLoaded", [formCount]);
         }
 
         // A classic install carves nothing: its records are synthesized from game tables
@@ -173,7 +189,7 @@ internal static class SingleFileAnalysisHelper
         // parsed thousands of them.
         if (session.FileType == AnalysisFileType.ClassicGameData)
         {
-            return Strings.Status_ParsedRecords(session.SemanticResult?.TotalRecordsParsed ?? 0);
+            return ("Status_ParsedRecords", [session.SemanticResult?.TotalRecordsParsed ?? 0]);
         }
 
         var totalCount = allCarvedFiles.Count;
@@ -182,7 +198,18 @@ internal static class SingleFileAnalysisHelper
         var coveragePct = session.CoverageResult?.RecognizedPercent ?? 0;
 
         return fileCount > 0
-            ? Strings.Status_FoundFilesToCarve(totalCount, coveragePct, fileCount, recordCount)
-            : Strings.Status_FoundRecords(recordCount);
+            ? ("Status_FoundFilesToCarve", [totalCount, coveragePct, fileCount, recordCount])
+            : ("Status_FoundRecords", [recordCount]);
     }
+
+    /// <summary>Formats completion counts using the current display catalog.</summary>
+    /// <param name="session">The completed source state.</param>
+    /// <param name="allCarvedFiles">The source entries used to calculate counts.</param>
+    /// <returns>The localized completion message.</returns>
+    public static string BuildCompletionStatus(AnalysisSessionState session, List<CarvedFileEntry> allCarvedFiles)
+    {
+        var message = BuildCompletionMessage(session, allCarvedFiles);
+        return Strings.GetFormat(message.Key, message.Arguments);
+    }
+
 }

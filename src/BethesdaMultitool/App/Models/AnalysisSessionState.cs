@@ -50,6 +50,9 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
     /// <summary>Semantic parse result (computed on demand for reports/data browser).</summary>
     public RecordCollection? SemanticResult { get; set; }
 
+    /// <summary>Selected plugin records, or the original records for a single source or capture.</summary>
+    internal RecordCollection? EffectiveRecords => LoadOrder.SelectedView?.Records ?? SemanticResult;
+
     /// <summary>Unified FormID resolver built from SemanticResult. Set when SemanticResult is assigned.</summary>
     public FormIdResolver? Resolver { get; set; }
 
@@ -114,13 +117,13 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
     public LoadOrder LoadOrder { get; } = new();
 
     /// <summary>
-    ///     Effective resolver: merges primary + load order resolvers when both are available.
-    ///     Primary resolver takes precedence over all load order entries.
+    ///     Uses selected plugin identities when available. Other source modes retain their original resolver merge.
     /// </summary>
     public FormIdResolver? EffectiveResolver
     {
         get
         {
+            if (LoadOrder.SelectedView is { } selected) { return selected.Resolver; }
             var primary = Resolver;
             var loadOrderMerged = LoadOrder.BuildMergedResolver();
             if (primary != null && loadOrderMerged != null)
@@ -131,6 +134,9 @@ internal sealed class AnalysisSessionState : ITrackableResource, IDisposable
 
     /// <summary>Subtitle index from load order data, if loaded.</summary>
     public SubtitleIndex? EffectiveSubtitles => LoadOrder.Subtitles;
+
+    internal Task<Core.Semantic.LoadOrder.LoadOrderSelectionView?> GetSelectedViewAsync() =>
+        LoadOrder.GetSelectedViewAsync(FilePath, FileType, SemanticResult, AnalysisResult?.EsmRecords);
 
     public bool IsAnalyzed => AnalysisResult != null;
     public bool HasAccessor => Accessor != null;

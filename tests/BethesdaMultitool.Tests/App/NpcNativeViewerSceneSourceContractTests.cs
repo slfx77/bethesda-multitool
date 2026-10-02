@@ -35,7 +35,7 @@ public sealed class NpcNativeViewerSceneSourceContractTests
 
         SourceContract.AssertOrder(
             npcScene,
-            "ResolveAppearance(npcFormId, previewPlayerLevel)",
+            "ResolveAppearance(npcFormId, previewPlayerLevel, generation)",
             "NpcCompositionPlanner.CreatePlan(",
             "NpcCompositionExportAdapter.BuildNpc(",
             "BethesdaViewerSceneGlbAdapter.FromGlbScene(",
@@ -294,8 +294,12 @@ public sealed class NpcNativeViewerSceneSourceContractTests
             "/>");
         Assert.DoesNotContain(" Value=\"", previewLevel, StringComparison.Ordinal);
         Assert.Contains("Minimum=\"1\"", previewLevel, StringComparison.Ordinal);
-        Assert.Contains("Leave blank to keep it unresolved.", previewLevel, StringComparison.Ordinal);
-        Assert.Contains("Preview player level (optional):", xaml, StringComparison.Ordinal);
+        // The hint moved into Resources.resw behind RuntimeLocalization so it follows a live
+        // language change; pin the binding and its resource rather than the English text.
+        Assert.Contains("live:RuntimeLocalization.Uid=\"ActorInventory_PreviewLevelInput\"", previewLevel,
+            StringComparison.Ordinal);
+        // The label moved into Resources.resw as ActorInventory_PreviewLevel.Text.
+        Assert.Contains("ActorInventory_PreviewLevel", xaml, StringComparison.Ordinal);
         Assert.Contains("NpcPreviewPlayerLevelNumberBox.Value", host, StringComparison.Ordinal);
         Assert.Equal(2, SourceContract.CountOccurrences(workflow, "options.PreviewPlayerLevel"));
     }

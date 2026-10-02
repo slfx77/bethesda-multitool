@@ -28,7 +28,7 @@ public sealed class ResetViewKeybindSourceContractTests
         var source = Read3DInput();
 
         // R is dispatched, text-entry guarded, first-press guarded, and lands on the reset method.
-        SourceContract.AssertOrder(source,
+        SourceContract.AssertOrderIgnoringWhitespace(source,
             "if (e.Key == VirtualKey.R && !TextEntryFocusGuard.IsTextEntryFocused(XamlRoot))",
             "if (_toggleKeysDown.Add(e.Key)) ResetViewToSceneFraming();",
             "private void ResetViewToSceneFraming()",
@@ -36,8 +36,8 @@ public sealed class ResetViewKeybindSourceContractTests
 
         // Ortho/projection modes frame from the ortho focus, not the camera — the reset must re-seed
         // it, again through the existing seeding method.
-        Assert.Contains("if (ProjectionActive) InitProjectionFocusFromCamera();",
-            source, StringComparison.Ordinal);
+        SourceContract.AssertContainsIgnoringWhitespace(
+            "if (ProjectionActive) InitProjectionFocusFromCamera();", source);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class ResetViewKeybindSourceContractTests
     {
         var source = ReadMapInput();
 
-        SourceContract.AssertOrder(source,
+        SourceContract.AssertOrderIgnoringWhitespace(source,
             "if (e.Key == Windows.System.VirtualKey.R && !TextEntryFocusGuard.IsTextEntryFocused(XamlRoot))",
             "ResetViewToActiveExtent();",
             "internal void ResetViewToActiveExtent()");
@@ -75,10 +75,10 @@ public sealed class ResetViewKeybindSourceContractTests
 
         // Cell-detail frames the open cell; overview frames the active worldspace. Both go through
         // the existing helpers so ITEM-1-style centring changes apply to the keybind for free.
-        SourceContract.AssertOrder(body,
+        SourceContract.AssertOrderIgnoringWhitespace(body,
             "WorldMapViewportHelper.ZoomToFitCell(",
             "ApplyZoomToFitWorldspace();");
-        Assert.Contains("MapCanvas.Invalidate();", body, StringComparison.Ordinal);
+        SourceContract.AssertContainsIgnoringWhitespace("MapCanvas.Invalidate();", body);
     }
 
     [Fact]
@@ -86,10 +86,9 @@ public sealed class ResetViewKeybindSourceContractTests
     {
         // One framing path for the button and the key — a second copy would be free to drift.
         var navigation = SourceContract.ReadAppSource("WorldMapControl.Navigation.cs");
-        Assert.Contains(
-            "private void ZoomFit_Click(object sender, RoutedEventArgs e) => ResetViewToActiveExtent();",
-            navigation,
-            StringComparison.Ordinal);
+        Assert.Matches(
+            @"\bprivate\s+void\s+ZoomFit_Click\s*\([^)]*\)\s*(?:=>\s*ResetViewToActiveExtent\s*\(\s*\)\s*;|\{\s*ResetViewToActiveExtent\s*\(\s*\)\s*;\s*\})",
+            navigation);
     }
 
     // "Both resets appear in the F1 list" is now asserted by value in

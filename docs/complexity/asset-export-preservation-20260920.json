@@ -1,0 +1,102 @@
+{
+  "schema": "bmt-asset-export-preservation-delta-review/v1",
+  "baseCommit": "9f08c55d2631803a5e39f691e0ad71dc93c250cc",
+  "sharedPin": "2d498be3aac356795a983f34088bfddfd93686f8",
+  "scope": "Incremental source/resource review of the extracted input-replacement guard and its additional actual-read provenance call in AssetExportService.ExportAsync. The existing GUI and CLI service entry points, operation orchestration, conversion policy, and Shared pin are unchanged.",
+  "hashConvention": {
+    "sourceSha256Lf": "SHA-256 of UTF-8 source bytes after CRLF/CR to LF normalization, without trimming.",
+    "declarationSha256Lf": "SHA-256 of the exact Tree-sitter method-declaration span in LF-normalized source, including signature and body, excluding preceding comments and following whitespace. ExportAsync includes its existing worker lambda.",
+    "evidence": "Evidence paths are repository-relative. Assembly hashes are raw-file SHA-256 values from the referenced execution receipts."
+  },
+  "verification": {
+    "sourceReview": "Tree-sitter C# parse reports no errors; exact method spans and incremental resource costs reviewed. This documentation task ran no compiler, tests, CLI commands, or GUI automation.",
+    "evidenceReview": "Read the existing Windows/Linux JUnit reports and CLI receipt. Each report contains nine AssetExportServiceTests cases, with zero failures and zero skips, within the 99-case candidate run.",
+    "callablesReviewed": 2
+  },
+  "variables": {
+    "L": "Combined character length of one source label, original normalized virtual path, and resolved destination path.",
+    "R": "Number of distinct selected items that complete a bounded read and pass existing captured-provenance and cancellation checks."
+  },
+  "callables": [
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/AssetExportService.cs",
+      "sourceSha256Lf": "5d5d8df5c7257bfe48191bb95880bc6a83b6e3ea1e80f5915f7a3f66f3046778",
+      "callable": "ExportAsync",
+      "line": 22,
+      "endLine": 108,
+      "declarationSha256Lf": "997b0e40f10dbb612c47cf338b1f7687ed06be1d1a39ebf98df5bc9f7472315d",
+      "incrementalTime": "One additional guard invocation per qualifying bounded read: O(L) managed path work plus at most one Directory.Exists metadata query. Across the selection this is O(sum of L over R). Filesystem latency is not assigned a constant-time guarantee.",
+      "incrementalStorage": "O(L) transient path strings per additional guard call; O(sum of L over R) aggregate allocation. No additional payload read, decode, or byte-buffer copy. Actual peak retention depends on runtime garbage collection.",
+      "disposition": "Retain the pre-read metadata-winner check and add the same predicate against read.Entry before conversion or staging. Layered reads may skip an unreadable override, so the source that supplied the bytes must also be protected. Existing provenance validation and cancellation checks retain their order before the new check. IOException remains a per-item failure and later selected items continue."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/AssetBrowse/AssetExportService.cs",
+      "sourceSha256Lf": "5d5d8df5c7257bfe48191bb95880bc6a83b6e3ea1e80f5915f7a3f66f3046778",
+      "callable": "ThrowIfInputReplacement",
+      "line": 114,
+      "endLine": 123,
+      "declarationSha256Lf": "8f3baaa0e65e75d95324ecc0223fe421227e5a0b5282cd73279817493262338a",
+      "incrementalTime": "The extracted pre-read invocation preserves the existing predicate cost. Each invocation performs O(L) managed path processing and at most one Directory.Exists query; no tree enumeration, payload access, or recursion.",
+      "incrementalStorage": "O(L) transient strings from existing path normalization/combination. Null or non-fully-qualified source labels return without those path allocations.",
+      "disposition": "Reuse the original archive-file and loose-root replacement predicate unchanged at both call sites. Preserve ordinal case-insensitive comparison and the exact error text: An export cannot replace its original input. This extraction centralizes the predicate without replacing VFS provenance resolution or destination validation."
+    }
+  ],
+  "preservedBoundaries": [
+    "Selected-path capture, normalized-path deduplication, relative output paths, overwrite defaults, captured-provenance rejection, and per-item progress/result ordering are unchanged.",
+    "The existing 512 MiB bounded-read limit, DDX conversion implementation, cancellation checkpoints, staged rename, temporary-file cleanup, and preservation of completed outputs remain in place.",
+    "Caller-owned source lifetimes and browser leases are unchanged; no new operation registry, workflow owner, decoder, or source copy is introduced."
+  ],
+  "evidence": {
+    "assemblyCorrespondence": "TestOutput/material-resume-20260920/assembly-correspondence-v2.json",
+    "appAssemblySha256": "a78a1f270022dd9832095a58f812dc5d7d78be0bea2bd5e08b60d57ad73c5974",
+    "testAssemblySha256": "0b5346345126aaf2a83cf6df3594a71162ae0e9cdeffa35a3330d7f4c490fc0c",
+    "windows": {
+      "log": "TestOutput/material-resume-20260920/candidate-v2.log",
+      "junit": "TestOutput/material-resume-20260920-candidate-v2.junit.xml",
+      "candidatePassed": 99,
+      "assetExportPassed": 9,
+      "assetExportFailed": 0,
+      "assetExportSkipped": 0,
+      "maximumTestThreads": 4
+    },
+    "linux": {
+      "log": "TestOutput/material-resume-20260920/linux-candidate.log",
+      "junit": "TestOutput/material-resume-20260920-linux-candidate.junit.xml",
+      "receipt": "TestOutput/material-resume-20260920/material-resume-20260920-linux-candidate.receipt.json",
+      "environment": "TestOutput/material-resume-20260920/linux-runtime.log",
+      "runtime": "Ubuntu 24.04 x64, .NET runtime 10.0.12; SDK 10.0.112 installed",
+      "executionScope": "Linux execution of the same Windows-built portable net10.0 managed binaries; no Linux source-build or publish claim.",
+      "candidatePassed": 99,
+      "assetExportPassed": 9,
+      "assetExportFailed": 0,
+      "assetExportSkipped": 0,
+      "maximumTestThreads": 4
+    },
+    "behavioralCoverage": [
+      "Two cases use the real layered VFS with tiny loose reads and a synthetic unreadable override. Actual loose-root and synthetic archive-file provenance forms are protected, the established error is reported, and a later successful item continues; these are not archive-decoder fixtures.",
+      "Cancellation triggered during the bounded read preserves an existing output and reports no completed item.",
+      "A deterministic failed final rename removes its staged temporary file and preserves a later successful output.",
+      "Cancellation after one completed item retains its bytes and prevents the next source read.",
+      "Four existing cases retain provenance rejection, path/deduplication/partial-success behavior, traversal/input/overwrite protection, and corrupt-DDX rejection."
+    ],
+    "cli": {
+      "receipt": "TestOutput/material-resume-20260920/cli-v2/asset-cli-receipt.json",
+      "partialSuccessStdout": "TestOutput/material-resume-20260920/cli-v2/assets-partial.stdout.log",
+      "partialSuccessStderr": "TestOutput/material-resume-20260920/cli-v2/assets-partial.stderr.log",
+      "inputProtectionStderr": "TestOutput/material-resume-20260920/cli-v2/assets-input-protection.stderr.log",
+      "partialSuccessExitCode": 1,
+      "inputReplacementWithForceExitCode": 1,
+      "inputPreserved": true,
+      "successfulOutputPreserved": true,
+      "temporaryFiles": 0,
+      "inputSha256": "610cbea5804de8eb8032e01d5e2c48e1375fbf37f573c6278cb0715ef284c929",
+      "scope": "Actual rebuilt Windows CLI preserved successful bytes on a mixed present/missing selection and refused --force replacement of its loose input. Actual-layer fallback is exercised by the behavioral tests, not this CLI fixture. The receipt also records pex help exit 0, which is outside this guard increment."
+    }
+  },
+  "limits": [
+    "This increment does not complete M3.5, shared executable-operation adoption, or the full GUI/CLI capability inventory.",
+    "No GUI interaction acceptance, native viewer acceptance, publish acceptance, or release readiness is established by this record.",
+    "Complexity is a source-level incremental bound; no measured throughput, latency, allocation, or peak-memory improvement is claimed.",
+    "Inherited path semantics and filesystem metadata checks are unchanged. This record does not claim new filesystem alias, symbolic-link race, concurrent file-replacement, or all-archive-family guarantees."
+  ]
+}

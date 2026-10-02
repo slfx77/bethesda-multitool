@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.EsmView;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
@@ -160,6 +161,29 @@ internal static class PlacedObjectCategoryResolver
         {
             properties.Add(new EsmPropertyEntry
                 { Name = "Model", Value = modelPath, Category = "Identity" });
+        }
+
+        if (worldViewData is not null)
+        {
+            var catalog = worldViewData.AssetRecords;
+            properties.Add(new EsmPropertyEntry { Name = "Record View", Value = catalog.Mode, Category = "Asset Provenance" });
+            AddOwner("Placement", catalog.PlacementOwner(obj));
+            AddOwner("Base", catalog.Owner(obj.BaseFormId));
+            if (obj.RecordType == "REFR" && !string.IsNullOrEmpty(modelPath)) AddOwner("Model", catalog.ModelOwner(obj, modelPath));
+
+            void AddOwner(string label, AssetRecordOwner owner)
+            {
+                properties.Add(new EsmPropertyEntry { Name = label + " Record", Value = owner.Status, Category = "Asset Provenance" });
+                if (owner.Plugin is not null)
+                    properties.Add(new EsmPropertyEntry { Name = label + " Plugin", Value = owner.Plugin, Category = "Asset Provenance" });
+                if (owner.FileLocalFormId is { } local)
+                    properties.Add(new EsmPropertyEntry { Name = label + " Local ID", Value = $"0x{local:X8}", Category = "Asset Provenance" });
+                if (owner.RecordOffset is { } offset)
+                    properties.Add(new EsmPropertyEntry { Name = label + " Offset", Value = $"0x{offset:X}", Category = "Asset Provenance" });
+                if (owner.FilePath is not null)
+                    properties.Add(new EsmPropertyEntry { Name = label + " Source", Value = owner.FilePath, Category = "Asset Provenance" });
+            }
+            properties.Add(new EsmPropertyEntry { Name = "Parsed Source Hash", Value = "Unavailable", Category = "Asset Provenance" });
         }
 
         var useCount = worldViewData?.UsageIndex?.GetUseCount(obj.FormId) ?? 0;

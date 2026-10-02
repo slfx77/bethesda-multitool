@@ -19,6 +19,26 @@ public sealed partial class SingleFileTab
     private List<LoadOrderEntry>? _pendingLoadOrderEntries;
     private string? _pendingSubtitleCsvPath;
 
+    /// <summary>Copies the applied or staged supplementary selection for the combined Explore dialog.</summary>
+    internal ObservableCollection<LoadOrderEntry> CreateExploreLoadOrderEntries() =>
+        LoadOrderDialogService.CreateWorkingEntries(_session.IsAnalyzed
+            ? _session.LoadOrder.Entries : _pendingLoadOrderEntries ?? Enumerable.Empty<LoadOrderEntry>());
+
+    /// <summary>The subtitle selection belonging to the current record document.</summary>
+    internal string? ExploreSubtitleCsvPath => _session.IsAnalyzed
+        ? _session.LoadOrder.SubtitleCsvPath : _pendingSubtitleCsvPath;
+
+    /// <summary>Retains explicit choices for application after a different primary document opens.</summary>
+    internal void StageExploreLoadOrder(LoadOrderDialogResult result)
+    {
+        _pendingLoadOrderEntries = result.Action == LoadOrderDialogAction.ClearAll || result.Entries.Count == 0
+            ? null : result.Entries.ToList();
+        var csvPath = result.SubtitleCsvPath?.Trim();
+        _pendingSubtitleCsvPath = result.Action != LoadOrderDialogAction.ClearAll &&
+            !string.IsNullOrEmpty(csvPath) && File.Exists(csvPath) ? csvPath : null;
+        UpdateLoadOrderStatusText();
+    }
+
     private async void LoadOrderButton_Click(object sender, RoutedEventArgs e)
     {
         if (!_session.IsAnalyzed)
@@ -34,11 +54,21 @@ public sealed partial class SingleFileTab
             new LoadOrderDialogOptions
             {
                 Title = "Load Order",
-                IntroText = "Files later in the list override records from earlier files.",
+                IntroText = "Files later in the list override earlier files. For Fallout 3/New Vegas plugins, " +
+                    "the primary file is placed before its dependents. Missing masters stay unresolved. " +
+                    "The resulting order is shown in the status and reports.",
                 AllowSubtitleCsv = true,
                 SubtitleCsvPath = _session.LoadOrder.SubtitleCsvPath,
                 PrimaryFilePath = _session.FilePath
             });
+
+        await ApplyExploreLoadOrderAsync(dialogResult);
+    }
+
+    /// <summary>Applies supplementary choices to the current primary without moving the selected pane.</summary>
+    internal async Task ApplyExploreLoadOrderAsync(LoadOrderDialogResult dialogResult, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
 
         switch (dialogResult.Action)
         {
@@ -55,11 +85,12 @@ public sealed partial class SingleFileTab
         var csvPath = dialogResult.SubtitleCsvPath?.Trim();
         var hasEntries = dialogResult.Entries.Count > 0;
         var hasCsv = !string.IsNullOrEmpty(csvPath) && File.Exists(csvPath);
-        // Mirror the applied selection into the stash so a later re-Load keeps it.
-        _pendingLoadOrderEntries = hasEntries ? dialogResult.Entries.ToList() : null;
-        _pendingSubtitleCsvPath = hasCsv ? csvPath : null;
         if (!hasEntries && !hasCsv)
         {
+            _pendingLoadOrderEntries = null;
+            _pendingSubtitleCsvPath = null;
+            _session.LoadOrder.Dispose();
+            await OnLoadOrderChanged();
             return;
         }
 
@@ -73,7 +104,13 @@ public sealed partial class SingleFileTab
                 _session.LoadOrder,
                 dialogResult.Entries,
                 csvPath,
-                status => DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = status));
+                status => DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = status),
+                cancellationToken);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            // Only successful publication changes the selection retained for a later reload.
+            _pendingLoadOrderEntries = hasEntries ? dialogResult.Entries.ToList() : null;
+            _pendingSubtitleCsvPath = hasCsv ? csvPath : null;
 
             // Switch back to Idle before OnLoadOrderChanged so the re-triggered tab handler
             // actually runs. SubTabView_SelectionChanged guards on `_pipelinePhase == Idle`
@@ -85,6 +122,10 @@ public sealed partial class SingleFileTab
 
             await OnLoadOrderChanged();
             StatusTextBlock.Text = "Load order data loaded.";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -149,7 +190,7 @@ public sealed partial class SingleFileTab
     ///     entries are re-filtered against the FINAL primary path (the dialog only dedups against the
     ///     textbox at add time; the user can change the primary afterwards).
     /// </summary>
-    private async Task ApplyPendingLoadOrderAsync(string primaryFilePath)
+    private async Task ApplyPendingLoadOrderAsync(string primaryFilePath, CancellationToken cancellationToken)
     {
         if (_pendingLoadOrderEntries is not { Count: > 0 } && _pendingSubtitleCsvPath is null)
         {
@@ -164,12 +205,16 @@ public sealed partial class SingleFileTab
             _session.LoadOrder,
             entries,
             _pendingSubtitleCsvPath,
-            status => DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = status));
+            status => DispatcherQueue.TryEnqueue(() => StatusTextBlock.Text = status),
+            cancellationToken);
         UpdateLoadOrderStatusText();
     }
 
     private async Task OnLoadOrderChanged()
     {
+        // Retire old-source publishers before clearing their UI and starting the new selection.
+        await _tasks.CancelAllAndDrainAsync();
+        await CancelNpcViewerLoadAndDrainAsync();
         UpdateLoadOrderStatusText();
 
         // Reset data browser so it rebuilds with new resolver
@@ -188,6 +233,10 @@ public sealed partial class SingleFileTab
         _session.WorldViewData = null;
         ResetWorldMap();
 
+        // Actor identities and details use the same selection as the record browser.
+        _session.NpcBrowserPopulated = false;
+        ResetNpcBrowser();
+
         // Reset dialogue viewer so it rebuilds with new resolver/subtitles
         _session.DialogueViewerPopulated = false;
         _session.DialogueTree = null;
@@ -205,6 +254,13 @@ public sealed partial class SingleFileTab
         }
 
         await Task.CompletedTask;
+    }
+
+    private async Task<Core.Semantic.LoadOrder.LoadOrderSelectionView?> GetSelectedLoadOrderViewAsync()
+    {
+        var view = await _session.GetSelectedViewAsync();
+        UpdateLoadOrderStatusText();
+        return view;
     }
 
     private void UpdateLoadOrderStatusText()
@@ -229,6 +285,15 @@ public sealed partial class SingleFileTab
             return;
         }
 
+        if (lo.SelectedView is { } selected)
+        {
+            LoadOrderStatusText.Text = $"{selected.Order.Entries.Count} plugins · static selection" +
+                (selected.Order.MissingMasters.Count > 0 ? $" · {selected.Order.MissingMasters.Count} unresolved masters" : "");
+            ToolTipService.SetToolTip(LoadOrderStatusText, string.Join(" → ", selected.Order.Entries.Select(e => e.Name)) +
+                (selected.Order.MissingMasters.Count > 0 ? "\nUnresolved: " + string.Join(", ", selected.Order.MissingMasters) : ""));
+            return;
+        }
+        ToolTipService.SetToolTip(LoadOrderStatusText, null);
         var parts = new List<string>();
         if (lo.Entries.Count > 0)
         {

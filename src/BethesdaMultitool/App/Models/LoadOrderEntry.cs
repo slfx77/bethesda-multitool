@@ -3,6 +3,7 @@ using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Records;
 
 namespace BethesdaMultitool;
 
@@ -27,6 +28,8 @@ internal sealed class LoadOrderEntry : IDisposable
 
     /// <summary>Full RecordCollection parsed from this file (needed for world map terrain).</summary>
     public RecordCollection? Records { get; set; }
+    /// <summary>Lightweight physical headers and LAND components retained with the same parsed snapshot.</summary>
+    public EsmRecordScanResult? SelectionEvidence { get; set; }
 
     /// <summary>True if this entry has been successfully loaded and parsed.</summary>
     public bool IsLoaded => Resolver != null;
@@ -35,5 +38,6 @@ internal sealed class LoadOrderEntry : IDisposable
     {
         Records = null;
         Resolver = null;
+        SelectionEvidence = null;
     }
 }

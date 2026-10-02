@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.EsmView;
 using BethesdaMultitool.Core.Formats.Esm.Export.Support;
 using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
+using BethesdaMultitool.Core.Formats.Esm.Inspection;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.AI;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Misc;
@@ -150,12 +151,13 @@ internal static class EsmBrowserTreeBuilder
         // consumed the types it routed into named categories).
         var graphicsSubs = new List<(string Name, IList Records)>();
         if (result.TextureSets.Count > 0) graphicsSubs.Add(("Texture Sets", result.TextureSets));
+        var imageModifiers = Pick(result.ImageSpaceModifiers, "IMAD");
+        if (imageModifiers.Count > 0) graphicsSubs.Add(("Image Space Modifiers", imageModifiers));
         // FO4/FO76 only — empty (and hidden) for every earlier game.
         if (result.MaterialSwaps.Count > 0) graphicsSubs.Add(("Material Swaps", result.MaterialSwaps));
         graphicsSubs.AddRange(BuildGenericSubcategories(byType,
             ("Camera Shots", "CAMS"),
-            ("Effect Shaders", "EFSH"),
-            ("Image Space Modifiers", "IMAD")));
+            ("Effect Shaders", "EFSH")));
         AddCategory(root, "Graphics", "\uE790", graphicsSubs.ToArray());
 
         var audioSubs = new List<(string Name, IList Records)>();
@@ -240,6 +242,57 @@ internal static class EsmBrowserTreeBuilder
         }
 
         return result.ToArray();
+    }
+
+    internal static void AppendPlacements(ObservableCollection<EsmBrowserNode> root,
+        IReadOnlyList<PlacementBrowserEntry> entries, string? primaryPath)
+    {
+        var primary = primaryPath == null ? null : Path.GetFullPath(primaryPath);
+        AddCategory(root, "Placed References", "\uE774", entries.GroupBy(e => e.RecordType)
+            .Select(g => (g.Key, (IList)g.Select(e => new PlacementNodeSource(e,
+                e.SourcePath.Equals(primary, StringComparison.OrdinalIgnoreCase))).ToList())).ToArray());
+    }
+
+    private sealed record PlacementNodeSource(PlacementBrowserEntry Entry, bool IsPrimarySource);
+
+    private static EsmBrowserNode BuildPlacementNode(PlacementNodeSource source, EsmBrowserNode typeNode,
+        FormIdResolver? resolver)
+    {
+        var entry = source.Entry;
+        return new EsmBrowserNode
+        {
+            DisplayName = entry.EditorId ?? $"0x{entry.FormId:X8}",
+            Detail = $"{Path.GetFileName(entry.SourcePath)} @ 0x{entry.Offset:X} · {entry.SelectionStatus}",
+            FormIdHex = $"0x{entry.FormId:X8}", EditorId = entry.EditorId, NodeType = "Record",
+            ParentTypeName = typeNode.ParentTypeName, IconGlyph = typeNode.IconGlyph,
+            ParentIconGlyph = typeNode.IconGlyph, DataObject = entry,
+            FileOffset = source.IsPrimarySource ? entry.Offset : null,
+            PropertyFactory = () =>
+            {
+                var properties = new List<EsmPropertyEntry>
+                {
+                    Property("File-local FormID", $"0x{entry.FileLocalFormId:X8}", "Provenance"),
+                    Property("Selection", entry.SelectionStatus, "Provenance")
+                };
+                try
+                {
+                    var row = entry.Read();
+                    if (row != null)
+                    { properties.AddRange(RecordDetailPropertyAdapter.Convert(PlacementDetailBuilder.Build(row, resolver ?? FormIdResolver.Empty))); }
+                    else { Unavailable("Unavailable"); }
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException)
+                { Unavailable($"Unavailable: {ex.Message}"); }
+                return properties;
+
+                void Unavailable(string message)
+                {
+                    properties.Add(Property("Source", entry.SourcePath, "Provenance"));
+                    properties.Add(Property("File offset", $"0x{entry.Offset:X}", "Provenance"));
+                    properties.Add(Property("Payload", message, "Provenance"));
+                }
+            }
+        };
     }
 
     private static void AddCategory(
@@ -358,6 +411,11 @@ internal static class EsmBrowserTreeBuilder
 
         foreach (var record in records)
         {
+            if (record is PlacementNodeSource placement)
+            {
+                recordNodes.Add(BuildPlacementNode(placement, typeNode, resolver));
+                continue;
+            }
             if (record is DmpGapRecoveryCandidate candidate)
             {
                 recordNodes.Add(BuildRecoverableGapNode(candidate, typeNode));
@@ -759,7 +817,8 @@ internal static class EsmBrowserTreeBuilder
             // Delegate to character property builder for actor/NPC-specific subrecords
             if (value is ActorBaseSubrecord stats)
             {
-                EsmCharacterPropertyBuilder.AddActorBaseStats(properties, stats, record is NpcRecord);
+                EsmCharacterPropertyBuilder.AddActorBaseStats(properties, stats, record is NpcRecord,
+                    allRecords?.Game ?? BethesdaGame.Unknown);
                 continue;
             }
 

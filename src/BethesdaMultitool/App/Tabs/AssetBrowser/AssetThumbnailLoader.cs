@@ -1,247 +1,75 @@
-// LIFO-stack scheduling, the session model and the three-way staleness guard are ported from
-// JimmyPCTool / AweMultitool (https://github.com/slfx77/JimmyPCTool, MIT licence) —
-// src/AweMultitool/App/Tabs/ThumbnailLoader.cs. Retargeted onto AssetBrowseSession + ThumbnailCache.
-
-using System.Collections.Concurrent;
 using BethesdaMultitool.Core.AssetBrowse;
-using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Imaging;
 using Microsoft.UI.Dispatching;
+using Slfx77.Multitool.Core.Caching;
+using Slfx77.Multitool.Core.Documents;
+using Slfx77.Multitool.Core.Media;
+using Slfx77.Multitool.WinUI.Images;
 
 namespace BethesdaMultitool;
 
-/// <summary>
-///     Decodes gallery thumbnails in the background, <b>newest request first</b>, one source at a time.
-///     <para>
-///         A retail install holds tens of thousands of assets, so decoding them up front is out of
-///         the question — and decoding them in list order is worse than useless, because after a
-///         fling-scroll the tiles the user is actually looking at are the ones requested LAST.
-///         Requests therefore go on a stack, not a queue.
-///     </para>
-///     <para>
-///         Three guards stop the wrong image appearing. Opening a source starts a new
-///         <i>session</i> and cancels the old one; the worker only touches its own session's state;
-///         and the dispatcher callback that finally attaches a bitmap re-checks both that its
-///         session is current and that the tile is still realized. That last check is the one that
-///         matters — cancelling a token does nothing to a callback already queued on the UI thread.
-///     </para>
-/// </summary>
-internal sealed class AssetThumbnailLoader : IDisposable
+/// <summary>Connects Bethesda's existing image and palette decoder to Shared's bounded thumbnail worker and cache.</summary>
+/// <remarks>The browser must await disposal before releasing its source lease. Each attachment creates one loader;
+/// source replacement never changes the decoder captured by an in-flight request.</remarks>
+internal sealed class AssetThumbnailLoader : IAsyncDisposable
 {
-    private readonly ThumbnailCache _cache;
-    private readonly int _cellPixels;
+    // ApplicationThumbnailCache construction retains configuration only; opening occurs on the worker.
+    private static readonly ApplicationThumbnailCache PersistentThumbnails = new("BethesdaMultitool");
+    private readonly ThumbnailLoader<AssetNode> _loader;
+    private readonly DdsThumbnailProducer _persistentDds;
     private readonly double _deviceScale;
-    private readonly DispatcherQueue _dispatcher;
-    private bool _disposed;
-    private Session? _session;
+    private readonly ThumbnailCacheObservation _observation;
+    private bool _started;
 
-    public AssetThumbnailLoader(DispatcherQueue dispatcher, ThumbnailCache cache, int cellPixels, double deviceScale)
+    /// <summary>Clears stored thumbnails through this application's existing shared owner, leaving previews and memory caches intact.</summary>
+    /// <param name="cancellationToken">Cancels admission and clearing between storage operations.</param>
+    /// <returns>Whether clearing completed; ongoing producers may subsequently store new thumbnails.</returns>
+    internal static bool ClearPersistentThumbnailCache(CancellationToken cancellationToken) =>
+        PersistentThumbnails.Clear(cancellationToken);
+
+    /// <summary>Registers a new shared loader before any decoder work can start, preserving BMT's memory limits.</summary>
+    /// <param name="dispatcher">The owning native presentation dispatcher.</param>
+    /// <param name="cellPixels">The existing maximum decoded edge in device pixels.</param>
+    /// <param name="deviceScale">The current display scale used for device-correct image layout.</param>
+    /// <param name="observation">The browser-lifetime resource observer; it owns no second image cache.</param>
+    internal AssetThumbnailLoader(DispatcherQueue dispatcher, int cellPixels,
+        double deviceScale, ThumbnailCacheObservation observation)
     {
-        ArgumentNullException.ThrowIfNull(dispatcher);
-        ArgumentNullException.ThrowIfNull(cache);
-
-        _dispatcher = dispatcher;
-        _cache = cache;
-        _cellPixels = cellPixels;
+        _loader = new ThumbnailLoader<AssetNode>(dispatcher, cellPixels, deviceScale,
+            maximumCacheEntries: 2048, maximumCacheBytes: 64L * 1024 * 1024);
+        _persistentDds = new DdsThumbnailProducer(PersistentThumbnails);
         _deviceScale = deviceScale;
+        _observation = observation;
+        _observation.Attach(this, () => _loader.CacheStatistics, _loader.TrimCacheToBytes);
     }
 
-    public void Dispose()
+    /// <summary>Captures an exact source only after the browser owns this loader and its retirement path.</summary>
+    /// <param name="source">The source retained by the browser's existing lease until this loader drains.</param>
+    /// <param name="cancellationToken">The exact source snapshot's retirement token.</param>
+    internal void BeginSession(AssetBrowseSession source, CancellationToken cancellationToken)
     {
-        if (_disposed)
+        if (_started) throw new InvalidOperationException("A thumbnail attachment cannot substitute its source.");
+        _started = true;
+        _loader.BeginContentSession((node, pixels, token) =>
         {
-            return;
-        }
-
-        _disposed = true;
-        Interlocked.Exchange(ref _session, null)?.Dispose();
+            var thumbnail = AssetThumbnailSource.TryRender(source, node, pixels, _persistentDds, _deviceScale, token,
+                out var imageInfo);
+            // Published before the artwork crosses to the dispatcher, so the tile's caption can read it on arrival.
+            node.ImageInfo = imageInfo;
+            return thumbnail is { } image
+                ? new ThumbnailContent(new DecodedImage(image.Width, image.Height, image.Rgba))
+                : new ThumbnailContent(null, [DocumentText.Resource("AssetGallery_NoPreview")]);
+        }, cancellationToken);
     }
 
-    /// <summary>Abandons the previous session and starts one reading through <paramref name="source" />.</summary>
-    public void BeginSession(AssetBrowseSession source)
+    /// <summary>Queues one admitted realized occurrence; Shared owns recycling and late-publication checks.</summary>
+    /// <param name="item">The exact current-source tile admitted by the UI owner.</param>
+    internal void Request(AssetGalleryItem item) => _loader.Request(item);
+
+    /// <summary>Returns the retained asynchronous drain, including failure, before the borrowed source can close.</summary>
+    /// <returns>Completion of all detached worker activity and cache retirement.</returns>
+    public async ValueTask DisposeAsync()
     {
-        ArgumentNullException.ThrowIfNull(source);
-
-        var session = new Session(source);
-
-        // Publish before cancelling, so a worker checking whether it is current cannot see the old
-        // session as the live one.
-        var previous = Interlocked.Exchange(ref _session, session);
-        previous?.Dispose();
-
-        if (_disposed)
-        {
-            session.Dispose();
-            return;
-        }
-
-        session.Start(this);
-    }
-
-    /// <summary>Queues a realized tile. UI thread only.</summary>
-    public void Request(AssetGalleryItem item)
-    {
-        ArgumentNullException.ThrowIfNull(item);
-
-        if (item.IsRequested || item.Thumbnail is not null)
-        {
-            return;
-        }
-
-        var session = Volatile.Read(ref _session);
-        if (session is null)
-        {
-            return;
-        }
-
-        item.IsRequested = true;
-        session.Pending.Push(item);
-        session.Signal.Release();
-    }
-
-    private void Work(Session session)
-    {
-        while (!session.Token.IsCancellationRequested)
-        {
-            try
-            {
-                session.Signal.Wait(session.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-
-            if (!session.Pending.TryPop(out var item))
-            {
-                continue;
-            }
-
-            // The tile may have scrolled away between being queued and being reached.
-            if (!item.IsRealized)
-            {
-                item.IsRequested = false;
-                continue;
-            }
-
-            Render(session, item);
-        }
-    }
-
-    private void Render(Session session, AssetGalleryItem item)
-    {
-        byte[]? bgra = null;
-        var width = 0;
-        var height = 0;
-
-        try
-        {
-            var key = new ThumbnailKey(session.Source.SourcePath, item.Node.VirtualPath, _cellPixels);
-            var fitted = _cache.GetOrAdd(
-                key, () => AssetThumbnailSource.TryRender(session.Source, item.Node, _cellPixels, session.Token));
-
-            if (fitted is { Rgba: not null } thumbnail)
-            {
-                width = thumbnail.Width;
-                height = thumbnail.Height;
-                bgra = PremultipliedBgra.FromRgba(thumbnail.Rgba);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-        catch (Exception e) when (e is InvalidDataException or ArgumentException or OverflowException
-                                      or IOException or IndexOutOfRangeException or ArgumentOutOfRangeException)
-        {
-            // One unreadable asset must not end the session; the tile shows a broken marker. Over a
-            // retail install some formats are simply not decoded yet, so this is expected traffic.
-        }
-
-        if (session.Token.IsCancellationRequested)
-        {
-            return;
-        }
-
-        var caption = bgra is null ? "no preview" : $"{width}×{height}";
-        _dispatcher.TryEnqueue(() =>
-        {
-            // Both checks are required: the session may have been replaced, and the tile may have
-            // been recycled, since this callback was queued.
-            if (!ReferenceEquals(Volatile.Read(ref _session), session) || !item.IsRealized)
-            {
-                item.IsRequested = false;
-                return;
-            }
-
-            item.SetCaption(caption);
-            item.SetThumbnail(bgra is null ? null : AssetBitmapFactory.FromPremultipliedBgra(width, height, bgra),
-                _deviceScale);
-        });
-    }
-
-    /// <summary>One source's worth of decoding, cancelled as a unit.</summary>
-    private sealed class Session : IDisposable
-    {
-        private readonly CancellationTokenSource _cts = new();
-        private bool _disposed;
-        private Task? _worker;
-
-        public Session(AssetBrowseSession source)
-        {
-            Source = source;
-            Token = _cts.Token;
-        }
-
-        public AssetBrowseSession Source { get; }
-
-        public ConcurrentStack<AssetGalleryItem> Pending { get; } = new();
-
-        public SemaphoreSlim Signal { get; } = new(0);
-
-        public CancellationToken Token { get; }
-
-        public void Dispose()
-        {
-            if (_disposed)
-            {
-                return;
-            }
-
-            _disposed = true;
-            try
-            {
-                try
-                {
-                    _cts.Cancel();
-                    Signal.Release();
-                }
-                finally
-                {
-                    // The worker only posts UI callbacks; it never waits for them. Drain it before
-                    // the caller can release its file system or thumbnail cache.
-                    _worker?.GetAwaiter().GetResult();
-                }
-            }
-            catch (OperationCanceledException) when (Token.IsCancellationRequested)
-            {
-                // Cancellation is the normal way this worker stops.
-            }
-            catch (Exception ex)
-            {
-                Logger.Instance.Warn("[AssetBrowser] Thumbnail worker failed during shutdown: {0}", ex.Message);
-            }
-            finally
-            {
-                Signal.Dispose();
-                _cts.Dispose();
-            }
-        }
-
-        public void Start(AssetThumbnailLoader owner)
-        {
-            _worker = Task.Factory.StartNew(
-                () => owner.Work(this), CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
-        }
+        await _loader.DisposeAsync();
+        _observation.CompleteRetirement(this);
     }
 }

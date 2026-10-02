@@ -52,10 +52,17 @@ public sealed class XamlAccessibilityRatchetTests
 
         if (regressions.Count > 0)
         {
-            var gapByKey = gaps.ToDictionary(ToKey, g => g);
+            // Several unnamed controls of the same type in one file share a key, so this reporting
+            // lookup must group rather than throw. It previously crashed the test with a duplicate-key
+            // ArgumentException, hiding the very regressions it was about to list.
+            var linesByKey = gaps.GroupBy(ToKey, StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group => string.Join(", ", group.Select(gap => gap.LineNumber).Order()),
+                    StringComparer.Ordinal);
             var regressionsWithLines = regressions.Select(r =>
-                gapByKey.TryGetValue(r, out var g)
-                    ? $"{r}  (line {g.LineNumber})"
+                linesByKey.TryGetValue(r, out var lines)
+                    ? $"{r}  (line {lines})"
                     : r);
             var header = $"{regressions.Count} new accessibility regression(s). " +
                          "Add AutomationProperties.Name / LabeledBy / x:Uid to these controls, " +

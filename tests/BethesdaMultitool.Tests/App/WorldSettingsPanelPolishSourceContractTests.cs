@@ -38,12 +38,14 @@ public sealed class WorldSettingsPanelPolishSourceContractTests
     {
         var singleFileTab = SourceContract.ReadAppSource("SingleFileTab.xaml");
         var panel = SourceContract.Extract(singleFileTab,
-            "<Grid x:Name=\"WorldRightPanelContent\"",
+            "<Border x:Name=\"WorldRightPanelContent\"",
             "<Grid.RowDefinitions>");
 
-        Assert.Contains("Background=\"{ThemeResource LayerFillColorAltBrush}\"", panel,
+        // The theme-aware surface moved into the shared AWT-derived card style, which sets a
+        // CardBackgroundBrush background, a CardBorderBrush border and CornerRadius 8. Pinning the style
+        // covers all three; repeating them here would only assert the style's own contents.
+        Assert.Contains("Style=\"{StaticResource MultitoolCardBorderStyle}\"", panel,
             StringComparison.Ordinal);
-        Assert.Contains("CornerRadius=\"8\"", panel, StringComparison.Ordinal);
         Assert.DoesNotContain("Background=\"#", panel, StringComparison.Ordinal);
     }
 

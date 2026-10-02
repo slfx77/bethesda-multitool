@@ -4,6 +4,10 @@ using BethesdaMultitool.Core.Formats.Esm.Export;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Subtitles;
 using BethesdaMultitool.Core.Semantic;
+using BethesdaMultitool.Core.Semantic.LoadOrder;
+using BethesdaMultitool.Core.Formats.Esm.Records;
+using BethesdaMultitool.Core.Analysis;
+using BethesdaMultitool.Core.Games;
 
 namespace BethesdaMultitool;
 
@@ -23,6 +27,43 @@ internal sealed class LoadOrder : IDisposable
     public SubtitleIndex? Subtitles { get; set; }
 
     public bool HasData => Entries.Count > 0 || Subtitles != null;
+    private Task<LoadOrderSelectionView?>? _selectionTask;
+    private RecordCollection? _selectionPrimary;
+    internal LoadOrderSelectionView? SelectedView => _selectionTask is { IsCompletedSuccessfully: true } ? _selectionTask.Result : null;
+
+    /// <summary>Called on the UI thread; parse snapshots are selected once off-thread for every consumer.</summary>
+    internal Task<LoadOrderSelectionView?> GetSelectedViewAsync(string? primaryPath, AnalysisFileType primaryType,
+        RecordCollection? primaryRecords, EsmRecordScanResult? primaryScan)
+    {
+        if (primaryType != AnalysisFileType.EsmFile || primaryPath == null || primaryRecords == null ||
+            primaryRecords.Game is not (BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas) || Entries.Count == 0)
+        {
+            return Task.FromResult<LoadOrderSelectionView?>(null);
+        }
+        if (_selectionTask != null && ReferenceEquals(primaryRecords, _selectionPrimary)) { return _selectionTask; }
+        var entries = Entries.Select(e => (e.FilePath, e.FileType, e.Records, e.SelectionEvidence)).ToArray();
+        _selectionPrimary = primaryRecords;
+        _selectionTask = Task.Run<LoadOrderSelectionView?>(() =>
+        {
+            if (primaryScan == null || entries.Any(e => e.FileType != AnalysisFileType.EsmFile ||
+                    e.Records?.Game != primaryRecords.Game || e.SelectionEvidence == null))
+            {
+                throw new InvalidOperationException("A plugin load order requires parsed plugins from the same game. Open a capture separately for a master-backed preview.");
+            }
+            var order = PrimaryPluginOrder.Create(primaryPath, entries.Select(e => e.FilePath).ToArray(), PluginLoadOrder.ReadMasters);
+            var sources = order.Entries.Select(entry =>
+            {
+                if (entry.Path.Equals(Path.GetFullPath(primaryPath), StringComparison.OrdinalIgnoreCase))
+                {
+                    return (entry, primaryRecords, primaryScan);
+                }
+                var source = entries.Single(e => Path.GetFullPath(e.FilePath).Equals(entry.Path, StringComparison.OrdinalIgnoreCase));
+                return (entry, source.Records!, source.SelectionEvidence!);
+            }).ToArray();
+            return LoadOrderSelectionView.FromParsedSources(order, sources);
+        });
+        return _selectionTask;
+    }
 
     /// <summary>
     ///     Builds a merged resolver from all loaded entries, folded in load order.
@@ -125,6 +166,8 @@ internal sealed class LoadOrder : IDisposable
 
     public void Dispose()
     {
+        _selectionTask = null;
+        _selectionPrimary = null;
         foreach (var entry in Entries)
             entry.Dispose();
         Entries.Clear();

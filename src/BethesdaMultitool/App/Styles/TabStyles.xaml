@@ -12,24 +12,18 @@
 
   <!-- Standard card container style -->
   <Style x:Key="CardBorderStyle"
-         TargetType="Border">
+         TargetType="Border" BasedOn="{StaticResource MultitoolCardBorderStyle}">
     <Setter Property="Padding"
-            Value="8" />
-    <Setter Property="Background"
-            Value="{ThemeResource CardBackgroundBrush}" />
-    <Setter Property="CornerRadius"
             Value="8" />
   </Style>
 
   <!-- Dark card style (for hex viewer, etc.) -->
   <Style x:Key="DarkCardBorderStyle"
-         TargetType="Border">
+         TargetType="Border" BasedOn="{StaticResource MultitoolCardBorderStyle}">
     <Setter Property="Padding"
             Value="8" />
     <Setter Property="Background"
-            Value="#FF1E1E1E" />
-    <Setter Property="CornerRadius"
-            Value="8" />
+            Value="{ThemeResource CardBackgroundSolidBrush}" />
   </Style>
 
   <!-- Column header container style -->
@@ -78,8 +72,8 @@
             Value="Collapsed" />
   </Style>
 
-  <!-- Settings drawer overlay style (hamburger-style, overlays from left) -->
-  <Style x:Key="SettingsDrawerBorderStyle"
+  <!-- Persistent workflow options -->
+  <Style x:Key="ToolOptionsBorderStyle"
          TargetType="Border">
     <Setter Property="HorizontalAlignment" Value="Left" />
     <Setter Property="VerticalAlignment" Value="Stretch" />
@@ -87,10 +81,10 @@
     <Setter Property="Padding" Value="16" />
     <Setter Property="Background" Value="{ThemeResource SolidBackgroundFillColorBaseBrush}" />
     <Setter Property="BorderBrush" Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
-    <Setter Property="BorderThickness" Value="0,0,1,0" />
-    <Setter Property="Canvas.ZIndex" Value="10" />
-    <Setter Property="CornerRadius" Value="8,0,0,8" />
-    <Setter Property="Visibility" Value="Collapsed" />
+    <Setter Property="BorderThickness" Value="1,0,0,0" />
+
+
+    <Setter Property="Visibility" Value="Visible" />
   </Style>
 
   <!-- I/O section container style -->
@@ -113,10 +107,7 @@
 
   <!-- I/O text box style -->
   <Style x:Key="IoTextBoxStyle"
-         TargetType="TextBox">
-    <Setter Property="Margin"
-            Value="0,0,8,0" />
-  </Style>
+         TargetType="TextBox" BasedOn="{StaticResource MultitoolIoTextBoxStyle}" />
 
   <!-- Action bar container style -->
   <Style x:Key="ActionBarGridStyle"
@@ -175,31 +166,9 @@
             Value="0,2" />
   </Style>
 
-  <!--
-    Draggable column splitter for hex-viewer / file-list / viewer layouts.
-    The toolkit default is transparent on Mica which makes the splitter invisible
-    even though dragging works. Breathing-room Margin keeps the bar from running
-    flush into adjacent controls; the outer Width stays 8 to preserve the hit
-    target. Solid subtle Background makes the splitter visible without adding a
-    custom gripper (toolkit's Element property can't be set on multiple splitters
-    via a shared Style because UIElement has a single-parent invariant; per-site
-    Elements would need to be declared inline if a richer grip is desired).
-    -->
+  <!-- Shared AWT-sized gap with the Toolkit's native grip and input handling. -->
   <Style x:Key="ResizableSplitterStyle"
-         TargetType="toolkit:GridSplitter">
-    <Setter Property="Width"
-            Value="8" />
-    <Setter Property="Margin"
-            Value="2,0" />
-    <Setter Property="Background"
-            Value="{ThemeResource DividerStrokeColorDefaultBrush}" />
-    <Setter Property="Foreground"
-            Value="{ThemeResource TextFillColorTertiaryBrush}" />
-    <Setter Property="ResizeBehavior"
-            Value="PreviousAndNext" />
-    <Setter Property="ResizeDirection"
-            Value="Columns" />
-  </Style>
+         TargetType="toolkit:GridSplitter" BasedOn="{StaticResource MultitoolColumnSplitterStyle}" />
 
   <!--
     Collapsible side panels (PanelCollapseController). The collapse chevron sits in the panel

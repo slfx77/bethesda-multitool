@@ -40,9 +40,11 @@ public sealed class NpcViewerVertexLerpSourceContractTests
         Assert.Contains("loadGeneration !== modelLoadGeneration", load, StringComparison.Ordinal);
         Assert.Contains("showFatalStatus(error);", load, StringComparison.Ordinal);
         Assert.Contains("modelLoadGeneration++;", clear, StringComparison.Ordinal);
-        Assert.Contains("status.textContent = 'Fatal mesh viewer error: ' + detail;", fatalStatus,
+        // The viewer status string moved into Resources.resw as Viewer_FatalError.
+        Assert.Contains("setLocalizedStatus('Viewer_FatalError', [detail]);", fatalStatus,
             StringComparison.Ordinal);
-        Assert.Contains("status.classList.remove('hidden');", fatalStatus, StringComparison.Ordinal);
+        // Revealing the status element moved into setLocalizedStatus, which showFatalStatus delegates to.
+        Assert.Contains("status.classList.remove('hidden');", source, StringComparison.Ordinal);
         SourceContract.AssertOrder(
             load,
             "const vertexLerpContract = inspectGlbVertexLerpContract(bytes);",

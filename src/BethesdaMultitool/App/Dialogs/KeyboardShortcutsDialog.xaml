@@ -6,6 +6,7 @@
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
   xmlns:local="using:BethesdaMultitool"
   xmlns:ui="using:BethesdaMultitool.Core.Ui"
+  Style="{StaticResource MultitoolContentDialogStyle}"
   Title="Keyboard shortcuts"
   CloseButtonText="Close"
   DefaultButton="Close"
