@@ -1,0 +1,1474 @@
+{
+ "schema": "display-blend-constants/1",
+ "generatedBy": "TestOutput/gap-impl-20260927/display-blend-probe/derive/make_constants.py",
+ "sources": [
+  "set_a.json",
+  "set_b.json",
+  "set_b_anchored_refined.json",
+  "set_b_other.json",
+  "set_b_anchored_over.json",
+  "lit_seeded.json",
+  "set_b_floors.json",
+  "set_b_guarded.json"
+ ],
+ "margin255": 0.05,
+ "tolerance255": 1.0,
+ "anchorGuard": 0.0625,
+ "framebufferModel": "Gamebryo PC: D3D9 8-bit UNORM target, no sRGB write, source saturated (INFERRED; not established for the X360 or PS3 framebuffers: display-blend CHALLENGE item 3)",
+ "importerRules": [
+  "A Transparent BSDF color (or Combine Color input) above 1 is never a socket default: a constant T > 1 arrives through Value nodes, the path the linked sentinels measure (review 2026-09-27 item 9)."
+ ],
+ "pins": {
+  "rule": "A test pins pin255, the SEEDED bound routine's output with its 0.05/255 margin (bound255, to 4 decimals), and passes when |reported bound - pin255| <= toleranceBound255. supersededChallengePin255 is the section-4.2 routine run as specified (unseeded): its alpha-over 14.90 held only because that grid under-read the supremum by 0.012/255 (unseeded found 14.8549 against seeded 14.8672). Every reported bound must also be at least analyticLower255 (a closed form at a known locus) where one exists; over and multiplicative have none and are cross-checked only by the numeric Nelder-Mead polish (polished255).",
+  "toleranceBound255": 0.01,
+  "designTest612SetA": {
+   "SRC_ALPHA/INV_SRC_ALPHA": 14.9172,
+   "SRC_ALPHA/ONE": 49.6514,
+   "ZERO/SRC_COLOR": 4.2879,
+   "ONE/ONE": 49.6514,
+   "ONE/ZERO": 0.0,
+   "SRC_COLOR/ONE": 49.6514,
+   "ZERO/INV_SRC_ALPHA": 4.2879,
+   "SRC_COLOR/SRC_COLOR": 40.5138,
+   "SRC_ALPHA/SRC_COLOR": 53.855,
+   "SRC_COLOR/ZERO": 0.0,
+   "ZERO/ZERO": 0.0
+  },
+  "setB": {
+   "SRC_ALPHA/INV_SRC_ALPHA": 14.1854,
+   "SRC_ALPHA/ONE": 13.1153,
+   "ZERO/SRC_COLOR": 4.1849,
+   "ONE/ONE": 13.1153,
+   "ONE/ZERO": 0.0,
+   "SRC_COLOR/ONE": 13.1153,
+   "ZERO/INV_SRC_ALPHA": 4.1849,
+   "SRC_COLOR/SRC_COLOR": 15.9039,
+   "SRC_ALPHA/SRC_COLOR": 16.1405,
+   "SRC_COLOR/ZERO": 0.0,
+   "ZERO/ZERO": 0.0
+  },
+  "setK": {
+   "SRC_ALPHA/ONE": 80.1618,
+   "ONE/ONE": 80.1618,
+   "SRC_COLOR/ONE": 80.1618
+  },
+  "lit": {
+   "A": {
+    "SRC_ALPHA/INV_SRC_ALPHA": 36.4189,
+    "SRC_ALPHA/ONE": 59.1432,
+    "ONE/ONE": 58.3248
+   },
+   "B": {
+    "SRC_ALPHA/INV_SRC_ALPHA": 36.4189,
+    "SRC_ALPHA/ONE": 45.5909,
+    "ONE/ONE": 43.637
+   },
+   "K": {
+    "SRC_ALPHA/ONE": 80.1618,
+    "ONE/ONE": 80.1618
+   }
+  }
+ },
+ "sets": {
+  "A": {
+   "label": "T <= 1, E >= 0: the design families with the challenge-corrected, seeded bounds",
+   "tmax": 1.0,
+   "pairs": {
+    "SRC_ALPHA/INV_SRC_ALPHA": {
+     "family": "over",
+     "fnvFiles": 3325,
+     "fit": {
+      "kind": "two",
+      "x1": 0.1015,
+      "x2": 0.7895,
+      "tmax": 1.0
+     },
+     "bound255": 14.9172,
+     "found255": 14.8672,
+     "argmax": [
+      0.895062,
+      0.555594,
+      1.0
+     ],
+     "polished255": 14.8672,
+     "supersededChallengePin255": 14.9,
+     "unseededBound255": 14.9049,
+     "pin255": 14.9172,
+     "analyticLowerHow": "no closed form (the maximum is interior on a Cd face): only the numeric Nelder-Mead polish cross-checks it"
+    },
+    "SRC_ALPHA/ONE": {
+     "family": "additive",
+     "fnvFiles": 807,
+     "fit": {
+      "kind": "one",
+      "xa": 0.21076
+     },
+     "bound255": 49.6514,
+     "found255": 49.6014,
+     "argmax": [
+      0.792335,
+      0.996094,
+      0.0
+     ],
+     "polished255": 49.6014,
+     "supersededChallengePin255": 49.65,
+     "unseededBound255": 49.6514,
+     "pin255": 49.6514,
+     "analyticLowerHow": "k0 = 1 - xa over black: enc(1 - lin(xa)) against 1 - xa",
+     "analyticLower255": 49.6014,
+     "analyticLowerAt": [
+      1.0,
+      0.78924,
+      0.0
+     ]
+    },
+    "ZERO/SRC_COLOR": {
+     "family": "multiplicative",
+     "fnvFiles": 726,
+     "fit": {
+      "kind": "two",
+      "x1": 0.061,
+      "x2": 0.7215,
+      "tmax": 1.0
+     },
+     "bound255": 4.2879,
+     "found255": 4.2379,
+     "argmax": [
+      0.051156,
+      1.0,
+      1.0
+     ],
+     "polished255": 4.2379,
+     "supersededChallengePin255": 4.29,
+     "unseededBound255": 4.2879,
+     "pin255": 4.2879,
+     "analyticLowerHow": "no closed form (the maximum is interior on a Cd face): only the numeric Nelder-Mead polish cross-checks it"
+    },
+    "ONE/ONE": {
+     "family": "additive",
+     "fnvFiles": 227,
+     "fit": {
+      "kind": "one",
+      "xa": 0.21076
+     },
+     "bound255": 49.6514,
+     "found255": 49.6014,
+     "argmax": [
+      0.78924,
+      1.0,
+      0.0
+     ],
+     "polished255": 49.6014,
+     "supersededChallengePin255": 49.65,
+     "unseededBound255": 49.6514,
+     "pin255": 49.6514,
+     "analyticLowerHow": "k0 = 1 - xa over black: enc(1 - lin(xa)) against 1 - xa",
+     "analyticLower255": 49.6014,
+     "analyticLowerAt": [
+      0.78924,
+      1.0,
+      0.0
+     ]
+    },
+    "ONE/ZERO": {
+     "family": "exact",
+     "fnvFiles": 12,
+     "fit": {
+      "kind": "exact"
+     },
+     "bound255": 0.0,
+     "found255": 0.0,
+     "argmax": null,
+     "pin255": 0.0
+    },
+    "SRC_COLOR/ONE": {
+     "family": "additive",
+     "fnvFiles": 9,
+     "fit": {
+      "kind": "one",
+      "xa": 0.21076
+     },
+     "bound255": 49.6514,
+     "found255": 49.6014,
+     "argmax": [
+      0.888392,
+      1.0,
+      0.0
+     ],
+     "polished255": 49.6014,
+     "supersededChallengePin255": 49.65,
+     "unseededBound255": 49.6513,
+     "pin255": 49.6514,
+     "analyticLowerHow": "k0 = 1 - xa over black: enc(1 - lin(xa)) against 1 - xa",
+     "analyticLower255": 49.6014,
+     "analyticLowerAt": [
+      0.888392,
+      1.0,
+      0.0
+     ]
+    },
+    "ZERO/INV_SRC_ALPHA": {
+     "family": "multiplicative",
+     "fnvFiles": 3,
+     "fit": {
+      "kind": "two",
+      "x1": 0.061,
+      "x2": 0.7215,
+      "tmax": 1.0
+     },
+     "bound255": 4.2879,
+     "found255": 4.2379,
+     "argmax": [
+      0.982656,
+      0.948844,
+      1.0
+     ],
+     "polished255": 4.2379,
+     "supersededChallengePin255": 4.29,
+     "unseededBound255": 4.2879,
+     "pin255": 4.2879,
+     "analyticLowerHow": "no closed form (the maximum is interior on a Cd face): only the numeric Nelder-Mead polish cross-checks it"
+    },
+    "SRC_COLOR/SRC_COLOR": {
+     "family": "other",
+     "fnvFiles": 3,
+     "fit": {
+      "kind": "two",
+      "x1": 0.173,
+      "x2": 0.466,
+      "tmax": 1.0
+     },
+     "bound255": 40.5138,
+     "found255": 40.4638,
+     "argmax": [
+      0.917234,
+      1.0,
+      0.0
+     ],
+     "polished255": 40.4638,
+     "supersededChallengePin255": 40.51,
+     "unseededBound255": 40.5137,
+     "pin255": 40.5138,
+     "analyticLowerHow": "Cs the root of Cs^2 + x1 Cs = 1, Cd 0: T = 0, E = 1 draws 1 against Cs^2",
+     "analyticLower255": 40.4638,
+     "analyticLowerAt": [
+      0.917234,
+      1.0,
+      0.0
+     ]
+    },
+    "SRC_ALPHA/SRC_COLOR": {
+     "family": "other",
+     "fnvFiles": 1,
+     "fit": {
+      "kind": "two",
+      "x1": 0.211,
+      "x2": 0.3515,
+      "tmax": 1.0
+     },
+     "bound255": 53.855,
+     "found255": 53.805,
+     "argmax": [
+      1.0,
+      0.789,
+      0.0
+     ],
+     "polished255": 53.805,
+     "supersededChallengePin255": 53.85,
+     "unseededBound255": 53.8449,
+     "pin255": 53.855,
+     "analyticLowerHow": "Cs 1, As 1 - x1, Cd 0: node 1 saturates, T = 0, E = 1 draws 1 against 1 - x1",
+     "analyticLower255": 53.805,
+     "analyticLowerAt": [
+      1.0,
+      0.789,
+      0.0
+     ]
+    },
+    "SRC_COLOR/ZERO": {
+     "family": "exact",
+     "fnvFiles": 1,
+     "fit": {
+      "kind": "exact"
+     },
+     "bound255": 0.0,
+     "found255": 0.0,
+     "argmax": null,
+     "pin255": 0.0
+    },
+    "ZERO/ZERO": {
+     "family": "exact",
+     "fnvFiles": 1,
+     "fit": {
+      "kind": "exact"
+     },
+     "bound255": 0.0,
+     "found255": 0.0,
+     "argmax": null,
+     "pin255": 0.0
+    }
+   },
+   "lit": {
+    "SRC_ALPHA/INV_SRC_ALPHA": {
+     "form": "power",
+     "p": 1.5,
+     "unseededFound255": 36.369,
+     "note": "p = 1.5 is the design's exponent; the seeded optimum p 1.5015 reaches 36.275/255 (open item)",
+     "bound255": 36.4189,
+     "found255": 36.3689,
+     "pin255": 36.4189,
+     "argmax": [
+      0.329372,
+      1.0,
+      0.0
+     ],
+     "analyticLower255": 36.3689,
+     "analyticLowerAt": [
+      0.32935,
+      1.0,
+      0.0
+     ],
+     "analyticLowerHow": "Ld 1, Cd 0: enc(As^p) against As (maximized over As)"
+    },
+    "SRC_ALPHA/ONE": {
+     "form": "scaled-power",
+     "mmax": 2.0,
+     "tmax": 1.0,
+     "s": 1.7684,
+     "p": 2.16245,
+     "q": 0.0,
+     "r": 1.0,
+     "unseededFound255": 59.747,
+     "bound255": 59.1432,
+     "found255": 59.0932,
+     "pin255": 59.1432,
+     "argmax": [
+      0.768262,
+      1.0,
+      0.0
+     ],
+     "analyticLower255": 59.0928,
+     "analyticLowerAt": [
+      0.7683,
+      0.999953,
+      0.0
+     ],
+     "analyticLowerHow": "display clip over black: Ld = enc(1/m(As)), Cd 0 draws 1 against As Ld (maximized over As)"
+    },
+    "ONE/ONE": {
+     "form": "constant",
+     "m": 1.79663,
+     "tau": 1.0,
+     "unseededFound255": 58.242,
+     "bound255": 58.3248,
+     "found255": 58.2748,
+     "pin255": 58.3248,
+     "argmax": [
+      1.0,
+      0.38553,
+      0.61447
+     ],
+     "analyticLower255": 58.2747,
+     "analyticLowerAt": [
+      1.0,
+      0.771472,
+      0.0
+     ],
+     "analyticLowerHow": "display clip over black: Ld = enc(1/m), Cd 0 draws 1 against enc(1/m)"
+    }
+   }
+  },
+  "B": {
+   "label": "Transparent BSDF color above 1 (T in [0, tmax]) with E >= 0; valid only if the two-cell sentinels show Blender composites T > 1 unclamped in the engine",
+   "tmax": 8.0,
+   "pairs": {
+    "SRC_ALPHA/INV_SRC_ALPHA": {
+     "family": "over",
+     "fnvFiles": 3325,
+     "fit": {
+      "kind": "anchored",
+      "x1": 0.1004,
+      "x2": 0.7991,
+      "tmax": 1.25,
+      "frac": 0.6905,
+      "guard": 0.0625
+     },
+     "bound255": 14.1854,
+     "found255": 14.1354,
+     "argmax": [
+      1.0,
+      0.199852,
+      0.0
+     ],
+     "polished255": 14.1354,
+     "note": "the anchored form searched under every tmax (tmax 1: 14.619, tmax 1.25: 14.135, tmax 1.5: 14.135, tmax 2: 14.135, tmax 8: 14.135; seeded found /255) against set A's two-node 14.867",
+     "exactAtAlpha0And1_255": {
+      "0.0": 4.246603069191224e-14,
+      "1.0": 4.246603069191224e-14
+     },
+     "pin255": 14.1854,
+     "analyticLowerHow": "no closed form (the maximum is interior on a Cd face): only the numeric Nelder-Mead polish cross-checks it",
+     "clampSensitivity255": 7.1352,
+     "clampSensitiveAt": [
+      1.0,
+      0.223328,
+      0.942627
+     ]
+    },
+    "SRC_ALPHA/ONE": {
+     "family": "additive",
+     "fnvFiles": 807,
+     "fit": {
+      "kind": "anchored",
+      "x1": 0.0512,
+      "x2": 0.5928,
+      "tmax": 8.0,
+      "frac": 0.6925,
+      "guard": 0.0625
+     },
+     "bound255": 13.1153,
+     "found255": 13.0653,
+     "argmax": [
+      0.397132,
+      0.782142,
+      0.231278
+     ],
+     "polished255": 13.0653,
+     "pin255": 13.1153,
+     "analyticLowerHow": "k0 = 1 - x1 over black: node 1 saturates, T = 0, E = 1 draws 1 against 1 - x1",
+     "analyticLower255": 13.056,
+     "analyticLowerAt": [
+      1.0,
+      0.9488,
+      0.0
+     ],
+     "clampSensitivity255": 82.5389,
+     "clampSensitiveAt": [
+      0.507568,
+      0.88623,
+      0.501099
+     ]
+    },
+    "ZERO/SRC_COLOR": {
+     "family": "multiplicative",
+     "fnvFiles": 726,
+     "fit": {
+      "kind": "anchored",
+      "x1": 0.0625,
+      "x2": 0.7261,
+      "tmax": 1.0,
+      "frac": 0.2741,
+      "guard": 0.0625
+     },
+     "bound255": 4.1849,
+     "found255": 4.1349,
+     "argmax": [
+      0.476738,
+      1.0,
+      0.0
+     ],
+     "polished255": 4.1349,
+     "note": "the anchored form searched under every tmax (tmax 1: 4.135, tmax 1.25: 4.135, tmax 1.5: 4.135, tmax 2: 4.135, tmax 8: 4.135; seeded found /255) against set A's two-node 4.238",
+     "pin255": 4.1849,
+     "analyticLowerHow": "no closed form (the maximum is interior on a Cd face): only the numeric Nelder-Mead polish cross-checks it"
+    },
+    "ONE/ONE": {
+     "family": "additive",
+     "fnvFiles": 227,
+     "fit": {
+      "kind": "anchored",
+      "x1": 0.0512,
+      "x2": 0.5928,
+      "tmax": 8.0,
+      "frac": 0.6925,
+      "guard": 0.0625
+     },
+     "bound255": 13.1153,
+     "found255": 13.0653,
+     "argmax": [
+      0.310613,
+      1.0,
+      0.231278
+     ],
+     "polished255": 13.0653,
+     "pin255": 13.1153,
+     "analyticLowerHow": "k0 = 1 - x1 over black: node 1 saturates, T = 0, E = 1 draws 1 against 1 - x1",
+     "analyticLower255": 13.056,
+     "analyticLowerAt": [
+      0.9488,
+      1.0,
+      0.0
+     ],
+     "clampSensitivity255": 82.5296,
+     "clampSensitiveAt": [
+      0.4552,
+      1.0,
+      0.495972
+     ]
+    },
+    "ONE/ZERO": {
+     "family": "exact",
+     "fnvFiles": 12,
+     "fit": {
+      "kind": "exact"
+     },
+     "bound255": 0.0,
+     "found255": 0.0,
+     "argmax": null,
+     "pin255": 0.0,
+     "note": "exact by construction (E = lin(clamp(k0)), T = k1 in {0, 1}): no tmax applies"
+    },
+    "SRC_COLOR/ONE": {
+     "family": "additive",
+     "fnvFiles": 9,
+     "fit": {
+      "kind": "anchored",
+      "x1": 0.0512,
+      "x2": 0.5928,
+      "tmax": 8.0,
+      "frac": 0.6925,
+      "guard": 0.0625
+     },
+     "bound255": 13.1153,
+     "found255": 13.0653,
+     "argmax": [
+      0.557327,
+      1.0,
+      0.231279
+     ],
+     "polished255": 13.0653,
+     "pin255": 13.1153,
+     "analyticLowerHow": "k0 = 1 - x1 over black: node 1 saturates, T = 0, E = 1 draws 1 against 1 - x1",
+     "analyticLower255": 13.056,
+     "analyticLowerAt": [
+      0.974064,
+      1.0,
+      0.0
+     ],
+     "clampSensitivity255": 82.5184,
+     "clampSensitiveAt": [
+      0.676208,
+      1.0,
+      0.494019
+     ]
+    },
+    "ZERO/INV_SRC_ALPHA": {
+     "family": "multiplicative",
+     "fnvFiles": 3,
+     "fit": {
+      "kind": "anchored",
+      "x1": 0.0625,
+      "x2": 0.7261,
+      "tmax": 1.0,
+      "frac": 0.2741,
+      "guard": 0.0625
+     },
+     "bound255": 4.1849,
+     "found255": 4.1349,
+     "argmax": [
+      0.036993,
+      0.523262,
+      0.0
+     ],
+     "polished255": 4.1349,
+     "note": "the anchored form searched under every tmax (tmax 1: 4.135, tmax 1.25: 4.135, tmax 1.5: 4.135, tmax 2: 4.135, tmax 8: 4.135; seeded found /255) against set A's two-node 4.238",
+     "pin255": 4.1849,
+     "analyticLowerHow": "no closed form (the maximum is interior on a Cd face): only the numeric Nelder-Mead polish cross-checks it"
+    },
+    "SRC_COLOR/SRC_COLOR": {
+     "family": "other",
+     "fnvFiles": 3,
+     "fit": {
+      "kind": "anchored",
+      "x1": 0.0642,
+      "x2": 0.7712,
+      "tmax": 8.0,
+      "frac": 0.6791,
+      "guard": 0.0625
+     },
+     "bound255": 15.9039,
+     "found255": 15.8539,
+     "argmax": [
+      0.968415,
+      1.0,
+      0.0
+     ],
+     "polished255": 15.8539,
+     "pin255": 15.9039,
+     "analyticLowerHow": "Cs the root of Cs^2 + x1 Cs = 1, Cd 0: T = 0, E = 1 draws 1 against Cs^2",
+     "analyticLower255": 15.8539,
+     "analyticLowerAt": [
+      0.968415,
+      1.0,
+      0.0
+     ],
+     "clampSensitivity255": 60.6867,
+     "clampSensitiveAt": [
+      0.773132,
+      1.0,
+      0.465454
+     ]
+    },
+    "SRC_ALPHA/SRC_COLOR": {
+     "family": "other",
+     "fnvFiles": 1,
+     "fit": {
+      "kind": "anchored",
+      "x1": 0.0631,
+      "x2": 0.7863,
+      "tmax": 8.0,
+      "frac": 0.6794,
+      "guard": 0.0625
+     },
+     "bound255": 16.1405,
+     "found255": 16.0905,
+     "argmax": [
+      1.0,
+      0.9369,
+      0.0
+     ],
+     "polished255": 16.0905,
+     "pin255": 16.1405,
+     "analyticLowerHow": "Cs 1, As 1 - x1, Cd 0: node 1 saturates, T = 0, E = 1 draws 1 against 1 - x1",
+     "analyticLower255": 16.0905,
+     "analyticLowerAt": [
+      1.0,
+      0.9369,
+      0.0
+     ],
+     "clampSensitivity255": 81.1489,
+     "clampSensitiveAt": [
+      1.0,
+      0.452148,
+      0.499268
+     ]
+    },
+    "SRC_COLOR/ZERO": {
+     "family": "exact",
+     "fnvFiles": 1,
+     "fit": {
+      "kind": "exact"
+     },
+     "bound255": 0.0,
+     "found255": 0.0,
+     "argmax": null,
+     "pin255": 0.0,
+     "note": "exact by construction (E = lin(clamp(k0)), T = k1 in {0, 1}): no tmax applies"
+    },
+    "ZERO/ZERO": {
+     "family": "exact",
+     "fnvFiles": 1,
+     "fit": {
+      "kind": "exact"
+     },
+     "bound255": 0.0,
+     "found255": 0.0,
+     "argmax": null,
+     "pin255": 0.0,
+     "note": "exact by construction (E = lin(clamp(k0)), T = k1 in {0, 1}): no tmax applies"
+    }
+   },
+   "lit": {
+    "SRC_ALPHA/INV_SRC_ALPHA": {
+     "form": "power",
+     "p": 1.5,
+     "unseededFound255": 36.369,
+     "note": "T > 1 and m > 1 do not lower the lit alpha-over floor (34.31 in every configuration): set A's curve",
+     "bound255": 36.4189,
+     "found255": 36.3689,
+     "pin255": 36.4189,
+     "argmax": [
+      0.329372,
+      1.0,
+      0.0
+     ],
+     "analyticLower255": 36.3689,
+     "analyticLowerAt": [
+      0.32935,
+      1.0,
+      0.0
+     ],
+     "analyticLowerHow": "Ld 1, Cd 0: enc(As^p) against As (maximized over As)"
+    },
+    "SRC_ALPHA/ONE": {
+     "form": "scaled-power",
+     "mmax": 2.0,
+     "tmax": 8.0,
+     "s": 1.44203,
+     "p": 1.86099,
+     "q": 0.56066,
+     "r": 1.0,
+     "unseededFound255": 45.542,
+     "note": "r fixed at 1 (tau continuous, tau(0) = 1): +1.29/255 at the worst case against the free search (r -> 0, seeded 44.255), which leaves an As = 1/255 texel 44.1/255 off instead of 0.9",
+     "bound255": 45.5909,
+     "found255": 45.5409,
+     "pin255": 45.5909,
+     "argmax": [
+      0.8065,
+      1.0,
+      0.0
+     ],
+     "analyticLower255": 45.5409,
+     "analyticLowerAt": [
+      0.8065,
+      1.0,
+      0.0
+     ],
+     "analyticLowerHow": "Ld 1, Cd 0: enc(m(As)) against As (maximized over As)",
+     "clampSensitivity255": 45.5402,
+     "clampSensitiveAt": [
+      1.0,
+      0.0,
+      0.821411
+     ]
+    },
+    "ONE/ONE": {
+     "form": "constant",
+     "m": 1.5284,
+     "tau": 1.5284,
+     "unseededFound255": 43.608,
+     "bound255": 43.637,
+     "found255": 43.587,
+     "pin255": 43.637,
+     "argmax": [
+      1.0,
+      0.0,
+      0.829071
+     ],
+     "analyticLower255": 43.587,
+     "analyticLowerAt": [
+      1.0,
+      0.829071,
+      0.0
+     ],
+     "analyticLowerHow": "display clip over black: Ld = enc(1/m), Cd 0 draws 1 against enc(1/m)",
+     "clampSensitivity255": 43.5869,
+     "clampSensitiveAt": [
+      1.0,
+      0.0,
+      0.829071
+     ]
+    }
+   }
+  },
+  "K": {
+   "label": "black-anchored additive (xa = 0): the D1 alternative, exact over black; today-equivalent worst case",
+   "tmax": 1.0,
+   "pairs": {
+    "SRC_ALPHA/ONE": {
+     "family": "additive",
+     "fnvFiles": 807,
+     "fit": {
+      "kind": "one",
+      "xa": 0.0
+     },
+     "bound255": 80.1618,
+     "found255": 80.1118,
+     "argmax": [
+      0.5,
+      1.0,
+      0.5
+     ],
+     "polished255": 80.1118,
+     "pin255": 80.1618,
+     "analyticLowerHow": "k0 = Cd = 1/2 (target clip): enc(lin(1/2 + xa) - lin(xa) + lin(1/2)) against 1",
+     "analyticLower255": 80.1118,
+     "analyticLowerAt": [
+      1.0,
+      0.5,
+      0.5
+     ]
+    },
+    "ONE/ONE": {
+     "family": "additive",
+     "fnvFiles": 227,
+     "fit": {
+      "kind": "one",
+      "xa": 0.0
+     },
+     "bound255": 80.1618,
+     "found255": 80.1118,
+     "argmax": [
+      0.5,
+      1.0,
+      0.5
+     ],
+     "polished255": 80.1118,
+     "pin255": 80.1618,
+     "analyticLowerHow": "k0 = Cd = 1/2 (target clip): enc(lin(1/2 + xa) - lin(xa) + lin(1/2)) against 1",
+     "analyticLower255": 80.1118,
+     "analyticLowerAt": [
+      0.5,
+      1.0,
+      0.5
+     ]
+    },
+    "SRC_COLOR/ONE": {
+     "family": "additive",
+     "fnvFiles": 9,
+     "fit": {
+      "kind": "one",
+      "xa": 0.0
+     },
+     "bound255": 80.1618,
+     "found255": 80.1118,
+     "argmax": [
+      0.707031,
+      1.0,
+      0.500107
+     ],
+     "polished255": 80.1118,
+     "pin255": 80.1618,
+     "analyticLowerHow": "k0 = Cd = 1/2 (target clip): enc(lin(1/2 + xa) - lin(xa) + lin(1/2)) against 1",
+     "analyticLower255": 80.1118,
+     "analyticLowerAt": [
+      0.707107,
+      1.0,
+      0.5
+     ]
+    }
+   },
+   "lit": {
+    "SRC_ALPHA/ONE": {
+     "form": "scaled-power",
+     "mmax": 1.0,
+     "tmax": 1.0,
+     "s": 1.0,
+     "p": 1.0,
+     "q": 0.0,
+     "r": 1.0,
+     "unseededFound255": 80.112,
+     "bound255": 80.1618,
+     "found255": 80.1118,
+     "pin255": 80.1618,
+     "argmax": [
+      1.0,
+      0.5,
+      0.5
+     ],
+     "analyticLower255": 80.1118,
+     "analyticLowerAt": [
+      1.0,
+      0.5,
+      0.5
+     ],
+     "analyticLowerHow": "target clip As Ld + Cd = 1 at Cd 1/2: enc(m lin(1/(2 As)) + tau lin(1/2)) against 1"
+    },
+    "ONE/ONE": {
+     "form": "constant",
+     "m": 1.0,
+     "tau": 1.0,
+     "unseededFound255": 80.112,
+     "bound255": 80.1618,
+     "found255": 80.1118,
+     "pin255": 80.1618,
+     "argmax": [
+      1.0,
+      0.5,
+      0.5
+     ],
+     "analyticLower255": 80.1118,
+     "analyticLowerAt": [
+      1.0,
+      0.5,
+      0.5
+     ],
+     "analyticLowerHow": "target clip midpoint Ld = Cd = 1/2: enc(m lin(1/2) + tau lin(1/2)) against 1"
+    }
+   }
+  }
+ },
+ "controls": {
+  "A": "two-node nodes -> (0, 1) (the endpoint fit); one-node xa -> 0 (black-anchored)",
+  "B": "tmax -> 1 on every two-node and anchored fit (the Transparent color clamped at 1)",
+  "lit": "the lit curves -> today's lit graph (m = the source scale, tau = the destination factor)"
+ },
+ "todayLinearGraph255": {
+  "SRC_ALPHA/INV_SRC_ALPHA": 73.21,
+  "SRC_ALPHA/ONE": 80.112,
+  "ZERO/SRC_COLOR": 7.43,
+  "ONE/ONE": 80.112,
+  "ONE/ZERO": 0.0,
+  "SRC_COLOR/ONE": 80.824,
+  "ZERO/INV_SRC_ALPHA": 73.21,
+  "SRC_COLOR/SRC_COLOR": 81.6,
+  "SRC_ALPHA/SRC_COLOR": 80.252,
+  "SRC_COLOR/ZERO": 7.428,
+  "ZERO/ZERO": 0.0
+ },
+ "relaxedFloors": {
+  "additive (k1 = 1, k0 in [0, 1])": [
+   {
+    "tmax": 1.0,
+    "floor255": 48.044,
+    "at": 0.405859375,
+    "tAtOptimum": 1.0
+   },
+   {
+    "tmax": 1.25,
+    "floor255": 42.101,
+    "at": 0.467578125,
+    "tAtOptimum": 1.25
+   },
+   {
+    "tmax": 1.5,
+    "floor255": 37.579,
+    "at": 0.515625,
+    "tAtOptimum": 1.5
+   },
+   {
+    "tmax": 2.0,
+    "floor255": 31.056,
+    "at": 0.590234375,
+    "tAtOptimum": 2.0
+   },
+   {
+    "tmax": 3.0,
+    "floor255": 23.125,
+    "at": 0.679296875,
+    "tAtOptimum": 3.0
+   },
+   {
+    "tmax": 4.0,
+    "floor255": 18.346,
+    "at": 0.73515625,
+    "tAtOptimum": 4.0
+   },
+   {
+    "tmax": 6.0,
+    "floor255": 12.708,
+    "at": 0.801953125,
+    "tAtOptimum": 6.0
+   },
+   {
+    "tmax": 8.0,
+    "floor255": 11.835,
+    "at": 0.32890625,
+    "tAtOptimum": 2.5391
+   },
+   {
+    "tmax": 16.0,
+    "floor255": 11.835,
+    "at": 0.32890625,
+    "tAtOptimum": 2.5391
+   },
+   {
+    "tmax": "inf",
+    "floor255": 11.835,
+    "at": 0.32890625,
+    "tAtOptimum": 2.5391
+   }
+  ],
+  "multiplicative (k0 = 0, k1 in [0, 1])": [
+   {
+    "tmax": 1.0,
+    "floor255": 3.43,
+    "at": 0.2796875,
+    "tAtOptimum": 0.0688
+   },
+   {
+    "tmax": 1.25,
+    "floor255": 3.43,
+    "at": 0.2796875,
+    "tAtOptimum": 0.0688
+   },
+   {
+    "tmax": 1.5,
+    "floor255": 3.43,
+    "at": 0.2796875,
+    "tAtOptimum": 0.0688
+   },
+   {
+    "tmax": 2.0,
+    "floor255": 3.43,
+    "at": 0.2796875,
+    "tAtOptimum": 0.0688
+   },
+   {
+    "tmax": 3.0,
+    "floor255": 3.43,
+    "at": 0.2796875,
+    "tAtOptimum": 0.0688
+   },
+   {
+    "tmax": 4.0,
+    "floor255": 3.43,
+    "at": 0.2796875,
+    "tAtOptimum": 0.0688
+   },
+   {
+    "tmax": 6.0,
+    "floor255": 3.43,
+    "at": 0.2796875,
+    "tAtOptimum": 0.0688
+   },
+   {
+    "tmax": 8.0,
+    "floor255": 3.43,
+    "at": 0.2796875,
+    "tAtOptimum": 0.0688
+   },
+   {
+    "tmax": 16.0,
+    "floor255": 3.43,
+    "at": 0.2796875,
+    "tAtOptimum": 0.0688
+   },
+   {
+    "tmax": "inf",
+    "floor255": 3.43,
+    "at": 0.2796875,
+    "tAtOptimum": 0.0688
+   }
+  ],
+  "over (SRC_ALPHA/INV_SRC_ALPHA)": [
+   {
+    "tmax": 1.0,
+    "floor255": 14.316,
+    "at": [
+     1.0,
+     0.28125
+    ],
+    "tAtOptimum": 1.0
+   },
+   {
+    "tmax": 1.25,
+    "floor255": 13.362,
+    "at": [
+     0.8671875,
+     0.39453125
+    ],
+    "tAtOptimum": 0.8715
+   },
+   {
+    "tmax": 1.5,
+    "floor255": 13.362,
+    "at": [
+     0.8671875,
+     0.39453125
+    ],
+    "tAtOptimum": 0.8715
+   },
+   {
+    "tmax": 2.0,
+    "floor255": 13.362,
+    "at": [
+     0.8671875,
+     0.39453125
+    ],
+    "tAtOptimum": 0.8715
+   },
+   {
+    "tmax": 3.0,
+    "floor255": 13.362,
+    "at": [
+     0.8671875,
+     0.39453125
+    ],
+    "tAtOptimum": 0.8715
+   },
+   {
+    "tmax": 4.0,
+    "floor255": 13.362,
+    "at": [
+     0.8671875,
+     0.39453125
+    ],
+    "tAtOptimum": 0.8715
+   },
+   {
+    "tmax": 6.0,
+    "floor255": 13.362,
+    "at": [
+     0.8671875,
+     0.39453125
+    ],
+    "tAtOptimum": 0.8715
+   },
+   {
+    "tmax": 8.0,
+    "floor255": 13.362,
+    "at": [
+     0.8671875,
+     0.39453125
+    ],
+    "tAtOptimum": 0.8715
+   },
+   {
+    "tmax": 16.0,
+    "floor255": 13.362,
+    "at": [
+     0.8671875,
+     0.39453125
+    ],
+    "tAtOptimum": 0.8715
+   },
+   {
+    "tmax": "inf",
+    "floor255": 13.362,
+    "at": [
+     0.8671875,
+     0.39453125
+    ],
+    "tAtOptimum": 0.8715
+   }
+  ],
+  "SRC_COLOR/SRC_COLOR": [
+   {
+    "tmax": 1.0,
+    "floor255": 33.799,
+    "at": 0.779296875,
+    "tAtOptimum": 1.0
+   },
+   {
+    "tmax": 1.25,
+    "floor255": 30.373,
+    "at": 0.800390625,
+    "tAtOptimum": 1.25
+   },
+   {
+    "tmax": 1.5,
+    "floor255": 27.647,
+    "at": 0.8171875,
+    "tAtOptimum": 1.5
+   },
+   {
+    "tmax": 2.0,
+    "floor255": 23.602,
+    "at": 0.84140625,
+    "tAtOptimum": 2.0
+   },
+   {
+    "tmax": 3.0,
+    "floor255": 18.329,
+    "at": 0.873828125,
+    "tAtOptimum": 3.0
+   },
+   {
+    "tmax": 4.0,
+    "floor255": 14.963,
+    "at": 0.89140625,
+    "tAtOptimum": 4.0
+   },
+   {
+    "tmax": 6.0,
+    "floor255": 13.353,
+    "at": 0.59453125,
+    "tAtOptimum": 0.8644
+   },
+   {
+    "tmax": 8.0,
+    "floor255": 13.353,
+    "at": 0.59453125,
+    "tAtOptimum": 0.8644
+   },
+   {
+    "tmax": 16.0,
+    "floor255": 13.353,
+    "at": 0.59453125,
+    "tAtOptimum": 0.8644
+   },
+   {
+    "tmax": "inf",
+    "floor255": 13.353,
+    "at": 0.59453125,
+    "tAtOptimum": 0.8644
+   }
+  ],
+  "SRC_ALPHA/SRC_COLOR": [
+   {
+    "tmax": 1.0,
+    "floor255": 48.014,
+    "at": [
+     1.0,
+     0.40625
+    ],
+    "tAtOptimum": 1.0
+   },
+   {
+    "tmax": 1.25,
+    "floor255": 42.091,
+    "at": [
+     1.0,
+     0.46875
+    ],
+    "tAtOptimum": 1.25
+   },
+   {
+    "tmax": 1.5,
+    "floor255": 37.579,
+    "at": [
+     1.0,
+     0.515625
+    ],
+    "tAtOptimum": 1.5
+   },
+   {
+    "tmax": 2.0,
+    "floor255": 31.048,
+    "at": [
+     1.0,
+     0.58984375
+    ],
+    "tAtOptimum": 2.0
+   },
+   {
+    "tmax": 3.0,
+    "floor255": 23.108,
+    "at": [
+     1.0,
+     0.6796875
+    ],
+    "tAtOptimum": 3.0
+   },
+   {
+    "tmax": 4.0,
+    "floor255": 18.342,
+    "at": [
+     1.0,
+     0.734375
+    ],
+    "tAtOptimum": 4.0
+   },
+   {
+    "tmax": 6.0,
+    "floor255": 13.355,
+    "at": [
+     0.6015625,
+     0.57421875
+    ],
+    "tAtOptimum": 0.8672
+   },
+   {
+    "tmax": 8.0,
+    "floor255": 13.355,
+    "at": [
+     0.6015625,
+     0.57421875
+    ],
+    "tAtOptimum": 0.8672
+   },
+   {
+    "tmax": 16.0,
+    "floor255": 13.355,
+    "at": [
+     0.6015625,
+     0.57421875
+    ],
+    "tAtOptimum": 0.8672
+   },
+   {
+    "tmax": "inf",
+    "floor255": 13.355,
+    "at": [
+     0.6015625,
+     0.57421875
+    ],
+    "tAtOptimum": 0.8672
+   }
+  ]
+ },
+ "darkProfile": {
+  "K": [
+   {
+    "Cd255": 0,
+    "worst255": 0.0,
+    "atK0_255": 121.52
+   },
+   {
+    "Cd255": 8,
+    "worst255": 7.716,
+    "atK0_255": 246.97
+   },
+   {
+    "Cd255": 16,
+    "worst255": 15.368,
+    "atK0_255": 238.94
+   },
+   {
+    "Cd255": 24,
+    "worst255": 22.837,
+    "atK0_255": 230.97
+   },
+   {
+    "Cd255": 32,
+    "worst255": 30.077,
+    "atK0_255": 223.0
+   },
+   {
+    "Cd255": 48,
+    "worst255": 43.696,
+    "atK0_255": 207.0
+   },
+   {
+    "Cd255": 64,
+    "worst255": 55.822,
+    "atK0_255": 191.0
+   },
+   {
+    "Cd255": 96,
+    "worst255": 73.718,
+    "atK0_255": 159.0
+   },
+   {
+    "Cd255": 128,
+    "worst255": 80.109,
+    "atK0_255": 127.0
+   },
+   {
+    "Cd255": 160,
+    "worst255": 73.316,
+    "atK0_255": 95.0
+   },
+   {
+    "Cd255": 192,
+    "worst255": 55.116,
+    "atK0_255": 63.0
+   },
+   {
+    "Cd255": 224,
+    "worst255": 29.186,
+    "atK0_255": 31.0
+   },
+   {
+    "Cd255": 255,
+    "worst255": 0.0,
+    "atK0_255": 0.0
+   }
+  ],
+  "A": [
+   {
+    "Cd255": 0,
+    "worst255": 49.6,
+    "atK0_255": 201.21
+   },
+   {
+    "Cd255": 8,
+    "worst255": 41.878,
+    "atK0_255": 201.21
+   },
+   {
+    "Cd255": 16,
+    "worst255": 34.193,
+    "atK0_255": 201.21
+   },
+   {
+    "Cd255": 24,
+    "worst255": 26.644,
+    "atK0_255": 201.21
+   },
+   {
+    "Cd255": 32,
+    "worst255": 19.248,
+    "atK0_255": 201.21
+   },
+   {
+    "Cd255": 48,
+    "worst255": 4.957,
+    "atK0_255": 201.21
+   },
+   {
+    "Cd255": 64,
+    "worst255": 8.522,
+    "atK0_255": 190.94
+   },
+   {
+    "Cd255": 96,
+    "worst255": 31.186,
+    "atK0_255": 159.0
+   },
+   {
+    "Cd255": 128,
+    "worst255": 45.659,
+    "atK0_255": 127.0
+   },
+   {
+    "Cd255": 160,
+    "worst255": 49.418,
+    "atK0_255": 95.0
+   },
+   {
+    "Cd255": 192,
+    "worst255": 41.683,
+    "atK0_255": 63.0
+   },
+   {
+    "Cd255": 224,
+    "worst255": 23.996,
+    "atK0_255": 31.0
+   },
+   {
+    "Cd255": 255,
+    "worst255": 0.0,
+    "atK0_255": 0.0
+   }
+  ],
+  "B": [
+   {
+    "Cd255": 0,
+    "worst255": 13.047,
+    "atK0_255": 241.93
+   },
+   {
+    "Cd255": 8,
+    "worst255": 5.053,
+    "atK0_255": 241.93
+   },
+   {
+    "Cd255": 16,
+    "worst255": 2.535,
+    "atK0_255": 239.0
+   },
+   {
+    "Cd255": 24,
+    "worst255": 6.168,
+    "atK0_255": 230.97
+   },
+   {
+    "Cd255": 32,
+    "worst255": 9.103,
+    "atK0_255": 90.02
+   },
+   {
+    "Cd255": 48,
+    "worst255": 12.496,
+    "atK0_255": 84.17
+   },
+   {
+    "Cd255": 64,
+    "worst255": 12.964,
+    "atK0_255": 76.7
+   },
+   {
+    "Cd255": 96,
+    "worst255": 10.084,
+    "atK0_255": 148.92
+   },
+   {
+    "Cd255": 128,
+    "worst255": 12.511,
+    "atK0_255": 114.49
+   },
+   {
+    "Cd255": 160,
+    "worst255": 12.948,
+    "atK0_255": 81.99
+   },
+   {
+    "Cd255": 192,
+    "worst255": 11.079,
+    "atK0_255": 51.92
+   },
+   {
+    "Cd255": 224,
+    "worst255": 8.152,
+    "atK0_255": 22.85
+   },
+   {
+    "Cd255": 255,
+    "worst255": 0.0,
+    "atK0_255": 0.0
+   }
+  ]
+ }
+}

@@ -1,0 +1,864 @@
+{
+ "schema": 1,
+ "generatedBy": "tools/scripts/nif_console_twins.py",
+ "pcData": "Builds/Fallout - New Vegas (2022-5-24, Steam - Final)/Data",
+ "rule": "the PC file at the console file's Data-relative path: the Steam Final build Data folder (loose, then every BSA in case-insensitive file-name order), then the installed Steam Data folder",
+ "twins": {
+  "00641817a579d6d56f54d277397c0ef4fe409763ae2aeb037267b3ffe3cd286e": {
+   "entry": "meshes/terminals/playerfacelights01.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/terminals/playerfacelights01.nif",
+   "pcSha256": "90696c231d844649dd9343154e15f17e863fe93a5c9cdc9f2e44bd210ad5d1c9",
+   "pcSize": 1288,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "0232fe6a2e72d487852ee8f0203ec64230b8544859d55e7f0060b841841d97ae": {
+   "entry": "meshes/furniture/oasis/oasiscouch01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/furniture/oasis/oasiscouch01.nif",
+   "pcSha256": "2e14997a3b8219e75bc1304487d728916dcfdfb9c8f3254e84fb3f11d86077e3",
+   "pcSize": 11343,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "0ca374dba55ba6790b82496cb9edaa361bcffbe0f8d845dedc4e46bf2287e5c7": {
+   "entry": "meshes/armor/slaverags/slaverags_m1.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/armor/slaverags/slaverags_m1.nif",
+   "pcSha256": "12a2290c67e02a7215b2a7fb4084002f5a6800fca054dd39c20a3ba056c30aa2",
+   "pcSize": 429259,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "0fd96857522130eeac326fc95ba81962c5d2302c3ba2904d43964313fd2a6531": {
+   "entry": "meshes/vatscameras/snipercamshoot02.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/vatscameras/snipercamshoot02.nif",
+   "pcSha256": "99f7ed35b64f52689ae37463a6183a49802aa712e4d233f1ea1d843529e700fe",
+   "pcSize": 1774,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "14410ca0655b1e75a84e8c4ce3a572a1f39647f5b039e3c9a020345cb00b16b8": {
+   "entry": "meshes/projectiles/libertyprimeprojectile.nif",
+   "platform": "x360",
+   "pcPath": "meshes/projectiles/libertyprimeprojectile.nif",
+   "pcSha256": "9a6143ade62abe15b33812ffb7dc075e2a35ab8bf432e7b37e13787134f35702",
+   "pcSize": 15568,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "17450d3dc5c8d58b8a825bfdcaf4b76d96cf46db72e29300d2b95542e6b6fd79": {
+   "entry": "meshes/architecture/vault22/vault22entrance.nif",
+   "platform": "x360",
+   "pcPath": "meshes/architecture/vault22/vault22entrance.nif",
+   "pcSha256": "86a2b2d0181b5dd7000a7d499091540a82b641622e8621d4b894bbc02c08c105",
+   "pcSize": 1344944,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "1795f49c5f3557b5ceaf0d917291e6f0d63424f8a8750fd141e1f918d2ee1996": {
+   "entry": "meshes/clutter/flags/nv_ncr_flag.nif",
+   "platform": "x360",
+   "pcPath": "meshes/clutter/flags/nv_ncr_flag.nif",
+   "pcSha256": "6118b65095d24b1435954a42d93e2fb75edc326f51605e2acf0f61442efad5fe",
+   "pcSize": 273287,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "1923640d288c443fae713629dadf1bdd35fd59f1a2e70768a64ad0521fe41b2a": {
+   "entry": "meshes/effects/explosionincendiarygrenade.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/effects/explosionincendiarygrenade.nif",
+   "pcSha256": "a2b24330ad25c25f66e3ad4065ccfc6bd0e20ed82f6d5d494734c143e1f32c49",
+   "pcSize": 36075,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "1c381aff172a1c8f210a45148735495aeb4dc70cd76095dad5e3dd26ea53a3f2": {
+   "entry": "meshes/water_placeable/water_bathtub.nif",
+   "platform": "x360",
+   "pcPath": "meshes/water_placeable/water_bathtub.nif",
+   "pcSha256": "7cd65b46226dbbc576e5a3bfd1ab2c8ab3e37eb380cf03609db43a48f44652f4",
+   "pcSize": 1506,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "1f14b714526771879232e51c74fd99552a5dc934f70677ff19b0550fd5d882d7": {
+   "entry": "meshes/effects/forcefieldfx/forcefieldleftimpact01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/effects/forcefieldfx/forcefieldleftimpact01.nif",
+   "pcSha256": "67077d299cfcc5c5342e43ca940d6bf63427305c3c80bae2d1cbaa33879a9f20",
+   "pcSize": 13016,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "22a1d2f98863a9a22a40115e9de6aa817e4fd1c574a865fb56863643dd31d05e": {
+   "entry": "meshes/clutter/deathclaw_graffiti/nv_deathclawgraffiti.nif",
+   "platform": "x360",
+   "pcPath": "meshes/clutter/deathclaw_graffiti/nv_deathclawgraffiti.nif",
+   "pcSha256": "ec92d7b3f86ff2d3e3b3b37efbee5e1b5e387c01e2278fe90943b73589a79a6a",
+   "pcSize": 1047,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "256aa18d8dbad20f058d222fbf88dee5d9a52dc1f0cee3471cb25d17cda38b48": {
+   "entry": "meshes/sky/atmosphere.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/sky/atmosphere.nif",
+   "pcSha256": "396ec51c96af9ce028587c2d04462520a7a7b0ee974cec9f43377ed2294e627d",
+   "pcSize": 30980,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "2a4de620c31e018cb91e2cf6c7390a16b8bae4e15690092030fc2fcb51068c85": {
+   "entry": "meshes/dlc05/effects/outerspace/dlc05spacewindowcover01.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/dlc05/effects/outerspace/dlc05spacewindowcover01.nif",
+   "pcSha256": "490afe3a8773624019fd88169209cb69bb988aff892d6b454a415cd340cd6a81",
+   "pcSize": 10603,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "2b523171a4a5c689eb9fe73703c13e98a7e8ba5272b091154fd02d3f05d6bbe7": {
+   "entry": "meshes/dlcanch/effects/dlcanchsnowwhirlwind01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dlcanch/effects/dlcanchsnowwhirlwind01.nif",
+   "pcSha256": "eecca7af19b3287179a57ad05cf577b567f557eac6870a5d932fb4ca1a25fff5",
+   "pcSize": 16109,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "2deb48b6922dcbf5b51ecab893f280782c69475f2ec188437627f5a2df7fac0c": {
+   "entry": "meshes/clutter/consoles/computerrack01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/clutter/consoles/computerrack01.nif",
+   "pcSha256": "08bb1edcc727477b3e67efaf3a0364f1574d71b64751b082c9ac107188d45182",
+   "pcSize": 108661,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "306beb0079449e7c13b4324cdfc4efedea1844279a22731c80a802be4df2c0db": {
+   "entry": "meshes/armor/headgear/cowboyhat/cowboy_hat_05.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/armor/headgear/cowboyhat/cowboy_hat_05.nif",
+   "pcSha256": "c9d57912743faa3daad6a1005e1820df794ad14b2a2544ccef017a72d1235807",
+   "pcSize": 35388,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "335187716da9a8dc814abbdf0dc4561912cc1d7f8142d2a845403e50fba18be6": {
+   "entry": "meshes/dlc05/effects/outerspace/dlc05spacedomecore01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dlc05/effects/outerspace/dlc05spacedomecore01.nif",
+   "pcSha256": "27588e1f1793912d51261f497fea859dfcfe1f4c80fef7d51a5c025beba8f63a",
+   "pcSize": 14256,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "33a86d2e7501834d87491ff36ec426a9ead6d80bd66795a35be1590227be6180": {
+   "entry": "meshes/dungeons/office/rubblepiles/offrublpilea03.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dungeons/office/rubblepiles/offrublpilea03.nif",
+   "pcSha256": "e16f4fac6cd737cce18be02b4d114994ee1c60119a5d70ed91989a2034870e72",
+   "pcSize": 22704,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "346b7ca6cd0eb6be15f6c1a926d765a19c7b5e3d72d48090f7ea3e8ae46f9167": {
+   "entry": "meshes/architecture/trainstation/trainstationinterior/nv_trainstationinterior.nif",
+   "platform": "x360",
+   "pcPath": "meshes/architecture/trainstation/trainstationinterior/nv_trainstationinterior.nif",
+   "pcSha256": "68fca4abbfb3f2a154dfea7a141275eb66b067c7a101c617cb58d71972eb4ebc",
+   "pcSize": 461794,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "3484ad606386b4a209362914bbcbab6365fdbb3b14fb4c0fbb9339c54276e799": {
+   "entry": "meshes/effects/nv/secanimfx.nif",
+   "platform": "x360",
+   "pcPath": "meshes/effects/nv/secanimfx.nif",
+   "pcSha256": "edf245a4bec070cd77d3857d5412a4bb036c2ae34ca11eb8f1d9c056fc43d09b",
+   "pcSize": 111159,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "34c955b0739697ca529447b68454ce6b415a4d7ba82f601a39f5d8520dad82be": {
+   "entry": "meshes/clutter/food/ramen01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/clutter/food/ramen01.nif",
+   "pcSha256": "af2a4d833118b9f39cf1f9bc4bd4da1c9b380c7bd150623365cc044a123f4423",
+   "pcSize": 10888,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "36a23e7928621549164c7be7434a15d35108689a6720e1dd06a5fd9550eba877": {
+   "entry": "meshes/landscape/brokenstreetstrip.nif",
+   "platform": "x360",
+   "pcPath": "meshes/landscape/brokenstreetstrip.nif",
+   "pcSha256": "fb9369ee9171d2000b500faf5ed150ba8266302dffd79a5b63897503154d6c91",
+   "pcSize": 524141,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "371714682eee63783e74c58aa2e5d98c66190bec7ec1fc399d0a5187749e9778": {
+   "entry": "meshes/landscape/lod/wastelandnv/blocks/wastelandnv.level4.x16.y-36.nif",
+   "platform": "x360",
+   "pcPath": "meshes/landscape/lod/wastelandnv/blocks/wastelandnv.level4.x16.y-36.nif",
+   "pcSha256": "dbde1675f13a96c7fbf91edbc9316f6444a6e5ea1654802c1b1a22f8b8996206",
+   "pcSize": 10574,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "375331ad6e9a714dd24bcca04a0c6f3641a0171f728532ab679d19bc2f670d61": {
+   "entry": "meshes/architecture/strip/ultraluxsignglow.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/architecture/strip/ultraluxsignglow.nif",
+   "pcSha256": "da44b13c874df1cd82b59dd42bd2b68891bf4fc88b423d3bc0e81b201b6d5e0d",
+   "pcSize": 1980,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "3a03a7e3fe901d70621c162a4f5be5d4787182f9a96fe93a39e348729e70fd9c": {
+   "entry": "meshes/dlc05/effects/dlc05consoledamage01.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/dlc05/effects/dlc05consoledamage01.nif",
+   "pcSha256": "7b1a424be03479468be91a43f7d44845e9eecc371844402ced04f1121e764de2",
+   "pcSize": 8212,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "3f45f907e68903b3b8aee0132bfec762dacaa5f081e8350694e38ad9a132b215": {
+   "entry": "meshes/effects/tests/testmultiboundyes.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/effects/tests/testmultiboundyes.nif",
+   "pcSha256": "44a7ed81210fe00a673d8f25aa17a1ecc7ec00718755d38974613d4e5d588b12",
+   "pcSize": 10271,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "3fa81c1fee0978e0bd03f044d8d9462eba40b4296f94af6d4acff92f0190ca1f": {
+   "entry": "meshes/clutter/questitems/monumentlight01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/clutter/questitems/monumentlight01.nif",
+   "pcSha256": "fb3f01b32e4669393e9d0940f4a72a703115fb924295482f3f0c039e4de3b618",
+   "pcSize": 4055,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "42beedad78922dc78a7f827bc20599c8ca3481022e4aea42dd4f7a08305cfe70": {
+   "entry": "meshes/architecture/wasteland/greenhousenvint.nif",
+   "platform": "x360",
+   "pcPath": "meshes/architecture/wasteland/greenhousenvint.nif",
+   "pcSha256": "57e5ead3402fea0d70da5e9324e4dd30e6d3ce5e329095032d61aca7694bafc3",
+   "pcSize": 267875,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "45d6a8c12139cd6af3243eb2239f9911f5a55931de578299eff9196d8314831e": {
+   "entry": "meshes/gore/fxgorepophead01.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/gore/fxgorepophead01.nif",
+   "pcSha256": "b03fa2766eb9a1b36042240a077f016e7fa8e40cccd96a63498ba204f09ec27a",
+   "pcSize": 8848,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "4910b536ae44fc6130b8c0c7ce475dc2b13b4d1e8e00e29ee01f33840d9fb24e": {
+   "entry": "meshes/dlcanch/interface/hud/dlcanchgaussscope01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dlcanch/interface/hud/dlcanchgaussscope01.nif",
+   "pcSha256": "f0ed9958f4c139f45b6fc8682d057e5b4438f72fda6aa6a6f1cd228c9f7d7cd0",
+   "pcSize": 42516,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "4f2519a0a3914729ec09437bbbb53e7bb5faf2239e332662419ea1ed16916a5b": {
+   "entry": "meshes/creatures/mistergutsy/misterhandy.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/creatures/mistergutsy/misterhandy.nif",
+   "pcSha256": "a1285abde50d900e741de9358d17b12efd7e4d449764556ec6b362572f9bd454",
+   "pcSize": 821254,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "580cf7cead6b22a12303cf5b08d54c5867d3394f2d724247b90d7020c9067348": {
+   "entry": "meshes/dungeons/office/room/officermwindowccnrlit01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dungeons/office/room/officermwindowccnrlit01.nif",
+   "pcSha256": "aad5966071484ecb5c3fca2dd446cf0604749a01935045f48fb9ab47a984e72b",
+   "pcSize": 103169,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "586d2ad680a581cfa00eda6a2afce9446f4da0d82623b0f71d40e0a95747d8cf": {
+   "entry": "meshes/terminals/nv_reflectron_ani.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/terminals/nv_reflectron_ani.nif",
+   "pcSha256": "9dc27cdad40148b71e26aff9ae5542be2c8afa889dffe49b910f96306d7b3642",
+   "pcSize": 146646,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "58eb2556a975971cbfb783e04c564afc2ab7a49cea55995cccc7cd9d01cef91a": {
+   "entry": "meshes/creatures/minisentryturret/skeleton.nif",
+   "platform": "x360",
+   "pcPath": "meshes/creatures/minisentryturret/skeleton.nif",
+   "pcSha256": "e00bd6b0adc783a56ec4a56c7e8694cc92e8c82252d3c13f78a3a0111c384a9b",
+   "pcSize": 4145,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "5c850cafe006c872e7d6b58c5250f4712fba01751825bb3d1d20c06c740a2f67": {
+   "entry": "meshes/characters/_male/skeleton.nif",
+   "platform": "x360",
+   "pcPath": "meshes/characters/_male/skeleton.nif",
+   "pcSha256": "c6667dd94fd10392f851f748438b7c69c0d2cb407448becae6431d5ed1994c4c",
+   "pcSize": 191216,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "61afcaf8bd1576f4011521d021bb366c34e9412971741395ac575a6566c1dd88": {
+   "entry": "meshes/clutter/junk/coffeeurn01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/clutter/junk/coffeeurn01.nif",
+   "pcSha256": "8a52d97745cbb427f944b7bf84dbb9c222c079f10bf02e7c12025715bdfd65d3",
+   "pcSize": 43523,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "649b2d163a1f17bc9c4a79764fd37f417f1cd0bc0b1766287086e0e708619b90": {
+   "entry": "meshes/mps/mpsenergygreenbloodsplat01.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/mps/mpsenergygreenbloodsplat01.nif",
+   "pcSha256": "b2092719f9b992bae4067152b62eac058bd8e8e12e34d09c57298e36d1acc2ba",
+   "pcSize": 5939,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "68110a1de83b72a3015a37790edff5589a0878c9ea345fbb3b125c14670deb54": {
+   "entry": "meshes/effects/nukagrenadeexplosion01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/effects/nukagrenadeexplosion01.nif",
+   "pcSha256": "113ce0c83059802ba43f808308c36ebff3c4940b60a09e56795ceceb78d5ae7c",
+   "pcSize": 118761,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "6814a91b4871ec9a63c93d9cb59aa9cc70016c6a1cfcbf682b706a71d203d622": {
+   "entry": "meshes/clutter/junk/holyhandgrenadebox.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/clutter/junk/holyhandgrenadebox.nif",
+   "pcSha256": "a1010139ea712243a35aa1dfdea11ed3e5e85f303ee1b9309cd79259d7316ba3",
+   "pcSize": 24329,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "68edddae555380e6aa12c68f5692b2e3165ecf57a8b9afee3831d7b96bab24d0": {
+   "entry": "meshes/animobjects/nvvomit.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/animobjects/nvvomit.nif",
+   "pcSha256": "628ea541645f0446de62fe1b32503ec974e200dd7cd0274e40710aedd2fa0236",
+   "pcSize": 11174,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "6b22458282f44401d69b9c8b03dcae1ec6f967187ff46eac20dff707771c2e27": {
+   "entry": "meshes/furniture/vaultschooldeskdirty.nif",
+   "platform": "x360",
+   "pcPath": "meshes/furniture/vaultschooldeskdirty.nif",
+   "pcSha256": "199f9835d9a17650076b242b1c381ddef106ebea824ad2824e39363102c8ac6c",
+   "pcSize": 111261,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "6d22f1c6bf41603797c87d6a890941bbf8df46e9b45a458d8e9e78bd6fe76901": {
+   "entry": "meshes/interface/circular loading/loading01.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/interface/circular loading/loading01.nif",
+   "pcSha256": "834811ef13b23b17788b4aa003bf0691c24282a648655f97eb291e6482901b08",
+   "pcSize": 4795,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "6e5ba1d2b2589488b2c1341eefea07293223ada885d6a38a73037df4689d18fc": {
+   "entry": "meshes/furniture/gomorrahcushion01.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/furniture/gomorrahcushion01.nif",
+   "pcSha256": "12f489fe51fd83dc0d03c7e2073063600bdeb1ce505472c50bbfe410fd517b69",
+   "pcSize": 40669,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "6f9d8d44cfcdcacae74480f65bb9dd64a2febc764e9805ff6fd6586f16ffc75b": {
+   "entry": "meshes/armor/troupers/armornvncrtrooperfacewrap_f.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/armor/troupers/armornvncrtrooperfacewrap_f.nif",
+   "pcSha256": "12c4927963c1445eb8a016b0a1a07019a3f2c808d88e725d26407d3eef5a7848",
+   "pcSize": 435542,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "72c16947a5b8074ff5d93660d134448bc419da7e311d99f9c085e49d535f71cc": {
+   "entry": "meshes/terminals/nv_roulette/nv_roulette-table.nif",
+   "platform": "x360",
+   "pcPath": "meshes/terminals/nv_roulette/nv_roulette-table.nif",
+   "pcSha256": "7f4916f1e59176bcd51e12007c9705b1cf38a6f19276aea098d0991e75dfcb81",
+   "pcSize": 380260,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "735aa19326bc8ca9f1d071b4539ca74e9bd497befb5db78ec3202f1dc091e2f7": {
+   "entry": "meshes/armor/headgear/gambler/gambler_pillbox_03_go.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/armor/headgear/gambler/gambler_pillbox_03_go.nif",
+   "pcSha256": "0c85454d18b6fcfc4351ae772a84798036326003c51bd2cb346a1a881161478b",
+   "pcSize": 50402,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "73aebcb259327996f3554376b10011b51dd0397cb4ccd78543ca4c9777b82247": {
+   "entry": "meshes/vehicles/vertibirdrrevac01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/vehicles/vertibirdrrevac01.nif",
+   "pcSha256": "aa56aa81549ca3397204b48f96417c10de1540398933ff1fc2f9b560480d8d18",
+   "pcSize": 750107,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "7453c2b1fb15023b08fd3777e28da4e056e1dcec37d532f4a93fc5591480f271": {
+   "entry": "meshes/creatures/giantant/giantant.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/creatures/giantant/giantant.nif",
+   "pcSha256": "c4c24afbdebdac7cfcea2a052a41d12faa1b886d5d8c5c83b75e6cee00756bb8",
+   "pcSize": 460655,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "7b117f3b54313db01d8b4038004861bf5f8c472e630b3455ceed52b211c92aea": {
+   "entry": "meshes/architecture/pentagon/citadelwirepile01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/architecture/pentagon/citadelwirepile01.nif",
+   "pcSha256": "a6168cede8645149174c03d1f73036b8e5750261d33e319e781facf0f408f283",
+   "pcSize": 16215,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "7b3e1f7a290ad694174da4531e5a065e3f0a78b2141052481245d6fece2aa661": {
+   "entry": "meshes/furniture/dinerbooth03.nif",
+   "platform": "x360",
+   "pcPath": "meshes/furniture/dinerbooth03.nif",
+   "pcSha256": "f53ec46cd150575467dc03562e0732bd8157b42c1dbc324e5c1ca78dc2a2e35a",
+   "pcSize": 67832,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "7b824c00490f47d2f7f5b5e6cdc12169730dd9eefd1354522ddb94edbe1502d8": {
+   "entry": "meshes/architecture/barrier/barrier01b.nif",
+   "platform": "x360",
+   "pcPath": "meshes/architecture/barrier/barrier01b.nif",
+   "pcSha256": "600cd18ff6b30814a81388c69017acc719edc8831bedcb4a9170df01b19bcfb8",
+   "pcSize": 311396,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "7dc198a1e753e0cb33a7d64e4b47571e558d861759b497336f68c7975b7f0d37": {
+   "entry": "meshes/creatures/radscorpion/barkscorpion.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/creatures/radscorpion/barkscorpion.nif",
+   "pcSha256": "1c8af7022b1686ab300aa886f31621f070e187ba227892407aba4f80fd0c6aec",
+   "pcSize": 508412,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "8625137c39dc25c373b94c0359027f7ffe9b94e40ce1ebb1ab8c3e8133c94768": {
+   "entry": "meshes/landscape/lod/wastelandnv/wastelandnv.level32.x32.y32.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/landscape/lod/wastelandnv/wastelandnv.level32.x32.y32.nif",
+   "pcSha256": "6183c72624314d1568a483c705e1bdbd70185e4fb08b6a1d567dcf3ada0a7083",
+   "pcSize": 41661,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "87edd175035d0cd79f2c7fadeca011c82ff28c01eee235d1862158d7b1afe3a4": {
+   "entry": "meshes/furniture/nv_legionflag_largnopole.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/furniture/nv_legionflag_largnopole.nif",
+   "pcSha256": "58b7d66eb1eda4c3e832f77a646740d48a7919a67e2403e5ad9d734c4402b9d0",
+   "pcSize": 49031,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "8a5cb6434fe38e27c73d6128a3527aa66aa83fd7aaed039bdd00291de7d91f9f": {
+   "entry": "meshes/interface/loading/loadinganim01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/interface/loading/loadinganim01.nif",
+   "pcSha256": "444af311a4251535b6e1560392c2e340ab9bf46299c534fd95fa80983b0dd6cf",
+   "pcSize": 12647,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "8a9fc4982fdcf8e3b85eb7526f846d21506f30fb688a4a086ad5e3fe1689b011": {
+   "entry": "meshes/characters/hair/beardsoulpatch.nif",
+   "platform": "x360",
+   "pcPath": "meshes/characters/hair/beardsoulpatch.nif",
+   "pcSha256": "c84caa72764e0cdb83e61f26a76347791f28f458836cbd44529d00af188536d6",
+   "pcSize": 5693,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "8c5fa6cb7a46342c57cfe05708616d42fa3a458b8fa06f99bb09dd40ed53708f": {
+   "entry": "meshes/architecture/quarryjunction/crusher-crusher-bars.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/architecture/quarryjunction/crusher-crusher-bars.nif",
+   "pcSha256": "ffe44a99ebd99044421e7ae0acc860c53b88970d71a6da08013ac5f0b4862dca",
+   "pcSize": 11989,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "8cf441e8203362b07c1724cac3145f87302f514d3002c8ea17a0490c1571285c": {
+   "entry": "meshes/characters/hair/glassestortoiseshellgo.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/characters/hair/glassestortoiseshellgo.nif",
+   "pcSha256": "5cbd3fb7ba6ee0ff55837e97ba021222f58695b1491335c847dff598dbfb2ed8",
+   "pcSize": 38627,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "9355981fbc431a6da12c8e5c29f5fa941379e892955da717c64380ea55512754": {
+   "entry": "meshes/weapons/1handgrenadethrow/dynamite.nif",
+   "platform": "x360",
+   "pcPath": "meshes/weapons/1handgrenadethrow/dynamite.nif",
+   "pcSha256": "7121fa0208ed85cb9fc165688b6797cac508b49504f70943e26271a1196c0357",
+   "pcSize": 45494,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "991bde7c02c23aa412723c435974933c02d337984424d9223bd1e182463ef532": {
+   "entry": "meshes/architecture/repcon/repglass.nif",
+   "platform": "x360",
+   "pcPath": "meshes/architecture/repcon/repglass.nif",
+   "pcSha256": "737f980580a4e9a1fb7f2e8aacd6f23c061bdec92431752fae30532999539e68",
+   "pcSize": 34972,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "9bc4f886e1730ca0368c1dac87c89f161e04668f76be6c362aa07cd8d2fa062c": {
+   "entry": "meshes/creatures/protectron/skeleton.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/creatures/protectron/skeleton.nif",
+   "pcSha256": "559049dbac7b44fdc98fb71a38c03fdc7c538755712b77526578f63740e3bceb",
+   "pcSize": 16858,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "9ff36f4ea1764512423f7ab5f3f71f294a6c530a1ea9d5d5c0ed0304525a9217": {
+   "entry": "meshes/dlc04/furniture/dlc04wheelchair01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dlc04/furniture/dlc04wheelchair01.nif",
+   "pcSha256": "867e61669bdc2837ef76aee4c917ca8082065562590a0c588488edcf8d102ba0",
+   "pcSize": 353405,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "a05c7c29e388964735d8c29cf7d8599374dc5b256ce706af42deeb86632b34b6": {
+   "entry": "meshes/dlc03/effects/dlc03teslatrapvol01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dlc03/effects/dlc03teslatrapvol01.nif",
+   "pcSha256": "c87ea0ffe85c4be95cb8b388de58f925ca1e030d1c3ddc2a05babb9e28199ed9",
+   "pcSize": 1810,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "a2ce723ae58492c96f74807738bf6e27b6820c57b89444432905f722f39a9ea5": {
+   "entry": "meshes/dungeons/utility/catwalks/utlcat1waynorails02.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dungeons/utility/catwalks/utlcat1waynorails02.nif",
+   "pcSha256": "29fddb8a8dc0c248899c1c28a1ae24c8f3c66321f8d41f9c6c0a1eea61ae3a6e",
+   "pcSize": 21734,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "a5f3a5636342b5362c0b451ecc81feea49b971d3cf2440dd7db7987ebb40df00": {
+   "entry": "meshes/dlc04/effects/dlc04slimebubble03.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dlc04/effects/dlc04slimebubble03.nif",
+   "pcSha256": "e76b7f807d3fdc27daf709d60bc63c642c84da7a1da62a371462b31ca40caa89",
+   "pcSize": 23199,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "ab2c9682da14c2b0ff44da1099e59a0fe543a882402ad0bccf803169577d6645": {
+   "entry": "meshes/dlc03/clutter/scientistlab/dlc03plasmaglobe.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dlc03/clutter/scientistlab/dlc03plasmaglobe.nif",
+   "pcSha256": "3d6140635c17846e2f6c7ae23a41a6c8cffd9a01f18dc87627784a1c56c73fda",
+   "pcSize": 72731,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "ae0aca13dd919e2c103fa178b8036a1f03d0395dec9cc4dfae327fc29459bbdb": {
+   "entry": "meshes/clutter/snowglobes/snowglobes_fortmormon.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/clutter/snowglobes/snowglobes_fortmormon.nif",
+   "pcSha256": "fd5a1d2ae727278751eda2e71e67aa97f5901924fd8d4b28e2777ca6cc207466",
+   "pcSize": 118103,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "ae1a7ad8aa2d836065c6e5d070ff15c67791a3259ad9784ac0f9868404f08a3c": {
+   "entry": "meshes/dungeons/nvlucky38/nvlucky38reactor.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dungeons/nvlucky38/nvlucky38reactor.nif",
+   "pcSha256": "c8ec35f3c52fdf719a49d716c4a95cab4612f85c4aff0a0482ce2aaaa9aabede",
+   "pcSize": 5049830,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "af5d5b728f895a1c1b645ebbbe77deca780a7e50bdeb7b449f2fed432dd592e0": {
+   "entry": "meshes/dlc05/dungeons/mz/doors/dlc05mzdoorsmfieldeffect01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dlc05/dungeons/mz/doors/dlc05mzdoorsmfieldeffect01.nif",
+   "pcSha256": "be0ea7aa2aa56b8ccf7c02f32ec1c8355d8775517264f58963b26673f90b7763",
+   "pcSize": 77914,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "b19e0ff75a73e8a9c245dc102675d4458376207365e8e4385b0c48baeca2b1df": {
+   "entry": "meshes/creatures/centaur/nv_centaur_evolved.nif",
+   "platform": "x360",
+   "pcPath": "meshes/creatures/centaur/nv_centaur_evolved.nif",
+   "pcSha256": "d4f08c249fb3b5cccd5a64f08a0935fc61d56b16e16dbd36b4f1a0312af14b22",
+   "pcSize": 696825,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "b4cfe00130a6a3cf5dff9d0520a4d6231667694940c299dc2822ce2d801da46b": {
+   "entry": "meshes/scol/scolelectricitypylonwires1b_lod.nif",
+   "platform": "x360",
+   "pcPath": "meshes/scol/scolelectricitypylonwires1b_lod.nif",
+   "pcSha256": "77ee963f526cebfe0c9db972f3acaee14ca806b81035921087cbeb6de2620f15",
+   "pcSize": 17429,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "b52a6b53685cc7d0e724289f384f3b4e3ef15d7dcdd0763256d2e5bcb128a423": {
+   "entry": "meshes/clutter/hooverdammap.nif",
+   "platform": "x360",
+   "pcPath": "meshes/clutter/hooverdammap.nif",
+   "pcSha256": "0432fbe8ef2776cf504abb3d683887f239d86c28fc3898c5f87881af36fedf6f",
+   "pcSize": 1077,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "b73a612b819bb4783c5f1f4ac32dccfba0fb1c7aeeb222c69f346827d2b6bc88": {
+   "entry": "meshes/architecture/urban/streetdressing/utilitypolewirenv.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/architecture/urban/streetdressing/utilitypolewirenv.nif",
+   "pcSha256": "efbfd86b9830efa0231729cd28916bc7e903b0b4ab0c14af96c1ac4f75936eea",
+   "pcSize": 6257,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "b8593cc063e36e71f6c10179e2b5c13dbd24b161f5f01f3ff80305a016a29fda": {
+   "entry": "meshes/landscape/trees/wastelandhedgerow04.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/landscape/trees/wastelandhedgerow04.nif",
+   "pcSha256": "759c5d38db6a79075bab09e1e25e72c4bd616b6b1b07b688c9d0dc2d34a48ca7",
+   "pcSize": 86094,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "badfbb4191da02c7cf8ff3e4a0b1ae9bedd37810236938ff95428e395d38d22e": {
+   "entry": "meshes/landscape/grass/grasswasteland03.nif",
+   "platform": "x360",
+   "pcPath": "meshes/landscape/grass/grasswasteland03.nif",
+   "pcSha256": "8947b6d244c833306e6d790cc84ec82e5230d9a72c5f1be9d7795fc4b7daa966",
+   "pcSize": 1632,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "baf741835731a19cd58f26e1f73af93cb8d380e1400e4cecf49b7fa87eeb4719": {
+   "entry": "meshes/clutter/food/mutfruit01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/clutter/food/mutfruit01.nif",
+   "pcSha256": "1bfd1359356df58d5f6db83db1603501aa21833dc7dde9d542d4a0a22b0c74ea",
+   "pcSize": 9021,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "c4599eb6331ea83deaf6de7817068dcb5e40201efc53601ed20a907154ab7fd2": {
+   "entry": "meshes/furniture/benchmuseum01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/furniture/benchmuseum01.nif",
+   "pcSha256": "ba5327fc5d1748c0f2faaeefc8af4d2b916312efbddb97f8891b6c76112c8eed",
+   "pcSize": 31762,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "c57c6cfd2a1f91a515027b932388e2d70c73b0940d0411edda113fcdf0beb725": {
+   "entry": "meshes/architecture/noso/nv_noso_apartments02.nif",
+   "platform": "x360",
+   "pcPath": "meshes/architecture/noso/nv_noso_apartments02.nif",
+   "pcSha256": "efb52e3736f091a92af834d795a24fc77f58965c08a706f8cdeb77a25ebe52c0",
+   "pcSize": 1045860,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "c62b26e81cf9a4c58de95a8757a925ee54bd8ce17683b5d3fc76fdd649dabf78": {
+   "entry": "meshes/effects/box03.nif",
+   "platform": "x360",
+   "pcPath": "meshes/effects/box03.nif",
+   "pcSha256": "a948e66c1582a5502f972cb453e07668771e7804a33380755d982f3cf5c54ea8",
+   "pcSize": 4456,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "c8211d6dacfec9761135d0efc78d18d93101ad0ba8e9e97474fcb0d90779fc3f": {
+   "entry": "meshes/creatures/nvmantis/nvmantis.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/creatures/nvmantis/nvmantis.nif",
+   "pcSha256": "7e156c8573155567ee02b360859ac8a3b7bd0ac4aeeff7b6b533d728ac86e7cf",
+   "pcSize": 312583,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "cf174d6a0a270546792aa59d7e7a66fa0bf15e6bff7d39f4636207bfb003c646": {
+   "entry": "meshes/clutter/wwromanes.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/clutter/wwromanes.nif",
+   "pcSha256": "a2ec4a39570eb468c603028341b29c276f973d12a426379600e0832ccbbc0d8c",
+   "pcSize": 997,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "d2cfb7fb3bd199c23ddee81fc36952190f187217864cd3fc18b8e4913619c313": {
+   "entry": "meshes/dlc04/effects/dlc04fxshovellindirt01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dlc04/effects/dlc04fxshovellindirt01.nif",
+   "pcSha256": "11d1d00ae8cded4ea282d4564d18f641ae2039367052483917ef338107e5731e",
+   "pcSize": 7993,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "d49bcd5c603ad5589f36261ace735b6a43251e4af0241ec96bb41e59d1e1e607": {
+   "entry": "meshes/armor/headgear/legionhelmets/legionhelmetbase_go.nif",
+   "platform": "x360",
+   "pcPath": "meshes/armor/headgear/legionhelmets/legionhelmetbase_go.nif",
+   "pcSha256": "6327c876627057d07e9b2ca75b27a49b17fce11257d120f259049caf05b0f8e4",
+   "pcSize": 65087,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "d840792dceaa17838da5ad44532253bf75f04d02a4d953456c6b3ee1f2b19d76": {
+   "entry": "meshes/architecture/suburban/bldgcorner06_windowsext.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/architecture/suburban/bldgcorner06_windowsext.nif",
+   "pcSha256": "607ab2ea83cee8927870cd5b4fa8f9fe94e086314c036b45569d1980dc0ebb46",
+   "pcSize": 9080,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "e167504f1bf8bfd4c9bffe3256d9d1521b8a71e55fc4110bd67b2bb9d958d814": {
+   "entry": "meshes/dungeons/vaultruined/galley/vgalleyendrr01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/dungeons/vaultruined/galley/vgalleyendrr01.nif",
+   "pcSha256": "5c4ef78f3fc9c62b237b9bc3f5f25538187497da95dd8e3c914360d22562fb89",
+   "pcSize": 132618,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "e1db570ace547da308f9f2212fceb7ba15fb4d5f8974fb82486c178467416d59": {
+   "entry": "meshes/traps/terminaldesktrap01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/traps/terminaldesktrap01.nif",
+   "pcSha256": "6690d69c4fd7a51bb07e26bb74cf73c61624768adabc59d3eaa88f5e0849f220",
+   "pcSize": 36499,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "e52f57cfe5afe028aa4966b03e84b710a642a9dc6071fc316884fd7636449071": {
+   "entry": "meshes/effects/tests/testexplodecake.nif",
+   "platform": "x360",
+   "pcPath": "meshes/effects/tests/testexplodecake.nif",
+   "pcSha256": "ba8f043826bd7a13c7ca95aa67b98fba3ebb1103fbf75685d3221c40998dc3e7",
+   "pcSize": 134415,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "e6473042bce9b286cb4e805fe78edede760eb2b21725efce020df4e674ac5205": {
+   "entry": "meshes/weapons/2handmelee/baseballbatdirty.nif",
+   "platform": "x360",
+   "pcPath": "meshes/weapons/2handmelee/baseballbatdirty.nif",
+   "pcSha256": "403f541946529034dc447c0254332921f4ae95f1cf7d8b283b31810080b7a5fd",
+   "pcSize": 16681,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "e8a2f503c986efca9d9a5432e13fd0a313ff7a4c241e45712e3cea3c603e1c59": {
+   "entry": "meshes/creatures/nvcazadores/nvcazadores.nif",
+   "platform": "x360",
+   "pcPath": "meshes/creatures/nvcazadores/nvcazadores.nif",
+   "pcSha256": "86a540d5b842304b488fb46e55f176879ee19cf35e8a4d6eaccffa809721f2ed",
+   "pcSize": 1043052,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "e8c98563f89d46fdffdcb8eb055abec38c3dbae32c5fc60d31f2e630dea8cc9a": {
+   "entry": "meshes/architecture/urban/buildingkits/bld11divwallgfdockmed01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/architecture/urban/buildingkits/bld11divwallgfdockmed01.nif",
+   "pcSha256": "20ca2bc8fe01322727cd96443bc35089022c825eea65654b94339bd7c9108d56",
+   "pcSize": 36389,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "edadb86754ca35eff09596175865f0945dad4be99fcc6956b3b22d9e009c5d4e": {
+   "entry": "meshes/effects/fxharoldheart01.nif",
+   "platform": "x360",
+   "pcPath": "meshes/effects/fxharoldheart01.nif",
+   "pcSha256": "b6c3371de6f6bd4cfe7f7a2d55055c2f07e901ae501ebf5c21464d44591d5192",
+   "pcSize": 363657,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "ef2e31b7e0b3152bcd0f50e51b399b6d9378c8354b12fac29693dc0014352b0a": {
+   "entry": "meshes/clutter/blackrefblock256.nif",
+   "platform": "x360",
+   "pcPath": "meshes/clutter/blackrefblock256.nif",
+   "pcSha256": "c4b3c7c7465b1bb6a54e474847b6820d8a9958c7690f9ff4b9a793a985fceb0d",
+   "pcSize": 1039,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "f6d4737ab68dfd1e8dd1d2f0873437735c1d292ad12a5e658ae5528fcf40026d": {
+   "entry": "meshes/effects/impactflameburst.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/effects/impactflameburst.nif",
+   "pcSha256": "335f3c7f86e9fa9fbe98abe1c81b457e18c19d0a05a1b735f72c80b9fbb4645a",
+   "pcSize": 695,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "fb7eaa976509bf3f3f69642fad676ce5c3dd5002efa18d2e61b4a3b3d0ab4b7b": {
+   "entry": "meshes/dlc05/dungeons/mz/misc/dlc05hololivingquarters.nif",
+   "platform": "ps3",
+   "pcPath": "meshes/dlc05/dungeons/mz/misc/dlc05hololivingquarters.nif",
+   "pcSha256": "deb37b6306a31b774d3862c2da2be758dc12a654c6f25441b1f259906df809ff",
+   "pcSize": 30347,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  },
+  "fb82cc6af07467b3e6d5c00d019937b0293d65c68add3ebb6ec3b1fa85fc6fd9": {
+   "entry": "meshes/clutter/playground/ruined/seesawruinedb02.nif",
+   "platform": "x360",
+   "pcPath": "meshes/clutter/playground/ruined/seesawruinedb02.nif",
+   "pcSha256": "60bdfeae64bb12d6b6ef79918d7028639c23e4a53608d06757ae00d82acaf97a",
+   "pcSize": 21502,
+   "pcLayer": "Fallout - Meshes.bsa",
+   "pcStep": "steamFinalBuild"
+  }
+ },
+ "missing": {}
+}

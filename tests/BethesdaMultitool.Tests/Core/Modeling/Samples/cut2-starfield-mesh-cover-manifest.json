@@ -1,0 +1,2186 @@
+{
+ "schema": "cut2-starfield-mesh-cover/2",
+ "generator": "tools/scripts/gate2/starfield_mesh_cover.py manifest",
+ "plan": "docs/design/cut2-starfield-mesh-reader-plan-20260928.md, section 8",
+ "census": {
+  "records": 720957,
+  "unique": 399638,
+  "archives": {
+   "SFBGS003 - Main.ba2": 474,
+   "SFBGS004 - Main.ba2": 150,
+   "SFBGS008 - Main.ba2": 62,
+   "SFBGS00D - Main.ba2": 3460,
+   "SFBGS047 - Main.ba2": 79,
+   "SFBGS050 - Main.ba2": 12923,
+   "ShatteredSpace - Main01.ba2": 23570,
+   "Starfield - FaceMeshes.ba2": 4832,
+   "Starfield - Meshes01.ba2": 288231,
+   "Starfield - Meshes02.ba2": 62685,
+   "Starfield - MeshesPatch.ba2": 324491
+  },
+  "decodeErrors": 0
+ },
+ "rule": "exact MILP joint cover over every value and every observed pair of values of (version, weightsPerVertex, lodCount, colors, UV1, meshlet-count bucket) plus every file-level tag; minimum file count, then minimum bytes; representatives are the smallest file (then SHA-256 order) of each (cell, tag set) group; then the edge files",
+ "solver": {
+  "countStage": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+  "bytesStage": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+  "count": 60
+ },
+ "cellCount": 295,
+ "groupCount": 1842,
+ "itemCount": 266,
+ "uncoveredItems": [],
+ "files": [
+  {
+   "role": "cover",
+   "name": "cover 01 v2|w0|lod0|nocol|nouv1|m1",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/89b837abb1a99f8a2ea9/92d5215f898a30a1198b.mesh",
+   "index": 220702,
+   "size": 180,
+   "sha256": "0a7baa58b8ae1198ee3fae78773185c44da27c193cb3ea96a3cf6aee0fb726fc",
+   "version": 2,
+   "vertexCount": 4,
+   "indexCount": 6,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 1,
+   "tail": true,
+   "cell": "v2|w0|lod0|nocol|nouv1|m1",
+   "tags": [
+    "normalW:1",
+    "qMaxAbs=32767",
+    "scaleNotPowerOfTwo",
+    "tangentW:0"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 02 v2|w2|lod0|nocol|nouv1|m1",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/3f60ed39a084aa43908f/af3c00d2f1abd0d14d6a.mesh",
+   "index": 118521,
+   "size": 212,
+   "sha256": "7efbe1759d16ce21a7a4846e2bbaf077955cccf105251d5335bd29fc5550d0b0",
+   "version": 2,
+   "vertexCount": 4,
+   "indexCount": 6,
+   "weightsPerVertex": 2,
+   "lodCount": 0,
+   "meshletCount": 1,
+   "tail": true,
+   "cell": "v2|w2|lod0|nocol|nouv1|m1",
+   "tags": [
+    "normalW:1",
+    "tangentW:0"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/3f60ed39a084aa43908f/af3c00d2f1abd0d14d6a.mesh",
+     "index": 102167
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 03 v2|w1|lod0|col|uv1|m1",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS004 - Main.ba2",
+   "archive": "SFBGS004 - Main.ba2",
+   "entry": "geometries/2bf7eb2f5ccf6a2c80ed/190d468706a5ff825494.mesh",
+   "index": 30,
+   "size": 228,
+   "sha256": "b4a3cd3f6ff53fff309a115ba94523d1a4abc04a75f042b1f77579237f25c3ff",
+   "version": 2,
+   "vertexCount": 4,
+   "indexCount": 6,
+   "weightsPerVertex": 1,
+   "lodCount": 0,
+   "meshletCount": 1,
+   "tail": true,
+   "cell": "v2|w1|lod0|col|uv1|m1",
+   "tags": [
+    "normalW:1",
+    "tangentW:3"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 04 v2|w3|lod1|nocol|nouv1|m1",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS050 - Main.ba2",
+   "archive": "SFBGS050 - Main.ba2",
+   "entry": "geometries/d10cf919e26d46e18f44/c30949662d883f259c71.mesh",
+   "index": 10607,
+   "size": 1804,
+   "sha256": "77518e1fdefc3d1d36ae49163a45e9fbc9cb8bd4d1a0256ccca0778cd003a397",
+   "version": 2,
+   "vertexCount": 40,
+   "indexCount": 168,
+   "weightsPerVertex": 3,
+   "lodCount": 1,
+   "meshletCount": 1,
+   "tail": true,
+   "cell": "v2|w3|lod1|nocol|nouv1|m1",
+   "tags": [
+    "normalW:1",
+    "tangentW:0"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 05 v2|w4|lod2|nocol|nouv1|m1",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS050 - Main.ba2",
+   "archive": "SFBGS050 - Main.ba2",
+   "entry": "geometries/85a3209d5dcf40e3acb9/b6f4a2fba11c6192c38c.mesh",
+   "index": 6807,
+   "size": 1944,
+   "sha256": "56d1c10e9588c7a4f6590a0538cd8480083d03da3a348aa74518f396e2ce4a6e",
+   "version": 2,
+   "vertexCount": 34,
+   "indexCount": 144,
+   "weightsPerVertex": 4,
+   "lodCount": 2,
+   "meshletCount": 1,
+   "tail": true,
+   "cell": "v2|w4|lod2|nocol|nouv1|m1",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 06 v2|w2|lod0|nocol|nouv1|mabsent",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - FaceMeshes.ba2",
+   "archive": "Starfield - FaceMeshes.ba2",
+   "entry": "geometries/d6fe8a2e3979bb782a29/dbe6b3bce9c211804c32.mesh",
+   "index": 5346,
+   "size": 1958,
+   "sha256": "21b193e01c391b50e3747cb9f51c95f051a288f24c54dfb8ea9a549e4f286279",
+   "version": 2,
+   "vertexCount": 55,
+   "indexCount": 240,
+   "weightsPerVertex": 2,
+   "lodCount": 0,
+   "meshletCount": 0,
+   "tail": false,
+   "cell": "v2|w2|lod0|nocol|nouv1|mabsent",
+   "tags": [
+    "normalW:0",
+    "tangentW:0"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 07 v2|w5|lod3|nocol|nouv1|m1",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/b0812b09b521080cb6f3/1e87dedcd225d24783c6.mesh",
+   "index": 273798,
+   "size": 1968,
+   "sha256": "00ca39ef846a98c6dd300481b46be88d3e007546a33ec44e0e7993fb40c11241",
+   "version": 2,
+   "vertexCount": 30,
+   "indexCount": 96,
+   "weightsPerVertex": 5,
+   "lodCount": 3,
+   "meshletCount": 1,
+   "tail": true,
+   "cell": "v2|w5|lod3|nocol|nouv1|m1",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/b0812b09b521080cb6f3/1e87dedcd225d24783c6.mesh",
+     "index": 245786
+    }
+   ],
+   "edges": [
+    "mostLods"
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 08 v2|w6|lod0|nocol|nouv1|m1",
+   "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+   "archive": "ShatteredSpace - Main01.ba2",
+   "entry": "geometries/269f56b86e415eb7e44b/34d61d31e992f7c497ac.mesh",
+   "index": 3535,
+   "size": 2016,
+   "sha256": "0657e03df0b431877f192a1c7c4957e6ed37c67806b789ae012a034957906b4d",
+   "version": 2,
+   "vertexCount": 38,
+   "indexCount": 162,
+   "weightsPerVertex": 6,
+   "lodCount": 0,
+   "meshletCount": 1,
+   "tail": true,
+   "cell": "v2|w6|lod0|nocol|nouv1|m1",
+   "tags": [
+    "normalW:1",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 09 v2|w0|lod0|nocol|nouv1|m2-4",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS050 - Main.ba2",
+   "archive": "SFBGS050 - Main.ba2",
+   "entry": "geometries/1846e33aa79cb0f3fb0e/8863bcf8a231823065f9.mesh",
+   "index": 1191,
+   "size": 2344,
+   "sha256": "15e605b2ac71635227112a13690e83b2d68480c423ee6754ff0074397aa5bcaa",
+   "version": 2,
+   "vertexCount": 108,
+   "indexCount": 132,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 2,
+   "tail": true,
+   "cell": "v2|w0|lod0|nocol|nouv1|m2-4",
+   "tags": [
+    "cullOvershoot",
+    "normalW:1",
+    "tangentW:0"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 10 v2|w3|lod0|nocol|nouv1|mabsent",
+   "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+   "archive": "ShatteredSpace - Main01.ba2",
+   "entry": "geometries/5d54469ecd8c2c466c03/baeb30a664db4941b2fd.mesh",
+   "index": 8692,
+   "size": 4308,
+   "sha256": "215081023d619e093356211efd7fdc94c399d387ba7d0252626c58a97b0d9a50",
+   "version": 2,
+   "vertexCount": 110,
+   "indexCount": 480,
+   "weightsPerVertex": 3,
+   "lodCount": 0,
+   "meshletCount": 0,
+   "tail": false,
+   "cell": "v2|w3|lod0|nocol|nouv1|mabsent",
+   "tags": [
+    "normalW:0",
+    "tangentW:0"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 11 v2|w2|lod0|col|uv1|m2-4",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes02.ba2",
+   "archive": "Starfield - Meshes02.ba2",
+   "entry": "geometries/fe95b653666602666793/b4c2d6e8c6770b554d54.mesh",
+   "index": 60728,
+   "size": 4580,
+   "sha256": "f668c251d617fab575740dd57d0743a9d1e7bacafc48149f85c1b2d0a8d4916f",
+   "version": 2,
+   "vertexCount": 106,
+   "indexCount": 420,
+   "weightsPerVertex": 2,
+   "lodCount": 0,
+   "meshletCount": 2,
+   "tail": true,
+   "cell": "v2|w2|lod0|col|uv1|m2-4",
+   "tags": [
+    "normalW:1",
+    "tangentW:03"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/fe95b653666602666793/b4c2d6e8c6770b554d54.mesh",
+     "index": 344966
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 12 v2|w3|lod0|col|uv1|m2-4",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS050 - Main.ba2",
+   "archive": "SFBGS050 - Main.ba2",
+   "entry": "geometries/e1e8c7c6a20fa4c8bca5/7144f7258e17e7d32188.mesh",
+   "index": 11442,
+   "size": 4728,
+   "sha256": "1471a42c20c8c9bbd44b7d3faaa8e1f9fe3ec052f038155fcb5e90ef5ff5c94b",
+   "version": 2,
+   "vertexCount": 112,
+   "indexCount": 168,
+   "weightsPerVertex": 3,
+   "lodCount": 0,
+   "meshletCount": 2,
+   "tail": true,
+   "cell": "v2|w3|lod0|col|uv1|m2-4",
+   "tags": [
+    "normalW:1",
+    "tangentW:03"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 13 v2|w1|lod0|nocol|nouv1|mabsent",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - FaceMeshes.ba2",
+   "archive": "Starfield - FaceMeshes.ba2",
+   "entry": "geometries/20adf8dffa7e6f52d527/b598eb35de2f01527c89.mesh",
+   "index": 1857,
+   "size": 4788,
+   "sha256": "595ec5a25b9ca29688f5aaec002f20bf82367e6a4ab4113c3440a695f4c4f2f3",
+   "version": 2,
+   "vertexCount": 150,
+   "indexCount": 720,
+   "weightsPerVertex": 1,
+   "lodCount": 0,
+   "meshletCount": 0,
+   "tail": false,
+   "cell": "v2|w1|lod0|nocol|nouv1|mabsent",
+   "tags": [
+    "normalW:0",
+    "tangentW:0"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+     "archive": "ShatteredSpace - Main01.ba2",
+     "entry": "geometries/20adf8dffa7e6f52d527/b598eb35de2f01527c89.mesh",
+     "index": 2989
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 14 v2|w8|lod0|nocol|nouv1|m1",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/34f7995e1f0714815165/2de0797ee01e63c27076.mesh",
+   "index": 104410,
+   "size": 5268,
+   "sha256": "51c17b827d77e018f520887340d60e2bbce1471d80cf0e0726ad29829df24b89",
+   "version": 2,
+   "vertexCount": 90,
+   "indexCount": 336,
+   "weightsPerVertex": 8,
+   "lodCount": 0,
+   "meshletCount": 1,
+   "tail": true,
+   "cell": "v2|w8|lod0|nocol|nouv1|m1",
+   "tags": [
+    "normalW:1",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 15 v2|w5|lod0|nocol|nouv1|mabsent",
+   "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+   "archive": "ShatteredSpace - Main01.ba2",
+   "entry": "geometries/be5d8bb63366deaebed9/a59b4ba4f361d3f20436.mesh",
+   "index": 17588,
+   "size": 5632,
+   "sha256": "28ec774630f8111bffb4b808f8744c5ef36e3bab5e1b4da92f9409a7cec2f481",
+   "version": 2,
+   "vertexCount": 128,
+   "indexCount": 360,
+   "weightsPerVertex": 5,
+   "lodCount": 0,
+   "meshletCount": 0,
+   "tail": false,
+   "cell": "v2|w5|lod0|nocol|nouv1|mabsent",
+   "tags": [
+    "normalW:0",
+    "tangentW:0"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 16 v2|w8|lod0|nocol|nouv1|m2-4",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/19cc7229b193e8026aac/d4e879bc1dd81ad3de8f.mesh",
+   "index": 67553,
+   "size": 6484,
+   "sha256": "8fee25a1e7544f5dcd1c3aa096a6f984db249d926948a0e5adab08eff8cb1b82",
+   "version": 2,
+   "vertexCount": 108,
+   "indexCount": 474,
+   "weightsPerVertex": 8,
+   "lodCount": 0,
+   "meshletCount": 2,
+   "tail": true,
+   "cell": "v2|w8|lod0|nocol|nouv1|m2-4",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/SFBGS050 - Main.ba2",
+     "archive": "SFBGS050 - Main.ba2",
+     "entry": "geometries/19cc7229b193e8026aac/d4e879bc1dd81ad3de8f.mesh",
+     "index": 1269
+    },
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/19cc7229b193e8026aac/d4e879bc1dd81ad3de8f.mesh",
+     "index": 54996
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 17 v2|w4|lod0|nocol|nouv1|mabsent",
+   "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+   "archive": "ShatteredSpace - Main01.ba2",
+   "entry": "geometries/79112e5b11651c76cb42/d79e0060ff6507036921.mesh",
+   "index": 11219,
+   "size": 6588,
+   "sha256": "1099c07c17c5afff4d9b516ffbf3c5488e83e7b3f11d69b7ce19f9e6d271eb36",
+   "version": 2,
+   "vertexCount": 150,
+   "indexCount": 720,
+   "weightsPerVertex": 4,
+   "lodCount": 0,
+   "meshletCount": 0,
+   "tail": false,
+   "cell": "v2|w4|lod0|nocol|nouv1|mabsent",
+   "tags": [
+    "normalW:0",
+    "tangentW:0"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 18 v2|w1|lod2|nocol|nouv1|m2-4",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/5449f69e37c8f1373cbb/b119c961d56e4e9898d4.mesh",
+   "index": 147192,
+   "size": 8484,
+   "sha256": "b03ed3dd83e48bc3dbc8ab076f4fd0fda1d2ea8c1a090d4906d9d1b5949f8c3d",
+   "version": 2,
+   "vertexCount": 214,
+   "indexCount": 1086,
+   "weightsPerVertex": 1,
+   "lodCount": 2,
+   "meshletCount": 4,
+   "tail": true,
+   "cell": "v2|w1|lod2|nocol|nouv1|m2-4",
+   "tags": [
+    "normalW:1",
+    "tangentW:3"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/5449f69e37c8f1373cbb/b119c961d56e4e9898d4.mesh",
+     "index": 128681
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 19 v2|w4|lod2|col|nouv1|m2-4",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/567878857e348f9fea7c/a691764b582ab366539b.mesh",
+   "index": 150217,
+   "size": 9634,
+   "sha256": "2061d91778e075598ead79bf016a1799b1a4de241a08ee5ec1f56d1da804668b",
+   "version": 2,
+   "vertexCount": 180,
+   "indexCount": 801,
+   "weightsPerVertex": 4,
+   "lodCount": 2,
+   "meshletCount": 3,
+   "tail": true,
+   "cell": "v2|w4|lod2|col|nouv1|m2-4",
+   "tags": [
+    "colorAlpha<255",
+    "normalW:1",
+    "tangentW:0"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/567878857e348f9fea7c/a691764b582ab366539b.mesh",
+     "index": 131463
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 20 v2|w5|lod0|col|nouv1|m5-16",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/64b4f33442b267806040/7bb92880f7d228e3b115.mesh",
+   "index": 169730,
+   "size": 10216,
+   "sha256": "93390ab4943e6e94478f9adb79d949a879f66dfd1a36ffff6d22df3fc35e11b5",
+   "version": 2,
+   "vertexCount": 196,
+   "indexCount": 864,
+   "weightsPerVertex": 5,
+   "lodCount": 0,
+   "meshletCount": 5,
+   "tail": true,
+   "cell": "v2|w5|lod0|col|nouv1|m5-16",
+   "tags": [
+    "colorAlpha<255",
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/64b4f33442b267806040/7bb92880f7d228e3b115.mesh",
+     "index": 149500
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 21 v2|w1|lod1|nocol|nouv1|m5-16",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS050 - Main.ba2",
+   "archive": "SFBGS050 - Main.ba2",
+   "entry": "geometries/aa8c9ed5fbee5ee1ea7d/fdb04800ad2c0e25d6fe.mesh",
+   "index": 8671,
+   "size": 10646,
+   "sha256": "6eec810f4f2747b0e4b48c7d7fc13132eedef51b16aabf2b16cee52badd6e854",
+   "version": 2,
+   "vertexCount": 309,
+   "indexCount": 1524,
+   "weightsPerVertex": 1,
+   "lodCount": 1,
+   "meshletCount": 5,
+   "tail": true,
+   "cell": "v2|w1|lod1|nocol|nouv1|m5-16",
+   "tags": [
+    "normalW:1",
+    "tangentW:0"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 22 v2|w4|lod0|nocol|uv1|m5-16",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/433a687d18367da876be/830de61ca69d667ec29a.mesh",
+   "index": 123815,
+   "size": 11270,
+   "sha256": "a7bb85588bd5cf7907f5b19f987785d43dcc389050bc147b8ac24ea1b2875ba4",
+   "version": 2,
+   "vertexCount": 230,
+   "indexCount": 1137,
+   "weightsPerVertex": 4,
+   "lodCount": 0,
+   "meshletCount": 5,
+   "tail": true,
+   "cell": "v2|w4|lod0|nocol|uv1|m5-16",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 23 v2|w5|lod2|nocol|nouv1|m2-4",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/23d53ad50e363004ec50/fac260a94e7307230438.mesh",
+   "index": 81279,
+   "size": 12114,
+   "sha256": "7d4f074dd8bd3c046d8468f3f3aedde59ad3953cfd623f07c077ebab0d42a5c2",
+   "version": 2,
+   "vertexCount": 205,
+   "indexCount": 690,
+   "weightsPerVertex": 5,
+   "lodCount": 2,
+   "meshletCount": 3,
+   "tail": true,
+   "cell": "v2|w5|lod2|nocol|nouv1|m2-4",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalSentinel",
+    "normalW:1",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/23d53ad50e363004ec50/fac260a94e7307230438.mesh",
+     "index": 67686
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 24 v2|w0|lod0|col|nouv1|m17-64",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/0409b9fbe5882cb475c6/87eca380bd4737cb11a8.mesh",
+   "index": 37786,
+   "size": 12544,
+   "sha256": "76e9d1d60a29acf7c11b4ee286533673abeff2ba0d7f079aa7985598e6470d60",
+   "version": 2,
+   "vertexCount": 363,
+   "indexCount": 1911,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 17,
+   "tail": true,
+   "cell": "v2|w0|lod0|col|nouv1|m17-64",
+   "tags": [
+    "colorNotAllSaturated",
+    "normalW:1",
+    "tangentW:0"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/0409b9fbe5882cb475c6/87eca380bd4737cb11a8.mesh",
+     "index": 27436
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 25 v2|w0|lod0|col|uv1|m5-16",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS050 - Main.ba2",
+   "archive": "SFBGS050 - Main.ba2",
+   "entry": "geometries/264d144dd83c53118e76/91c59527c639f4295378.mesh",
+   "index": 1878,
+   "size": 14110,
+   "sha256": "38ccca440e171193debd61e7313ffc92761433444a2b72e88daca1732367036b",
+   "version": 2,
+   "vertexCount": 475,
+   "indexCount": 732,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 6,
+   "tail": true,
+   "cell": "v2|w0|lod0|col|uv1|m5-16",
+   "tags": [
+    "colorAlpha<255",
+    "normalW:1",
+    "tangentSentinel",
+    "tangentW:03",
+    "uv0NonFinite",
+    "uv1NonFinite"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 26 v2|w2|lod2|nocol|nouv1|m5-16",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes02.ba2",
+   "archive": "Starfield - Meshes02.ba2",
+   "entry": "geometries/e3e438469acb8f9793e2/9092d7dfe9c90e926090.mesh",
+   "index": 23650,
+   "size": 16996,
+   "sha256": "b2e9b19fc58d408f750be2d3b3dcf5def5d8e51b8b6e6634bbc080c1a1b148fb",
+   "version": 2,
+   "vertexCount": 468,
+   "indexCount": 1692,
+   "weightsPerVertex": 2,
+   "lodCount": 2,
+   "meshletCount": 6,
+   "tail": true,
+   "cell": "v2|w2|lod2|nocol|nouv1|m5-16",
+   "tags": [
+    "normalW:1",
+    "tangentW:03"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/e3e438469acb8f9793e2/9092d7dfe9c90e926090.mesh",
+     "index": 310740
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 27 v2|w6|lod0|col|nouv1|m5-16",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/92e19a94c17632fb1be0/408156389ba8e5df49a6.mesh",
+   "index": 233189,
+   "size": 18852,
+   "sha256": "162c1539e0385bc82a5fd1424d97a24ac708ffd212d7a0fc770f5fedc5b0fc2d",
+   "version": 2,
+   "vertexCount": 352,
+   "indexCount": 1182,
+   "weightsPerVertex": 6,
+   "lodCount": 0,
+   "meshletCount": 6,
+   "tail": true,
+   "cell": "v2|w6|lod0|col|nouv1|m5-16",
+   "tags": [
+    "colorNotAllSaturated",
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/92e19a94c17632fb1be0/408156389ba8e5df49a6.mesh",
+     "index": 208224
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 28 v2|w6|lod1|nocol|nouv1|m2-4",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/22a18e95a492834b0c3f/22873debe54ccf61435f.mesh",
+   "index": 79638,
+   "size": 19678,
+   "sha256": "0c25abc87891b059c67ddbe94cce831aca2803a57820d538ff284a5bb9c85cc9",
+   "version": 2,
+   "vertexCount": 365,
+   "indexCount": 1314,
+   "weightsPerVertex": 6,
+   "lodCount": 1,
+   "meshletCount": 4,
+   "tail": true,
+   "cell": "v2|w6|lod1|nocol|nouv1|m2-4",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/22a18e95a492834b0c3f/22873debe54ccf61435f.mesh",
+     "index": 66174
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 29 v2|w3|lod2|nocol|uv1|m5-16",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/ba85363972c3197bd73b/1eb96951ad44ad166e5f.mesh",
+   "index": 287613,
+   "size": 29936,
+   "sha256": "caf53943da076443bbe2b1fb16f645a3d8b5035c4e1f93881f526bc2aca1e983",
+   "version": 2,
+   "vertexCount": 564,
+   "indexCount": 1938,
+   "weightsPerVertex": 3,
+   "lodCount": 2,
+   "meshletCount": 7,
+   "tail": true,
+   "cell": "v2|w3|lod2|nocol|uv1|m5-16",
+   "tags": [
+    "normalW:1",
+    "tangentW:0"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/ba85363972c3197bd73b/1eb96951ad44ad166e5f.mesh",
+     "index": 258492
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 30 v2|w6|lod0|nocol|nouv1|mabsent",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - FaceMeshes.ba2",
+   "archive": "Starfield - FaceMeshes.ba2",
+   "entry": "geometries/e033295a81057612f731/da7c59a8dd2a6b9b6cbd.mesh",
+   "index": 5522,
+   "size": 35832,
+   "sha256": "002b6b897d7f4a0fadb6771a21bbd331560789da4b8e360e561d60d8c823a198",
+   "version": 2,
+   "vertexCount": 680,
+   "indexCount": 3612,
+   "weightsPerVertex": 6,
+   "lodCount": 0,
+   "meshletCount": 0,
+   "tail": false,
+   "cell": "v2|w6|lod0|nocol|nouv1|mabsent",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:0",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 31 v2|w3|lod0|nocol|nouv1|m17-64",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/58239b3e2fdf7c769677/636cc99c0ec929f8f86a.mesh",
+   "index": 152545,
+   "size": 38372,
+   "sha256": "06ee3c5c64cc9fe1721942e1392e8464991799405dc9f17d22413f7e5e4d6ace",
+   "version": 2,
+   "vertexCount": 944,
+   "indexCount": 4638,
+   "weightsPerVertex": 3,
+   "lodCount": 0,
+   "meshletCount": 18,
+   "tail": true,
+   "cell": "v2|w3|lod0|nocol|nouv1|m17-64",
+   "tags": [
+    "normalW:1",
+    "tangentW:03"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/58239b3e2fdf7c769677/636cc99c0ec929f8f86a.mesh",
+     "index": 133601
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 32 v2|w7|lod0|col|uv1|m5-16",
+   "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+   "archive": "ShatteredSpace - Main01.ba2",
+   "entry": "geometries/fb5186acc67b42e99e54/ba659772516643686be0.mesh",
+   "index": 23122,
+   "size": 46002,
+   "sha256": "bf9c674de23db59c6a3358af97dc29d3ceea0d82e132ebfdb8623c87d5da224a",
+   "version": 2,
+   "vertexCount": 731,
+   "indexCount": 2916,
+   "weightsPerVertex": 7,
+   "lodCount": 0,
+   "meshletCount": 16,
+   "tail": true,
+   "cell": "v2|w7|lod0|col|uv1|m5-16",
+   "tags": [
+    "colorAlpha<255",
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 33 v2|w8|lod0|col|uv1|m5-16",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS050 - Main.ba2",
+   "archive": "SFBGS050 - Main.ba2",
+   "entry": "geometries/e5a00cfcc438b92c96a1/6311e812ee23efb2b1fc.mesh",
+   "index": 11630,
+   "size": 48994,
+   "sha256": "0be575fd49704f4dbd12a61d9437ecab0e41737e4ab88b148ca5e57cc530610e",
+   "version": 2,
+   "vertexCount": 775,
+   "indexCount": 1794,
+   "weightsPerVertex": 8,
+   "lodCount": 0,
+   "meshletCount": 10,
+   "tail": true,
+   "cell": "v2|w8|lod0|col|uv1|m5-16",
+   "tags": [
+    "colorAlpha<255",
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 34 v2|w0|lod0|col|uv1|m65-256",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/c30f16b62c97b9a25b28/c9d3a8a6c091ce511f7a.mesh",
+   "index": 299291,
+   "size": 51910,
+   "sha256": "d9cb5a5c1e10b6277edb7d38e307f189152ed56f014b688c71d15c037726d61c",
+   "version": 2,
+   "vertexCount": 1357,
+   "indexCount": 6966,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 66,
+   "tail": true,
+   "cell": "v2|w0|lod0|col|uv1|m65-256",
+   "tags": [
+    "colorNotAllSaturated",
+    "normalW:1",
+    "tangentW:0"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/c30f16b62c97b9a25b28/c9d3a8a6c091ce511f7a.mesh",
+     "index": 269280
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 35 v2|w1|lod0|nocol|uv1|m17-64",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/ceefefef7fbeaee0b16b/1bab6a0babe76d2e8b42.mesh",
+   "index": 315369,
+   "size": 61958,
+   "sha256": "81079baad957ae8882954a94c531bee82917929d8ccd83efbd4486a1f067c38a",
+   "version": 2,
+   "vertexCount": 1827,
+   "indexCount": 6540,
+   "weightsPerVertex": 1,
+   "lodCount": 0,
+   "meshletCount": 33,
+   "tail": true,
+   "cell": "v2|w1|lod0|nocol|uv1|m17-64",
+   "tags": [
+    "normalW:1",
+    "tangentW:03",
+    "unusedVertices"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 36 v2|w2|lod3|nocol|nouv1|m17-64",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/aab2d58e5a40933db121/45ed79aff06003eb67ae.mesh",
+   "index": 265781,
+   "size": 63668,
+   "sha256": "7b5568ab7f337e7b7732d81e6d0d84ed822230c6e74881f82ebb9f168f4ab517",
+   "version": 2,
+   "vertexCount": 1599,
+   "indexCount": 8268,
+   "weightsPerVertex": 2,
+   "lodCount": 3,
+   "meshletCount": 39,
+   "tail": true,
+   "cell": "v2|w2|lod3|nocol|nouv1|m17-64",
+   "tags": [
+    "normalW:1",
+    "tangentW:0"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/aab2d58e5a40933db121/45ed79aff06003eb67ae.mesh",
+     "index": 238385
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 37 v2|w4|lod3|nocol|nouv1|m17-64",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/289a060ffd8406a98aae/98314f3c3c7370cd9907.mesh",
+   "index": 87776,
+   "size": 66002,
+   "sha256": "fe4335a35849c35f6f477622dffbf2db86f78b91f215d8daa847848a2f4a145c",
+   "version": 2,
+   "vertexCount": 1335,
+   "indexCount": 6840,
+   "weightsPerVertex": 4,
+   "lodCount": 3,
+   "meshletCount": 21,
+   "tail": true,
+   "cell": "v2|w4|lod3|nocol|nouv1|m17-64",
+   "tags": [
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/289a060ffd8406a98aae/98314f3c3c7370cd9907.mesh",
+     "index": 73701
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 38 v2|w7|lod2|nocol|nouv1|m17-64",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/9da98ccbd3e9c73127ba/1e0511d934222d1e8b65.mesh",
+   "index": 247870,
+   "size": 71888,
+   "sha256": "5816cbd770bfc22c8969bcc24210cbfec2d1d1b13148c0fd159fbc1f1507d023",
+   "version": 2,
+   "vertexCount": 1185,
+   "indexCount": 5526,
+   "weightsPerVertex": 7,
+   "lodCount": 2,
+   "meshletCount": 25,
+   "tail": true,
+   "cell": "v2|w7|lod2|nocol|nouv1|m17-64",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/9da98ccbd3e9c73127ba/1e0511d934222d1e8b65.mesh",
+     "index": 221859
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 39 v2|w8|lod1|nocol|nouv1|m17-64",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/4490e92614a2503c60d3/0e3e234a64adc7accca7.mesh",
+   "index": 125619,
+   "size": 75048,
+   "sha256": "347e49a3a250314770ed72df58a00b495ba4f13622f173ce47dc900f8233a82e",
+   "version": 2,
+   "vertexCount": 1170,
+   "indexCount": 5928,
+   "weightsPerVertex": 8,
+   "lodCount": 1,
+   "meshletCount": 24,
+   "tail": true,
+   "cell": "v2|w8|lod1|nocol|nouv1|m17-64",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/4490e92614a2503c60d3/0e3e234a64adc7accca7.mesh",
+     "index": 108718
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 40 v2|w2|lod0|nocol|nouv1|m65-256",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/bb26612afbf4d7cafcc0/b6f6fbc23d0a26bdb86f.mesh",
+   "index": 288424,
+   "size": 85562,
+   "sha256": "20d56c8d7de0e00f725f82923a71782c4bf3481aa9c58203d74ddffa05844df1",
+   "version": 2,
+   "vertexCount": 2619,
+   "indexCount": 7326,
+   "weightsPerVertex": 2,
+   "lodCount": 0,
+   "meshletCount": 69,
+   "tail": true,
+   "cell": "v2|w2|lod0|nocol|nouv1|m65-256",
+   "tags": [
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentSentinel",
+    "tangentW:03"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/bb26612afbf4d7cafcc0/b6f6fbc23d0a26bdb86f.mesh",
+     "index": 259244
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 41 v2|w3|lod0|nocol|nouv1|m65-256",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/2d5a05570db44677d36f/66b4cc95a7fd1bf9e193.mesh",
+   "index": 94067,
+   "size": 92762,
+   "sha256": "bf1ae1a7ef53d6762f88f86015d55389bb0f034791d8e0685f888354a427a34e",
+   "version": 2,
+   "vertexCount": 2449,
+   "indexCount": 8238,
+   "weightsPerVertex": 3,
+   "lodCount": 0,
+   "meshletCount": 69,
+   "tail": true,
+   "cell": "v2|w3|lod0|nocol|nouv1|m65-256",
+   "tags": [
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/2d5a05570db44677d36f/66b4cc95a7fd1bf9e193.mesh",
+     "index": 79518
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 42 v2|w6|lod3|nocol|uv1|m17-64",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/0fe0b5e3f4dca2a5c0c6/20a95e4b240bf1d20c5e.mesh",
+   "index": 54021,
+   "size": 99096,
+   "sha256": "72e80175f37d84f2b09d552f7c454352d91a75a2060d7d38b1e0d8f6e3cc46a9",
+   "version": 2,
+   "vertexCount": 1510,
+   "indexCount": 6072,
+   "weightsPerVertex": 6,
+   "lodCount": 3,
+   "meshletCount": 24,
+   "tail": true,
+   "cell": "v2|w6|lod3|nocol|uv1|m17-64",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/0fe0b5e3f4dca2a5c0c6/20a95e4b240bf1d20c5e.mesh",
+     "index": 42490
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 43 v2|w1|lod3|nocol|nouv1|m65-256",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/0ff6ca28d59eb0ee27f5/ec4c76883963b95d6c1b.mesh",
+   "index": 54162,
+   "size": 101318,
+   "sha256": "b21a466b825f6a8851f390467077aadb404364b5dd5938564cc2b4267cced058",
+   "version": 2,
+   "vertexCount": 2957,
+   "indexCount": 14580,
+   "weightsPerVertex": 1,
+   "lodCount": 3,
+   "meshletCount": 70,
+   "tail": true,
+   "cell": "v2|w1|lod3|nocol|nouv1|m65-256",
+   "tags": [
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:03"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/0ff6ca28d59eb0ee27f5/ec4c76883963b95d6c1b.mesh",
+     "index": 42620
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 44 v2|w8|lod0|nocol|nouv1|mabsent",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - FaceMeshes.ba2",
+   "archive": "Starfield - FaceMeshes.ba2",
+   "entry": "geometries/1dab9b555236e381b842/ed0130344146aa4a9ff3.mesh",
+   "index": 1809,
+   "size": 107100,
+   "sha256": "03858d27fe26964348c57d5d2f30c63f4cd6908c33214d24d4224de7597968c5",
+   "version": 2,
+   "vertexCount": 1782,
+   "indexCount": 8976,
+   "weightsPerVertex": 8,
+   "lodCount": 0,
+   "meshletCount": 0,
+   "tail": false,
+   "cell": "v2|w8|lod0|nocol|nouv1|mabsent",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:0",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/SFBGS003 - Main.ba2",
+     "archive": "SFBGS003 - Main.ba2",
+     "entry": "geometries/1dab9b555236e381b842/ed0130344146aa4a9ff3.mesh",
+     "index": 50
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 45 v2|w4|lod0|nocol|nouv1|m65-256",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/2d159210be5ea8be93b9/116de03c4181940ae1fc.mesh",
+   "index": 93728,
+   "size": 112940,
+   "sha256": "a7e7f2bb32c4ed4c3500689ae6d8435f8232ffa311cfbfa96fc6908bcff6492d",
+   "version": 2,
+   "vertexCount": 2488,
+   "indexCount": 12846,
+   "weightsPerVertex": 4,
+   "lodCount": 0,
+   "meshletCount": 65,
+   "tail": true,
+   "cell": "v2|w4|lod0|nocol|nouv1|m65-256",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/2d159210be5ea8be93b9/116de03c4181940ae1fc.mesh",
+     "index": 79212
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 46 v2|w6|lod2|nocol|nouv1|m65-256",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/2dc699e98f2fa49046ec/254096c65b434055cf3a.mesh",
+   "index": 94626,
+   "size": 140256,
+   "sha256": "e4b34bb5d1106dfa2cb2cde2570f2fd98062becad876836dc3f6141f28009849",
+   "version": 2,
+   "vertexCount": 2392,
+   "indexCount": 12726,
+   "weightsPerVertex": 6,
+   "lodCount": 2,
+   "meshletCount": 65,
+   "tail": true,
+   "cell": "v2|w6|lod2|nocol|nouv1|m65-256",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/2dc699e98f2fa49046ec/254096c65b434055cf3a.mesh",
+     "index": 80035
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 47 v2|w5|lod1|col|nouv1|m65-256",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes02.ba2",
+   "archive": "Starfield - Meshes02.ba2",
+   "entry": "geometries/e22233d5bd56749e6ef6/40564dd1a5f1aa56473c.mesh",
+   "index": 21210,
+   "size": 142544,
+   "sha256": "1ceb3f5bb3d8a78c731a5d7a8bb821fd8b931f3a8ef0c643211d3746446f434f",
+   "version": 2,
+   "vertexCount": 2524,
+   "indexCount": 13302,
+   "weightsPerVertex": 5,
+   "lodCount": 1,
+   "meshletCount": 65,
+   "tail": true,
+   "cell": "v2|w5|lod1|col|nouv1|m65-256",
+   "tags": [
+    "colorNotAllSaturated",
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/e22233d5bd56749e6ef6/40564dd1a5f1aa56473c.mesh",
+     "index": 308510
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 48 v2|w5|lod1|nocol|uv1|m17-64",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/4fe2af7f869814fca7ee/784ae5fbf019fa42858e.mesh",
+   "index": 141076,
+   "size": 155052,
+   "sha256": "f7727c5c148ed58c4b6fd30e695864d95dc145707c645f55d93f1ee9825ad9de",
+   "version": 2,
+   "vertexCount": 3064,
+   "indexCount": 8496,
+   "weightsPerVertex": 5,
+   "lodCount": 1,
+   "meshletCount": 39,
+   "tail": true,
+   "cell": "v2|w5|lod1|nocol|uv1|m17-64",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/4fe2af7f869814fca7ee/784ae5fbf019fa42858e.mesh",
+     "index": 123010
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 49 v2|w0|lod0|nocol|nouv1|m257+",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/4bc42f369b756589e8c0/faa7876542078c13a05c.mesh",
+   "index": 135398,
+   "size": 170096,
+   "sha256": "c6f6ab6bc0a9bde49e9681e54406efe4e2432e64c697ce7ad117639501fd4a1f",
+   "version": 2,
+   "vertexCount": 5328,
+   "indexCount": 31848,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 261,
+   "tail": true,
+   "cell": "v2|w0|lod0|nocol|nouv1|m257+",
+   "tags": [
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:0"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 50 v2|w7|lod1|nocol|nouv1|m65-256",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/a4e072cec2a21e1eb476/4983be435a64f9548715.mesh",
+   "index": 257756,
+   "size": 260366,
+   "sha256": "9e81a9f4fd500418c99c52af3272083144c0720ed4d50ccc8a044183052b12fa",
+   "version": 2,
+   "vertexCount": 4383,
+   "indexCount": 21852,
+   "weightsPerVertex": 7,
+   "lodCount": 1,
+   "meshletCount": 86,
+   "tail": true,
+   "cell": "v2|w7|lod1|nocol|nouv1|m65-256",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/a4e072cec2a21e1eb476/4983be435a64f9548715.mesh",
+     "index": 230988
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 51 v2|w2|lod0|nocol|nouv1|m257+",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/019d6bc679041f2a2763/d751ef889891a43171f8.mesh",
+   "index": 34532,
+   "size": 326176,
+   "sha256": "0c65cc8acfab1559cfbfd94abebc0994a83d560e8fa61aec6bf47f3bd63ee45a",
+   "version": 2,
+   "vertexCount": 9000,
+   "indexCount": 39540,
+   "weightsPerVertex": 2,
+   "lodCount": 0,
+   "meshletCount": 326,
+   "tail": true,
+   "cell": "v2|w2|lod0|nocol|nouv1|m257+",
+   "tags": [
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:03"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/019d6bc679041f2a2763/d751ef889891a43171f8.mesh",
+     "index": 24410
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 52 v2|w1|lod0|nocol|nouv1|m257+",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/b0c0c9b1918a3937cb0c/c80ca36003c8a3284c6e.mesh",
+   "index": 274133,
+   "size": 333560,
+   "sha256": "84c16b0283169f5ebf74a84184802a313e9651d1247c35818bfbbcaade7be5fd",
+   "version": 2,
+   "vertexCount": 11797,
+   "indexCount": 31245,
+   "weightsPerVertex": 1,
+   "lodCount": 0,
+   "meshletCount": 287,
+   "tail": true,
+   "cell": "v2|w1|lod0|nocol|nouv1|m257+",
+   "tags": [
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:03"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 53 v2|w8|lod3|col|nouv1|m65-256",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes02.ba2",
+   "archive": "Starfield - Meshes02.ba2",
+   "entry": "geometries/fe95c2e1c8acbaf88d3c/0248742bf1647aed1f14.mesh",
+   "index": 60729,
+   "size": 424806,
+   "sha256": "59a60a8c6fe1b5cece4dc780fc2b76c89e44ef9c1a14170b8bcabbfb4d923223",
+   "version": 2,
+   "vertexCount": 6181,
+   "indexCount": 33816,
+   "weightsPerVertex": 8,
+   "lodCount": 3,
+   "meshletCount": 127,
+   "tail": true,
+   "cell": "v2|w8|lod3|col|nouv1|m65-256",
+   "tags": [
+    "colorAlpha<255",
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/fe95c2e1c8acbaf88d3c/0248742bf1647aed1f14.mesh",
+     "index": 344967
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 54 v2|w6|lod0|nocol|nouv1|m257+",
+   "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+   "archive": "ShatteredSpace - Main01.ba2",
+   "entry": "geometries/8dd87bfc6d1944e3fbe0/f234bde24411ecf3a40c.mesh",
+   "index": 13152,
+   "size": 494444,
+   "sha256": "7ff62f2bcf31ce6d73221b0b70b374d1d46527e774f022b61df850a6afe1154f",
+   "version": 2,
+   "vertexCount": 9122,
+   "indexCount": 50412,
+   "weightsPerVertex": 6,
+   "lodCount": 0,
+   "meshletCount": 261,
+   "tail": true,
+   "cell": "v2|w6|lod0|nocol|nouv1|m257+",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 55 v2|w7|lod0|col|nouv1|mabsent",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - FaceMeshes.ba2",
+   "archive": "Starfield - FaceMeshes.ba2",
+   "entry": "geometries/375af6c90f56c331d446/5df3aade31bcaec8fa69.mesh",
+   "index": 2303,
+   "size": 557844,
+   "sha256": "0c4f18cd504aa4721ae7f2d147ab8ede9cd3099b483960b6ad692829c7a99ef7",
+   "version": 2,
+   "vertexCount": 10218,
+   "indexCount": 23448,
+   "weightsPerVertex": 7,
+   "lodCount": 0,
+   "meshletCount": 0,
+   "tail": false,
+   "cell": "v2|w7|lod0|col|nouv1|mabsent",
+   "tags": [
+    "colorNotAllSaturated",
+    "duplicateNonzeroBone",
+    "normalW:0",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 56 v2|w5|lod0|col|uv1|m257+",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS050 - Main.ba2",
+   "archive": "SFBGS050 - Main.ba2",
+   "entry": "geometries/333359b76b167b8f36b1/b013ee9980404b27f02e.mesh",
+   "index": 2550,
+   "size": 600714,
+   "sha256": "c415e2bec27c4bd0d643734ac4b92f299499c7e5d9cd19610af244000ca503e3",
+   "version": 2,
+   "vertexCount": 11191,
+   "indexCount": 37176,
+   "weightsPerVertex": 5,
+   "lodCount": 0,
+   "meshletCount": 288,
+   "tail": true,
+   "cell": "v2|w5|lod0|col|uv1|m257+",
+   "tags": [
+    "colorNotAllSaturated",
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": []
+  },
+  {
+   "role": "cover",
+   "name": "cover 57 v2|w4|lod1|nocol|nouv1|m257+",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/816e07bb55ae58311f38/9950c9a1b397c57acee9.mesh",
+   "index": 209298,
+   "size": 602522,
+   "sha256": "8e8eb02c284e67b453bb3cf53feab7ace32e13f3c4bc6cf9e777ffd05f5f0775",
+   "version": 2,
+   "vertexCount": 13470,
+   "indexCount": 52854,
+   "weightsPerVertex": 4,
+   "lodCount": 1,
+   "meshletCount": 263,
+   "tail": true,
+   "cell": "v2|w4|lod1|nocol|nouv1|m257+",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/816e07bb55ae58311f38/9950c9a1b397c57acee9.mesh",
+     "index": 186089
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 58 v2|w7|lod3|nocol|nouv1|m257+",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/610e3e5fc7a1b9b5123f/baecde06af95caa500d6.mesh",
+   "index": 164662,
+   "size": 611116,
+   "sha256": "772ce68e04a226f1a000d25bdd1eac61dda6c15718817473b4ac662a04fbea4d",
+   "version": 2,
+   "vertexCount": 10296,
+   "indexCount": 52890,
+   "weightsPerVertex": 7,
+   "lodCount": 3,
+   "meshletCount": 272,
+   "tail": true,
+   "cell": "v2|w7|lod3|nocol|nouv1|m257+",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/610e3e5fc7a1b9b5123f/baecde06af95caa500d6.mesh",
+     "index": 144817
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 59 v2|w8|lod2|nocol|nouv1|m257+",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/cb77134f3cb9b66aad02/12234a4db0770a7cd992.mesh",
+   "index": 310665,
+   "size": 716864,
+   "sha256": "b3de10f2768b2825f2af6de14484028d53cbb89a6b29dc97d16b49bf2f881d3d",
+   "version": 2,
+   "vertexCount": 11264,
+   "indexCount": 56409,
+   "weightsPerVertex": 8,
+   "lodCount": 2,
+   "meshletCount": 258,
+   "tail": true,
+   "cell": "v2|w8|lod2|nocol|nouv1|m257+",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/cb77134f3cb9b66aad02/12234a4db0770a7cd992.mesh",
+     "index": 279820
+    }
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "cover 60 v2|w3|lod3|nocol|nouv1|m257+",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes02.ba2",
+   "archive": "Starfield - Meshes02.ba2",
+   "entry": "geometries/e35adcddf5907de6f81f/dcc4c1c5e456a4bc391f.mesh",
+   "index": 22882,
+   "size": 934180,
+   "sha256": "151a38c6d8bf058253982155bfb869fcd051785353bfb35f53910d1a88402b5e",
+   "version": 2,
+   "vertexCount": 22471,
+   "indexCount": 84951,
+   "weightsPerVertex": 3,
+   "lodCount": 3,
+   "meshletCount": 347,
+   "tail": true,
+   "cell": "v2|w3|lod3|nocol|nouv1|m257+",
+   "tags": [
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:03"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/e35adcddf5907de6f81f/dcc4c1c5e456a4bc391f.mesh",
+     "index": 310045
+    }
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "edge largestBoneIndex",
+   "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+   "archive": "ShatteredSpace - Main01.ba2",
+   "entry": "geometries/ed1262cb8808085bd92b/307e0e029be389186bbf.mesh",
+   "index": 21883,
+   "size": 335176,
+   "sha256": "c6b7a5ada441fbfbf4cd10aeecefb1629ef324aeddec00284ba955dff551ae0c",
+   "version": 2,
+   "vertexCount": 4984,
+   "indexCount": 28074,
+   "weightsPerVertex": 8,
+   "lodCount": 3,
+   "meshletCount": 111,
+   "tail": true,
+   "cell": "v2|w8|lod3|nocol|nouv1|m65-256",
+   "tags": [
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:afterVertexCount",
+    "tangentW:0",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [],
+   "edges": [
+    "largestBoneIndex"
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "edge largestFile",
+   "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+   "archive": "ShatteredSpace - Main01.ba2",
+   "entry": "geometries/36e8ec79ff07f8ac2100/4843808dac53b440baf6.mesh",
+   "index": 5145,
+   "size": 3690290,
+   "sha256": "72e48eeb4abd5c1e2d453e365a784f65c2e00de25790ea4621ee9440dd281c26",
+   "version": 2,
+   "vertexCount": 62985,
+   "indexCount": 130962,
+   "weightsPerVertex": 8,
+   "lodCount": 0,
+   "meshletCount": 678,
+   "tail": true,
+   "cell": "v2|w8|lod0|col|nouv1|m257+",
+   "tags": [
+    "colorNotAllSaturated",
+    "duplicateNonzeroBone",
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:03",
+    "weightSum!=65535"
+   ],
+   "alsoIn": [],
+   "edges": [
+    "largestFile"
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "edge loosestCull",
+   "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+   "archive": "ShatteredSpace - Main01.ba2",
+   "entry": "geometries/cd22d82db116cd23be14/2c419da859fbcaa5f714.mesh",
+   "index": 18931,
+   "size": 569062,
+   "sha256": "e29ce9cc6139fa6070f64f71abc519f8ad7ed2a5bc68edf73ac7b483eba5a342",
+   "version": 2,
+   "vertexCount": 23731,
+   "indexCount": 63684,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 362,
+   "tail": true,
+   "cell": "v2|w0|lod0|nocol|nouv1|m257+",
+   "tags": [
+    "cullOvershoot",
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:0"
+   ],
+   "alsoIn": [],
+   "edges": [
+    "loosestCull"
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "edge mostIndices",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/265c27b4be015a859efe/513885baa923ff30d4b6.mesh",
+   "index": 84696,
+   "size": 1491732,
+   "sha256": "a043f344659c7e03f3e23d6f0bef83eb3a5ec05a502eb4bd15839663a719399a",
+   "version": 2,
+   "vertexCount": 59522,
+   "indexCount": 195120,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 751,
+   "tail": true,
+   "cell": "v2|w0|lod0|nocol|nouv1|m257+",
+   "tags": [
+    "cullOvershoot",
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:03"
+   ],
+   "alsoIn": [],
+   "edges": [
+    "mostIndices"
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "edge mostMeshlets",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes01.ba2",
+   "archive": "Starfield - Meshes01.ba2",
+   "entry": "geometries/af47b4200eb165833822/92b5c171ab12fd69140d.mesh",
+   "index": 272094,
+   "size": 1444752,
+   "sha256": "c072984143c130245d6f58b077c1498bad43f652797c40db8476d3b44a4701b9",
+   "version": 2,
+   "vertexCount": 46756,
+   "indexCount": 173052,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 1749,
+   "tail": true,
+   "cell": "v2|w0|lod0|col|nouv1|m257+",
+   "tags": [
+    "colorNotAllSaturated",
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:0"
+   ],
+   "alsoIn": [],
+   "edges": [
+    "mostMeshlets"
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "edge mostVertices",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Meshes02.ba2",
+   "archive": "Starfield - Meshes02.ba2",
+   "entry": "geometries/f281c48bb045337de5d7/530f1aad0ab0a16a30c0.mesh",
+   "index": 43892,
+   "size": 1587890,
+   "sha256": "20e11be0fb73d70fe0997ce2aff610cae3d98d3f860ffe2d91247dfed2798313",
+   "version": 2,
+   "vertexCount": 65080,
+   "indexCount": 188937,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 963,
+   "tail": true,
+   "cell": "v2|w0|lod0|nocol|nouv1|m257+",
+   "tags": [
+    "normalW:1",
+    "probe:Tentative:beforeVertexCount",
+    "tangentW:03"
+   ],
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/Starfield/Data/Starfield - MeshesPatch.ba2",
+     "archive": "Starfield - MeshesPatch.ba2",
+     "entry": "geometries/f281c48bb045337de5d7/530f1aad0ab0a16a30c0.mesh",
+     "index": 329443
+    }
+   ],
+   "edges": [
+    "mostVertices"
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "edge smallestFile",
+   "source": "<SteamLibrary>/Starfield/Data/ShatteredSpace - Main01.ba2",
+   "archive": "ShatteredSpace - Main01.ba2",
+   "entry": "geometries/3878e5280427dcb19e3f/76445de4d7d501f809cc.mesh",
+   "index": 5278,
+   "size": 156,
+   "sha256": "0051fc95e0a72e9b52ad859c3cbdfcfac8770d88b26cbb0cdc7f22198cfcafd8",
+   "version": 2,
+   "vertexCount": 3,
+   "indexCount": 3,
+   "weightsPerVertex": 0,
+   "lodCount": 0,
+   "meshletCount": 1,
+   "tail": true,
+   "cell": "v2|w0|lod0|nocol|nouv1|m1",
+   "tags": [
+    "normalW:1",
+    "tangentW:0"
+   ],
+   "alsoIn": [],
+   "edges": [
+    "smallestFile"
+   ]
+  }
+ ],
+ "declineControls": [
+  {
+   "role": "decline",
+   "name": "control check:indexCount%3",
+   "kind": "check:indexCount%3",
+   "source": "<SteamLibrary>/Starfield/Data/Constellation - Localization.ba2",
+   "archive": "Constellation - Localization.ba2",
+   "entry": "strings/constellation_en.dlstrings",
+   "index": 3,
+   "size": 54,
+   "sha256": "a24dad43c6ffc091a6d2b38a2bee67624b57331a22be27f69eaf01a4c301a2f0",
+   "expect": "NotAModel",
+   "probeReason": "indexCount%3",
+   "probeStage": "indexCount",
+   "passesVersion": true
+  },
+  {
+   "role": "decline",
+   "name": "control check:indexCount>length",
+   "kind": "check:indexCount>length",
+   "source": "<SteamLibrary>/Starfield/Data/BlueprintShips-Starfield - Localization.ba2",
+   "archive": "BlueprintShips-Starfield - Localization.ba2",
+   "entry": "strings/blueprintships-starfield_de.dlstrings",
+   "index": 0,
+   "size": 8,
+   "sha256": "af5570f5a1810b7af78caf4bc70a660f0df51e42baf91d4de5b2328de0e83dfc",
+   "expect": "NotAModel",
+   "probeReason": "indexCount>length",
+   "probeStage": "indexCount",
+   "passesVersion": true
+  },
+  {
+   "role": "decline",
+   "name": "control check:scale",
+   "kind": "check:scale",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS003 - Main.ba2",
+   "archive": "SFBGS003 - Main.ba2",
+   "entry": "meshes/actors/sfbgs003/human/animations/furniture/sfbgs003_zerog_welder/lookdirections.af",
+   "index": 533,
+   "size": 1100,
+   "sha256": "17443a0982b090a3cef3f88e4c63b944466d1cf81512c2842a9b65cb620966f9",
+   "expect": "NotAModel",
+   "probeReason": "scale",
+   "probeStage": "scale",
+   "passesVersion": true
+  },
+  {
+   "role": "decline",
+   "name": "control check:short",
+   "kind": "check:short",
+   "source": "<SteamLibrary>/Starfield/Data/Starfield - Animations.ba2",
+   "archive": "Starfield - Animations.ba2",
+   "entry": "meshes/actors/bipeda/animations/temp.txt",
+   "index": 282,
+   "size": 4,
+   "sha256": "a6864eb339b0e1f6e00d75293a8840abf069a2c0fe82e6e53af6ac099793c1d5",
+   "expect": "NotAModel",
+   "probeReason": "short",
+   "probeStage": "start",
+   "passesVersion": false
+  },
+  {
+   "role": "decline",
+   "name": "control check:vertexCount",
+   "kind": "check:vertexCount",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS003 - Main.ba2",
+   "archive": "SFBGS003 - Main.ba2",
+   "entry": "meshes/actors/sfbgs003/human/animations/furniture/sfbgs003_zerog_welder/enterfromstand.af",
+   "index": 517,
+   "size": 22290,
+   "sha256": "378e9abc110795536565a3913f8117f3400724fa243b341cecdccb8cc2e2442a",
+   "expect": "NotAModel",
+   "probeReason": "vertexCount",
+   "probeStage": "vertexCount",
+   "passesVersion": true
+  },
+  {
+   "role": "decline",
+   "name": "control check:weightsPerVertex",
+   "kind": "check:weightsPerVertex",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS050 - Main.ba2",
+   "archive": "SFBGS050 - Main.ba2",
+   "entry": "meshes/actors/sfbgs022/minibota/animations/afraid/relaxed_rundeparture_left180.af",
+   "index": 13035,
+   "size": 1318,
+   "sha256": "ead26e72b1a94ab892ff7b3c8182078b2a74997fcbedd15dd4473d020f7ded6a",
+   "expect": "NotAModel",
+   "probeReason": "weightsPerVertex",
+   "probeStage": "weightsPerVertex",
+   "passesVersion": true
+  },
+  {
+   "role": "decline",
+   "name": "control extension:af",
+   "kind": "extension:af",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS003 - Main.ba2",
+   "archive": "SFBGS003 - Main.ba2",
+   "entry": "meshes/actors/sfbgs003/human/animations/furniture/sfbgs003_zerog_welder/enterinstant.af",
+   "index": 519,
+   "size": 1250,
+   "sha256": "bb72e4bf7c9eb4b6014e77a033838dba68593f0af598e915d371e1af7a51f3be",
+   "expect": "NotAModel",
+   "probeReason": "vertexCount",
+   "probeStage": "vertexCount",
+   "passesVersion": true
+  },
+  {
+   "role": "decline",
+   "name": "control extension:btd",
+   "kind": "extension:btd",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS00D - Main.ba2",
+   "archive": "SFBGS00D - Main.ba2",
+   "entry": "meshes/terrain/overlaypoibiomegrottolayered01.btd",
+   "index": 4086,
+   "size": 263132,
+   "sha256": "337c7e68101428aa565c2a7ab7d1da9ccc833dc854e389d51bd3ef59d5a7fefe",
+   "expect": "NotAModel",
+   "probeReason": "version",
+   "probeStage": "version",
+   "passesVersion": false
+  },
+  {
+   "role": "decline",
+   "name": "control extension:cdb",
+   "kind": "extension:cdb",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS003 - Main.ba2",
+   "archive": "SFBGS003 - Main.ba2",
+   "entry": "materials/creations/sfbgs003/materialsbeta.cdb",
+   "index": 474,
+   "size": 1196720,
+   "sha256": "582def46dbeb302ceebb7b7211329ebfa6c288d36671726d2a9f88b49ca6833c",
+   "expect": "NotAModel",
+   "probeReason": "version",
+   "probeStage": "version",
+   "passesVersion": false
+  },
+  {
+   "role": "decline",
+   "name": "control extension:dat",
+   "kind": "extension:dat",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS003 - Main.ba2",
+   "archive": "SFBGS003 - Main.ba2",
+   "entry": "meshes/morphs/sfbgs003/clothes/spacesuit_etes/spacesuit_etes_f/chargen/spacesuit_etes_lowerbody_f/morph.dat",
+   "index": 674,
+   "size": 846980,
+   "sha256": "415c6b7a3aff38c206952a4b4cb1a29fa757fa5133b4dc30bc1b916604dfb1b3",
+   "expect": "NotAModel",
+   "probeReason": "version",
+   "probeStage": "version",
+   "passesVersion": false
+  },
+  {
+   "role": "decline",
+   "name": "control extension:nif",
+   "kind": "extension:nif",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS003 - Main.ba2",
+   "archive": "SFBGS003 - Main.ba2",
+   "entry": "meshes/actors/character/facegendata/facegeom/sfbgs003.esm/00000e90.nif",
+   "index": 476,
+   "size": 16912,
+   "sha256": "3451d6286a266c96c1bf70d8f40e70180873ca9eadcba30ed508eb0c91b1b49e",
+   "expect": "NotAModel",
+   "probeReason": "version",
+   "probeStage": "version",
+   "passesVersion": false
+  },
+  {
+   "role": "decline",
+   "name": "control extension:rig",
+   "kind": "extension:rig",
+   "source": "<SteamLibrary>/Starfield/Data/SFBGS003 - Main.ba2",
+   "archive": "SFBGS003 - Main.ba2",
+   "entry": "meshes/actors/sfbgs003/human/characterassets/skeleton.rig",
+   "index": 556,
+   "size": 10680,
+   "sha256": "79ac87b90edb177d59b8f1308bbc03e53fc39f61d979ceafe28156a4f061a451",
+   "expect": "NotAModel",
+   "probeReason": "version",
+   "probeStage": "version",
+   "passesVersion": false
+  }
+ ],
+ "syntheticControls": [
+  {
+   "kind": "truncated",
+   "expect": "never Supported by the probe; the read throws",
+   "rule": "every truncation point of a builder mesh and of the smallest cover files; the tail-boundary cut is refused only by the normal-W rule, which is its control"
+  },
+  {
+   "kind": "version3",
+   "expect": "NotAModel",
+   "rule": "version dword set to 3"
+  },
+  {
+   "kind": "trailing-byte",
+   "expect": "NotAModel; the read throws",
+   "rule": "one byte appended"
+  },
+  {
+   "kind": "index-out-of-range",
+   "expect": "NotAModel; the read throws",
+   "rule": "one index set to vertexCount"
+  }
+ ]
+}

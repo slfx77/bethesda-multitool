@@ -1,0 +1,1294 @@
+{
+ "schema": "cut2-shadowkey-cover/1",
+ "generator": "tools/scripts/gate2/shadowkey_cover.py manifest",
+ "plan": "docs/design/cut2-shadowkey-reader-plan-20260928.md, section 9",
+ "root": "<Sample>/Builds/The Elder Scrolls Travels - Shadowkey (2004-10-27, N-Gage - Final)/The Elder Scrolls Travels - Shadowkey/system/apps/6r51",
+ "rule": "exact MILP joint cover over every value and every observed pair of values of the slot cells (frames, skins, texture, sequences) and zone cells (sky, painted, palette key, fog, grid) plus every tag; fewest rows, then fewest bytes; byte-identical slot payloads collapse to one representative; then the edge rows",
+ "solver": {
+  "slots": {
+   "requirements": 91,
+   "stage1": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+   "stage2": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+   "count": 17
+  },
+  "zones": {
+   "requirements": 55,
+   "stage1": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+   "stage2": "Optimization terminated successfully. (HiGHS Status 7: Optimal)",
+   "count": 7
+  }
+ },
+ "uncoveredItems": [],
+ "pack": {
+  "models.idx": {
+   "size": 1900,
+   "sha256": "7b67e1d26b3d0037b748622fceb340fb4556bb638490b985b2c4b0f62bf0ae71"
+  },
+  "models.huge": {
+   "size": 4907880,
+   "sha256": "3b49517651b9edbf78e99660ef0a0f5f9d398146d11eecb7ee12df81c8fbd310"
+  },
+  "models.txt": {
+   "size": 6433,
+   "sha256": "a595b31863e96777083b6c1294c81c27d7ba4334a6ffb8332162246c96fffb24"
+  },
+  "entities.txt": {
+   "size": 22064,
+   "sha256": "0b4556a4690948c02c74931f5467e74c07c773c846bd152ce441b28a4839126e"
+  }
+ },
+ "slots": [
+  {
+   "role": "cover",
+   "name": "slot 25 dagger.bin",
+   "slot": 25,
+   "entry": "025_dagger.bin",
+   "offset": 1060044,
+   "size": 12360,
+   "sha256": "3911ce00c091662d8926f0b99fba07b9c02ade9d7cb8c47c2128b2264c45a797",
+   "alsoInSlots": [
+    224
+   ],
+   "cell": "frames=128+|sequences=5+|skins=1|texture=16x16",
+   "tags": [
+    "closed",
+    "duplicate-name",
+    "duplicate-payload",
+    "humanoid-table",
+    "uv-beyond-texture"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 56 wormmouth.bin",
+   "slot": 56,
+   "entry": "056_wormmouth.bin",
+   "offset": 1492798,
+   "size": 73342,
+   "sha256": "cec99ca11ff86db2133e0fc49bf1f4061e44c45d4a81a7ee750374524ed72fb7",
+   "alsoInSlots": [],
+   "cell": "frames=16-127|sequences=2-4|skins=2-4|texture=64x64",
+   "tags": [
+    "closed",
+    "probe-tentative",
+    "repeated-position-triangle"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 59 argonian.bin",
+   "slot": 59,
+   "entry": "059_argonian.bin",
+   "offset": 1651772,
+   "size": 136154,
+   "sha256": "4e547cc7517906ac3f552eba14045e3f8cd1c006b303fa2ba4e6b944ff2a26c5",
+   "alsoInSlots": [],
+   "cell": "frames=128+|sequences=5+|skins=2-4|texture=64x64",
+   "tags": [
+    "closed",
+    "probe-tentative",
+    "rate1-multi-frame"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 63 orc_ice_warrior.bin",
+   "slot": 63,
+   "entry": "063_orc_ice_warrior.bin",
+   "offset": 2131734,
+   "size": 146448,
+   "sha256": "a56d487bc7209a9364f4e58f0d6a4ea0357cfbcf3fce7af445efd7e0f6ec54d6",
+   "alsoInSlots": [],
+   "cell": "frames=16-127|sequences=5+|skins=5+|texture=64x64",
+   "tags": [
+    "humanoid-table",
+    "probe-tentative"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 69 zombie.bin",
+   "slot": 69,
+   "entry": "069_zombie.bin",
+   "offset": 2857676,
+   "size": 168892,
+   "sha256": "bde2626f33cdcf567103ab32cf83ebf04b0ae872e41aea38b74cecf4bf95c48b",
+   "alsoInSlots": [],
+   "cell": "frames=128+|sequences=2-4|skins=5+|texture=64x64",
+   "tags": [
+    "closed",
+    "probe-tentative"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 70 portcullis.bin",
+   "slot": 70,
+   "entry": "070_portcullis.bin",
+   "offset": 3026568,
+   "size": 33612,
+   "sha256": "3d214ea23becb37e1aa3ffdfe8b45035a5149fc5309ae5c9c5d6033aa1c7d663",
+   "alsoInSlots": [],
+   "cell": "frames=2-15|sequences=1|skins=1|texture=128x128",
+   "tags": [
+    "closed",
+    "magenta",
+    "rate-equals-length"
+   ],
+   "edges": [
+    "largest-frame-delta"
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "slot 75 startooth.bin",
+   "slot": 75,
+   "entry": "075_startooth.bin",
+   "offset": 3122562,
+   "size": 4676,
+   "sha256": "11b4ba8789f0819938a6ff4d263d257ab79adaded055864c42f6276bed2dfd8c",
+   "alsoInSlots": [],
+   "cell": "frames=1|sequences=1|skins=1|texture=32x64",
+   "tags": [
+    "closed",
+    "non-square-texture"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 77 glasscase.bin",
+   "slot": 77,
+   "entry": "077_glasscase.bin",
+   "offset": 3130154,
+   "size": 17588,
+   "sha256": "b0ac265518d0cdcd49e507dc3728d4cfd234f1dc4804acf84857c8710f717ea4",
+   "alsoInSlots": [],
+   "cell": "frames=1|sequences=1|skins=1|texture=128x64",
+   "tags": [
+    "magenta",
+    "non-square-texture"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 78 sarcophagus.bin",
+   "slot": 78,
+   "entry": "078_sarcophagus.bin",
+   "offset": 3147742,
+   "size": 10188,
+   "sha256": "11d5f1a583aa2f4c159d497a5f6a30bed8a72b3607fc0857cb0025d8eda466c3",
+   "alsoInSlots": [],
+   "cell": "frames=2-15|sequences=1|skins=1|texture=64x64",
+   "tags": [
+    "rate-equals-length"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 80 charnelflame.bin",
+   "slot": 80,
+   "entry": "080_charnelflame.bin",
+   "offset": 3160786,
+   "size": 4268,
+   "sha256": "55a3b7cc7e0dc8fe0533f4631e30d1b5458f70e9102cf6abb2ef399bdab8ee76",
+   "alsoInSlots": [],
+   "cell": "frames=1|sequences=1|skins=1|texture=64x32",
+   "tags": [
+    "magenta",
+    "non-square-texture"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 123 umbrastat.bin",
+   "slot": 123,
+   "entry": "123_umbrastat.bin",
+   "offset": 3657890,
+   "size": 17574,
+   "sha256": "f4bb8c1827e66abd5afc0477e82032759141c023ab4e98a142a5b67a11c35618",
+   "alsoInSlots": [],
+   "cell": "frames=1|sequences=1|skins=1|texture=64x64",
+   "tags": [
+    "duplicate-triangle",
+    "unused-vertices"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 142 spiketrap.bin",
+   "slot": 142,
+   "entry": "142_spiketrap.bin",
+   "offset": 3858560,
+   "size": 3186,
+   "sha256": "f38b1e1ab381549bc597aa5c20f9a3d65c4aae345c72c52844cd99ef1eef8254",
+   "alsoInSlots": [],
+   "cell": "frames=2-15|sequences=2-4|skins=1|texture=32x32",
+   "tags": [
+    "magenta"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 152 burnedwall.bin",
+   "slot": 152,
+   "entry": "152_burnedwall.bin",
+   "offset": 3943802,
+   "size": 32868,
+   "sha256": "72cce309f3e22023d36152c6d273845dfdda3b88cb3b9d754594674234b2c086",
+   "alsoInSlots": [],
+   "cell": "frames=1|sequences=1|skins=1|texture=128x128",
+   "tags": [],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 175 arrow.bin",
+   "slot": 175,
+   "entry": "175_arrow.bin",
+   "offset": 4173632,
+   "size": 678,
+   "sha256": "ab7d0963b256f8208100df97f6b3da7025ff146c32bc02fb8c19025a52cc234e",
+   "alsoInSlots": [],
+   "cell": "frames=1|sequences=1|skins=1|texture=8x8",
+   "tags": [
+    "repeated-position-triangle"
+   ],
+   "edges": [
+    "smallest"
+   ]
+  },
+  {
+   "role": "cover",
+   "name": "slot 176 throw_dagger.bin",
+   "slot": 176,
+   "entry": "176_throw_dagger.bin",
+   "offset": 4174310,
+   "size": 1146,
+   "sha256": "c59149bd68e7b814a66b0d974a70ac5009e194e9bee2223cba601e3550039b43",
+   "alsoInSlots": [],
+   "cell": "frames=1|sequences=1|skins=1|texture=16x16",
+   "tags": [
+    "closed",
+    "static-rate-10",
+    "uv-beyond-texture"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 208 woodenbucket.bin",
+   "slot": 208,
+   "entry": "208_woodenbucket.bin",
+   "offset": 4443332,
+   "size": 2744,
+   "sha256": "1b31645f8ae13c48727dde38a23257fb409f6781c6fbb01ae06480e302a1116d",
+   "alsoInSlots": [],
+   "cell": "frames=1|sequences=1|skins=1|texture=32x32",
+   "tags": [
+    "closed",
+    "closed-negative-volume",
+    "uv-beyond-texture"
+   ],
+   "edges": []
+  },
+  {
+   "role": "cover",
+   "name": "slot 233 azra.bin",
+   "slot": 233,
+   "entry": "233_azra.bin",
+   "offset": 4834218,
+   "size": 31974,
+   "sha256": "fae48ec8789f8f5776946faeaed7a57ebfc1046f6ac175ca1f82e64b12dbd193",
+   "alsoInSlots": [],
+   "cell": "frames=16-127|sequences=2-4|skins=1|texture=64x64",
+   "tags": [
+    "closed"
+   ],
+   "edges": []
+  },
+  {
+   "role": "edge",
+   "name": "slot 22 male_long_tunic.bin",
+   "slot": 22,
+   "entry": "022_male_long_tunic.bin",
+   "offset": 593628,
+   "size": 257784,
+   "sha256": "62a7bf7ae82f66440386550dd7428f66fbe4a6a58a9a69aeb56a00f39e396f1a",
+   "alsoInSlots": [],
+   "cell": "frames=128+|sequences=5+|skins=5+|texture=64x64",
+   "tags": [
+    "closed",
+    "humanoid-table",
+    "probe-tentative"
+   ],
+   "edges": [
+    "largest",
+    "most-skins"
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "slot 230 Pergan02.bin",
+   "slot": 230,
+   "entry": "230_Pergan02.bin",
+   "offset": 4621406,
+   "size": 200770,
+   "sha256": "e588d76ebd0533ee663844d19f4de4c2eb59fed1e70a99c01df12b3b28429f9e",
+   "alsoInSlots": [],
+   "cell": "frames=128+|sequences=5+|skins=2-4|texture=64x64",
+   "tags": [
+    "duplicate-triangle",
+    "probe-tentative"
+   ],
+   "edges": [
+    "most-frames"
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "slot 67 umbra.bin",
+   "slot": 67,
+   "entry": "067_umbra.bin",
+   "offset": 2562608,
+   "size": 203058,
+   "sha256": "d2ef25342c510209afeba37d3356a31acf327c97acc79b0722e0b7692a7244bf",
+   "alsoInSlots": [],
+   "cell": "frames=128+|sequences=2-4|skins=1|texture=64x64",
+   "tags": [
+    "probe-tentative",
+    "unused-vertices"
+   ],
+   "edges": [
+    "most-vertices",
+    "most-faces"
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "slot 215 windowbox.bin",
+   "slot": 215,
+   "entry": "215_windowbox.bin",
+   "offset": 4480902,
+   "size": 3288,
+   "sha256": "f55cfa18023b85692479319ca3ea32bc4ce124d75792f72f56ba8aacd1fedfa3",
+   "alsoInSlots": [],
+   "cell": "frames=1|sequences=1|skins=1|texture=32x32",
+   "tags": [
+    "duplicate-triangle",
+    "uv-beyond-texture"
+   ],
+   "edges": [
+    "widest-uv-wrap"
+   ]
+  },
+  {
+   "role": "edge",
+   "name": "slot 20 female_long_tunic.bin",
+   "slot": 20,
+   "entry": "020_female_long_tunic.bin",
+   "offset": 186412,
+   "size": 172184,
+   "sha256": "b112963601287acba87b14e66bf34f87c66776f2d229026885d0d98d2ada06c2",
+   "alsoInSlots": [],
+   "cell": "frames=128+|sequences=5+|skins=5+|texture=64x64",
+   "tags": [
+    "humanoid-table",
+    "probe-tentative"
+   ],
+   "edges": [
+    "most-sequences"
+   ]
+  }
+ ],
+ "zones": [
+  {
+   "role": "cover",
+   "name": "zone azra",
+   "stem": "azra",
+   "sha256": "a12b3a28e0e0c6e6d8f0452d2e67cd976b5c74c8bde4201c726211d39775df17",
+   "size": 48524,
+   "cell": "fog=black|grid=128x128|painted=True|palette-key=magenta|sky=counted",
+   "tags": [
+    "pitch-roll-angles",
+    "sky-rate-10",
+    "slot-at-or-above-texture-count",
+    "sta"
+   ],
+   "edges": [
+    "most-prototypes"
+   ],
+   "files": {
+    "azra.zmp": {
+     "size": 48524,
+     "sha256": "a12b3a28e0e0c6e6d8f0452d2e67cd976b5c74c8bde4201c726211d39775df17"
+    },
+    "azra.zcp": {
+     "size": 84319,
+     "sha256": "ed4a130710a88207fc6081a5cdb677dc73064017282d6566ddb685d46d37421f"
+    },
+    "azra.zsk": {
+     "size": 8865,
+     "sha256": "5f758954fcf1f6708d818c3e7b45bd61c59db89ff91fec1e3ace648ae142bb41"
+    },
+    "azra.ztx": {
+     "size": 166480,
+     "sha256": "d88e17a33628f1dc4b70ffbf1b9fc5af66f8e9b316cd98107fae3ec98490a708"
+    },
+    "azra.zlu": {
+     "size": 47303,
+     "sha256": "6ea3dfa685f174db63ef8d4a6290b12ddb68e9d9e55cc3e8a2d01e93c6da8848"
+    },
+    "azra.zfg": {
+     "size": 17188,
+     "sha256": "4d37fe4442d8d174bf7341617956abfa8050ac345ab103f708d34b9ee4ca6432"
+    },
+    "azra.ent": {
+     "size": 20308,
+     "sha256": "63b794df329576f9e24cda682a6557430717861d26a15866b0b29d6d6e367a5d"
+    },
+    "azra.sur": {
+     "size": 185,
+     "sha256": "42f424e5e4167a7546c5c53aa3b22b3c159b48be54ada1a501c32e90306ecf3f"
+    },
+    "azra.zon": {
+     "size": 1226,
+     "sha256": "25c56f1666f8fdf895bc94f625b68b37b3cac0fd988a093581e28749adb2d7b5"
+    },
+    "azra.pth": {
+     "size": 2,
+     "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    "azra.stn": {
+     "size": 2,
+     "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    "azra.pal": {
+     "size": 768,
+     "sha256": "3fc64b485aeb13e1078911077b045b2fa2e2f64a03ca43db1e29545d68d1e45b"
+    },
+    "azra.sta": {
+     "size": 6436,
+     "sha256": "d01534d95e859dbd99c55300500554530fd184a8701dd819e9a1396cae82f60b"
+    },
+    "azra_models.txt": {
+     "size": 4836,
+     "sha256": "2210b5b8d61ba8736750d4ea6f8ea45ef426d8ca931e38ea1c40d67d78ba5b48"
+    }
+   }
+  },
+  {
+   "role": "cover",
+   "name": "zone crypt2",
+   "stem": "crypt2",
+   "sha256": "64737106bc0d57f2860e1a2a1edb7e8eb298a985e729b8cb60d9c4ffdb6f9ad2",
+   "size": 23324,
+   "cell": "fog=black|grid=128x128|painted=False|palette-key=magenta|sky=uncounted",
+   "tags": [
+    "author-not-default",
+    "locks",
+    "paths",
+    "slot-at-or-above-texture-count"
+   ],
+   "edges": [],
+   "files": {
+    "crypt2.zmp": {
+     "size": 23324,
+     "sha256": "64737106bc0d57f2860e1a2a1edb7e8eb298a985e729b8cb60d9c4ffdb6f9ad2"
+    },
+    "crypt2.zcp": {
+     "size": 1710,
+     "sha256": "c8a80b7d09a2c70b239ebf96c5e0baa5fcdd2a1cf6f4b974a373000ab3ee89c5"
+    },
+    "crypt2.zsk": {
+     "size": 2245,
+     "sha256": "9e3d92c882b1de3f4e784f183c49be148679effc13cdb307e59d953f9e969732"
+    },
+    "crypt2.ztx": {
+     "size": 148203,
+     "sha256": "4f587b65e96aeb92ddaf2a7c86f9c1fd82e4f1021e4dcfb2cb9b3a09f83c1a34"
+    },
+    "crypt2.zlu": {
+     "size": 47303,
+     "sha256": "6ea3dfa685f174db63ef8d4a6290b12ddb68e9d9e55cc3e8a2d01e93c6da8848"
+    },
+    "crypt2.zfg": {
+     "size": 17188,
+     "sha256": "4d37fe4442d8d174bf7341617956abfa8050ac345ab103f708d34b9ee4ca6432"
+    },
+    "crypt2.ent": {
+     "size": 21028,
+     "sha256": "f716195c33d97ea33fb2022d483bb6c0d880a2bcd6f6096808086007dcfc883b"
+    },
+    "crypt2.sur": {
+     "size": 145,
+     "sha256": "38bbf4f9991fd610cbbb2704ff2bb90699df654c9d47cf84659ca02d4b573769"
+    },
+    "crypt2.zon": {
+     "size": 1082,
+     "sha256": "f734f018660371a42333810d7c8a91383e0704fa48a4d9c766898cf9051dc274"
+    },
+    "crypt2.pth": {
+     "size": 318,
+     "sha256": "0a20243831ca274e5547d015f3884261430bf9f14519ec8eed95a84a23604786"
+    },
+    "crypt2.stn": {
+     "size": 28,
+     "sha256": "f2a3bb5cfe5749f82720e36452fd927468c04536a3384e7ba60a98916ffe0eee"
+    },
+    "crypt2.pal": {
+     "size": 768,
+     "sha256": "3fc64b485aeb13e1078911077b045b2fa2e2f64a03ca43db1e29545d68d1e45b"
+    },
+    "crypt2_models.txt": {
+     "size": 4815,
+     "sha256": "d70c9e586043b5ea5fced79461c62ae62740c9bc2ded4bb7a14bcd79dbce12ae"
+    }
+   }
+  },
+  {
+   "role": "cover",
+   "name": "zone delfhide",
+   "stem": "delfhide",
+   "sha256": "7f76e7e0d1ae46639bc171be63f38a6fd9ffc227f8170525321bf215871e28fc",
+   "size": 33354,
+   "cell": "fog=black|grid=128x128|painted=False|palette-key=magenta|sky=counted",
+   "tags": [
+    "description-not-default",
+    "locks",
+    "on-blocked",
+    "outside-grid",
+    "paths",
+    "pitch-roll-angles",
+    "slot-at-or-above-texture-count"
+   ],
+   "edges": [],
+   "files": {
+    "delfhide.zmp": {
+     "size": 33354,
+     "sha256": "7f76e7e0d1ae46639bc171be63f38a6fd9ffc227f8170525321bf215871e28fc"
+    },
+    "delfhide.zcp": {
+     "size": 7847,
+     "sha256": "e269841366b85a7a6f1ddb6f91c7ce61f3a4d49700130fd463aebed892f76a08"
+    },
+    "delfhide.zsk": {
+     "size": 1137,
+     "sha256": "f3ec4a66c6f3bc6a8a0fb978ed8bc4dddc8ca91f2ac94a99b3cda85f40591967"
+    },
+    "delfhide.ztx": {
+     "size": 152449,
+     "sha256": "7a460f3e1ee88f0d73b9305a64bf5cb7c2bd4a0b729ee0102cfb8791544aec31"
+    },
+    "delfhide.zlu": {
+     "size": 47303,
+     "sha256": "6ea3dfa685f174db63ef8d4a6290b12ddb68e9d9e55cc3e8a2d01e93c6da8848"
+    },
+    "delfhide.zfg": {
+     "size": 17188,
+     "sha256": "4d37fe4442d8d174bf7341617956abfa8050ac345ab103f708d34b9ee4ca6432"
+    },
+    "delfhide.ent": {
+     "size": 54724,
+     "sha256": "0793527dbe366523b4d21ebeb4d95918698fd452db0ecc801084350767db2fb9"
+    },
+    "delfhide.sur": {
+     "size": 169,
+     "sha256": "4906333003d77e2bb48048a3c3a9c0ffef01421cd0567af2188df6f84a05221e"
+    },
+    "delfhide.zon": {
+     "size": 1010,
+     "sha256": "30850ef165aaa4663628aaab6d750d8a5b41ab0c87240daa31f720c40eafb54d"
+    },
+    "delfhide.pth": {
+     "size": 70,
+     "sha256": "acf35dc67ec6b1198e50c145cc096e0e9bae8a227c502fe97f78ba535ed8e0b0"
+    },
+    "delfhide.stn": {
+     "size": 171,
+     "sha256": "5546dd58ccad1cc7b60fa85298dec7f243bc95a32f70b23dd4f3a673363777aa"
+    },
+    "delfhide.pal": {
+     "size": 768,
+     "sha256": "3fc64b485aeb13e1078911077b045b2fa2e2f64a03ca43db1e29545d68d1e45b"
+    },
+    "delfhide_models.txt": {
+     "size": 4936,
+     "sha256": "217b51724b9280f2ada98cc4349814a361c4b1536ea345b7bfd8fff31767a763"
+    }
+   }
+  },
+  {
+   "role": "cover",
+   "name": "zone ffarena",
+   "stem": "ffarena",
+   "sha256": "e894a3b38004ba6b465a63680dc2dd897e22ed8da7a9120d5c44da8d025a017f",
+   "size": 6201,
+   "cell": "fog=black|grid=64x64|painted=False|palette-key=none|sky=uncounted",
+   "tags": [
+    "paths",
+    "pitch-roll-angles"
+   ],
+   "edges": [
+    "fewest-placements"
+   ],
+   "files": {
+    "ffarena.zmp": {
+     "size": 6201,
+     "sha256": "e894a3b38004ba6b465a63680dc2dd897e22ed8da7a9120d5c44da8d025a017f"
+    },
+    "ffarena.zcp": {
+     "size": 6183,
+     "sha256": "9ef86094b094e84db5cb4b9ef99cbc493169682ead6ded5df1df7ca2b81c7a33"
+    },
+    "ffarena.zsk": {
+     "size": 2245,
+     "sha256": "9e3d92c882b1de3f4e784f183c49be148679effc13cdb307e59d953f9e969732"
+    },
+    "ffarena.ztx": {
+     "size": 60727,
+     "sha256": "9bb018d958944e95bf6e10b7d344025f93381a30822583d3fc5a0b2ba58b661a"
+    },
+    "ffarena.zlu": {
+     "size": 47708,
+     "sha256": "63aba38936d8d0f1d7e89d5afe74dccb39a2c1add61a61d54caedb4a633bf91a"
+    },
+    "ffarena.zfg": {
+     "size": 17188,
+     "sha256": "4d37fe4442d8d174bf7341617956abfa8050ac345ab103f708d34b9ee4ca6432"
+    },
+    "ffarena.ent": {
+     "size": 2956,
+     "sha256": "190fadd15ebde4735480da017fbc89f9211945da242d9304e7b809e852a0f24d"
+    },
+    "ffarena.sur": {
+     "size": 57,
+     "sha256": "ab02751ca6eb6e596f588de64e07bd6c33dff827cf76f02f297c3006d11ebb45"
+    },
+    "ffarena.zon": {
+     "size": 218,
+     "sha256": "c05dcf3f963b68af3070a6e6b12481a06a2f444a0000e7d74ee40ca91fefcdcb"
+    },
+    "ffarena.pth": {
+     "size": 70,
+     "sha256": "acf35dc67ec6b1198e50c145cc096e0e9bae8a227c502fe97f78ba535ed8e0b0"
+    },
+    "ffarena.stn": {
+     "size": 2,
+     "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    "ffarena.pal": {
+     "size": 768,
+     "sha256": "af707f798adf82da2c5d6ea94d7141a82ca99cd4bf368bc73afa6b5485934a31"
+    },
+    "ffarena_models.txt": {
+     "size": 4740,
+     "sha256": "4b9e36e7a02642223394871cc609b49eff76558de79cf4cf1c3eb8f73be284ad"
+    }
+   }
+  },
+  {
+   "role": "cover",
+   "name": "zone glaciercrawl",
+   "stem": "glaciercrawl",
+   "sha256": "b4cb8d123156b23e6c5af69a05ba95407e5731b6edbef782cf22c2280803bd8d",
+   "size": 26780,
+   "cell": "fog=colored|grid=128x128|painted=True|palette-key=none|sky=counted",
+   "tags": [
+    "pitch-roll-angles",
+    "sky-rate-10",
+    "slot-at-or-above-texture-count"
+   ],
+   "edges": [],
+   "files": {
+    "glaciercrawl.zmp": {
+     "size": 26780,
+     "sha256": "b4cb8d123156b23e6c5af69a05ba95407e5731b6edbef782cf22c2280803bd8d"
+    },
+    "glaciercrawl.zcp": {
+     "size": 860,
+     "sha256": "e2d5e9df0946e6e20e85509c90a01d28510c1a283ddaeade737f5a9cf1330523"
+    },
+    "glaciercrawl.zsk": {
+     "size": 10931,
+     "sha256": "953de03364e938edf4c51520afdcbd4565bedeb6ddec5e69cd7811895fc30484"
+    },
+    "glaciercrawl.ztx": {
+     "size": 57753,
+     "sha256": "1ba12aa0b52b38c54c83ce117bf9ea854cc81fe4c373703a45e28596297564f8"
+    },
+    "glaciercrawl.zlu": {
+     "size": 42975,
+     "sha256": "9f1eb8132f4c20bde93b55b69f7485244d18ae1d3b9628661dc9cb479e8a7c87"
+    },
+    "glaciercrawl.zfg": {
+     "size": 17693,
+     "sha256": "e49c2ae23bf7da06d1729cacaff3a9e80078b34c57f3890860d1afbc76d8e5ec"
+    },
+    "glaciercrawl.ent": {
+     "size": 15124,
+     "sha256": "5e0e3061e87adf0ef332d3a064489a714b92c49ddc801bb7cb1e169ea013a354"
+    },
+    "glaciercrawl.sur": {
+     "size": 57,
+     "sha256": "cd634d3065dae8297fc0160041cff0fc568029d8bda59ca2414a2024ae59e8cc"
+    },
+    "glaciercrawl.zon": {
+     "size": 362,
+     "sha256": "133522dbebca558dcbf6dedf59e355402fc84b94758b52ae6387d1003556991c"
+    },
+    "glaciercrawl.pth": {
+     "size": 2,
+     "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    "glaciercrawl.stn": {
+     "size": 2,
+     "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    "glaciercrawl.pal": {
+     "size": 768,
+     "sha256": "4c4a0ee17cbf4fe8de760dda10f51985a3066f496465ab58e7c24fccf1c8c313"
+    },
+    "glaciercrawl_models.txt": {
+     "size": 4840,
+     "sha256": "860c611eb031bbd2f9c3b25a0e17d426d494104a77d14a1a7c2af559008de068"
+    }
+   }
+  },
+  {
+   "role": "cover",
+   "name": "zone raiders",
+   "stem": "raiders",
+   "sha256": "25c8013abca04dfaa582f7f5b90add75887c896c577826f432a109b563073452",
+   "size": 28021,
+   "cell": "fog=black|grid=128x128|painted=False|palette-key=none|sky=counted",
+   "tags": [
+    "locks",
+    "on-blocked",
+    "pitch-roll-angles",
+    "sky-uv-variant",
+    "unterminated-name"
+   ],
+   "edges": [
+    "most-placements",
+    "fewest-prototypes"
+   ],
+   "files": {
+    "raiders.zmp": {
+     "size": 28021,
+     "sha256": "25c8013abca04dfaa582f7f5b90add75887c896c577826f432a109b563073452"
+    },
+    "raiders.zcp": {
+     "size": 402,
+     "sha256": "7e0784eec7563fabcf21b983f6c15fa43cb91cbf2df3ef77a2cdbecf09164853"
+    },
+    "raiders.zsk": {
+     "size": 1121,
+     "sha256": "167c909235328d46045fd8fac4d36cb8152d1a04258bfde671e862d23bc45684"
+    },
+    "raiders.ztx": {
+     "size": 113090,
+     "sha256": "98927190825854ed2fe4e4c08b6f698f6581d5d15e950d8a02ee071347affa5c"
+    },
+    "raiders.zlu": {
+     "size": 47408,
+     "sha256": "49da70663e4dc980721f986262b5abad91d4e7720ea2e1b60d87a3f06c693c83"
+    },
+    "raiders.zfg": {
+     "size": 17188,
+     "sha256": "4d37fe4442d8d174bf7341617956abfa8050ac345ab103f708d34b9ee4ca6432"
+    },
+    "raiders.ent": {
+     "size": 77188,
+     "sha256": "815c788c006a6db5484af9967dd11414b87fd2deb4717a1162b74e259f78bcdf"
+    },
+    "raiders.sur": {
+     "size": 97,
+     "sha256": "48ce6bd21fbe90a516fabceec7596493f6278f1b2e34d5bb69bd51ea0a8e3afd"
+    },
+    "raiders.zon": {
+     "size": 434,
+     "sha256": "201f1146efd1a641f9e58c4a85d40b72a4b935f18d5bc12c31a4c44b7c589f66"
+    },
+    "raiders.pth": {
+     "size": 2,
+     "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    "raiders.stn": {
+     "size": 128,
+     "sha256": "0c98bc4c4c61e3046fed2e6e0f754a9b6c0837afcda4310cb7a1624fb38dd0ce"
+    },
+    "raiders.pal": {
+     "size": 768,
+     "sha256": "d13799cfd4123106ed646978732d3e7ec445b049876764cd1fcdc63eeee6712a"
+    },
+    "raiders_models.txt": {
+     "size": 4955,
+     "sha256": "2cba6ef0a78553aa8b42dd863623a98b1c3f7c6397075d7c5b2edee92275aa95"
+    }
+   }
+  },
+  {
+   "role": "cover",
+   "name": "zone stouttp",
+   "stem": "stouttp",
+   "sha256": "f1c1b237032133d397a7dda1514c554522c3c3647f363453885615d57b04fc76",
+   "size": 22301,
+   "cell": "fog=colored|grid=128x128|painted=True|palette-key=magenta|sky=counted",
+   "tags": [
+    "pitch-roll-angles"
+   ],
+   "edges": [],
+   "files": {
+    "stouttp.zmp": {
+     "size": 22301,
+     "sha256": "f1c1b237032133d397a7dda1514c554522c3c3647f363453885615d57b04fc76"
+    },
+    "stouttp.zcp": {
+     "size": 59175,
+     "sha256": "12fdefe4b8a0bef599de3cd88606ba32462026cab5e004d42b9d963852b532e5"
+    },
+    "stouttp.zsk": {
+     "size": 20786,
+     "sha256": "262f2fd4aad2f38be7afe7d184485037c0a7366803b924b50cc0b3cc71af2238"
+    },
+    "stouttp.ztx": {
+     "size": 124070,
+     "sha256": "1ae95a292ef5fd6ca842ea621b090b86db0e5bcb8cb4f25fa71de2e5a7521e6c"
+    },
+    "stouttp.zlu": {
+     "size": 47303,
+     "sha256": "6ea3dfa685f174db63ef8d4a6290b12ddb68e9d9e55cc3e8a2d01e93c6da8848"
+    },
+    "stouttp.zfg": {
+     "size": 18070,
+     "sha256": "44599abeb229b8d9ae0f5f8fcc53443c218da199f5e93d62614b90e3ba9139d1"
+    },
+    "stouttp.ent": {
+     "size": 5836,
+     "sha256": "18d8958c2b571b586b84fbc884008479a2e0bd2287160a2ce3699580cc9b4b97"
+    },
+    "stouttp.sur": {
+     "size": 113,
+     "sha256": "394e91019912d6ec77684aea70be372ae0838043f508b369689758a12ca6e11c"
+    },
+    "stouttp.zon": {
+     "size": 434,
+     "sha256": "88ff545da86aefdc8df3b19d74ca89741c77b6efb97b9d586dde8dcb5b13cc0b"
+    },
+    "stouttp.pth": {
+     "size": 2,
+     "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    "stouttp.stn": {
+     "size": 2,
+     "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    "stouttp.pal": {
+     "size": 768,
+     "sha256": "3fc64b485aeb13e1078911077b045b2fa2e2f64a03ca43db1e29545d68d1e45b"
+    },
+    "stouttp_models.txt": {
+     "size": 4752,
+     "sha256": "15b5b2000f53444d02ffbce732104fc9a1e99b4a36d93d445dc252e5a1ab0c36"
+    }
+   }
+  },
+  {
+   "role": "edge",
+   "name": "zone dstar_w",
+   "stem": "dstar_w",
+   "sha256": "115ff3ceb0de9b240e8a9c96b3ebaa02d04a529d4e6e4358c9b581ad0df5820a",
+   "size": 34382,
+   "cell": "fog=colored|grid=128x128|painted=True|palette-key=none|sky=counted",
+   "tags": [
+    "locks",
+    "pitch-roll-angles",
+    "slot-at-or-above-texture-count",
+    "unterminated-name"
+   ],
+   "edges": [
+    "most-terrain"
+   ],
+   "files": {
+    "dstar_w.zmp": {
+     "size": 34382,
+     "sha256": "115ff3ceb0de9b240e8a9c96b3ebaa02d04a529d4e6e4358c9b581ad0df5820a"
+    },
+    "dstar_w.zcp": {
+     "size": 8643,
+     "sha256": "dfabe930d6a184537a9dc6cad9d87d6f6b362836ba5c936e145ddb39eec48312"
+    },
+    "dstar_w.zsk": {
+     "size": 12077,
+     "sha256": "0fe99e9ad251c0861607e5cf677a4d5d33989f60e67b2c65c9386ac3255559bf"
+    },
+    "dstar_w.ztx": {
+     "size": 146127,
+     "sha256": "6542fba7010892f2290fc6270332ad86575800045fd8ea32384c0d5d34ffe662"
+    },
+    "dstar_w.zlu": {
+     "size": 47708,
+     "sha256": "63aba38936d8d0f1d7e89d5afe74dccb39a2c1add61a61d54caedb4a633bf91a"
+    },
+    "dstar_w.zfg": {
+     "size": 17879,
+     "sha256": "4ff7d8cc85a973e9059466632f63ef12b03bdf90495996881a3215ed5d9336cc"
+    },
+    "dstar_w.ent": {
+     "size": 75244,
+     "sha256": "d444c351ab25157ca36c9f9545030936261d7d455c468b6fe1fc2d5cf58fa7f0"
+    },
+    "dstar_w.sur": {
+     "size": 169,
+     "sha256": "9d6717505b5395b73abca93175936ee59ab1063a28450c1995da3962e98a949f"
+    },
+    "dstar_w.zon": {
+     "size": 794,
+     "sha256": "175e4e70c3e6d0320cd67c7c9d5178ff9986c293ecfcd5db82cbe2a62e260e3c"
+    },
+    "dstar_w.pth": {
+     "size": 2,
+     "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    "dstar_w.stn": {
+     "size": 314,
+     "sha256": "c4a10781206c5a00e9ea51c756333af91944912b18a0afdf220441d436b5ed62"
+    },
+    "dstar_w.pal": {
+     "size": 768,
+     "sha256": "af707f798adf82da2c5d6ea94d7141a82ca99cd4bf368bc73afa6b5485934a31"
+    },
+    "dstar_w_models.txt": {
+     "size": 5095,
+     "sha256": "ba3a7fed09112fb908dff82d268067d7931be302f91f94a279ab874a0f0bd1c0"
+    }
+   }
+  },
+  {
+   "role": "edge",
+   "name": "zone dstar_e",
+   "stem": "dstar_e",
+   "sha256": "b03ae2fc5575ed9e4a9cf67c112180117a5f2fca26a6c5e4305f2718300db1c4",
+   "size": 27276,
+   "cell": "fog=colored|grid=128x128|painted=True|palette-key=none|sky=counted",
+   "tags": [
+    "locks",
+    "pitch-roll-angles",
+    "unterminated-name"
+   ],
+   "edges": [
+    "most-animated"
+   ],
+   "files": {
+    "dstar_e.zmp": {
+     "size": 27276,
+     "sha256": "b03ae2fc5575ed9e4a9cf67c112180117a5f2fca26a6c5e4305f2718300db1c4"
+    },
+    "dstar_e.zcp": {
+     "size": 4392,
+     "sha256": "f43cb74bc509898662eadfaeeaff6e8e704127f2db50c3747cc6f32d7ea7b25e"
+    },
+    "dstar_e.zsk": {
+     "size": 12077,
+     "sha256": "0fe99e9ad251c0861607e5cf677a4d5d33989f60e67b2c65c9386ac3255559bf"
+    },
+    "dstar_e.ztx": {
+     "size": 187714,
+     "sha256": "26e332175d03fb40e3aa020a2cc76525d7be92eef8d9d7baf23fbdca13cdf67f"
+    },
+    "dstar_e.zlu": {
+     "size": 47708,
+     "sha256": "63aba38936d8d0f1d7e89d5afe74dccb39a2c1add61a61d54caedb4a633bf91a"
+    },
+    "dstar_e.zfg": {
+     "size": 17879,
+     "sha256": "4ff7d8cc85a973e9059466632f63ef12b03bdf90495996881a3215ed5d9336cc"
+    },
+    "dstar_e.ent": {
+     "size": 51484,
+     "sha256": "071fc680590b846f85593cc8da1b8ed4a5594869f02517ad08e42fa83e54960e"
+    },
+    "dstar_e.sur": {
+     "size": 169,
+     "sha256": "c7f7ac79d30b39e4f2775171f7fcc938207124a221f21effa85565348be3bfb1"
+    },
+    "dstar_e.zon": {
+     "size": 722,
+     "sha256": "b0926c1b87c4990021543262e68b73626190da8fd2f5096528ae7a5f44b57133"
+    },
+    "dstar_e.pth": {
+     "size": 2,
+     "sha256": "96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7"
+    },
+    "dstar_e.stn": {
+     "size": 396,
+     "sha256": "d99e4f19fb2279ca46a18d769fa1c18b00e26c27e2aacab3bbe9a8716fed6e6e"
+    },
+    "dstar_e.pal": {
+     "size": 768,
+     "sha256": "af707f798adf82da2c5d6ea94d7141a82ca99cd4bf368bc73afa6b5485934a31"
+    },
+    "dstar_e_models.txt": {
+     "size": 4903,
+     "sha256": "5e3cc3e3c36eaf2f248cb6bf222dceb8d96b4ef5ec7b42cf3a0dba33887e9d62"
+    }
+   }
+  }
+ ],
+ "declineControls": [
+  {
+   "name": "empty slot 19",
+   "kind": "empty-slot",
+   "slot": 19,
+   "entry": "019_NULL.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "empty slot 24",
+   "kind": "empty-slot",
+   "slot": 24,
+   "entry": "024_blood_spirit.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "empty slot 26",
+   "kind": "empty-slot",
+   "slot": 26,
+   "entry": "026_food.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "empty slot 28",
+   "kind": "empty-slot",
+   "slot": 28,
+   "entry": "028_herbs.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "empty slot 29",
+   "kind": "empty-slot",
+   "slot": 29,
+   "entry": "029_ratseye.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "empty slot 54",
+   "kind": "empty-slot",
+   "slot": 54,
+   "entry": "054_archer.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "empty slot 57",
+   "kind": "empty-slot",
+   "slot": 57,
+   "entry": "057_spellcaster.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "empty slot 133",
+   "kind": "empty-slot",
+   "slot": 133,
+   "entry": "133_radersdoorred.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "empty slot 221",
+   "kind": "empty-slot",
+   "slot": 221,
+   "entry": "221_traderoof.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "empty slot 227",
+   "kind": "empty-slot",
+   "slot": 227,
+   "entry": "227_NO_I_MEANT_AT_THE_END_OF_THE_FILE_ITS_A_BUG.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "empty slot 236",
+   "kind": "empty-slot",
+   "slot": 236,
+   "entry": "236_NULL_LEAVE_SOMETHING_HERE.bin",
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "expect": "NotAModel"
+  },
+  {
+   "name": "file 6r51.app",
+   "kind": "file",
+   "path": "6r51.app",
+   "size": 1075184,
+   "sha256": "8a63ca402c54adfe6d0a550a6c95120b66c56acc47f2a5cff15a4c3647aef0de",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "no zlib envelope"
+  },
+  {
+   "name": "file ffarena.ent",
+   "kind": "file",
+   "path": "ffarena.ent",
+   "size": 2956,
+   "sha256": "190fadd15ebde4735480da017fbc89f9211945da242d9304e7b809e852a0f24d",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "no zlib envelope"
+  },
+  {
+   "name": "file models.idx",
+   "kind": "file",
+   "path": "models.idx",
+   "size": 1900,
+   "sha256": "7b67e1d26b3d0037b748622fceb340fb4556bb638490b985b2c4b0f62bf0ae71",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "no zlib envelope"
+  },
+  {
+   "name": "file battle2.ogg",
+   "kind": "file",
+   "path": "battle2.ogg",
+   "size": 210069,
+   "sha256": "7aa330800924c98a0b07d0eca64bb8b0a8292e8b64ed60af942beb6ce01ca09d",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "no zlib envelope"
+  },
+  {
+   "name": "file delfhide/lockeddoor_10.s",
+   "kind": "file",
+   "path": "delfhide/lockeddoor_10.s",
+   "size": 25,
+   "sha256": "46a1d0b8a814490e5c230a6906a496b6f79f3434699202cdaf40baa64a30a141",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "no zlib envelope"
+  },
+  {
+   "name": "file global.spr",
+   "kind": "file",
+   "path": "global.spr",
+   "size": 1646707,
+   "sha256": "2de96d48a8e6045f990c16236084c4340d9046099b25b36f03975fd3c5974fef",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "no zlib envelope"
+  },
+  {
+   "name": "file menu_sprites.txt",
+   "kind": "file",
+   "path": "menu_sprites.txt",
+   "size": 252,
+   "sha256": "141afaada2508f41898e5875c9c53a81192e68b26fac08a3b7258dba5fade130",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "no zlib envelope"
+  },
+  {
+   "name": "file menunewxbx.wav",
+   "kind": "file",
+   "path": "menunewxbx.wav",
+   "size": 1802,
+   "sha256": "d8e974240f7a4afa29df6f3045b5636f42d4139f487f34faa1b12220512abc83",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "no zlib envelope"
+  },
+  {
+   "name": "file raiders.zcp",
+   "kind": "file",
+   "path": "raiders.zcp",
+   "size": 402,
+   "sha256": "7e0784eec7563fabcf21b983f6c15fa43cb91cbf2df3ef77a2cdbecf09164853",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "grid arithmetic against the declared length"
+  },
+  {
+   "name": "file azra.zfg",
+   "kind": "file",
+   "path": "azra.zfg",
+   "size": 17188,
+   "sha256": "4d37fe4442d8d174bf7341617956abfa8050ac345ab103f708d34b9ee4ca6432",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "name field"
+  },
+  {
+   "name": "file lothcav.zlu",
+   "kind": "file",
+   "path": "lothcav.zlu",
+   "size": 40871,
+   "sha256": "b45080d2b67c5bdd0c585f92eff9f97e55f62ea19b4b7bca5dd0fb3a5ea2dd85",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "name field"
+  },
+  {
+   "name": "file raiders.zsk",
+   "kind": "file",
+   "path": "raiders.zsk",
+   "size": 1121,
+   "sha256": "167c909235328d46045fd8fac4d36cb8152d1a04258bfde671e862d23bc45684",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "name field"
+  },
+  {
+   "name": "file glaciercrawl.ztx",
+   "kind": "file",
+   "path": "glaciercrawl.ztx",
+   "size": 57753,
+   "sha256": "1ba12aa0b52b38c54c83ce117bf9ea854cc81fe4c373703a45e28596297564f8",
+   "expect": "NotAModel",
+   "meshReason": "header constants",
+   "zoneReason": "name field"
+  }
+ ],
+ "syntheticControls": [
+  "every truncation of a builder record is never Supported and Confirmed",
+  "one trailing byte after the sequence table",
+  "tag 6",
+  "trailer 2",
+  "coordinate count 3V + 1",
+  "a face vertex index equal to the vertex count",
+  "a face UV index equal to the UV count",
+  "a sequence end past the frame count",
+  "a zero sequence rate",
+  "a .zmp whose declared length is one cell short",
+  "a .zmp name field without a NUL",
+  "an interior sky payload read with the counted header"
+ ]
+}

@@ -1,0 +1,6294 @@
+{
+ "schema": "gate1a-blender-fixture/1",
+ "description": "Hop F blend-pair render recorded by the owner on 2026-09-25 (Blender 5.1.1, Cycles CPU): the importer loaded the blend-source PNG with Blender's default alpha mode STRAIGHT. Per cell, the scene-linear RGB sample Blender rendered. The self-check holds fake_render.delivered_texel to it (display-blend design section 1: H1 on 330 of 330 cells).",
+ "source": "TestOutput/gate1a-blender-20260925/work/f/blend-pairs/probe-result.json",
+ "sourceSha256": "915a3313f00bc6b18032ba8fdc687039d28deaacffb57755f0b1c70745dd18d4",
+ "blenderVersion": "5.1.1",
+ "settings": {
+  "engine": "CYCLES",
+  "cycles.device": "CPU",
+  "cycles.samples": 16,
+  "cycles.use_denoising": false,
+  "cycles.use_adaptive_sampling": false,
+  "cycles.sample_clamp_direct": 0.0,
+  "cycles.sample_clamp_indirect": 0.0,
+  "view_transform": "Standard",
+  "look": "None",
+  "exposure": 0.0,
+  "gamma": 1.0,
+  "dither_intensity": 0.0
+ },
+ "importerAlphaMode": "STRAIGHT",
+ "cells": {
+  "pair00_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair00_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair00_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair00_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair00_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair00_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.10744032263755798,
+    0.10744032263755798,
+    0.10744032263755798
+   ]
+  },
+  "pair00_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.6054795384407043,
+    0.6054795384407043,
+    0.6054795384407043
+   ]
+  },
+  "pair00_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.21494726836681366,
+    0.21494726836681366,
+    0.21494726836681366
+   ]
+  },
+  "pair00_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.1329745054244995,
+    0.2660890519618988,
+    0.5015377402305603
+   ]
+  },
+  "pair00_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.5015377402305603,
+    0.17361392080783844,
+    0.12392780184745789
+   ]
+  },
+  "pair00_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.15022289752960205,
+    0.01799558661878109,
+    0.002278928179293871
+   ]
+  },
+  "pair00_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.8992424011230469,
+    0.7670152187347412,
+    0.7512986660003662
+   ]
+  },
+  "pair00_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.311906635761261,
+    0.17967936396598816,
+    0.163962721824646
+   ]
+  },
+  "pair00_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.1886247843503952,
+    0.25659340620040894,
+    0.5949766635894775
+   ]
+  },
+  "pair00_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.7429205775260925,
+    0.11751654744148254,
+    0.02707504667341709
+   ]
+  },
+  "pair00_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.024552462622523308,
+    0.23586076498031616,
+    0.5905637145042419
+   ]
+  },
+  "pair00_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.2755327820777893,
+    0.4868411719799042,
+    0.8415441513061523
+   ]
+  },
+  "pair00_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.07872922718524933,
+    0.2900375723838806,
+    0.6447404026985168
+   ]
+  },
+  "pair00_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.03742009028792381,
+    0.3158097267150879,
+    0.7891638278961182
+   ]
+  },
+  "pair00_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.22315268218517303,
+    0.2692081034183502,
+    0.5988722443580627
+   ]
+  },
+  "pair00_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.05901259556412697,
+    0.3089505732059479,
+    0.15735045075416565
+   ]
+  },
+  "pair00_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.45901253819465637,
+    0.708950400352478,
+    0.5573505163192749
+   ]
+  },
+  "pair00_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.14535684883594513,
+    0.39529478549957275,
+    0.2436947077512741
+   ]
+  },
+  "pair00_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.07952038943767548,
+    0.4363691806793213,
+    0.4738697409629822
+   ]
+  },
+  "pair00_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.37553170323371887,
+    0.3620978891849518,
+    0.17059238255023956
+   ]
+  },
+  "pair00_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair00_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair00_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair00_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair00_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/INV_SRC_ALPHA",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair01_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair01_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    2.0,
+    2.0,
+    2.0
+   ]
+  },
+  "pair01_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.215860366821289,
+    1.215860366821289,
+    1.215860366821289
+   ]
+  },
+  "pair01_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.05126953125,
+    1.3185465335845947,
+    1.7912979125976562
+   ]
+  },
+  "pair01_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.7912979125976562,
+    1.1328685283660889,
+    1.0331047773361206
+   ]
+  },
+  "pair01_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.10744032263755798,
+    0.10744032263755798,
+    0.10744032263755798
+   ]
+  },
+  "pair01_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.1074402332305908,
+    1.1074402332305908,
+    1.1074402332305908
+   ]
+  },
+  "pair01_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.323300838470459,
+    0.323300838470459,
+    0.323300838470459
+   ]
+  },
+  "pair01_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.15870976448059082,
+    0.4259871244430542,
+    0.8987380862236023
+   ]
+  },
+  "pair01_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.8987380862236023,
+    0.24030858278274536,
+    0.1405450701713562
+   ]
+  },
+  "pair01_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.15022289752960205,
+    0.01799558661878109,
+    0.002278928179293871
+   ]
+  },
+  "pair01_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.1502227783203125,
+    1.0179955959320068,
+    1.0022790431976318
+   ]
+  },
+  "pair01_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.3660833537578583,
+    0.23385614156723022,
+    0.21813951432704926
+   ]
+  },
+  "pair01_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.2014923393726349,
+    0.3365423083305359,
+    0.7935769557952881
+   ]
+  },
+  "pair01_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.9415206909179688,
+    0.1508639007806778,
+    0.03538369759917259
+   ]
+  },
+  "pair01_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.024552462622523308,
+    0.23586076498031616,
+    0.5905637145042419
+   ]
+  },
+  "pair01_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.024552345275879,
+    1.235860824584961,
+    1.590563416481018
+   ]
+  },
+  "pair01_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.24041295051574707,
+    0.4517212510108948,
+    0.8064242005348206
+   ]
+  },
+  "pair01_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.07582192122936249,
+    0.5544075965881348,
+    1.3818614482879639
+   ]
+  },
+  "pair01_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.8158502578735352,
+    0.3687290847301483,
+    0.6236685514450073
+   ]
+  },
+  "pair01_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.05901259556412697,
+    0.3089505732059479,
+    0.15735045075416565
+   ]
+  },
+  "pair01_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.0590124130249023,
+    1.3089505434036255,
+    1.1573505401611328
+   ]
+  },
+  "pair01_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.27487316727638245,
+    0.5248109698295593,
+    0.37321099638938904
+   ]
+  },
+  "pair01_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.1102820634841919,
+    0.6274971961975098,
+    0.9486484527587891
+   ]
+  },
+  "pair01_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.8503103852272034,
+    0.44181883335113525,
+    0.19045519828796387
+   ]
+  },
+  "pair01_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair01_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.7912979125976562,
+    1.1714413166046143,
+    1.0193824768066406
+   ]
+  },
+  "pair01_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.0071583986282349,
+    0.3873016834259033,
+    0.23524296283721924
+   ]
+  },
+  "pair01_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    0.842567503452301,
+    0.48998787999153137,
+    0.8106803894042969
+   ]
+  },
+  "pair01_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/ONE",
+   "linear": [
+    1.582595944404602,
+    0.3043094277381897,
+    0.05248713493347168
+   ]
+  },
+  "pair02_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair02_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair02_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.2158605456352234,
+    0.2158605456352234,
+    0.2158605456352234
+   ]
+  },
+  "pair02_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.051269467920064926,
+    0.31854677200317383,
+    0.7912979125976562
+   ]
+  },
+  "pair02_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.7912979125976562,
+    0.13286830484867096,
+    0.03310476988554001
+   ]
+  },
+  "pair02_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair02_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.051269467920064926,
+    0.051269467920064926,
+    0.051269467920064926
+   ]
+  },
+  "pair02_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.011067052371799946,
+    0.011067052371799946,
+    0.011067052371799946
+   ]
+  },
+  "pair02_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.0026285576168447733,
+    0.01633172109723091,
+    0.040569424629211426
+   ]
+  },
+  "pair02_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.040569424629211426,
+    0.006812088191509247,
+    0.0016972641460597515
+   ]
+  },
+  "pair02_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair02_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.033104781061410904,
+    0.006512091029435396,
+    0.0018211620626971126
+   ]
+  },
+  "pair02_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.007146015297621489,
+    0.001405703485943377,
+    0.00039311687578447163
+   ]
+  },
+  "pair02_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.001697264495305717,
+    0.0020744057837873697,
+    0.0014410818694159389
+   ]
+  },
+  "pair02_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.026195742189884186,
+    0.0008652507676742971,
+    6.028915231581777e-05
+   ]
+  },
+  "pair02_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair02_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.019382361322641373,
+    0.16826939582824707,
+    0.41254279017448425
+   ]
+  },
+  "pair02_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.004183887504041195,
+    0.03632271662354469,
+    0.08905168622732162
+   ]
+  },
+  "pair02_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.0009937231661751866,
+    0.05360167846083641,
+    0.32644420862197876
+   ]
+  },
+  "pair02_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.01533722784370184,
+    0.022357672452926636,
+    0.013657134026288986
+   ]
+  },
+  "pair02_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair02_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.03560132533311844,
+    0.16826939582824707,
+    0.08865559846162796
+   ]
+  },
+  "pair02_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.007684921845793724,
+    0.03632271662354469,
+    0.019137242808938026
+   ]
+  },
+  "pair02_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.0018252604641020298,
+    0.05360167846083641,
+    0.07015299797058105
+   ]
+  },
+  "pair02_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.02817126363515854,
+    0.022357672452926636,
+    0.0029349226970225573
+   ]
+  },
+  "pair02_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair02_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair02_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.17080999910831451,
+    0.03700738772749901,
+    0.004183887504041195
+   ]
+  },
+  "pair02_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.040569424629211426,
+    0.054612040519714355,
+    0.01533722784370184
+   ]
+  },
+  "pair02_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/SRC_COLOR",
+   "linear": [
+    0.6261526346206665,
+    0.022779105231165886,
+    0.0006416486576199532
+   ]
+  },
+  "pair03_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair03_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    2.0,
+    2.0,
+    2.0
+   ]
+  },
+  "pair03_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.215860366821289,
+    1.215860366821289,
+    1.215860366821289
+   ]
+  },
+  "pair03_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.05126953125,
+    1.3185465335845947,
+    1.7912979125976562
+   ]
+  },
+  "pair03_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.7912979125976562,
+    1.1328685283660889,
+    1.0331047773361206
+   ]
+  },
+  "pair03_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.051269467920064926,
+    0.051269467920064926,
+    0.051269467920064926
+   ]
+  },
+  "pair03_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.05126953125,
+    1.05126953125,
+    1.05126953125
+   ]
+  },
+  "pair03_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.2671300172805786,
+    0.2671300172805786,
+    0.2671300172805786
+   ]
+  },
+  "pair03_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.10253889113664627,
+    0.36981627345085144,
+    0.8425674438476562
+   ]
+  },
+  "pair03_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.8425674438476562,
+    0.18413777649402618,
+    0.08437422662973404
+   ]
+  },
+  "pair03_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.033104781061410904,
+    0.006512091029435396,
+    0.0018211620626971126
+   ]
+  },
+  "pair03_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.0331048965454102,
+    1.006511926651001,
+    1.0018212795257568
+   ]
+  },
+  "pair03_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.24896538257598877,
+    0.22237266600131989,
+    0.21768175065517426
+   ]
+  },
+  "pair03_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.08437422662973404,
+    0.3250589072704315,
+    0.7931191921234131
+   ]
+  },
+  "pair03_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.8244028091430664,
+    0.13938039541244507,
+    0.034925930202007294
+   ]
+  },
+  "pair03_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.019382361322641373,
+    0.16826939582824707,
+    0.41254279017448425
+   ]
+  },
+  "pair03_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.0193824768066406,
+    1.168269395828247,
+    1.4125425815582275
+   ]
+  },
+  "pair03_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.23524296283721924,
+    0.3841298222541809,
+    0.6284031271934509
+   ]
+  },
+  "pair03_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.0706518217921257,
+    0.48681625723838806,
+    1.2038404941558838
+   ]
+  },
+  "pair03_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.8106803894042969,
+    0.3011377155780792,
+    0.44564759731292725
+   ]
+  },
+  "pair03_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.03560132533311844,
+    0.16826939582824707,
+    0.08865559846162796
+   ]
+  },
+  "pair03_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.0356013774871826,
+    1.168269395828247,
+    1.0886555910110474
+   ]
+  },
+  "pair03_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.251461923122406,
+    0.3841298222541809,
+    0.30451613664627075
+   ]
+  },
+  "pair03_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.08687078952789307,
+    0.48681625723838806,
+    0.8799534440040588
+   ]
+  },
+  "pair03_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.8268992900848389,
+    0.3011377155780792,
+    0.12176036834716797
+   ]
+  },
+  "pair03_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair03_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.7912979125976562,
+    1.1714413166046143,
+    1.0193824768066406
+   ]
+  },
+  "pair03_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.0071583986282349,
+    0.3873016834259033,
+    0.23524296283721924
+   ]
+  },
+  "pair03_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    0.842567503452301,
+    0.48998787999153137,
+    0.8106803894042969
+   ]
+  },
+  "pair03_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ONE",
+   "linear": [
+    1.582595944404602,
+    0.3043094277381897,
+    0.05248713493347168
+   ]
+  },
+  "pair04_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair04_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair04_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair04_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair04_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair04_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.051269467920064926,
+    0.051269467920064926,
+    0.051269467920064926
+   ]
+  },
+  "pair04_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.051269467920064926,
+    0.051269467920064926,
+    0.051269467920064926
+   ]
+  },
+  "pair04_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.051269467920064926,
+    0.051269467920064926,
+    0.051269467920064926
+   ]
+  },
+  "pair04_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.051269467920064926,
+    0.051269467920064926,
+    0.051269467920064926
+   ]
+  },
+  "pair04_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.051269467920064926,
+    0.051269467920064926,
+    0.051269467920064926
+   ]
+  },
+  "pair04_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.033104781061410904,
+    0.006512091029435396,
+    0.0018211620626971126
+   ]
+  },
+  "pair04_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.033104781061410904,
+    0.006512091029435396,
+    0.0018211620626971126
+   ]
+  },
+  "pair04_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.033104781061410904,
+    0.006512091029435396,
+    0.0018211620626971126
+   ]
+  },
+  "pair04_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.033104781061410904,
+    0.006512091029435396,
+    0.0018211620626971126
+   ]
+  },
+  "pair04_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.033104781061410904,
+    0.006512091029435396,
+    0.0018211620626971126
+   ]
+  },
+  "pair04_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.019382361322641373,
+    0.16826939582824707,
+    0.41254279017448425
+   ]
+  },
+  "pair04_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.019382361322641373,
+    0.16826939582824707,
+    0.41254279017448425
+   ]
+  },
+  "pair04_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.019382361322641373,
+    0.16826939582824707,
+    0.41254279017448425
+   ]
+  },
+  "pair04_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.019382361322641373,
+    0.16826939582824707,
+    0.41254279017448425
+   ]
+  },
+  "pair04_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.019382361322641373,
+    0.16826939582824707,
+    0.41254279017448425
+   ]
+  },
+  "pair04_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.03560132533311844,
+    0.16826939582824707,
+    0.08865559846162796
+   ]
+  },
+  "pair04_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.03560132533311844,
+    0.16826939582824707,
+    0.08865559846162796
+   ]
+  },
+  "pair04_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.03560132533311844,
+    0.16826939582824707,
+    0.08865559846162796
+   ]
+  },
+  "pair04_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.03560132533311844,
+    0.16826939582824707,
+    0.08865559846162796
+   ]
+  },
+  "pair04_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.03560132533311844,
+    0.16826939582824707,
+    0.08865559846162796
+   ]
+  },
+  "pair04_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair04_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair04_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair04_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair04_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ONE/ZERO",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair05_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair05_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    2.0,
+    2.0,
+    2.0
+   ]
+  },
+  "pair05_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    1.215860366821289,
+    1.215860366821289,
+    1.215860366821289
+   ]
+  },
+  "pair05_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    1.05126953125,
+    1.3185465335845947,
+    1.7912979125976562
+   ]
+  },
+  "pair05_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    1.7912979125976562,
+    1.1328685283660889,
+    1.0331047773361206
+   ]
+  },
+  "pair05_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.002628557849675417,
+    0.002628557849675417,
+    0.002628557849675417
+   ]
+  },
+  "pair05_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    1.0026283264160156,
+    1.0026283264160156,
+    1.0026283264160156
+   ]
+  },
+  "pair05_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.21848911046981812,
+    0.21848911046981812,
+    0.21848911046981812
+   ]
+  },
+  "pair05_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.053898029029369354,
+    0.32117530703544617,
+    0.7939263582229614
+   ]
+  },
+  "pair05_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.7939263582229614,
+    0.13549686968326569,
+    0.035733334720134735
+   ]
+  },
+  "pair05_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.0010959265055134892,
+    4.2407347791595384e-05,
+    3.316631591587793e-06
+   ]
+  },
+  "pair05_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    1.0010957717895508,
+    1.000042200088501,
+    1.0000030994415283
+   ]
+  },
+  "pair05_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.2169564813375473,
+    0.21590296924114227,
+    0.21586386859416962
+   ]
+  },
+  "pair05_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.052365392446517944,
+    0.3185892105102539,
+    0.7913010716438293
+   ]
+  },
+  "pair05_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.7923937439918518,
+    0.13291072845458984,
+    0.03310808539390564
+   ]
+  },
+  "pair05_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.000375676027033478,
+    0.028314590454101562,
+    0.17019152641296387
+   ]
+  },
+  "pair05_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    1.000375747680664,
+    1.0283145904541016,
+    1.1701915264129639
+   ]
+  },
+  "pair05_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.21623623371124268,
+    0.24417513608932495,
+    0.38605207204818726
+   ]
+  },
+  "pair05_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.051645148545503616,
+    0.3468613624572754,
+    0.9614896178245544
+   ]
+  },
+  "pair05_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.7916736602783203,
+    0.16118289530277252,
+    0.2032962590456009
+   ]
+  },
+  "pair05_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.001267454819753766,
+    0.028314590454101562,
+    0.007859817706048489
+   ]
+  },
+  "pair05_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    1.001267433166504,
+    1.0283145904541016,
+    1.0078599452972412
+   ]
+  },
+  "pair05_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.2171279788017273,
+    0.24417513608932495,
+    0.22372031211853027
+   ]
+  },
+  "pair05_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.05253690853714943,
+    0.3468613624572754,
+    0.7991577982902527
+   ]
+  },
+  "pair05_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.7925653457641602,
+    0.16118289530277252,
+    0.04096459224820137
+   ]
+  },
+  "pair05_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.6261528730392456,
+    0.02939208783209324,
+    0.000375676027033478
+   ]
+  },
+  "pair05_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    1.626152515411377,
+    1.0293922424316406,
+    1.000375747680664
+   ]
+  },
+  "pair05_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.8420132994651794,
+    0.2452525943517685,
+    0.21623623371124268
+   ]
+  },
+  "pair05_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    0.6774224042892456,
+    0.3479388654232025,
+    0.7916736602783203
+   ]
+  },
+  "pair05_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ONE",
+   "linear": [
+    1.4174505472183228,
+    0.16226039826869965,
+    0.0334804505109787
+   ]
+  },
+  "pair06_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.49803921580314636,
+    0.49803921580314636,
+    0.49803921580314636
+   ]
+  },
+  "pair06_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.10750699043273926,
+    0.10750699043273926,
+    0.10750699043273926
+   ]
+  },
+  "pair06_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.02553420141339302,
+    0.1586487591266632,
+    0.39409735798835754
+   ]
+  },
+  "pair06_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.39409735798835754,
+    0.06617362052202225,
+    0.016487468034029007
+   ]
+  },
+  "pair06_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.7490196228027344,
+    0.7490196228027344,
+    0.7490196228027344
+   ]
+  },
+  "pair06_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.16168376803398132,
+    0.16168376803398132,
+    0.16168376803398132
+   ]
+  },
+  "pair06_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.03840183466672897,
+    0.2385978102684021,
+    0.5926977396011353
+   ]
+  },
+  "pair06_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.5926977396011353,
+    0.0995209664106369,
+    0.024796120822429657
+   ]
+  },
+  "pair06_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.2509803771972656,
+    0.2509803771972656,
+    0.2509803771972656
+   ]
+  },
+  "pair06_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.054176751524209976,
+    0.054176751524209976,
+    0.054176751524209976
+   ]
+  },
+  "pair06_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.01286762859672308,
+    0.07994900643825531,
+    0.19860027730464935
+   ]
+  },
+  "pair06_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.19860027730464935,
+    0.033347342163324356,
+    0.008308647200465202
+   ]
+  },
+  "pair06_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.40000003576278687,
+    0.40000003576278687,
+    0.40000003576278687
+   ]
+  },
+  "pair06_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.08634420484304428,
+    0.08634420484304428,
+    0.08634420484304428
+   ]
+  },
+  "pair06_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.020507780835032463,
+    0.12741872668266296,
+    0.31651920080184937
+   ]
+  },
+  "pair06_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.31651920080184937,
+    0.053147319704294205,
+    0.0132419029250741
+   ]
+  },
+  "pair06_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair06_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/INV_SRC_ALPHA",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair07_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair07_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    2.0,
+    2.0,
+    2.0
+   ]
+  },
+  "pair07_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    1.215860366821289,
+    1.215860366821289,
+    1.215860366821289
+   ]
+  },
+  "pair07_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    1.05126953125,
+    1.3185465335845947,
+    1.7912979125976562
+   ]
+  },
+  "pair07_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    1.7912979125976562,
+    1.1328685283660889,
+    1.0331047773361206
+   ]
+  },
+  "pair07_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.002628557849675417,
+    0.002628557849675417,
+    0.002628557849675417
+   ]
+  },
+  "pair07_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.05389803275465965,
+    0.05389803275465965,
+    0.05389803275465965
+   ]
+  },
+  "pair07_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.0136956125497818,
+    0.0136956125497818,
+    0.0136956125497818
+   ]
+  },
+  "pair07_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.005257115233689547,
+    0.01896028406918049,
+    0.04319798946380615
+   ]
+  },
+  "pair07_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.04319798946380615,
+    0.009440647438168526,
+    0.0043258219957351685
+   ]
+  },
+  "pair07_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.0010959265055134892,
+    4.2407347791595384e-05,
+    3.316631591587793e-06
+   ]
+  },
+  "pair07_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.03420070558786392,
+    0.006554499268531799,
+    0.0018244789680466056
+   ]
+  },
+  "pair07_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.008241943083703518,
+    0.0014481106773018837,
+    0.00039643351919949055
+   ]
+  },
+  "pair07_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.0027931914664804935,
+    0.0021168130915611982,
+    0.00144439865835011
+   ]
+  },
+  "pair07_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.027291664853692055,
+    0.0009076583082787693,
+    6.360578117892146e-05
+   ]
+  },
+  "pair07_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.000375676027033478,
+    0.028314590454101562,
+    0.17019152641296387
+   ]
+  },
+  "pair07_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.019758043810725212,
+    0.19658398628234863,
+    0.5827341675758362
+   ]
+  },
+  "pair07_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.004559563938528299,
+    0.06463730335235596,
+    0.2592432200908661
+   ]
+  },
+  "pair07_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.0013693993678316474,
+    0.08191625773906708,
+    0.4966355860233307
+   ]
+  },
+  "pair07_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.015712901949882507,
+    0.050672270357608795,
+    0.18384863436222076
+   ]
+  },
+  "pair07_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.001267454819753766,
+    0.028314590454101562,
+    0.007859817706048489
+   ]
+  },
+  "pair07_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.03686877712607384,
+    0.19658398628234863,
+    0.09651541709899902
+   ]
+  },
+  "pair07_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.008952375501394272,
+    0.06463730335235596,
+    0.02699705958366394
+   ]
+  },
+  "pair07_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.0030927155166864395,
+    0.08191625773906708,
+    0.07801281660795212
+   ]
+  },
+  "pair07_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.029438721016049385,
+    0.050672270357608795,
+    0.010794737376272678
+   ]
+  },
+  "pair07_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.6261528730392456,
+    0.02939208783209324,
+    0.000375676027033478
+   ]
+  },
+  "pair07_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    1.4174506664276123,
+    0.2008332908153534,
+    0.019758043810725212
+   ]
+  },
+  "pair07_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.7969627380371094,
+    0.0663994625210762,
+    0.004559563938528299
+   ]
+  },
+  "pair07_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    0.6667222380638123,
+    0.08400412648916245,
+    0.015712901949882507
+   ]
+  },
+  "pair07_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/SRC_COLOR",
+   "linear": [
+    1.252305269241333,
+    0.05217118188738823,
+    0.0010173246264457703
+   ]
+  },
+  "pair08_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair08_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    2.0,
+    2.0,
+    2.0
+   ]
+  },
+  "pair08_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    1.215860366821289,
+    1.215860366821289,
+    1.215860366821289
+   ]
+  },
+  "pair08_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    1.05126953125,
+    1.3185465335845947,
+    1.7912979125976562
+   ]
+  },
+  "pair08_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    1.7912979125976562,
+    1.1328685283660889,
+    1.0331047773361206
+   ]
+  },
+  "pair08_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.10744032263755798,
+    0.10744032263755798,
+    0.10744032263755798
+   ]
+  },
+  "pair08_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.32148152589797974,
+    0.32148152589797974,
+    0.32148152589797974
+   ]
+  },
+  "pair08_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.15364335477352142,
+    0.15364335477352142,
+    0.15364335477352142
+   ]
+  },
+  "pair08_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.11841411143541336,
+    0.17562244832515717,
+    0.2768106460571289
+   ]
+  },
+  "pair08_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.2768106460571289,
+    0.13587960600852966,
+    0.11452611535787582
+   ]
+  },
+  "pair08_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.15022289752960205,
+    0.01799558661878109,
+    0.002278928179293871
+   ]
+  },
+  "pair08_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.7487670183181763,
+    0.08969675749540329,
+    0.011359035037457943
+   ]
+  },
+  "pair08_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.2794249951839447,
+    0.03347303718328476,
+    0.004238964058458805
+   ]
+  },
+  "pair08_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.18091000616550446,
+    0.04083577170968056,
+    0.009463999420404434
+   ]
+  },
+  "pair08_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.6238498091697693,
+    0.027522405609488487,
+    0.0025795234832912683
+   ]
+  },
+  "pair08_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.024552462622523308,
+    0.23586076498031616,
+    0.5905637145042419
+   ]
+  },
+  "pair08_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.05733191967010498,
+    0.5507534742355347,
+    1.3790123462677002
+   ]
+  },
+  "pair08_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.03162825107574463,
+    0.30383363366127014,
+    0.760758638381958
+   ]
+  },
+  "pair08_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.026233045384287834,
+    0.3361687660217285,
+    1.214461326599121
+   ]
+  },
+  "pair08_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.05049079284071922,
+    0.2777000367641449,
+    0.6166651844978333
+   ]
+  },
+  "pair08_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.05901259556412697,
+    0.3089505732059479,
+    0.15735045075416565
+   ]
+  },
+  "pair08_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.15736696124076843,
+    0.823867917060852,
+    0.41960129141807556
+   ]
+  },
+  "pair08_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.08024342358112335,
+    0.4201008379459381,
+    0.21396006643772125
+   ]
+  },
+  "pair08_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.06405515968799591,
+    0.47297582030296326,
+    0.36486896872520447
+   ]
+  },
+  "pair08_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.13684020936489105,
+    0.3773667514324188,
+    0.16603222489356995
+   ]
+  },
+  "pair08_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.7912980318069458,
+    0.17144116759300232,
+    0.019382361322641373
+   ]
+  },
+  "pair08_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    1.582595944404602,
+    0.3428822457790375,
+    0.03876471891999245
+   ]
+  },
+  "pair08_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.9621080160140991,
+    0.20844849944114685,
+    0.023566249758005142
+   ]
+  },
+  "pair08_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    0.8318673372268677,
+    0.22605323791503906,
+    0.03471959009766579
+   ]
+  },
+  "pair08_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_ALPHA/SRC_COLOR",
+   "linear": [
+    1.4174506664276123,
+    0.19422021508216858,
+    0.020024007186293602
+   ]
+  },
+  "pair09_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair09_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair09_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair09_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair09_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "pair09_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.002628557849675417,
+    0.002628557849675417,
+    0.002628557849675417
+   ]
+  },
+  "pair09_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.002628557849675417,
+    0.002628557849675417,
+    0.002628557849675417
+   ]
+  },
+  "pair09_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.002628557849675417,
+    0.002628557849675417,
+    0.002628557849675417
+   ]
+  },
+  "pair09_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.002628557849675417,
+    0.002628557849675417,
+    0.002628557849675417
+   ]
+  },
+  "pair09_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.002628557849675417,
+    0.002628557849675417,
+    0.002628557849675417
+   ]
+  },
+  "pair09_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.0010959265055134892,
+    4.2407347791595384e-05,
+    3.316631591587793e-06
+   ]
+  },
+  "pair09_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.0010959265055134892,
+    4.2407347791595384e-05,
+    3.316631591587793e-06
+   ]
+  },
+  "pair09_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.0010959265055134892,
+    4.2407347791595384e-05,
+    3.316631591587793e-06
+   ]
+  },
+  "pair09_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.0010959265055134892,
+    4.2407347791595384e-05,
+    3.316631591587793e-06
+   ]
+  },
+  "pair09_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.0010959265055134892,
+    4.2407347791595384e-05,
+    3.316631591587793e-06
+   ]
+  },
+  "pair09_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.000375676027033478,
+    0.028314590454101562,
+    0.17019152641296387
+   ]
+  },
+  "pair09_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.000375676027033478,
+    0.028314590454101562,
+    0.17019152641296387
+   ]
+  },
+  "pair09_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.000375676027033478,
+    0.028314590454101562,
+    0.17019152641296387
+   ]
+  },
+  "pair09_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.000375676027033478,
+    0.028314590454101562,
+    0.17019152641296387
+   ]
+  },
+  "pair09_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.000375676027033478,
+    0.028314590454101562,
+    0.17019152641296387
+   ]
+  },
+  "pair09_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.001267454819753766,
+    0.028314590454101562,
+    0.007859817706048489
+   ]
+  },
+  "pair09_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.001267454819753766,
+    0.028314590454101562,
+    0.007859817706048489
+   ]
+  },
+  "pair09_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.001267454819753766,
+    0.028314590454101562,
+    0.007859817706048489
+   ]
+  },
+  "pair09_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.001267454819753766,
+    0.028314590454101562,
+    0.007859817706048489
+   ]
+  },
+  "pair09_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.001267454819753766,
+    0.028314590454101562,
+    0.007859817706048489
+   ]
+  },
+  "pair09_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.6261528730392456,
+    0.02939208783209324,
+    0.000375676027033478
+   ]
+  },
+  "pair09_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.6261528730392456,
+    0.02939208783209324,
+    0.000375676027033478
+   ]
+  },
+  "pair09_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.6261528730392456,
+    0.02939208783209324,
+    0.000375676027033478
+   ]
+  },
+  "pair09_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.6261528730392456,
+    0.02939208783209324,
+    0.000375676027033478
+   ]
+  },
+  "pair09_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "SRC_COLOR/ZERO",
+   "linear": [
+    0.6261528730392456,
+    0.02939208783209324,
+    0.000375676027033478
+   ]
+  },
+  "pair10_src0_bg0": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src0_bg1": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src0_bg2": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src0_bg3": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src0_bg4": {
+   "sourceBytes": [
+    255,
+    255,
+    255,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src1_bg0": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src1_bg1": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src1_bg2": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src1_bg3": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src1_bg4": {
+   "sourceBytes": [
+    128,
+    128,
+    128,
+    128
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src2_bg0": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src2_bg1": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src2_bg2": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src2_bg3": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src2_bg4": {
+   "sourceBytes": [
+    204,
+    77,
+    26,
+    64
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src3_bg0": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src3_bg1": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src3_bg2": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src3_bg3": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src3_bg4": {
+   "sourceBytes": [
+    51,
+    153,
+    230,
+    191
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src4_bg0": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src4_bg1": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src4_bg2": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src4_bg3": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src4_bg4": {
+   "sourceBytes": [
+    89,
+    191,
+    140,
+    153
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src5_bg0": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    0,
+    0,
+    0
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src5_bg1": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    255,
+    255,
+    255
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src5_bg2": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    128,
+    128,
+    128
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src5_bg3": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    64,
+    153,
+    230
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  },
+  "pair10_src5_bg4": {
+   "sourceBytes": [
+    230,
+    115,
+    38,
+    255
+   ],
+   "backgroundBytes": [
+    230,
+    102,
+    51
+   ],
+   "pair": "ZERO/ZERO",
+   "linear": [
+    0.0,
+    0.0,
+    0.0
+   ]
+  }
+ }
+}

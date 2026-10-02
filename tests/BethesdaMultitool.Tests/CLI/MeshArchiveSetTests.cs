@@ -129,6 +129,82 @@ public sealed class MeshArchiveSetTests
         Assert.Equal(expectedIdentity, miss.ArchiveSetIdentity);
     }
 
+    /// <summary>The bounded overload preserves primary/fallback selection and reports limits as failures.</summary>
+    [Fact]
+    public void BoundedReadsPreserveResolutionAndRejectOversize()
+    {
+        using var directory = new TempDirectory();
+        var primary = Path.Combine(directory.Path, "primary.bsa");
+        var fallback = Path.Combine(directory.Path, "fallback.bsa");
+        byte[] first = [1, 2, 3];
+        byte[] second = [4, 5, 6];
+        WriteBsa(primary, [("meshes\\head.nif", first)]);
+        WriteBsa(fallback, [("meshes\\head.nif", second), ("meshes\\selected.tri", second)]);
+        using var archives = MeshArchiveSet.Open(primary, [fallback]);
+        Assert.True(archives.TryExtractFileBounded("meshes/head.nif", 1024, out var head,
+            out var headArchive, out var headResolved));
+        Assert.Equal(first, head);
+        Assert.Equal(primary, headArchive);
+        Assert.Equal("meshes\\head.nif", headResolved);
+        Assert.True(archives.TryExtractFileBounded("meshes/selected.tri", 1024, out var tri,
+            out var triArchive, out var triResolved));
+        Assert.Equal(second, tri);
+        Assert.Equal(fallback, triArchive);
+        Assert.Equal("meshes\\selected.tri", triResolved);
+        Assert.Throws<InvalidDataException>(() =>
+            archives.TryExtractFileBounded("meshes/head.nif", 1, out _, out _, out _));
+        Assert.False(archives.TryExtractFileBounded("meshes/missing.tri", 1024, out _, out _, out _));
+    }
+
+    /// <summary>The head proof uses the appearance's explicit TRI path and retains both actual archive locators.</summary>
+    [Fact]
+    public void HeadProofUsesExplicitTriAndFallbackProvenance()
+    {
+        using var directory = new TempDirectory();
+        var primary = Path.Combine(directory.Path, "primary.bsa");
+        var fallback = Path.Combine(directory.Path, "fallback.bsa");
+        WriteBsa(primary, [("meshes\\head.nif",
+            BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Npc.NifMorphTargetFixture.Create())]);
+        WriteBsa(fallback, [("meshes\\selected.tri",
+            BethesdaMultitool.Tests.Core.Formats.FaceGen.Tri.TriFixture.Create().Bytes)]);
+        using var archives = MeshArchiveSet.Open(primary, [fallback]);
+        var fullDomain = new float[15];
+        fullDomain[0] = 1;
+        var target = Assert.IsType<BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen.NifPreSkinMorphTarget>(
+            BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition.NpcHeadMorphTargetLoader.Load(
+                "meshes/head.nif", "meshes/selected.tri", fullDomain, archives));
+        Assert.Equal(primary + "::meshes\\head.nif", target.NifSource);
+        Assert.Equal(fallback + "::meshes\\selected.tri", target.TriSource);
+        Assert.Equal(3, target.ShapeBlockIndex);
+        Assert.Equal(5, target.FullVertexCount);
+        Assert.Null(BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition.NpcHeadMorphTargetLoader.Load(
+            "meshes/head.nif", "meshes/missing.tri", fullDomain, archives));
+        Assert.Equal(1, fullDomain[0]);
+        Assert.Equal(15, fullDomain.Length);
+    }
+
+    /// <summary>The existing loose-file override remains selected and its length is bounded before reading.</summary>
+    [Fact]
+    public void BoundedLooseOverridePreservesSourceAndLimit()
+    {
+        using var directory = new TempDirectory();
+        var archive = Path.Combine(directory.Path, "primary.bsa");
+        WriteBsa(archive, [("meshes\\head.tri", new byte[3])]);
+        var looseDirectory = Path.Combine(directory.Path, "meshes");
+        Directory.CreateDirectory(looseDirectory);
+        var loosePath = Path.Combine(looseDirectory, "head.tri");
+        byte[] payload = [8, 7, 6, 5, 4];
+        File.WriteAllBytes(loosePath, payload);
+        using var archives = MeshArchiveSet.Open(archive, null, false, includeLooseFiles: true);
+        Assert.Throws<InvalidDataException>(() =>
+            archives.TryExtractFileBounded("meshes/head.tri", 4, out _, out _, out _));
+        Assert.True(archives.TryExtractFileBounded("meshes/head.tri", 5,
+            out var actual, out var source, out var resolved));
+        Assert.Equal(payload, actual);
+        Assert.Equal(loosePath, source);
+        Assert.Equal("meshes\\head.tri", resolved);
+    }
+
     private static void WriteBsa(string path, IReadOnlyList<(string Path, byte[] Data)> files)
     {
         using var writer = BsaWriter.CreateWithAutoFlags(files.Select(static f => f.Path));

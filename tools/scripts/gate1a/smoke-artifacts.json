@@ -1,0 +1,15 @@
+{
+ "schema": "gate1a-artifacts/1",
+ "note": "Self-check manifest over the artifacts that already exist in TestOutput; the tincan01 sample has every hop input, the upperbody sample has only a GLB and a fidelity JSON.",
+ "samples": [
+  {"id": "20.2.0.7/uv11/bs34/LE :: meshes/clutter/junk/tincan01.nif", "key": "20.2.0.7/uv11/bs34/LE", "role": "smoke", "source": "Sample/Builds/Fallout - New Vegas (2022-5-24, Steam - Final)/Data/Fallout - Meshes.bsa", "entry": "meshes/clutter/junk/tincan01.nif", "sha256": "e928406fde567a4c933a0f9cb5344b7f5e9f70e66b76a2c65b45fc4e62d79bf1", "platform": null, "game": "fnv",
+   "glb": "C:/dev/Multitool-worktrees/bmt-material-preparation-20260912/TestOutput/slices7-8-20260924/smoke/glb/Fallout - Meshes/meshes/clutter/junk/tincan01.nif.glb",
+   "package": "C:/dev/Multitool-worktrees/bmt-material-preparation-20260912/TestOutput/adopt-be-20260924/smoke/tincan01.zip",
+   "dump": "C:/dev/Multitool-worktrees/bmt-material-preparation-20260912/TestOutput/adopt-be-20260924/smoke/tincan-dump.json",
+   "fidelity": null, "exitCodes": null, "partial": true},
+  {"id": "20.2.0.7/uv11/bs34/LE :: meshes/characters/_male/upperbody.nif", "key": "20.2.0.7/uv11/bs34/LE", "role": "smoke", "source": "Sample/Builds/Fallout - New Vegas (2022-5-24, Steam - Final)/Data/Fallout - Meshes.bsa", "entry": "meshes/characters/_male/upperbody.nif", "sha256": null, "platform": null, "game": "fnv",
+   "glb": "C:/dev/Multitool-worktrees/bmt-material-preparation-20260912/TestOutput/slices7-8-20260924/smoke/glb/Fallout - Meshes/meshes/characters/_male/upperbody.nif.glb",
+   "package": null, "dump": null,
+   "fidelity": "C:/dev/Multitool-worktrees/bmt-material-preparation-20260912/TestOutput/slices7-8-20260924/smoke/fidelity-upperbody-glb.json", "exitCodes": null, "partial": true}
+ ]
+}

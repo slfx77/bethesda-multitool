@@ -1,0 +1,5 @@
+{
+  "schema": "gate1b-dont-sample/1",
+  "description": "Sample-time ranges gate 1b must not compare, each with the reviewer's reason. Every applied entry is counted in the channel record's 'skipped' map ('dont-sample: <reason>'). Fields: sample (substring of the sample id, optional), clip (exact clip name, optional), channel (substring of the channel label, optional), from and to (output seconds, inclusive, optional), reason (required). Empty on purpose: on the 2026-09-26 slice-10 artifacts (Shared fdf7964) every discontinuity the writers emitted is handled by the +-4 Float32-step rule in anim_compare.py, so no entry was needed.",
+  "entries": []
+}

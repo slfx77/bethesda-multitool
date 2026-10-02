@@ -1,0 +1,1132 @@
+{
+ "tool": "cut1c_cover_manifest.py",
+ "manifestSchema": 1,
+ "options": {
+  "scope": "cut1c",
+  "payloads": true
+ },
+ "plan": "docs/design/cut1c-xngine-reader-plan-20260925.md section 9 (Cover)",
+ "generatedUtc": "2026-09-28T22:03:49Z",
+ "files": [
+  {
+   "role": "design",
+   "name": "Daggerfall 44005",
+   "game": "Daggerfall",
+   "population": "daggerfall_arch3d",
+   "container": "arch3d-bsa",
+   "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (2026-8-31, Steam - Final)/DF/DAGGER/ARENA2/ARCH3D.BSA",
+   "entry": "44005",
+   "index": 0,
+   "tag": "v2.7",
+   "size": 4104,
+   "sha256": "e72b7147c834b01bb6d68fb6558683ff2ec42750692789b5e57abd72a9e3714e",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (1997-6-26, PC - Final)/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "44005",
+     "index": 0,
+     "container": "arch3d-bsa"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Daggerfall/DF/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "44005",
+     "index": 0,
+     "container": "arch3d-bsa"
+    }
+   ],
+   "controls": [
+    {
+     "name": "arch3d-extracted-loose-ambiguity"
+    }
+   ],
+   "note": "v2.7, 8-byte plane headers; the extracted-loose control reads this record outside its archive, where header +20 = 0 makes the game ambiguous (plan section 6.2)."
+  },
+  {
+   "role": "design",
+   "name": "Daggerfall 451",
+   "game": "Daggerfall",
+   "population": "daggerfall_arch3d",
+   "container": "arch3d-bsa",
+   "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (2026-8-31, Steam - Final)/DF/DAGGER/ARENA2/ARCH3D.BSA",
+   "entry": "451",
+   "index": 5552,
+   "tag": "v2.6",
+   "size": 81394,
+   "sha256": "e5d2b24a615ef34d4254426835e7d9248f02c61dc722e26ad3993765bcb3e2eb",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (1997-6-26, PC - Final)/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "451",
+     "index": 5552,
+     "container": "arch3d-bsa"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Daggerfall/DF/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "451",
+     "index": 5552,
+     "container": "arch3d-bsa"
+    }
+   ],
+   "controls": [],
+   "note": "v2.6, id < 905 so the packed-UV unfold applies, but it changes no stored value here (no fold-range value in corners 0 to 2; ARCH3D 409 is the row where it changes 44); exceeds the 64 KiB probe prefix (Tentative)."
+  },
+  {
+   "role": "design",
+   "name": "Daggerfall 41509",
+   "game": "Daggerfall",
+   "population": "daggerfall_arch3d",
+   "container": "arch3d-bsa",
+   "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (2026-8-31, Steam - Final)/DF/DAGGER/ARENA2/ARCH3D.BSA",
+   "entry": "41509",
+   "index": 8205,
+   "tag": "v2.5",
+   "size": 21874,
+   "sha256": "c0314b181da87d33de8c924d0b288fc0ba5f149c28e8ae3750f94a0c56c487bc",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (1997-6-26, PC - Final)/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "41509",
+     "index": 8205,
+     "container": "arch3d-bsa"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Daggerfall/DF/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "41509",
+     "index": 8205,
+     "container": "arch3d-bsa"
+    }
+   ],
+   "controls": [],
+   "note": "v2.5: point offsets stored divided by 3."
+  },
+  {
+   "role": "design",
+   "name": "Redguard CRAK0001.3D",
+   "game": "Redguard",
+   "population": "redguard_loose_3dart",
+   "container": "loose",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/CRAK0001.3D",
+   "entry": "CRAK0001.3D",
+   "index": null,
+   "tag": "v2.7",
+   "size": 4964,
+   "sha256": "305b910028a84106e8ab1f01b47d72566d710b425b617c8fb1c30b41f975f4da",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/CRAK0001.3D",
+     "entry": "CRAK0001.3D",
+     "index": null,
+     "container": "loose"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/CRAK0001.3D",
+     "entry": "CRAK0001.3D",
+     "index": null,
+     "container": "loose"
+    },
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/CAVERNS.ROB",
+     "entry": "CRAK0001",
+     "index": 259,
+     "container": "rob",
+     "segmentType": 0
+    },
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/CAVERNS.ROB",
+     "entry": "CRAK0001",
+     "index": 259,
+     "container": "rob",
+     "segmentType": 0
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/CAVERNS.ROB",
+     "entry": "CRAK0001",
+     "index": 259,
+     "container": "rob",
+     "segmentType": 0
+    }
+   ],
+   "controls": [],
+   "note": "Loose Redguard static mesh; byte-identical to CAVERNS.ROB segment 259."
+  },
+  {
+   "role": "design",
+   "name": "ISLAND.ROB GR_COMP",
+   "game": "Redguard",
+   "population": "redguard_rob_3dart",
+   "container": "rob",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/ISLAND.ROB",
+   "entry": "GR_COMP",
+   "index": 0,
+   "tag": "v2.7",
+   "size": 1714,
+   "sha256": "2df3f935f98d391ef14068edda698756ea2b4923de010eb7dbe64d9a848ea898",
+   "segmentType": 0,
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/ISLAND.ROB",
+     "entry": "GR_COMP",
+     "index": 0,
+     "container": "rob",
+     "segmentType": 0
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/ISLAND.ROB",
+     "entry": "GR_COMP",
+     "index": 0,
+     "container": "rob",
+     "segmentType": 0
+    }
+   ],
+   "controls": [],
+   "note": "ROB segment 0; payload excludes the 80-byte segment header."
+  },
+  {
+   "role": "design",
+   "name": "Battlespire ARMOR.3D",
+   "game": "Battlespire",
+   "population": "battlespire_loose",
+   "container": "loose",
+   "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/ARMOR.3D",
+   "entry": "ARMOR.3D",
+   "index": null,
+   "tag": "v2.7",
+   "size": 34556,
+   "sha256": "001e797ffb5de618b6a5669715b054001b0de0383789c3f5778710e74614850e",
+   "alsoIn": [
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/ARMOR.3D",
+     "entry": "ARMOR.3D",
+     "index": null,
+     "container": "loose"
+    },
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/3D.BSA",
+     "entry": "ARMOR.3D",
+     "index": 651,
+     "container": "xngine-bsa",
+     "storedSize": 13999,
+     "storedSha256": "098f489171c58735b4094efa8366fd42bd7e91032f18820c0ced7dec27ffd449"
+    },
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (1997-11-13, PC - Final)/batspire/GameData/3D.BSA",
+     "entry": "ARMOR.3D",
+     "index": 651,
+     "container": "xngine-bsa",
+     "storedSize": 13999,
+     "storedSha256": "098f489171c58735b4094efa8366fd42bd7e91032f18820c0ced7dec27ffd449"
+    },
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/3D.BSA",
+     "entry": "ARMOR.3D",
+     "index": 651,
+     "container": "xngine-bsa",
+     "storedSize": 13999,
+     "storedSha256": "098f489171c58735b4094efa8366fd42bd7e91032f18820c0ced7dec27ffd449"
+    },
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/3D.BS6",
+     "entry": "ARMOR.3D",
+     "index": 1900,
+     "container": "xngine-bsa",
+     "storedSize": 13999,
+     "storedSha256": "098f489171c58735b4094efa8366fd42bd7e91032f18820c0ced7dec27ffd449"
+    },
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (1997-11-13, PC - Final)/batspire/GameData/3D.BS6",
+     "entry": "ARMOR.3D",
+     "index": 1900,
+     "container": "xngine-bsa",
+     "storedSize": 13999,
+     "storedSha256": "098f489171c58735b4094efa8366fd42bd7e91032f18820c0ced7dec27ffd449"
+    },
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/3D.BS6",
+     "entry": "ARMOR.3D",
+     "index": 1900,
+     "container": "xngine-bsa",
+     "storedSize": 13999,
+     "storedSha256": "098f489171c58735b4094efa8366fd42bd7e91032f18820c0ced7dec27ffd449"
+    }
+   ],
+   "controls": [],
+   "note": "Byte-identical in 3D.BSA (#651) and 3D.BS6 (#1900), both LZSS at the same stored bytes; the loose copy is the primary."
+  },
+  {
+   "role": "design",
+   "name": "BMANA001.3DC",
+   "game": "Redguard",
+   "population": "redguard_3dc_3dart",
+   "container": "loose",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/BMANA001.3DC",
+   "entry": "BMANA001.3DC",
+   "index": null,
+   "tag": "v2.6",
+   "size": 769244,
+   "sha256": "490778361a5a5f4e52a0c06c5bc1a2a26255b8d5363b0315f457fe3dfaad9c7f",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/BMANA001.3DC",
+     "entry": "BMANA001.3DC",
+     "index": null,
+     "container": "loose"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/BMANA001.3DC",
+     "entry": "BMANA001.3DC",
+     "index": null,
+     "container": "loose"
+    }
+   ],
+   "controls": [],
+   "note": "Wide .3DC (4-dword frame records), 70 frames; exceeds the probe prefix."
+  },
+  {
+   "role": "design",
+   "name": "DOGA001.3DC",
+   "game": "Redguard",
+   "population": "redguard_3dc_3dart",
+   "container": "loose",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/DOGA001.3DC",
+   "entry": "DOGA001.3DC",
+   "index": null,
+   "tag": "v2.6",
+   "size": 328398,
+   "sha256": "a8dddd86ca4005f86b6997ffea7caa29a3ed4be6ddc107ad73f906fb89dc24e6",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/DOGA001.3DC",
+     "entry": "DOGA001.3DC",
+     "index": null,
+     "container": "loose"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/DOGA001.3DC",
+     "entry": "DOGA001.3DC",
+     "index": null,
+     "container": "loose"
+    }
+   ],
+   "controls": [
+    {
+     "name": "doga001-unit-control"
+    }
+   ],
+   "note": "Narrow .3DC, 38 frames; the section 6.3 unit control (1.47 m tall at 1/20480)."
+  },
+  {
+   "role": "proposed",
+   "name": "3D.BS6 BARSTEP1.3D",
+   "game": "Battlespire",
+   "population": "battlespire_3d_bs6",
+   "container": "xngine-bsa",
+   "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/3D.BS6",
+   "entry": "BARSTEP1.3D",
+   "index": 437,
+   "tag": "v2.7",
+   "size": 1540,
+   "sha256": "e714112cfb4752f19ae7912e29eb2bba503e117c0e6bebe98e5cc44d30de90c2",
+   "storedSize": 569,
+   "storedSha256": "5f1ecaed2e34eff2c96cd765246ef7a90920074fd3e88d234afafc949c13e436",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (1997-11-13, PC - Final)/batspire/GameData/3D.BS6",
+     "entry": "BARSTEP1.3D",
+     "index": 437,
+     "container": "xngine-bsa",
+     "storedSize": 569,
+     "storedSha256": "5f1ecaed2e34eff2c96cd765246ef7a90920074fd3e88d234afafc949c13e436"
+    },
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/3D.BS6",
+     "entry": "BARSTEP1.3D",
+     "index": 437,
+     "container": "xngine-bsa",
+     "storedSize": 569,
+     "storedSha256": "5f1ecaed2e34eff2c96cd765246ef7a90920074fd3e88d234afafc949c13e436"
+    }
+   ],
+   "controls": [
+    {
+     "name": "barstep1-bs6-cover"
+    }
+   ],
+   "note": "LZSS entry; its 3D.BSA namesake (#438) carries different bytes and is pinned as the barstep1-3dbsa-namesake control."
+  },
+  {
+   "role": "proposed",
+   "name": "3D.BSA HUTVANE.3D",
+   "game": "Battlespire",
+   "population": "battlespire_3d_bsa",
+   "container": "xngine-bsa",
+   "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/3D.BSA",
+   "entry": "HUTVANE.3D",
+   "index": 2050,
+   "tag": "v2.6",
+   "size": 2086,
+   "sha256": "b661c9afaf555267ba567e58edc063356bdfddf62cfafed70521de3e22ec2e42",
+   "storedSize": 1014,
+   "storedSha256": "2b32e02a7e48663c80d81d6dd6437e5840624266a4a5f7529173b0e24d0d36e3",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (1997-11-13, PC - Final)/batspire/GameData/3D.BSA",
+     "entry": "HUTVANE.3D",
+     "index": 2050,
+     "container": "xngine-bsa",
+     "storedSize": 1014,
+     "storedSha256": "2b32e02a7e48663c80d81d6dd6437e5840624266a4a5f7529173b0e24d0d36e3"
+    },
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/3D.BSA",
+     "entry": "HUTVANE.3D",
+     "index": 2050,
+     "container": "xngine-bsa",
+     "storedSize": 1014,
+     "storedSha256": "2b32e02a7e48663c80d81d6dd6437e5840624266a4a5f7529173b0e24d0d36e3"
+    }
+   ],
+   "controls": [],
+   "note": "v2.6 Battlespire mesh, 3D.BSA only, LZSS."
+  },
+  {
+   "role": "proposed",
+   "name": "CVFTL001.3DC",
+   "game": "Redguard",
+   "population": "redguard_3dc_3dart",
+   "container": "loose",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/CVFTL001.3DC",
+   "entry": "CVFTL001.3DC",
+   "index": null,
+   "tag": "v2.7",
+   "size": 8266,
+   "sha256": "f7463fed1899f9606b87a3942e25a34c13e080c6f63a5d69860fab305015d0ad",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/CVFTL001.3DC",
+     "entry": "CVFTL001.3DC",
+     "index": null,
+     "container": "loose"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/CVFTL001.3DC",
+     "entry": "CVFTL001.3DC",
+     "index": null,
+     "container": "loose"
+    }
+   ],
+   "controls": [
+    {
+     "name": "3dc-offered-to-3d-reader"
+    }
+   ],
+   "note": "Narrow v2.7 .3DC, 13 frames, complete within the probe prefix. The control offers it to the .3D reader, which must answer NotAModel (shape test S; plan section 6.1)."
+  },
+  {
+   "role": "alternate",
+   "name": "BLOBA001.3DC",
+   "game": "Redguard",
+   "population": "redguard_3dc_3dart",
+   "container": "loose",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/BLOBA001.3DC",
+   "entry": "BLOBA001.3DC",
+   "index": null,
+   "tag": "v2.7",
+   "size": 5032,
+   "sha256": "9cbff8f498f4a8d85e5bf7552aa1b5a0f4b62e6df988f8f0083cc48a32af608d",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/BLOBA001.3DC",
+     "entry": "BLOBA001.3DC",
+     "index": null,
+     "container": "loose"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/BLOBA001.3DC",
+     "entry": "BLOBA001.3DC",
+     "index": null,
+     "container": "loose"
+    }
+   ],
+   "controls": [],
+   "note": "The only .3DC with fewer than 3 frames (2)."
+  },
+  {
+   "role": "alternate",
+   "name": "BEAMA001.3DC",
+   "game": "Redguard",
+   "population": "redguard_3dc_3dart",
+   "container": "loose",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/BEAMA001.3DC",
+   "entry": "BEAMA001.3DC",
+   "index": null,
+   "tag": "v2.7",
+   "size": 1648,
+   "sha256": "4ed043bb5f4d3351721f867308080d52506e4564bfcd05d5303c896b6e9d2d2b",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/BEAMA001.3DC",
+     "entry": "BEAMA001.3DC",
+     "index": null,
+     "container": "loose"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/BEAMA001.3DC",
+     "entry": "BEAMA001.3DC",
+     "index": null,
+     "container": "loose"
+    }
+   ],
+   "controls": [],
+   "note": "The only .3DC with no unaccounted region."
+  },
+  {
+   "role": "alternate",
+   "name": "CV_SKUL3.3DC",
+   "game": "Redguard",
+   "population": "redguard_3dc_3dart",
+   "container": "loose",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/CV_SKUL3.3DC",
+   "entry": "CV_SKUL3.3DC",
+   "index": null,
+   "tag": "v2.7",
+   "size": 30518,
+   "sha256": "5e43d52ac1c479ea9cdc2f55f71f2b97337fc61b5621877ddb9d8a8d5f896f8d",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/CV_SKUL3.3DC",
+     "entry": "CV_SKUL3.3DC",
+     "index": null,
+     "container": "loose"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/CV_SKUL3.3DC",
+     "entry": "CV_SKUL3.3DC",
+     "index": null,
+     "container": "loose"
+    }
+   ],
+   "controls": [],
+   "note": "The smallest v2.7 wide .3DC (45 frames)."
+  },
+  {
+   "role": "declined-control",
+   "name": "fxart CV_SPR1.3D",
+   "game": "Redguard",
+   "population": "redguard_loose_fxart",
+   "container": "loose",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/fxart/CV_SPR1.3D",
+   "entry": "CV_SPR1.3D",
+   "index": null,
+   "tag": "v5.0",
+   "size": 488,
+   "sha256": "9c260c6eb472306399c7657a24de976a08f9aa4dbb83d0a991980c4803cf3875",
+   "alsoIn": [],
+   "controls": [
+    {
+     "name": "fxart-v5-unsupported"
+    }
+   ],
+   "declined": "Redguard 3dfx mesh (10-byte plane header, point indices) not decoded: later cut",
+   "note": "Smallest loose fxart v5.0 file (Disc 1 build only; fxart ships on no other source)."
+  },
+  {
+   "role": "declined-control",
+   "name": "3D.BSA MZ stray (ARCH3.EXE)",
+   "game": "Battlespire",
+   "population": "battlespire_3d_bsa",
+   "container": "xngine-bsa",
+   "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/3D.BSA",
+   "entry": "ARCH3.EXE",
+   "index": 119,
+   "tag": "MZ",
+   "size": 120903,
+   "sha256": "57a79832c61e7cd988eea13151cb5cdbdbb7bee429e5f648c95b55680cee229b",
+   "storedSize": 95002,
+   "storedSha256": "f41b3565c55da326f99078b14a579303596b714464500075f53c466bec7fa2fc",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (1997-11-13, PC - Final)/batspire/GameData/3D.BSA",
+     "entry": "ARCH3.EXE",
+     "index": 119,
+     "container": "xngine-bsa",
+     "storedSize": 95002,
+     "storedSha256": "f41b3565c55da326f99078b14a579303596b714464500075f53c466bec7fa2fc"
+    },
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/3D.BSA",
+     "entry": "ARCH3.EXE",
+     "index": 119,
+     "container": "xngine-bsa",
+     "storedSize": 95002,
+     "storedSha256": "f41b3565c55da326f99078b14a579303596b714464500075f53c466bec7fa2fc"
+    }
+   ],
+   "controls": [
+    {
+     "name": "3dbsa-mz-stray"
+    }
+   ],
+   "declined": "not a mesh: MZ executable stray (header +16 = 1008; the plane walk fails: normal list does not fit)",
+   "note": "One of the five 3D.BSA non-mesh strays; the probe answers NotAModel."
+  },
+  {
+   "role": "declined-control",
+   "name": "ISLAND.ROB empty segment BWAGA001",
+   "game": "Redguard",
+   "population": "redguard_rob_3dart",
+   "container": "rob",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/ISLAND.ROB",
+   "entry": "BWAGA001",
+   "index": 367,
+   "tag": null,
+   "size": 0,
+   "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+   "segmentType": 512,
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/ISLAND.ROB",
+     "entry": "BWAGA001",
+     "index": 367,
+     "container": "rob",
+     "segmentType": 512
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/ISLAND.ROB",
+     "entry": "BWAGA001",
+     "index": 367,
+     "container": "rob",
+     "segmentType": 512
+    }
+   ],
+   "controls": [
+    {
+     "name": "empty-rob-segment"
+    }
+   ],
+   "declined": "empty ROB segment (size 0): no bytes to read",
+   "note": "First empty segment of ISLAND.ROB in segment order; the probe answers NotAModel."
+  },
+  {
+   "role": "edge-control",
+   "name": "MENU.ROB MENUA001",
+   "game": "Redguard",
+   "population": "redguard_rob_3dart",
+   "container": "rob",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/MENU.ROB",
+   "entry": "MENUA001",
+   "index": 0,
+   "tag": "v2.6",
+   "size": 108576,
+   "sha256": "2a5e168846f1b9ecbfcb64bc8634e84106c58da854e1b9b052bb949317748471",
+   "segmentType": 256,
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/MENU.ROB",
+     "entry": "MENUA001",
+     "index": 0,
+     "container": "rob",
+     "segmentType": 256
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/MENU.ROB",
+     "entry": "MENUA001",
+     "index": 0,
+     "container": "rob",
+     "segmentType": 256
+    }
+   ],
+   "controls": [
+    {
+     "name": "menu-rob-static-h16"
+    }
+   ],
+   "note": "Header +16 = 9 on a static mesh; walks as .3D but fails the .3DC shape test S (plan sections 0.2 and 6.1). Carries the section 3.4 diagnostic."
+  },
+  {
+   "role": "edge-control",
+   "name": "ARCH3D 5090 (index 5007)",
+   "game": "Daggerfall",
+   "population": "daggerfall_arch3d",
+   "container": "arch3d-bsa",
+   "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (2026-8-31, Steam - Final)/DF/DAGGER/ARENA2/ARCH3D.BSA",
+   "entry": "5090",
+   "index": 5007,
+   "tag": "v2.7",
+   "size": 670,
+   "sha256": "1ec24f49e2513e644a0e11a60cb0adb08ae3b3672f185c7efaeee931100aefdf",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (1997-6-26, PC - Final)/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 5007,
+     "container": "arch3d-bsa"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Daggerfall/DF/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 5007,
+     "container": "arch3d-bsa"
+    }
+   ],
+   "controls": [
+    {
+     "name": "id-5090-duplicate-group"
+    }
+   ],
+   "note": "Duplicate-id group (D6): 6 records share id 5090; this copy and index 8903 are byte-identical, the other four differ. Path lookup reaches only index 10238."
+  },
+  {
+   "role": "edge-control",
+   "name": "ARCH3D 5090 (index 8903)",
+   "game": "Daggerfall",
+   "population": "daggerfall_arch3d",
+   "container": "arch3d-bsa",
+   "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (2026-8-31, Steam - Final)/DF/DAGGER/ARENA2/ARCH3D.BSA",
+   "entry": "5090",
+   "index": 8903,
+   "tag": "v2.7",
+   "size": 670,
+   "sha256": "1ec24f49e2513e644a0e11a60cb0adb08ae3b3672f185c7efaeee931100aefdf",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (1997-6-26, PC - Final)/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 8903,
+     "container": "arch3d-bsa"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Daggerfall/DF/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 8903,
+     "container": "arch3d-bsa"
+    }
+   ],
+   "controls": [
+    {
+     "name": "id-5090-duplicate-group"
+    }
+   ],
+   "note": "Byte-identical twin of index 5007 (the group's one identical pair)."
+  },
+  {
+   "role": "edge-control",
+   "name": "ARCH3D 5090 (index 9787)",
+   "game": "Daggerfall",
+   "population": "daggerfall_arch3d",
+   "container": "arch3d-bsa",
+   "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (2026-8-31, Steam - Final)/DF/DAGGER/ARENA2/ARCH3D.BSA",
+   "entry": "5090",
+   "index": 9787,
+   "tag": "v2.7",
+   "size": 670,
+   "sha256": "89a1dfaeeff1aaea62b3657cf48d44c9baa963b5db2619c4d532eb83f03b2fdd",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (1997-6-26, PC - Final)/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 9787,
+     "container": "arch3d-bsa"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Daggerfall/DF/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 9787,
+     "container": "arch3d-bsa"
+    }
+   ],
+   "controls": [
+    {
+     "name": "id-5090-duplicate-group"
+    }
+   ],
+   "note": "Duplicate-id group member."
+  },
+  {
+   "role": "edge-control",
+   "name": "ARCH3D 5090 (index 9824)",
+   "game": "Daggerfall",
+   "population": "daggerfall_arch3d",
+   "container": "arch3d-bsa",
+   "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (2026-8-31, Steam - Final)/DF/DAGGER/ARENA2/ARCH3D.BSA",
+   "entry": "5090",
+   "index": 9824,
+   "tag": "v2.7",
+   "size": 670,
+   "sha256": "ba0489a4c9908b70d668e29ed6a84d79435a98873a264bdb3a652ca177912425",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (1997-6-26, PC - Final)/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 9824,
+     "container": "arch3d-bsa"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Daggerfall/DF/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 9824,
+     "container": "arch3d-bsa"
+    }
+   ],
+   "controls": [
+    {
+     "name": "id-5090-duplicate-group"
+    }
+   ],
+   "note": "Duplicate-id group member."
+  },
+  {
+   "role": "edge-control",
+   "name": "ARCH3D 5090 (index 9826)",
+   "game": "Daggerfall",
+   "population": "daggerfall_arch3d",
+   "container": "arch3d-bsa",
+   "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (2026-8-31, Steam - Final)/DF/DAGGER/ARENA2/ARCH3D.BSA",
+   "entry": "5090",
+   "index": 9826,
+   "tag": "v2.7",
+   "size": 670,
+   "sha256": "1fbec4effb80a1d98d621eada6a781acdff220247e010f88068116efd81ba822",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (1997-6-26, PC - Final)/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 9826,
+     "container": "arch3d-bsa"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Daggerfall/DF/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 9826,
+     "container": "arch3d-bsa"
+    }
+   ],
+   "controls": [
+    {
+     "name": "id-5090-duplicate-group"
+    }
+   ],
+   "note": "Duplicate-id group member."
+  },
+  {
+   "role": "edge-control",
+   "name": "ARCH3D 5090 (index 10238)",
+   "game": "Daggerfall",
+   "population": "daggerfall_arch3d",
+   "container": "arch3d-bsa",
+   "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (2026-8-31, Steam - Final)/DF/DAGGER/ARENA2/ARCH3D.BSA",
+   "entry": "5090",
+   "index": 10238,
+   "tag": "v2.7",
+   "size": 670,
+   "sha256": "9c27816c813529eaab615a577f63636239bbe92807e44d3bda6c0dda891d9b08",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (1997-6-26, PC - Final)/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 10238,
+     "container": "arch3d-bsa"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Daggerfall/DF/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "5090",
+     "index": 10238,
+     "container": "arch3d-bsa"
+    }
+   ],
+   "controls": [
+    {
+     "name": "id-5090-duplicate-group"
+    }
+   ],
+   "note": "The copy path lookup keeps (last of id 5090 in directory order)."
+  },
+  {
+   "role": "edge-control",
+   "name": "3D.BS6 ESPEAR.3D",
+   "game": "Battlespire",
+   "population": "battlespire_3d_bs6",
+   "container": "xngine-bsa",
+   "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/3D.BS6",
+   "entry": "ESPEAR.3D",
+   "index": 1430,
+   "tag": "v2.7",
+   "size": 9566,
+   "sha256": "07b583e7df69bf9f58cbb0ac64625a07addb2685ed18947c5a44dfb4345e755e",
+   "storedSize": 3611,
+   "storedSha256": "d09712297a976d4e34e5f033e49d336c8ea62bb26fc4f78faec83fa72262dcda",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (1997-11-13, PC - Final)/batspire/GameData/3D.BS6",
+     "entry": "ESPEAR.3D",
+     "index": 1430,
+     "container": "xngine-bsa",
+     "storedSize": 3611,
+     "storedSha256": "d09712297a976d4e34e5f033e49d336c8ea62bb26fc4f78faec83fa72262dcda"
+    },
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/3D.BS6",
+     "entry": "ESPEAR.3D",
+     "index": 1430,
+     "container": "xngine-bsa",
+     "storedSize": 3611,
+     "storedSha256": "d09712297a976d4e34e5f033e49d336c8ea62bb26fc4f78faec83fa72262dcda"
+    }
+   ],
+   "controls": [
+    {
+     "name": "espear-omitted-planes"
+    }
+   ],
+   "note": "66 no-triangle planes (the corpus maximum) and one emptied texture key (0xfffffffe); must read and convert without an empty primitive (D5)."
+  },
+  {
+   "role": "edge-control",
+   "name": "ISLAND.ROB HBBLD01",
+   "game": "Redguard",
+   "population": "redguard_rob_3dart",
+   "container": "rob",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/ISLAND.ROB",
+   "entry": "HBBLD01",
+   "index": 258,
+   "tag": "v2.7",
+   "size": 17990,
+   "sha256": "26812c5403e4c0200f66939d133f7d565d956b2bc6dfc989569d3fd003e2561a",
+   "segmentType": 0,
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/ISLAND.ROB",
+     "entry": "HBBLD01",
+     "index": 258,
+     "container": "rob",
+     "segmentType": 0
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/ISLAND.ROB",
+     "entry": "HBBLD01",
+     "index": 258,
+     "container": "rob",
+     "segmentType": 0
+    }
+   ],
+   "controls": [
+    {
+     "name": "hbbld01-emptied-key-nonzero-normal"
+    }
+   ],
+   "note": "The one ROB no-triangle plane with a NON-zero authored normal (key 0xAC), so its texture key empties without any zero-normal plane."
+  },
+  {
+   "role": "edge-control",
+   "name": "3D.BSA CAT02.3D (folded fan)",
+   "game": "Battlespire",
+   "population": "battlespire_3d_bsa",
+   "container": "xngine-bsa",
+   "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/3D.BSA",
+   "entry": "CAT02.3D",
+   "index": 1111,
+   "tag": "v2.7",
+   "size": 1806,
+   "sha256": "e243414b3ae256de9e52afb7b1323052328a910c92f52f9882449ef00feebcf5",
+   "storedSize": 843,
+   "storedSha256": "408bb35c7a93477cf1b85c29936170f292323898c9bbe92456dc0defd8d671c2",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (1997-11-13, PC - Final)/batspire/GameData/3D.BSA",
+     "entry": "CAT02.3D",
+     "index": 1111,
+     "container": "xngine-bsa",
+     "storedSize": 843,
+     "storedSha256": "408bb35c7a93477cf1b85c29936170f292323898c9bbe92456dc0defd8d671c2"
+    },
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/3D.BSA",
+     "entry": "CAT02.3D",
+     "index": 1111,
+     "container": "xngine-bsa",
+     "storedSize": 843,
+     "storedSha256": "408bb35c7a93477cf1b85c29936170f292323898c9bbe92456dc0defd8d671c2"
+    }
+   ],
+   "controls": [
+    {
+     "name": "folded-fan"
+    }
+   ],
+   "note": "M-Z's folded-fan pick (slice-2 receipt m_z_zero_normals_folded.json, restated by cut1c_folded_fan_pick.py): the smallest Battlespire mesh with a folded fan, 2 folded triangles at 1,806 decoded bytes, LZSS. The 3D.BS6 namesake (#1069) is NOT byte-identical (67 of 1,806 payload bytes differ inside the plane list, same structure, same 2 folded triangles) and so is no alsoIn candidate. Replaces the first draft's loose-only OGSCAF1.3D pick (review finding, 2026-09-28)."
+  },
+  {
+   "role": "edge-control",
+   "name": "3D.BSA BARSTEP1.3D namesake",
+   "game": "Battlespire",
+   "population": "battlespire_3d_bsa",
+   "container": "xngine-bsa",
+   "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/3D.BSA",
+   "entry": "BARSTEP1.3D",
+   "index": 438,
+   "tag": "v2.7",
+   "size": 1540,
+   "sha256": "1ad5586cd66e481da590c98ccde1f74dc04a55bbb1fe35e1eb58a74093abb250",
+   "storedSize": 570,
+   "storedSha256": "ad4cef083741e3a66a14a3eab70a860b99e7ee44f7aacfc70bf709accf524251",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (1997-11-13, PC - Final)/batspire/GameData/3D.BSA",
+     "entry": "BARSTEP1.3D",
+     "index": 438,
+     "container": "xngine-bsa",
+     "storedSize": 570,
+     "storedSha256": "ad4cef083741e3a66a14a3eab70a860b99e7ee44f7aacfc70bf709accf524251"
+    },
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/3D.BSA",
+     "entry": "BARSTEP1.3D",
+     "index": 438,
+     "container": "xngine-bsa",
+     "storedSize": 570,
+     "storedSha256": "ad4cef083741e3a66a14a3eab70a860b99e7ee44f7aacfc70bf709accf524251"
+    }
+   ],
+   "controls": [
+    {
+     "name": "barstep1-3dbsa-namesake"
+    }
+   ],
+   "note": "Same entry name as the 3D.BS6 cover file, different bytes (payload and stored): naming this copy for the cover row's digest must fail (plan slice-1 control)."
+  },
+  {
+   "role": "edge-control",
+   "name": "ARCH3D 409 (unfold changes values)",
+   "game": "Daggerfall",
+   "population": "daggerfall_arch3d",
+   "container": "arch3d-bsa",
+   "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (2026-8-31, Steam - Final)/DF/DAGGER/ARENA2/ARCH3D.BSA",
+   "entry": "409",
+   "index": 4762,
+   "tag": "v2.7",
+   "size": 57176,
+   "sha256": "fdf7351c94e95d801aafe9863eca352297f6a2dafbd08699418a04b572f7649f",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls II - Daggerfall (1997-6-26, PC - Final)/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "409",
+     "index": 4762,
+     "container": "arch3d-bsa"
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Daggerfall/DF/DAGGER/ARENA2/ARCH3D.BSA",
+     "entry": "409",
+     "index": 4762,
+     "container": "arch3d-bsa"
+    }
+   ],
+   "controls": [
+    {
+     "name": "arch3d-unfold-changes-values"
+    }
+   ],
+   "note": "The ARCH3D record below id 905 on which the packed-UV unfold (D2) changes the most stored values: 44 in corners 0 to 2 (110 of the 520 records below 905 change any, 539 values in all; slice-5 review receipt measure_review_fixes.json). Its id is unique, so path lookup reaches it; hop A3x compares its unfolded UVs with the legacy route's."
+  },
+  {
+   "role": "edge-control",
+   "name": "3D.BSA PUZSPRT1.3D (repeated point)",
+   "game": "Battlespire",
+   "population": "battlespire_3d_bsa",
+   "container": "xngine-bsa",
+   "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/3D.BSA",
+   "entry": "PUZSPRT1.3D",
+   "index": 98,
+   "tag": "v2.7",
+   "size": 15650,
+   "sha256": "6376861f503a3bfb9e28ceeaeee33349f21015d881514d9b4861839f50e25e60",
+   "storedSize": 5274,
+   "storedSha256": "48d72227b36a99c6dd77590b7fba6f4a7f9e89087f31057102c35b37b4a160c5",
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (1997-11-13, PC - Final)/batspire/GameData/3D.BSA",
+     "entry": "PUZSPRT1.3D",
+     "index": 98,
+     "container": "xngine-bsa",
+     "storedSize": 5274,
+     "storedSha256": "48d72227b36a99c6dd77590b7fba6f4a7f9e89087f31057102c35b37b4a160c5"
+    },
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/3D.BSA",
+     "entry": "PUZSPRT1.3D",
+     "index": 98,
+     "container": "xngine-bsa",
+     "storedSize": 5274,
+     "storedSha256": "48d72227b36a99c6dd77590b7fba6f4a7f9e89087f31057102c35b37b4a160c5"
+    },
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (2026-8-31, Steam - Final)/GAMEDATA/3D.BS6",
+     "entry": "PUZSPRT1.3D",
+     "index": 467,
+     "container": "xngine-bsa",
+     "storedSize": 5274,
+     "storedSha256": "48d72227b36a99c6dd77590b7fba6f4a7f9e89087f31057102c35b37b4a160c5"
+    },
+    {
+     "source": "Sample/Builds/An Elder Scrolls Legend - Battlespire (1997-11-13, PC - Final)/batspire/GameData/3D.BS6",
+     "entry": "PUZSPRT1.3D",
+     "index": 467,
+     "container": "xngine-bsa",
+     "storedSize": 5274,
+     "storedSha256": "48d72227b36a99c6dd77590b7fba6f4a7f9e89087f31057102c35b37b4a160c5"
+    },
+    {
+     "source": "<SteamLibrary>/An Elder Scrolls Legend Battlespire/GAMEDATA/3D.BS6",
+     "entry": "PUZSPRT1.3D",
+     "index": 467,
+     "container": "xngine-bsa",
+     "storedSize": 5274,
+     "storedSha256": "48d72227b36a99c6dd77590b7fba6f4a7f9e89087f31057102c35b37b4a160c5"
+    }
+   ],
+   "controls": [
+    {
+     "name": "bsa-repeated-point-plane"
+    }
+   ],
+   "note": "Plane 72 names point 77 at corners 3 and 5 (points 76, 37, 34, 77, 75, 77) and keeps a triangle that covers area: its face repeats a source point, which Blender cannot store (Shared's admission reports it Dropped). Byte-identical in 3D.BS6 #467, LZSS at the same stored bytes."
+  },
+  {
+   "role": "edge-control",
+   "name": "NECRISLE.ROB NCGATE01",
+   "game": "Redguard",
+   "population": "redguard_rob_3dart",
+   "container": "rob",
+   "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (2026-8-31, Steam - Final)/Redguard/3dart/NECRISLE.ROB",
+   "entry": "NCGATE01",
+   "index": 108,
+   "tag": "v2.7",
+   "size": 7506,
+   "sha256": "bd2b88602418b2ec6a0cb551f42ff4e2001005b4b06de771c4e998173847a14a",
+   "segmentType": 0,
+   "alsoIn": [
+    {
+     "source": "Sample/Builds/The Elder Scrolls Adventures - Redguard (1998-7-24, PC - Final)/Disc 1 (Install)/extracted/3dart/NECRISLE.ROB",
+     "entry": "NCGATE01",
+     "index": 108,
+     "container": "rob",
+     "segmentType": 0
+    },
+    {
+     "source": "<SteamLibrary>/The Elder Scrolls Adventures Redguard/Redguard/3dart/NECRISLE.ROB",
+     "entry": "NCGATE01",
+     "index": 108,
+     "container": "rob",
+     "segmentType": 0
+    }
+   ],
+   "controls": [
+    {
+     "name": "rob-repeated-point-planes"
+    },
+    {
+     "name": "rob-legacy-unfold-accident"
+    }
+   ],
+   "note": "Two drawn planes repeat a source point (30: 66, 65, 6, 66, 60; 49: 22, 21, 53, 12, 13, 12), both with area; and planes 9, 26 and 61 store fold-range values in corners 0 to 2, which the legacy route unfolds through the segment index 108 while the reader, Redguard by its container, does not (the A3x UV exclusions)."
+  }
+ ]
+}
