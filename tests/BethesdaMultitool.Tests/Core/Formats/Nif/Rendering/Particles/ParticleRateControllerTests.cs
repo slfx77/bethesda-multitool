@@ -37,6 +37,34 @@ public sealed class ParticleRateControllerTests
         Assert.Equal(new ParticleRateKey(1f, 10f, 11f, 12f), keys[1]);
     }
 
+    /// <summary>
+    ///     A TBC key stores tension, continuity, bias in that order, not nif.xml's t, b, c labels: the engine's
+    ///     NiTCBFloatKey::LoadBinary fills +8/+0xC/+0x10 and its getters name them GetTension/GetContinuity/GetBias
+    ///     (Fallout 4 PDB; see the parser's comment). Three distinct floats fail on either swap.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Parser_ReadsTbcRateKeysAsTensionContinuityBias(bool bigEndian)
+    {
+        var bytes = new byte[8 + 20];
+        WriteUInt32(bytes, 0, 1, bigEndian);
+        WriteUInt32(bytes, 4, (uint)ParticleRateInterpolation.Tbc, bigEndian);
+        WriteFloat(bytes, 8, 0.5f, bigEndian);
+        WriteFloat(bytes, 12, 7f, bigEndian);
+        WriteFloat(bytes, 16, 0.25f, bigEndian);
+        WriteFloat(bytes, 20, -0.5f, bigEndian);
+        WriteFloat(bytes, 24, 0.75f, bigEndian);
+
+        var success = NifParticleSystemParser.TryReadRateKeys(
+            bytes, 0, bytes.Length, bigEndian, out var interpolation, out var keys);
+
+        Assert.True(success);
+        Assert.Equal(ParticleRateInterpolation.Tbc, interpolation);
+        var key = Assert.Single(keys);
+        Assert.Equal(new ParticleRateKey(0.5f, 7f, Tension: 0.25f, Continuity: -0.5f, Bias: 0.75f), key);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

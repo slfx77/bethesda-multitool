@@ -1,5 +1,6 @@
-#if WINDOWS_GUI
 using System.Diagnostics;
+using Slfx77.Multitool.Core.Lifetime;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Abstractions;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
@@ -13,12 +14,12 @@ using D12 = Vortice.Direct3D12;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
-///     Owns the GPU pipeline-state objects (PSOs) used by <see cref="ReferenceRenderer12" />:
-///     compiles the reference shaders once, builds the two opaque (back-face / double-sided)
-///     instanced PSOs up front, and lazily creates + caches blended PSOs keyed by blend mode.
-///     This is a pure GPU-resource factory — it records no command-list work, so the renderer's
-///     draw ordering is unaffected by the extraction.
+///     Creates the fixed and lazy reference pipelines used by <c>ReferenceRenderer12</c> and native
+///     Bethesda scene viewers. Shared families own every native pipeline; callers borrow the
+///     established opaque, cutout, mirror, shadow and game-specialization handles.
 /// </summary>
+/// <remarks>This factory records no commands. Callers retain the device and root and establish GPU
+/// retirement before replacing a profile or disposing the factory on its creating thread.</remarks>
 internal sealed class ReferencePipelineFactory12 : IDisposable
 {
     private readonly GpuDevice12 _gpu;
@@ -30,8 +31,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     // identical between routes, only the shaders differ, so one shared cache would hand back another
     // route's pipeline after the first draw. Adding per-game pair #2 = one more route field + one
     // more Set method.
-    private readonly ShaderRoutePsos _sharedRoute;
-    private readonly ShaderRoutePsos _grassRoute = new();
+    private readonly ReferenceShaderRoute12 _sharedRoute;
+    private readonly ReferenceShaderRoute12 _grassRoute;
 
     // The INSTANCED + BLENDED grass route. Its shaders are the same per-game grass pair as
     // _grassRoute, compiled with GRASS_INSTANCED so the VS takes its world matrix from the t8
@@ -41,7 +42,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     // 256-byte ring allocation and three full list re-scans per blade. Nothing about the PSO itself
     // is new: blend and instancing are argument values on the same CreatePipelineState, over the same
     // root signature and the same input layout.
-    private readonly ShaderRoutePsos _instancedGrassBlendRoute = new();
+    private readonly ReferenceShaderRoute12 _instancedGrassBlendRoute;
 
     // The INSTANCED grass route. Separate from _grassRoute because the ABIs differ: _grassRoute
     // serves blended per-draw PSOs (world matrix from the per-draw CB) while these shaders take
@@ -49,8 +50,8 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     // game loads, which is after this constructor runs.
     private GameShaderPair _instancedGrassProfile;
     private bool _instancedGrassCompileAttempted;
-    private ID3D12PipelineState? _grassOpaqueBackPso;
-    private ID3D12PipelineState? _grassOpaqueDoublePso;
+    private bool _instancedGrassProfileChangePending;
+    private ShaderPipelineResources? _instancedGrassPipelineResources;
     private ID3D12PipelineState? _grassOpaqueBackA2CPso;
     private ID3D12PipelineState? _grassOpaqueDoubleA2CPso;
 
@@ -75,19 +76,19 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private ID3D12PipelineState? _directStarfieldDiffuseLitDoubleCutoutPso;
     private ID3D12PipelineState? _directClassicSkinBackPso;
     private ID3D12PipelineState? _directClassicSkinDoublePso;
-    private byte[]? _directClassicSkinVertexShader;
+    private ReadOnlyMemory<byte>? _directClassicSkinVertexShader;
     private ID3D12PipelineState? _directClassicSkinFactorOneBackPso;
     private ID3D12PipelineState? _directClassicSkinFactorOneDoublePso;
-    private readonly Dictionary<(bool DoubleSided, bool FactorOne), ID3D12PipelineState> _independentSkinPipelines = [];
+    private readonly ShaderPipelineCache<(bool DoubleSided, bool FactorOne)> _independentSkinPipelines;
     private ID3D12PipelineState? _oblivionEyePso;
 
-    // A throwing COM/shader call in this constructor prevents the session from ever receiving the
-    // factory instance, so its ordinary Dispose path cannot run. Every PSO created while this bag is
-    // active is transaction-owned; a successful constructor commits the bag to the fields below,
-    // while a failure releases the partial graph in reverse creation order.
-    private readonly PipelineConstructionTransaction? _constructionTransaction = new();
-    private readonly HashSet<ID3D12PipelineState> _ownedMirrorPsos =
-        new(ReferenceEqualityComparer.Instance);
+    // Borrowed PSO fields may alias; only the retained Shared families own native handles.
+    private readonly List<ShaderPipelineResources> _pipelineFamilies = new(12);
+    private ShaderPipelineResources? _pendingPipelineRelease;
+
+    // Construction retains owners before compiling or allocating pipelines. Runtime retirement can
+    // retry failed child releases, but a throwing constructor cannot publish its owner for a retry.
+    private readonly ReferencePipelineConstructionTransaction12? _constructionTransaction = new();
 
     // DXBC precompilation removes FXC from startup, but CreateGraphicsPipelineState can still ask
     // the display driver to compile/link a hardware pipeline. Keep that cost separate from shader
@@ -98,8 +99,16 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     private double _psoCreationMilliseconds;
     private double _maxPsoCreationMilliseconds;
 
+    private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
+    private RetiredResourceDisposal? _retiredResources;
     private bool _disposed;
 
+    /// <summary>Creates fixed reference pipelines and retains empty Shared blend caches before native setup.</summary>
+    /// <param name="gpu">Borrowed device and scene sampling configuration.</param>
+    /// <param name="rootSignature">World root retained by every fixed family and dynamic cache entry.</param>
+    /// <param name="game">Game selecting the existing optional shader specializations.</param>
+    /// <remarks>Construction rolls back unpublished resources; a rollback failure cannot publish a retry owner.
+    /// Runtime disposal retains failed child releases for retry on the creating thread.</remarks>
     public ReferencePipelineFactory12(
         GpuDevice12 gpu,
         GpuRootSignature12 rootSignature,
@@ -111,6 +120,11 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         _rootSignature = rootSignature;
         try
         {
+        _grassRoute = TrackConstructionResource(new ReferenceShaderRoute12(rootSignature));
+        _instancedGrassBlendRoute = TrackConstructionResource(new ReferenceShaderRoute12(rootSignature));
+        _independentSkinPipelines = TrackConstructionResource(
+            rootSignature.CreatePipelineCache<(bool DoubleSided, bool FactorOne)>());
+        var fixedPipelineResources = RetainPipelineFamily(26);
         var shaderOverride =
             EnvironmentVariables.Get(EnvironmentVariables.Viewer.ReferenceModernStandardShader);
         var shaderActivation = ModernStandardShaderActivationPolicy.Resolve(game, shaderOverride);
@@ -123,43 +137,48 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         var blendedVsBytecode = CompileEmbeddedShader("reference.vert.hlsl", "main", "vs_5_1");
         var instancedVsBytecode = CompileEmbeddedShader("reference_instanced.vert.hlsl", "main", "vs_5_1");
         var psBytecode = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1");
-        _sharedRoute = new ShaderRoutePsos(blendedVsBytecode, psBytecode);
+        _sharedRoute = TrackConstructionResource(
+            new ReferenceShaderRoute12(rootSignature, blendedVsBytecode, psBytecode));
         var basePsoGroup = BeginPsoGroup("base-opaque", game);
         // Standalone Bethesda scenes carry one authored world transform per mesh part rather than
         // thousands of repeated placements. Reuse the established per-draw vertex ABI for their
         // opaque path instead of manufacturing one-element instance buffers in the viewer.
-        DirectOpaqueBackPso = CreatePipelineState(
-            blendedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
-            depthWriteEnabled: true);
-        DirectOpaqueDoublePso = CreatePipelineState(
-            blendedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
-            depthWriteEnabled: true);
-        DirectOpaqueBackDecalPso = CreatePipelineState(
-            blendedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
-            depthWriteEnabled: true, decal: true);
-        DirectOpaqueDoubleDecalPso = CreatePipelineState(
-            blendedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
-            depthWriteEnabled: true, decal: true);
-        DirectOpaqueBackNoDepthPso = CreatePipelineState(
-            blendedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
-            depthWriteEnabled: false, depthTestEnabled: false);
-        DirectOpaqueDoubleNoDepthPso = CreatePipelineState(
-            blendedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
-            depthWriteEnabled: false, depthTestEnabled: false);
-        DirectOpaqueBackDecalNoDepthPso = CreatePipelineState(
-            blendedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
-            depthWriteEnabled: false, decal: true, depthTestEnabled: false);
-        DirectOpaqueDoubleDecalNoDepthPso = CreatePipelineState(
-            blendedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
-            depthWriteEnabled: false, decal: true, depthTestEnabled: false);
-        OpaqueBackPso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: false, blendAttachment: null,
-            depthWriteEnabled: true);
-        OpaqueDoublePso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: true, blendAttachment: null,
-            depthWriteEnabled: true);
-        OpaqueBackDecalPso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: false,
-            blendAttachment: null, depthWriteEnabled: true, decal: true);
-        OpaqueDoubleDecalPso = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: true,
-            blendAttachment: null, depthWriteEnabled: true, decal: true);
+        DirectOpaqueBackPso = CreatePipelineState(fixedPipelineResources, 0,
+                blendedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+        DirectOpaqueDoublePso = CreatePipelineState(fixedPipelineResources, 1,
+                blendedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
+        DirectOpaqueBackDecalPso = CreatePipelineState(fixedPipelineResources, 2,
+                blendedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true, Decal: true));
+        DirectOpaqueDoubleDecalPso = CreatePipelineState(fixedPipelineResources, 3,
+                blendedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true, Decal: true));
+        DirectOpaqueBackNoDepthPso = CreatePipelineState(fixedPipelineResources, 4,
+                blendedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: false, DepthTestEnabled: false));
+        DirectOpaqueDoubleNoDepthPso = CreatePipelineState(fixedPipelineResources, 5,
+                blendedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: false, DepthTestEnabled: false));
+        DirectOpaqueBackDecalNoDepthPso = CreatePipelineState(fixedPipelineResources, 6,
+                blendedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: false, Decal: true, DepthTestEnabled: false));
+        DirectOpaqueDoubleDecalNoDepthPso = CreatePipelineState(fixedPipelineResources, 7,
+                blendedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: false, Decal: true, DepthTestEnabled: false));
+        OpaqueBackPso = CreatePipelineState(fixedPipelineResources, 8,
+                instancedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+        OpaqueDoublePso = CreatePipelineState(fixedPipelineResources, 9,
+                instancedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
+        OpaqueBackDecalPso = CreatePipelineState(fixedPipelineResources, 10,
+                instancedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true, Decal: true));
+        OpaqueDoubleDecalPso = CreatePipelineState(fixedPipelineResources, 11,
+                instancedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true, Decal: true));
         CompletePsoGroup("base-opaque", game, basePsoGroup);
 
         if (FalloutModernStandardRequested)
@@ -211,38 +230,36 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             var a2cPsBytecode = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1",
                 new ShaderMacro("ALPHA_TO_COVERAGE", "1"));
             var alphaToCoveragePsoGroup = BeginPsoGroup("alpha-to-coverage", game);
-            DirectOpaqueBackA2CPso = CreatePipelineState(
-                blendedVsBytecode, a2cPsBytecode, doubleSided: false,
-                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
-            DirectOpaqueDoubleA2CPso = CreatePipelineState(
-                blendedVsBytecode, a2cPsBytecode, doubleSided: true,
-                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
-            DirectOpaqueBackDecalA2CPso = CreatePipelineState(
-                blendedVsBytecode, a2cPsBytecode, doubleSided: false,
-                blendAttachment: null, depthWriteEnabled: true, decal: true, alphaToCoverage: true);
-            DirectOpaqueDoubleDecalA2CPso = CreatePipelineState(
-                blendedVsBytecode, a2cPsBytecode, doubleSided: true,
-                blendAttachment: null, depthWriteEnabled: true, decal: true, alphaToCoverage: true);
-            DirectOpaqueBackNoDepthA2CPso = CreatePipelineState(
-                blendedVsBytecode, a2cPsBytecode, doubleSided: false,
-                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true,
-                depthTestEnabled: false);
-            DirectOpaqueDoubleNoDepthA2CPso = CreatePipelineState(
-                blendedVsBytecode, a2cPsBytecode, doubleSided: true,
-                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true,
-                depthTestEnabled: false);
-            DirectOpaqueBackDecalNoDepthA2CPso = CreatePipelineState(
-                blendedVsBytecode, a2cPsBytecode, doubleSided: false,
-                blendAttachment: null, depthWriteEnabled: true, decal: true, alphaToCoverage: true,
-                depthTestEnabled: false);
-            DirectOpaqueDoubleDecalNoDepthA2CPso = CreatePipelineState(
-                blendedVsBytecode, a2cPsBytecode, doubleSided: true,
-                blendAttachment: null, depthWriteEnabled: true, decal: true, alphaToCoverage: true,
-                depthTestEnabled: false);
-            OpaqueBackA2CPso = CreatePipelineState(instancedVsBytecode, a2cPsBytecode, doubleSided: false,
-                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
-            OpaqueDoubleA2CPso = CreatePipelineState(instancedVsBytecode, a2cPsBytecode, doubleSided: true,
-                blendAttachment: null, depthWriteEnabled: true, alphaToCoverage: true);
+            DirectOpaqueBackA2CPso = CreatePipelineState(fixedPipelineResources, 12,
+                blendedVsBytecode, a2cPsBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true, AlphaToCoverage: true));
+            DirectOpaqueDoubleA2CPso = CreatePipelineState(fixedPipelineResources, 13,
+                blendedVsBytecode, a2cPsBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true, AlphaToCoverage: true));
+            DirectOpaqueBackDecalA2CPso = CreatePipelineState(fixedPipelineResources, 14,
+                blendedVsBytecode, a2cPsBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true, Decal: true, AlphaToCoverage: true));
+            DirectOpaqueDoubleDecalA2CPso = CreatePipelineState(fixedPipelineResources, 15,
+                blendedVsBytecode, a2cPsBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true, Decal: true, AlphaToCoverage: true));
+            DirectOpaqueBackNoDepthA2CPso = CreatePipelineState(fixedPipelineResources, 16,
+                blendedVsBytecode, a2cPsBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true, AlphaToCoverage: true, DepthTestEnabled: false));
+            DirectOpaqueDoubleNoDepthA2CPso = CreatePipelineState(fixedPipelineResources, 17,
+                blendedVsBytecode, a2cPsBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true, AlphaToCoverage: true, DepthTestEnabled: false));
+            DirectOpaqueBackDecalNoDepthA2CPso = CreatePipelineState(fixedPipelineResources, 18,
+                blendedVsBytecode, a2cPsBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true, Decal: true, AlphaToCoverage: true, DepthTestEnabled: false));
+            DirectOpaqueDoubleDecalNoDepthA2CPso = CreatePipelineState(fixedPipelineResources, 19,
+                blendedVsBytecode, a2cPsBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true, Decal: true, AlphaToCoverage: true, DepthTestEnabled: false));
+            OpaqueBackA2CPso = CreatePipelineState(fixedPipelineResources, 20,
+                instancedVsBytecode, a2cPsBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true, AlphaToCoverage: true));
+            OpaqueDoubleA2CPso = CreatePipelineState(fixedPipelineResources, 21,
+                instancedVsBytecode, a2cPsBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true, AlphaToCoverage: true));
             CompletePsoGroup("alpha-to-coverage", game, alphaToCoveragePsoGroup);
         }
         else
@@ -268,17 +285,17 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             new ShaderMacro("SHADOW_CARD_LIGHT_FACING", "1"));
         var shadowPsBytecode = CompileEmbeddedShader("shadow.frag.hlsl", "main", "ps_5_1");
         var shadowPsoGroup = BeginPsoGroup("shadow", game);
-        ShadowOpaquePso = CreateShadowPipelineState(shadowVsBytecode, psBytecode: null);
-        ShadowAlphaTestPso = CreateShadowPipelineState(shadowVsBytecode, shadowPsBytecode);
+        ShadowOpaquePso = CreateShadowPipelineState(fixedPipelineResources, 22, shadowVsBytecode, psBytecode: null);
+        ShadowAlphaTestPso = CreateShadowPipelineState(fixedPipelineResources, 23, shadowVsBytecode, shadowPsBytecode);
         CompletePsoGroup("shadow", game, shadowPsoGroup);
 
         // Mirror-winding twins for the water-reflection color replay: only the BACK-CULLED opaque
         // PSOs need one (a mirrored viewProj flips screen-space winding); CullMode.None PSOs are
         // winding-agnostic and map to themselves. Decals are excluded from the replay entirely.
         var mirrorPsoGroup = BeginPsoGroup("mirror", game);
-        var mirrorBack = CreatePipelineState(instancedVsBytecode, psBytecode, doubleSided: false,
-            blendAttachment: null, depthWriteEnabled: true, mirrorWinding: true);
-        _ownedMirrorPsos.Add(mirrorBack);
+        var mirrorBack = CreatePipelineState(fixedPipelineResources, 24,
+                instancedVsBytecode, psBytecode, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true, MirrorWinding: true));
         _mirrorPsoMap = new Dictionary<ID3D12PipelineState, ID3D12PipelineState>
         {
             [OpaqueBackPso] = mirrorBack,
@@ -317,10 +334,9 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         {
             var a2cPsBytecodeMirror = CompileEmbeddedShader("reference.frag.hlsl", "main", "ps_5_1",
                 new ShaderMacro("ALPHA_TO_COVERAGE", "1"));
-            var mirrorA2C = CreatePipelineState(instancedVsBytecode,
-                a2cPsBytecodeMirror, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true, alphaToCoverage: true, mirrorWinding: true);
-            _ownedMirrorPsos.Add(mirrorA2C);
+            var mirrorA2C = CreatePipelineState(fixedPipelineResources, 25,
+                instancedVsBytecode, a2cPsBytecodeMirror, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true, AlphaToCoverage: true, MirrorWinding: true));
             _mirrorPsoMap[OpaqueBackA2CPso] = mirrorA2C;
         }
         CompletePsoGroup("mirror", game, mirrorPsoGroup);
@@ -329,9 +345,18 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         _constructionTransaction = null;
         constructionSucceeded = true;
         }
-        catch
+        catch (Exception creationError)
         {
-            _constructionTransaction?.Dispose();
+            try
+            {
+                _constructionTransaction?.Dispose();
+            }
+            catch (Exception cleanupError)
+            {
+                throw new AggregateException(
+                    "Reference pipeline construction and rollback failed; unpublished owners cannot be retried by the caller.",
+                    creationError, cleanupError);
+            }
             _constructionTransaction = null;
             throw;
         }
@@ -590,6 +615,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     /// </summary>
     public ID3D12PipelineState GetDirectClassicSkinFactorOnePso(bool doubleSided)
     {
+        VerifyAccess();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!DirectClassicSkinRequested || !DirectClassicSkinAvailable ||
             _directClassicSkinVertexShader is null)
@@ -600,52 +626,70 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
         if (_directClassicSkinFactorOneBackPso is null || _directClassicSkinFactorOneDoublePso is null)
         {
-            CreateDirectClassicSkinFactorOnePipelines(_directClassicSkinVertexShader);
+            CreateDirectClassicSkinFactorOnePipelines(_directClassicSkinVertexShader.Value);
         }
 
         return (doubleSided ? _directClassicSkinFactorOneDoublePso : _directClassicSkinFactorOneBackPso)
             ?? throw new InvalidOperationException("The skin factor-one diagnostic pipeline is unavailable.");
     }
 
-    /// <summary>Exact ordinary skin vertex/PSO state with the requested independent-albedo pixel entry.</summary>
+    /// <summary>Returns the retained ordinary-skin state with the requested independent-albedo pixel entry.</summary>
+    /// <param name="doubleSided">Disables culling for the requested skin pipeline.</param>
+    /// <param name="factorOne">Uses the independent-albedo factor-one diagnostic pixel entry.</param>
+    /// <returns>A borrowed Shared-cached handle, with no compilation or native creation on a cache hit.</returns>
     internal ID3D12PipelineState GetDirectClassicSkinIndependentPso(bool doubleSided, bool factorOne)
     {
+        VerifyAccess();
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!DirectClassicSkinRequested || !DirectClassicSkinAvailable || _directClassicSkinVertexShader is null)
+        {
             throw new InvalidOperationException("Independent skin sampling requires the complete Oblivion skin pipeline.");
-        var key = (doubleSided, factorOne);
-        if (_independentSkinPipelines.TryGetValue(key, out var existing)) return existing;
-        var pixelShader = CompileEmbeddedShader(
-            factorOne ? "reference_classic_skin_independent_factor_one.frag.hlsl" : "reference_classic_skin_independent.frag.hlsl",
-            factorOne ? "mainIndependentFactorOne" : "mainIndependent", "ps_5_1");
-        var pipeline = CreatePipelineState(_directClassicSkinVertexShader, pixelShader, doubleSided,
-            blendAttachment: null, depthWriteEnabled: true);
-        try { _independentSkinPipelines.Add(key, pipeline); }
-        catch { pipeline.Dispose(); throw; }
-        return pipeline;
+        }
+        var key = (DoubleSided: doubleSided, FactorOne: factorOne);
+        return _independentSkinPipelines.GetOrCreate(key, (self: this, key), static (state, family) =>
+        {
+            var pixelShader = CompileEmbeddedShader(
+                state.key.FactorOne ? "reference_classic_skin_independent_factor_one.frag.hlsl" : "reference_classic_skin_independent.frag.hlsl",
+                state.key.FactorOne ? "mainIndependentFactorOne" : "mainIndependent", "ps_5_1");
+            return state.self.CreatePipelineState(family, 0,
+                state.self._directClassicSkinVertexShader!.Value, pixelShader,
+                new ReferencePipelineRenderState12(state.key.DoubleSided, null, DepthWriteEnabled: true));
+        });
     }
 
-    /// <summary>Ordinary TES4 eye overlay: ONE/ONE, depth test on, no depth write or stencil.</summary>
+    /// <summary>Returns the ordinary TES4 eye overlay: ONE/ONE blending, depth testing and no depth write or stencil.</summary>
+    /// <returns>A borrowed handle retained by its own Shared family.</returns>
     internal ID3D12PipelineState GetOblivionEyePso()
     {
+        VerifyAccess();
         ObjectDisposedException.ThrowIf(_disposed, this);
-        if (_oblivionEyePso is not null) return _oblivionEyePso;
-        var vertexShader = CompileEmbeddedShader("reference_oblivion_eye.vert.hlsl", "main", "vs_5_1");
-        var pixelShader = CompileEmbeddedShader("reference_oblivion_eye.frag.hlsl", "main", "ps_5_1");
-        var blend = new D12.RenderTargetBlendDescription
+        if (_oblivionEyePso is not null) { return _oblivionEyePso; }
+        var pipelineResources = RetainPipelineFamily(1);
+        var published = false;
+        try
         {
-            BlendEnable = true,
-            SourceBlend = D12.Blend.One,
-            DestinationBlend = D12.Blend.One,
-            BlendOperation = D12.BlendOperation.Add,
-            SourceBlendAlpha = D12.Blend.One,
-            DestinationBlendAlpha = D12.Blend.One,
-            BlendOperationAlpha = D12.BlendOperation.Add,
-            RenderTargetWriteMask = D12.ColorWriteEnable.All
-        };
-        _oblivionEyePso = CreatePipelineState(vertexShader, pixelShader, doubleSided: false,
-            blendAttachment: blend, depthWriteEnabled: false);
-        return _oblivionEyePso;
+            var vertexShader = CompileEmbeddedShader("reference_oblivion_eye.vert.hlsl", "main", "vs_5_1");
+            var pixelShader = CompileEmbeddedShader("reference_oblivion_eye.frag.hlsl", "main", "ps_5_1");
+            var blend = new D12.RenderTargetBlendDescription
+            {
+                BlendEnable = true,
+                SourceBlend = D12.Blend.One,
+                DestinationBlend = D12.Blend.One,
+                BlendOperation = D12.BlendOperation.Add,
+                SourceBlendAlpha = D12.Blend.One,
+                DestinationBlendAlpha = D12.Blend.One,
+                BlendOperationAlpha = D12.BlendOperation.Add,
+                RenderTargetWriteMask = D12.ColorWriteEnable.All
+            };
+            _oblivionEyePso = CreatePipelineState(pipelineResources, 0, vertexShader, pixelShader,
+                new ReferencePipelineRenderState12(DoubleSided: false, BlendAttachment: blend, DepthWriteEnabled: false));
+            published = true;
+            return _oblivionEyePso;
+        }
+        finally
+        {
+            if (!published) { ReleaseUnpublishedPipelineFamily(pipelineResources); }
+        }
     }
 
     /// <summary>Depth-only shadow-pass PSO for opaque batches (instanced VS, no pixel shader).</summary>
@@ -686,129 +730,147 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
     /// <summary>
     ///     Selects the per-game INSTANCED grass pair (the opaque cutout route FO3/FNV grass draws
-    ///     through). Call once per ESM load, before any draw. Compilation is deferred to the first
-    ///     grass draw and is FAIL-SOFT: on failure the shared instanced PSOs are used instead.
+    ///     through). Compilation is deferred to the first grass draw; shader compilation failure
+    ///     retains the shared instanced fallback. A failed previous cleanup is retried even when
+    ///     the requested profile matches the old profile.
     /// </summary>
+    /// <param name="profile">Shader pair selected by the game adapter.</param>
+    /// <remarks>Retire GPU users of the previous profile before calling this method on the creating thread.</remarks>
     public void SetInstancedGrassShaderProfile(GameShaderPair profile)
     {
-        if (profile.Equals(_instancedGrassProfile)) return;
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_instancedGrassProfileChangePending && profile.Equals(_instancedGrassProfile)) { return; }
 
+        _instancedGrassProfileChangePending = true;
         DisposeInstancedGrassPipelines();
         _instancedGrassProfile = profile;
         _instancedGrassCompileAttempted = false;
+        _instancedGrassProfileChangePending = false;
     }
 
-    /// <summary>True when the per-game instanced grass pair compiled and its PSOs are live.</summary>
+    /// <summary>True when the per-game instanced grass pair compiled and its complete family is live.</summary>
     public bool InstancedGrassShaderAvailable => EnsureInstancedGrassPipelines();
 
-    /// <summary>
-    ///     The PSO for an alpha-tested grass cutout submesh: the per-game instanced grass pair when
-    ///     one is available, else the shared A2C pipelines this route has always used. Both grass
-    ///     draw sites call this so the batch key (which includes the PSO) stays coherent.
-    /// </summary>
+    /// <summary>Returns the complete per-game grass cutout family, or the established shared A2C fallback.</summary>
+    /// <param name="doubleSided">Selects the culling-disabled member of the available family.</param>
+    /// <returns>A borrowed handle whose lifetime is enclosed by this factory and its current grass profile.</returns>
     public ID3D12PipelineState GetGrassCutoutPso(bool doubleSided)
     {
         if (EnsureInstancedGrassPipelines())
         {
             return doubleSided ? _grassOpaqueDoubleA2CPso! : _grassOpaqueBackA2CPso!;
         }
-
         return doubleSided ? OpaqueDoubleA2CPso : OpaqueBackA2CPso;
     }
 
+    /// <summary>Builds one retained instanced grass family and publishes borrowed fields only after every variant exists.</summary>
+    /// <returns>False for disabled or uncompiled profiles, retaining the ordinary instanced fallback.</returns>
     private bool EnsureInstancedGrassPipelines()
     {
-        if (_grassOpaqueBackA2CPso is not null) return true;
-        if (_instancedGrassCompileAttempted || !_instancedGrassProfile.Enabled) return false;
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_instancedGrassProfileChangePending) { return false; }
+        if (_grassOpaqueBackA2CPso is not null) { return true; }
+        if (_instancedGrassCompileAttempted || !_instancedGrassProfile.Enabled) { return false; }
 
+        var pipelineResources = RetainPipelineFamily(4);
         _instancedGrassCompileAttempted = true;
-        var plain = _instancedGrassProfile.TryCompile(
-            nameof(ReferencePipelineFactory12) + " instanced grass route", [], []);
-        if (plain is not ({ } vs, { } ps)) return false;
-
-        _grassOpaqueBackPso = CreatePipelineState(vs, ps, doubleSided: false, blendAttachment: null,
-            depthWriteEnabled: true);
-        _grassOpaqueDoublePso = CreatePipelineState(vs, ps, doubleSided: true, blendAttachment: null,
-            depthWriteEnabled: true);
-
-        if (!AlphaToCoverageAvailable)
+        _instancedGrassPipelineResources = pipelineResources;
+        var published = false;
+        try
         {
-            // Single-sampled scene: A2C aliases the plain variants exactly as the shared PSOs do,
-            // so grass keeps its per-game shader when MSAA is off instead of silently reverting.
-            _grassOpaqueBackA2CPso = _grassOpaqueBackPso;
-            _grassOpaqueDoubleA2CPso = _grassOpaqueDoublePso;
+            var plain = _instancedGrassProfile.TryCompile(
+                nameof(ReferencePipelineFactory12) + " instanced grass route", [], []);
+            if (plain is not ({ } vs, { } ps)) { return false; }
+
+            var back = CreatePipelineState(pipelineResources, 0, vs, ps,
+                new ReferencePipelineRenderState12(DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var doubleSided = CreatePipelineState(pipelineResources, 1, vs, ps,
+                new ReferencePipelineRenderState12(DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
+            var backA2C = back;
+            var doubleA2C = doubleSided;
+            if (AlphaToCoverageAvailable)
+            {
+                var a2c = _instancedGrassProfile.TryCompile(
+                    nameof(ReferencePipelineFactory12) + " instanced grass A2C route",
+                    [], [new ShaderMacro("ALPHA_TO_COVERAGE", "1")]);
+                if (a2c is not (_, { } a2cPs)) { return false; }
+                backA2C = CreatePipelineState(pipelineResources, 2, vs, a2cPs,
+                    new ReferencePipelineRenderState12(DoubleSided: false, BlendAttachment: null,
+                        DepthWriteEnabled: true, AlphaToCoverage: true));
+                doubleA2C = CreatePipelineState(pipelineResources, 3, vs, a2cPs,
+                    new ReferencePipelineRenderState12(DoubleSided: true, BlendAttachment: null,
+                        DepthWriteEnabled: true, AlphaToCoverage: true));
+            }
+
+            // Single-sample coverage handles alias the plain pair; the Shared owner still owns only two PSOs.
+            _grassOpaqueBackA2CPso = backA2C;
+            _grassOpaqueDoubleA2CPso = doubleA2C;
+            published = true;
             return true;
         }
-
-        var a2c = _instancedGrassProfile.TryCompile(
-            nameof(ReferencePipelineFactory12) + " instanced grass A2C route",
-            [],
-            [new ShaderMacro("ALPHA_TO_COVERAGE", "1")]);
-        if (a2c is not (_, { } a2cPs))
+        finally
         {
-            DisposeInstancedGrassPipelines();
-            return false;
+            if (!published)
+            {
+                ReleaseUnpublishedPipelineFamily(pipelineResources);
+                _instancedGrassPipelineResources = null;
+            }
         }
-
-        _grassOpaqueBackA2CPso = CreatePipelineState(vs, a2cPs, doubleSided: false, blendAttachment: null,
-            depthWriteEnabled: true, alphaToCoverage: true);
-        _grassOpaqueDoubleA2CPso = CreatePipelineState(vs, a2cPs, doubleSided: true, blendAttachment: null,
-            depthWriteEnabled: true, alphaToCoverage: true);
-        return true;
     }
 
+    /// <summary>Unpublishes the caller-retired grass family before releasing it; a failed owner remains reachable for retry.</summary>
+    /// <remarks>The caller must retire GPU work before replacing the profile. No fence is waited here.</remarks>
     private void DisposeInstancedGrassPipelines()
     {
-        // A2C aliases the plain PSOs when the scene is single-sampled — dispose each object once.
-        if (!ReferenceEquals(_grassOpaqueBackA2CPso, _grassOpaqueBackPso))
-        {
-            _grassOpaqueBackA2CPso?.Dispose();
-        }
-
-        if (!ReferenceEquals(_grassOpaqueDoubleA2CPso, _grassOpaqueDoublePso))
-        {
-            _grassOpaqueDoubleA2CPso?.Dispose();
-        }
-
-        _grassOpaqueBackPso?.Dispose();
-        _grassOpaqueDoublePso?.Dispose();
         _grassOpaqueBackA2CPso = null;
         _grassOpaqueDoubleA2CPso = null;
-        _grassOpaqueBackPso = null;
-        _grassOpaqueDoublePso = null;
+        if (_instancedGrassPipelineResources is not null)
+        {
+            ReleasePipelineFamily(_instancedGrassPipelineResources);
+            _instancedGrassPipelineResources = null;
+        }
+        RetryPendingPipelineRelease();
     }
 
+    /// <summary>Returns the route-local authored blend pipeline with depth writes disabled.</summary>
+    /// <param name="srcBlendMode">Unmodified source blend factor byte.</param>
+    /// <param name="dstBlendMode">Unmodified destination blend factor byte.</param>
+    /// <param name="doubleSided">Disables back-face culling.</param>
+    /// <param name="decal">Applies the established coplanar depth bias.</param>
+    /// <param name="grassRoute">Requests the active game-specific grass route.</param>
+    /// <param name="depthTestOff">Disables hardware depth testing.</param>
+    /// <param name="instancedGrass">Requests the instanced grass ABI when available.</param>
+    /// <returns>A borrowed cached pipeline, creating a Shared-owned family only on a miss.</returns>
     public ID3D12PipelineState GetBlendPipeline(
         byte srcBlendMode, byte dstBlendMode, bool doubleSided, bool decal = false, bool grassRoute = false,
         bool depthTestOff = false, bool instancedGrass = false)
     {
         var route = SelectBlendRoute(grassRoute, instancedGrass);
-        return route.GetOrCreate(
-            new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff),
-            depthWrite: false,
-            (self: this, srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff),
-            static (s, vs, ps) => s.self.CreateBlendPipelineState(
-                vs, ps, s.srcBlendMode, s.dstBlendMode, s.doubleSided, s.decal, depthWriteEnabled: false,
-                depthTestEnabled: !s.depthTestOff));
+        var key = new ReferenceBlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff);
+        return route.GetOrCreate(key, depthWrite: false, (self: this, key),
+            static (state, vs, ps, family) => state.self.CreateBlendPipelineState(
+                family, vs, ps, state.key, depthWriteEnabled: false));
     }
 
-    /// <summary>
-    ///     Depth-WRITING variant of <see cref="GetBlendPipeline" />: the same alpha blend, but it also
-    ///     writes depth. Used for effects-folder foliage the engine marks ZBuffer_Write (e.g. NVSeaPlant02).
-    ///     The renderer draws these inline BEFORE the water pass so the water surface occludes them from
-    ///     above — which a no-depth blend (drawn after water) can't do.
-    /// </summary>
+    /// <summary>Returns the route-local authored blend pipeline that also writes depth before water is drawn.</summary>
+    /// <param name="srcBlendMode">Unmodified source blend factor byte.</param>
+    /// <param name="dstBlendMode">Unmodified destination blend factor byte.</param>
+    /// <param name="doubleSided">Disables back-face culling.</param>
+    /// <param name="decal">Applies the established coplanar depth bias.</param>
+    /// <param name="grassRoute">Requests the active game-specific grass route.</param>
+    /// <param name="depthTestOff">Disables hardware depth testing.</param>
+    /// <param name="instancedGrass">Requests the instanced grass ABI when available.</param>
+    /// <returns>A borrowed cached pipeline distinct from its non-depth-writing counterpart.</returns>
     public ID3D12PipelineState GetBlendDepthWritePipeline(byte srcBlendMode, byte dstBlendMode, bool doubleSided,
         bool decal = false, bool grassRoute = false, bool depthTestOff = false, bool instancedGrass = false)
     {
         var route = SelectBlendRoute(grassRoute, instancedGrass);
-        return route.GetOrCreate(
-            new BlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff),
-            depthWrite: true,
-            (self: this, srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff),
-            static (s, vs, ps) => s.self.CreateBlendPipelineState(
-                vs, ps, s.srcBlendMode, s.dstBlendMode, s.doubleSided, s.decal, depthWriteEnabled: true,
-                depthTestEnabled: !s.depthTestOff));
+        var key = new ReferenceBlendPipelineKey(srcBlendMode, dstBlendMode, doubleSided, decal, depthTestOff);
+        return route.GetOrCreate(key, depthWrite: true, (self: this, key),
+            static (state, vs, ps, family) => state.self.CreateBlendPipelineState(
+                family, vs, ps, state.key, depthWriteEnabled: true));
     }
 
     /// <summary>
@@ -818,121 +880,70 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     ///     matrix out of AlphaState. Both fall back to the shared route when unavailable, so the
     ///     fallback stays structural and no call site branches.
     /// </summary>
-    private ShaderRoutePsos SelectBlendRoute(bool grassRoute, bool instancedGrass)
+    private ReferenceShaderRoute12 SelectBlendRoute(bool grassRoute, bool instancedGrass)
     {
         if (!grassRoute) return _sharedRoute;
         if (instancedGrass) return InstancedBlendGrassShaderAvailable ? _instancedGrassBlendRoute : _sharedRoute;
         return GrassShaderAvailable ? _grassRoute : _sharedRoute;
     }
 
-    /// <summary>
-    ///     The alpha-blend PSO recipe shared by both blend getters and every shader route: the
-    ///     authored src/dst colour blend, One/Max alpha accumulation, and the standard depth/decal
-    ///     handling from <see cref="CreatePipelineState" />.
-    /// </summary>
+    /// <summary>Creates one dynamic blend permutation in its already-retained slot-zero family.</summary>
+    /// <param name="pipelineResources">Shared cache entry owning the native allocation and root dependency.</param>
+    /// <param name="vsBytecode">Borrowed route vertex shader.</param>
+    /// <param name="psBytecode">Borrowed route pixel shader.</param>
+    /// <param name="key">Exact authored blend and draw-state identity.</param>
+    /// <param name="depthWriteEnabled">Whether this permutation writes scene depth.</param>
+    /// <returns>A borrowed native pipeline owned exclusively by the Shared cache entry.</returns>
     private ID3D12PipelineState CreateBlendPipelineState(
-        byte[] vsBytecode, byte[] psBytecode, byte srcBlendMode, byte dstBlendMode, bool doubleSided,
-        bool decal, bool depthWriteEnabled, bool depthTestEnabled = true)
+        ShaderPipelineResources pipelineResources,
+        ReadOnlyMemory<byte> vsBytecode,
+        ReadOnlyMemory<byte> psBytecode,
+        ReferenceBlendPipelineKey key,
+        bool depthWriteEnabled)
     {
-        var rtBlend = new D12.RenderTargetBlendDescription
-        {
-            BlendEnable = true,
-            SourceBlend = NifD3D12BlendMapper.ResolveBlendFactor(srcBlendMode),
-            DestinationBlend = NifD3D12BlendMapper.ResolveBlendFactor(dstBlendMode),
-            BlendOperation = D12.BlendOperation.Add,
-            SourceBlendAlpha = D12.Blend.One,
-            DestinationBlendAlpha = D12.Blend.One,
-            BlendOperationAlpha = D12.BlendOperation.Max,
-            RenderTargetWriteMask = D12.ColorWriteEnable.All
-        };
-
-        return CreatePipelineState(
-            vsBytecode, psBytecode, doubleSided, rtBlend, depthWriteEnabled, decal,
-            depthTestEnabled: depthTestEnabled);
+        var state = new ReferencePipelineRenderState12(
+            key.DoubleSided,
+            ReferencePipelineRecipe12.CreateBlendAttachment(key.SrcBlendMode, key.DstBlendMode),
+            depthWriteEnabled,
+            Decal: key.Decal,
+            DepthTestEnabled: !key.DepthTestOff);
+        var description = ReferencePipelineRecipe12.CreateGraphicsDescription(
+            pipelineResources.RootSignature, _gpu.SceneSampleCount, vsBytecode, psBytecode, state);
+        return CreateNativePipeline(description, pipelineResources);
     }
 
+    /// <summary>Creates one borrowed fixed-family pipeline with the production reference recipe.</summary>
+    /// <param name="pipelineResources">Retained Shared owner for this complete shader family.</param>
+    /// <param name="slot">Unique slot within that family.</param>
+    /// <param name="vsBytecode">Borrowed direct or instanced vertex bytecode.</param>
+    /// <param name="psBytecode">Borrowed game or material pixel bytecode.</param>
+    /// <param name="state">Exact culling, blending, depth, decal, coverage and winding configuration.</param>
+    /// <returns>A borrowed native handle that must not be released independently.</returns>
     private ID3D12PipelineState CreatePipelineState(
-        byte[] vsBytecode,
-        byte[] psBytecode,
-        bool doubleSided,
-        D12.RenderTargetBlendDescription? blendAttachment,
-        bool depthWriteEnabled,
-        bool decal = false,
-        bool alphaToCoverage = false,
-        bool depthTestEnabled = true,
-        bool mirrorWinding = false)
+        ShaderPipelineResources pipelineResources,
+        int slot,
+        ReadOnlyMemory<byte> vsBytecode,
+        ReadOnlyMemory<byte> psBytecode,
+        ReferencePipelineRenderState12 state)
     {
-        var rasterizer = new D12.RasterizerDescription
-        {
-            FillMode = D12.FillMode.Solid,
-            CullMode = doubleSided ? D12.CullMode.None : D12.CullMode.Back,
-            // A mirrored (negative-determinant) viewProj flips triangle orientation in screen
-            // space; the water-reflection replay uses winding-flipped twins of the back-culled
-            // opaque PSOs so single-sided geometry keeps its front faces in the mirror.
-            FrontCounterClockwise = !mirrorWinding,
-            DepthClipEnable = true,
-            // Antialias triangle edges on the multisampled scene RT (no-op when scene isn't MSAA).
-            MultisampleEnable = _gpu.SceneSampleCount > 1,
-        };
+        var description = ReferencePipelineRecipe12.CreateGraphicsDescription(
+            pipelineResources.RootSignature, _gpu.SceneSampleCount, vsBytecode, psBytecode, state);
+        return CreateNativePipeline(description, pipelineResources, slot);
+    }
 
-        if (decal)
-        {
-            // Decal overlays are authored coplanar with their backing surface; bias them TOWARD the
-            // camera so they win the depth tie. Reversed-Z (GreaterEqual, near→1) means "closer" is a
-            // LARGER depth value, so the bias is positive. Small relative to the navmesh overlay's
-            // 2000/2.0 — a decal must only clear its own backing wall, not float over nearby props.
-            rasterizer.DepthBias = 64;
-            rasterizer.DepthBiasClamp = 0f;
-            rasterizer.SlopeScaledDepthBias = 1f;
-        }
-
-        var depth = new D12.DepthStencilDescription
-        {
-            // NoLighting "zbuffer test" Shader Flags bit 31 CLEAR ⇒ test OFF (engine-honored for
-            // the NoLighting family only; every other route passes the default true).
-            DepthEnable = depthTestEnabled,
-            DepthWriteMask = depthWriteEnabled ? D12.DepthWriteMask.All : D12.DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunction.GreaterEqual, // reversed-Z (near→1, far→0); depth clear = 0
-            StencilEnable = false,
-        };
-
-        var blend = new D12.BlendDescription
-        {
-            AlphaToCoverageEnable = alphaToCoverage,
-            IndependentBlendEnable = false,
-        };
-        blend.RenderTarget[0] = blendAttachment ?? new D12.RenderTargetBlendDescription
-        {
-            BlendEnable = false,
-            SourceBlend = D12.Blend.One,
-            DestinationBlend = D12.Blend.Zero,
-            BlendOperation = D12.BlendOperation.Add,
-            SourceBlendAlpha = D12.Blend.One,
-            DestinationBlendAlpha = D12.Blend.Zero,
-            BlendOperationAlpha = D12.BlendOperation.Add,
-            RenderTargetWriteMask = D12.ColorWriteEnable.All,
-        };
-
-        var psoDesc = new GraphicsPipelineStateDescription
-        {
-            RootSignature = _rootSignature.RootSignature,
-            VertexShader = vsBytecode,
-            PixelShader = psBytecode,
-            BlendState = blend,
-            RasterizerState = rasterizer,
-            DepthStencilState = depth,
-            InputLayout = new InputLayoutDescription(GpuMeshBufferFactory12.InputElements),
-            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
-            RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.SceneColor },
-            DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription((uint)_gpu.SceneSampleCount, 0),
-            SampleMask = uint.MaxValue,
-        };
+    /// <summary>Measures one native graphics creation inside a retained Shared family.</summary>
+    /// <param name="description">Complete production graphics description.</param>
+    /// <param name="pipelineResources">Shared owner retained before this call.</param>
+    /// <param name="slot">Unoccupied family slot, or zero for a dynamic cache entry.</param>
+    /// <returns>The created borrowed handle.</returns>
+    private ID3D12PipelineState CreateNativePipeline(
+        GraphicsPipelineStateDescription description, ShaderPipelineResources pipelineResources, int slot = 0)
+    {
         var psoStarted = Stopwatch.GetTimestamp();
         var succeeded = false;
         try
         {
-            var pipeline = TrackConstructionPipeline(_gpu.Device.CreateGraphicsPipelineState(psoDesc));
+            var pipeline = pipelineResources.CreateGraphics(slot, description);
             succeeded = true;
             return pipeline;
         }
@@ -942,12 +953,14 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         }
     }
 
+    /// <summary>Publishes the complete optional Oblivion direct-skin pair or retains the ordinary fallback.</summary>
     private void TryCreateDirectClassicSkinPipelines()
     {
-        ID3D12PipelineState? back = null;
-        ID3D12PipelineState? doubleSided = null;
+        ShaderPipelineResources? pipelineResources = null;
+        var published = false;
         try
         {
+            pipelineResources = RetainPipelineFamily(2);
             // Only the TES4 FaceGen direct PSO receives the recovered centroid light/eye varyings.
             // The generic, FNV, modern and instanced vertex permutations retain their existing ABI.
             var vertexShader = CompileEmbeddedShader(
@@ -956,18 +969,17 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
             var pixelShader = CompileEmbeddedShader(
                 "reference_classic_skin.frag.hlsl", "main", "ps_5_1");
 
-            back = CreatePipelineState(
-                vertexShader, pixelShader, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true);
-            doubleSided = CreatePipelineState(
-                vertexShader, pixelShader, doubleSided: true, blendAttachment: null,
-                depthWriteEnabled: true);
+            var back = CreatePipelineState(pipelineResources, 0,
+                vertexShader, pixelShader, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var doubleSided = CreatePipelineState(pipelineResources, 1,
+                vertexShader, pixelShader, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
 
             _directClassicSkinBackPso = back;
             _directClassicSkinDoublePso = doubleSided;
             _directClassicSkinVertexShader = vertexShader;
-            back = null;
-            doubleSided = null;
+            published = true;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -977,46 +989,53 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         }
         finally
         {
-            DisposeAbandonedConstructionPipeline(ref doubleSided);
-            DisposeAbandonedConstructionPipeline(ref back);
+            if (!published && pipelineResources is not null)
+            {
+                ReleaseUnpublishedPipelineFamily(pipelineResources);
+            }
         }
     }
 
-    private void CreateDirectClassicSkinFactorOnePipelines(byte[] vertexShader)
+    /// <summary>Creates both culling variants of the classic-skin factor-one diagnostic from cached vertex bytecode.</summary>
+    /// <param name="vertexShader">Read-only vertex bytecode borrowed during native pipeline creation.</param>
+    private void CreateDirectClassicSkinFactorOnePipelines(ReadOnlyMemory<byte> vertexShader)
     {
-        ID3D12PipelineState? back = null;
-        ID3D12PipelineState? doubleSided = null;
+        ShaderPipelineResources? pipelineResources = null;
+        var published = false;
         try
         {
+            pipelineResources = RetainPipelineFamily(2);
             // Reuse the exact ordinary SKIN vertex bytecode and all ordinary PSO state. Only the
             // separately inventoried pixel entry replaces the final RGB lighting factor with one.
             var pixelShader = CompileEmbeddedShader(
                 "reference_classic_skin_factor_one.frag.hlsl", "mainFactorOne", "ps_5_1");
-            back = CreatePipelineState(
-                vertexShader, pixelShader, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true);
-            doubleSided = CreatePipelineState(
-                vertexShader, pixelShader, doubleSided: true, blendAttachment: null,
-                depthWriteEnabled: true);
+            var back = CreatePipelineState(pipelineResources, 0,
+                vertexShader, pixelShader, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var doubleSided = CreatePipelineState(pipelineResources, 1,
+                vertexShader, pixelShader, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
             _directClassicSkinFactorOneBackPso = back;
             _directClassicSkinFactorOneDoublePso = doubleSided;
-            back = null;
-            doubleSided = null;
+            published = true;
         }
         finally
         {
-            DisposeAbandonedConstructionPipeline(ref doubleSided);
-            DisposeAbandonedConstructionPipeline(ref back);
+            if (!published && pipelineResources is not null)
+            {
+                ReleaseUnpublishedPipelineFamily(pipelineResources);
+            }
         }
     }
 
+    /// <summary>Publishes the complete optional instanced Fallout family or retains the ordinary fallback.</summary>
     private void TryCreateModernStandardOpaquePipelines()
     {
-        ID3D12PipelineState? back = null;
-        ID3D12PipelineState? backCutout = null;
-        ID3D12PipelineState? doubleCutout = null;
+        ShaderPipelineResources? pipelineResources = null;
+        var published = false;
         try
         {
+            pipelineResources = RetainPipelineFamily(3);
             // FXC assigns physical stage-link registers densely. Compile the instanced VS with
             // the same family/alpha axes as its PS so their sparse TEXCOORD semantics land on
             // identical hardware registers; a generic VS cannot link to these compact PS inputs.
@@ -1040,22 +1059,20 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
                 new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"),
                 new ShaderMacro("REFERENCE_MODERN_STANDARD_DOUBLE_SIDED", "1"));
 
-            back = CreatePipelineState(
-                backVs, backPs, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true);
-            backCutout = CreatePipelineState(
-                cutoutVs, backCutoutPs, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true);
-            doubleCutout = CreatePipelineState(
-                cutoutVs, doubleCutoutPs, doubleSided: true, blendAttachment: null,
-                depthWriteEnabled: true);
+            var back = CreatePipelineState(pipelineResources, 0,
+                backVs, backPs, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var backCutout = CreatePipelineState(pipelineResources, 1,
+                cutoutVs, backCutoutPs, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var doubleCutout = CreatePipelineState(pipelineResources, 2,
+                cutoutVs, doubleCutoutPs, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
 
             _modernStandardBackPso = back;
             _modernStandardBackCutoutPso = backCutout;
             _modernStandardDoubleCutoutPso = doubleCutout;
-            back = null;
-            backCutout = null;
-            doubleCutout = null;
+            published = true;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -1065,20 +1082,21 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         }
         finally
         {
-            DisposeAbandonedConstructionPipeline(ref doubleCutout);
-            DisposeAbandonedConstructionPipeline(ref backCutout);
-            DisposeAbandonedConstructionPipeline(ref back);
+            if (!published && pipelineResources is not null)
+            {
+                ReleaseUnpublishedPipelineFamily(pipelineResources);
+            }
         }
     }
 
+    /// <summary>Publishes the complete optional instanced Starfield family or retains the ordinary fallback.</summary>
     private void TryCreateStarfieldDiffuseLitPipelines()
     {
-        ID3D12PipelineState? back = null;
-        ID3D12PipelineState? doubleSided = null;
-        ID3D12PipelineState? backCutout = null;
-        ID3D12PipelineState? doubleCutout = null;
+        ShaderPipelineResources? pipelineResources = null;
+        var published = false;
         try
         {
+            pipelineResources = RetainPipelineFamily(4);
             var backVs = CompileEmbeddedShader(
                 "reference_instanced.vert.hlsl", "main", "vs_5_1",
                 new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"));
@@ -1103,27 +1121,24 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
                 new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"),
                 new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED", "1"));
 
-            back = CreatePipelineState(
-                backVs, backPs, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true);
-            doubleSided = CreatePipelineState(
-                backVs, doublePs, doubleSided: true, blendAttachment: null,
-                depthWriteEnabled: true);
-            backCutout = CreatePipelineState(
-                cutoutVs, backCutoutPs, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true);
-            doubleCutout = CreatePipelineState(
-                cutoutVs, doubleCutoutPs, doubleSided: true, blendAttachment: null,
-                depthWriteEnabled: true);
+            var back = CreatePipelineState(pipelineResources, 0,
+                backVs, backPs, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var doubleSided = CreatePipelineState(pipelineResources, 1,
+                backVs, doublePs, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
+            var backCutout = CreatePipelineState(pipelineResources, 2,
+                cutoutVs, backCutoutPs, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var doubleCutout = CreatePipelineState(pipelineResources, 3,
+                cutoutVs, doubleCutoutPs, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
 
             _starfieldDiffuseLitBackPso = back;
             _starfieldDiffuseLitDoublePso = doubleSided;
             _starfieldDiffuseLitBackCutoutPso = backCutout;
             _starfieldDiffuseLitDoubleCutoutPso = doubleCutout;
-            back = null;
-            doubleSided = null;
-            backCutout = null;
-            doubleCutout = null;
+            published = true;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -1133,20 +1148,21 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         }
         finally
         {
-            DisposeAbandonedConstructionPipeline(ref doubleCutout);
-            DisposeAbandonedConstructionPipeline(ref backCutout);
-            DisposeAbandonedConstructionPipeline(ref doubleSided);
-            DisposeAbandonedConstructionPipeline(ref back);
+            if (!published && pipelineResources is not null)
+            {
+                ReleaseUnpublishedPipelineFamily(pipelineResources);
+            }
         }
     }
 
+    /// <summary>Publishes the complete optional direct Fallout family without crossing the instanced shader ABI.</summary>
     private void TryCreateDirectModernStandardOpaquePipelines()
     {
-        ID3D12PipelineState? back = null;
-        ID3D12PipelineState? backCutout = null;
-        ID3D12PipelineState? doubleCutout = null;
+        ShaderPipelineResources? pipelineResources = null;
+        var published = false;
         try
         {
+            pipelineResources = RetainPipelineFamily(3);
             // Compile the per-draw VS with the same family/alpha macros as the compact PS. This is
             // deliberately reference.vert.hlsl, never an alias of the t8/SV_InstanceID ABI.
             var backVs = CompileEmbeddedShader(
@@ -1169,24 +1185,22 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
                 new ShaderMacro("REFERENCE_MODERN_STANDARD_ALPHA_GREATER", "1"),
                 new ShaderMacro("REFERENCE_MODERN_STANDARD_DOUBLE_SIDED", "1"));
 
-            back = CreatePipelineState(
-                backVs, backPs, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true);
-            backCutout = CreatePipelineState(
-                cutoutVs, backCutoutPs, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true);
-            doubleCutout = CreatePipelineState(
-                cutoutVs, doubleCutoutPs, doubleSided: true, blendAttachment: null,
-                depthWriteEnabled: true);
+            var back = CreatePipelineState(pipelineResources, 0,
+                backVs, backPs, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var backCutout = CreatePipelineState(pipelineResources, 1,
+                cutoutVs, backCutoutPs, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var doubleCutout = CreatePipelineState(pipelineResources, 2,
+                cutoutVs, doubleCutoutPs, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
 
             // Publish only after the complete direct family exists. A partially-created family is
-            // never observable, and its tracked PSOs are synchronously abandoned in finally.
+            // never observable; finally releases its retained owner or preserves pending cleanup.
             _directModernStandardBackPso = back;
             _directModernStandardBackCutoutPso = backCutout;
             _directModernStandardDoubleCutoutPso = doubleCutout;
-            back = null;
-            backCutout = null;
-            doubleCutout = null;
+            published = true;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -1196,20 +1210,21 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         }
         finally
         {
-            DisposeAbandonedConstructionPipeline(ref doubleCutout);
-            DisposeAbandonedConstructionPipeline(ref backCutout);
-            DisposeAbandonedConstructionPipeline(ref back);
+            if (!published && pipelineResources is not null)
+            {
+                ReleaseUnpublishedPipelineFamily(pipelineResources);
+            }
         }
     }
 
+    /// <summary>Publishes the complete optional direct Starfield family without crossing the instanced shader ABI.</summary>
     private void TryCreateDirectStarfieldDiffuseLitPipelines()
     {
-        ID3D12PipelineState? back = null;
-        ID3D12PipelineState? doubleSided = null;
-        ID3D12PipelineState? backCutout = null;
-        ID3D12PipelineState? doubleCutout = null;
+        ShaderPipelineResources? pipelineResources = null;
+        var published = false;
         try
         {
+            pipelineResources = RetainPipelineFamily(4);
             var backVs = CompileEmbeddedShader(
                 "reference.vert.hlsl", "main", "vs_5_1",
                 new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT", "1"));
@@ -1234,27 +1249,24 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
                 new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_ALPHA_GREATER", "1"),
                 new ShaderMacro("REFERENCE_STARFIELD_DIFFUSE_LIT_DOUBLE_SIDED", "1"));
 
-            back = CreatePipelineState(
-                backVs, backPs, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true);
-            doubleSided = CreatePipelineState(
-                backVs, doublePs, doubleSided: true, blendAttachment: null,
-                depthWriteEnabled: true);
-            backCutout = CreatePipelineState(
-                cutoutVs, backCutoutPs, doubleSided: false, blendAttachment: null,
-                depthWriteEnabled: true);
-            doubleCutout = CreatePipelineState(
-                cutoutVs, doubleCutoutPs, doubleSided: true, blendAttachment: null,
-                depthWriteEnabled: true);
+            var back = CreatePipelineState(pipelineResources, 0,
+                backVs, backPs, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var doubleSided = CreatePipelineState(pipelineResources, 1,
+                backVs, doublePs, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
+            var backCutout = CreatePipelineState(pipelineResources, 2,
+                cutoutVs, backCutoutPs, new ReferencePipelineRenderState12(
+                    DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));
+            var doubleCutout = CreatePipelineState(pipelineResources, 3,
+                cutoutVs, doubleCutoutPs, new ReferencePipelineRenderState12(
+                    DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));
 
             _directStarfieldDiffuseLitBackPso = back;
             _directStarfieldDiffuseLitDoublePso = doubleSided;
             _directStarfieldDiffuseLitBackCutoutPso = backCutout;
             _directStarfieldDiffuseLitDoubleCutoutPso = doubleCutout;
-            back = null;
-            doubleSided = null;
-            backCutout = null;
-            doubleCutout = null;
+            published = true;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -1264,10 +1276,10 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         }
         finally
         {
-            DisposeAbandonedConstructionPipeline(ref doubleCutout);
-            DisposeAbandonedConstructionPipeline(ref backCutout);
-            DisposeAbandonedConstructionPipeline(ref doubleSided);
-            DisposeAbandonedConstructionPipeline(ref back);
+            if (!published && pipelineResources is not null)
+            {
+                ReleaseUnpublishedPipelineFamily(pipelineResources);
+            }
         }
     }
 
@@ -1278,7 +1290,14 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
     ///     rasterizer depth bias — reversed-Z stores larger values nearer the light, so pushing
     ///     the stored depth away from the light (the acne fix) means biasing it SMALLER.
     /// </summary>
-    private ID3D12PipelineState CreateShadowPipelineState(byte[] vsBytecode, byte[]? psBytecode)
+    /// <param name="pipelineResources">Retained mandatory family that owns both shadow variants.</param>
+    /// <param name="slot">Distinct mandatory-family slot for this shadow pipeline.</param>
+    /// <param name="vsBytecode">Instanced shadow-card vertex bytecode.</param>
+    /// <param name="psBytecode">Alpha-test pixel bytecode, or null for opaque depth-only output.</param>
+    /// <returns>A borrowed single-sampled depth pipeline with the established reversed-Z bias.</returns>
+    private ID3D12PipelineState CreateShadowPipelineState(
+        ShaderPipelineResources pipelineResources, int slot,
+        ReadOnlyMemory<byte> vsBytecode, ReadOnlyMemory<byte>? psBytecode)
     {
         var rasterizer = new D12.RasterizerDescription
         {
@@ -1301,9 +1320,9 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
 
         var psoDesc = new GraphicsPipelineStateDescription
         {
-            RootSignature = _rootSignature.RootSignature,
+            RootSignature = pipelineResources.RootSignature,
             VertexShader = vsBytecode,
-            PixelShader = psBytecode,
+            PixelShader = psBytecode ?? ReadOnlyMemory<byte>.Empty,
             BlendState = D12.BlendDescription.Opaque,
             RasterizerState = rasterizer,
             DepthStencilState = depth,
@@ -1318,7 +1337,7 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         var succeeded = false;
         try
         {
-            var pipeline = TrackConstructionPipeline(_gpu.Device.CreateGraphicsPipelineState(psoDesc));
+            var pipeline = pipelineResources.CreateGraphics(slot, psoDesc);
             succeeded = true;
             return pipeline;
         }
@@ -1392,243 +1411,118 @@ internal sealed class ReferencePipelineFactory12 : IDisposable
         });
     }
 
-    private ID3D12PipelineState TrackConstructionPipeline(ID3D12PipelineState pipeline)
+    /// <summary>Retains a partially initialized route owner before any native pipeline can be created.</summary>
+    /// <param name="resource">Managed route whose future cache entries own their native allocations.</param>
+    /// <returns>The same resource for assignment to the factory field.</returns>
+    private T TrackConstructionResource<T>(T resource) where T : IDisposable
     {
-        _constructionTransaction?.Track(pipeline);
-        return pipeline;
+        _constructionTransaction?.Track(resource);
+        return resource;
     }
 
-    private void DisposeAbandonedConstructionPipeline(ref ID3D12PipelineState? pipeline)
+    /// <summary>Retains an independent Shared family before shader compilation or native pipeline creation.</summary>
+    /// <param name="capacity">Maximum number of native pipelines in this complete family.</param>
+    /// <returns>A retained owner initialized against the existing world root.</returns>
+    /// <remarks>Pending unpublished cleanup must succeed before another family can be allocated.</remarks>
+    private ShaderPipelineResources RetainPipelineFamily(int capacity)
     {
-        if (pipeline is null)
+        RetryPendingPipelineRelease();
+        _pipelineFamilies.EnsureCapacity(_pipelineFamilies.Count + 1);
+        _constructionTransaction?.Reserve();
+        var pipelineResources = _rootSignature.CreatePipelineResources(capacity);
+        _pipelineFamilies.Add(pipelineResources);
+        _constructionTransaction?.Track(pipelineResources);
+        return pipelineResources;
+    }
+
+    /// <summary>Releases a retired or unpublished family, removing ownership only after successful cleanup.</summary>
+    /// <param name="pipelineResources">Retained owner whose native users have already retired.</param>
+    private void ReleasePipelineFamily(ShaderPipelineResources pipelineResources)
+    {
+        pipelineResources.Dispose();
+        _constructionTransaction?.Forget(pipelineResources);
+        _pipelineFamilies.Remove(pipelineResources);
+    }
+
+    /// <summary>Attempts unpublished cleanup without hiding the original creation failure or losing its owner.</summary>
+    /// <param name="pipelineResources">Incomplete family that has never been used by a command list.</param>
+    /// <remarks>A failed release is retried before new family creation and by final disposal.</remarks>
+    private void ReleaseUnpublishedPipelineFamily(ShaderPipelineResources pipelineResources)
+    {
+        _pendingPipelineRelease = pipelineResources;
+        try
         {
-            return;
+            RetryPendingPipelineRelease();
         }
-
-        _constructionTransaction?.Forget(pipeline);
-        pipeline.Dispose();
-        pipeline = null;
+        catch (Exception cleanupError) when (cleanupError is not OutOfMemoryException)
+        {
+            BethesdaMultitool.Core.Diagnostics.Logger.Instance.Warn(
+                "ReferencePipelineFactory12: unpublished pipeline cleanup remains pending: {0}", cleanupError.Message);
+        }
     }
 
-    /// <summary>
-    ///     Forwards to the one shared compiler. This used to be a private copy — one of a dozen that
-    ///     had drifted apart on flags and resource lookup; see <see cref="GpuShaderCompiler12" />.
-    /// </summary>
-    private static byte[] CompileEmbeddedShader(
+    /// <summary>Retries the retained unpublished family before permitting another native family allocation.</summary>
+    private void RetryPendingPipelineRelease()
+    {
+        if (_pendingPipelineRelease is null) { return; }
+        ReleasePipelineFamily(_pendingPipelineRelease);
+        _pendingPipelineRelease = null;
+    }
+
+    /// <summary>Gets an embedded shader permutation through the application cache and Shared compiler.</summary>
+    /// <param name="name">Embedded shader file name.</param>
+    /// <param name="entryPoint">HLSL entry point.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <param name="macros">Definitions selecting the shader permutation.</param>
+    /// <returns>Read-only cached DXBC passed directly to native pipeline creation without a payload copy.</returns>
+    private static ReadOnlyMemory<byte> CompileEmbeddedShader(
         string name, string entryPoint, string profile, params ShaderMacro[] macros) =>
         GpuShaderCompiler12.Compile(name, entryPoint, profile, macros);
 
+    /// <summary>Releases caller-retired fixed pipelines and Shared route caches, retaining failed actions for retry.</summary>
+    /// <remarks>Only family owners are released; borrowed aliases are never disposed. This method does not establish GPU retirement.</remarks>
+    /// <exception cref="InvalidOperationException">Called from another managed thread.</exception>
+    /// <exception cref="AggregateException">One or more releases remain pending.</exception>
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _sharedRoute.DisposeAll();
-        _grassRoute.DisposeAll();
-        _instancedGrassBlendRoute.DisposeAll();
-        DisposeInstancedGrassPipelines();
-        foreach (var mirror in _ownedMirrorPsos)
+        VerifyAccess();
+        if (!_disposed)
         {
-            mirror.Dispose();
+            _retiredResources = PrepareRetiredResources();
+            _disposed = true;
         }
-        _ownedMirrorPsos.Clear();
-        _directClassicSkinFactorOneDoublePso?.Dispose();
-        foreach (var pipeline in _independentSkinPipelines.Values) pipeline.Dispose();
-        _independentSkinPipelines.Clear();
-        _oblivionEyePso?.Dispose();
-        _oblivionEyePso = null;
-        _directClassicSkinFactorOneBackPso?.Dispose();
+        _retiredResources!.Dispose();
+        _pipelineFamilies.Clear();
+        _pendingPipelineRelease = null;
+        _instancedGrassPipelineResources = null;
         _directClassicSkinVertexShader = null;
-        _directClassicSkinDoublePso?.Dispose();
-        _directClassicSkinBackPso?.Dispose();
-        _directStarfieldDiffuseLitDoubleCutoutPso?.Dispose();
-        _directStarfieldDiffuseLitBackCutoutPso?.Dispose();
-        _directStarfieldDiffuseLitDoublePso?.Dispose();
-        _directStarfieldDiffuseLitBackPso?.Dispose();
-        _directModernStandardDoubleCutoutPso?.Dispose();
-        _directModernStandardBackCutoutPso?.Dispose();
-        _directModernStandardBackPso?.Dispose();
-        _starfieldDiffuseLitDoubleCutoutPso?.Dispose();
-        _starfieldDiffuseLitBackCutoutPso?.Dispose();
-        _starfieldDiffuseLitDoublePso?.Dispose();
-        _starfieldDiffuseLitBackPso?.Dispose();
-        _modernStandardDoubleCutoutPso?.Dispose();
-        _modernStandardBackCutoutPso?.Dispose();
-        _modernStandardBackPso?.Dispose();
-        ShadowAlphaTestPso.Dispose();
-        ShadowOpaquePso.Dispose();
-        if (AlphaToCoverageAvailable)
-        {
-            // Distinct variants only — when MSAA is off these alias the plain opaque PSOs below.
-            OpaqueDoubleA2CPso.Dispose();
-            OpaqueBackA2CPso.Dispose();
-            DirectOpaqueDoubleA2CPso.Dispose();
-            DirectOpaqueBackA2CPso.Dispose();
-            DirectOpaqueDoubleDecalA2CPso.Dispose();
-            DirectOpaqueBackDecalA2CPso.Dispose();
-            DirectOpaqueDoubleNoDepthA2CPso.Dispose();
-            DirectOpaqueBackNoDepthA2CPso.Dispose();
-            DirectOpaqueDoubleDecalNoDepthA2CPso.Dispose();
-            DirectOpaqueBackDecalNoDepthA2CPso.Dispose();
-        }
-        OpaqueDoubleDecalPso.Dispose();
-        OpaqueBackDecalPso.Dispose();
-        OpaqueDoublePso.Dispose();
-        OpaqueBackPso.Dispose();
-        DirectOpaqueDoubleDecalPso.Dispose();
-        DirectOpaqueBackDecalPso.Dispose();
-        DirectOpaqueDoublePso.Dispose();
-        DirectOpaqueBackPso.Dispose();
-        DirectOpaqueDoubleDecalNoDepthPso.Dispose();
-        DirectOpaqueBackDecalNoDepthPso.Dispose();
-        DirectOpaqueDoubleNoDepthPso.Dispose();
-        DirectOpaqueBackNoDepthPso.Dispose();
+        _oblivionEyePso = null;
     }
 
-    private sealed class PipelineConstructionTransaction : IDisposable
+    /// <summary>Registers route caches and retained Shared families, including incomplete families with pending cleanup.</summary>
+    /// <returns>A retained collection that independently retries failed child releases.</returns>
+    private RetiredResourceDisposal PrepareRetiredResources()
     {
-        private readonly List<ID3D12PipelineState> _creationOrder = new(48);
-        private readonly HashSet<ID3D12PipelineState> _owned =
-            new(48, ReferenceEqualityComparer.Instance);
-
-        internal void Track(ID3D12PipelineState pipeline)
+        var retired = new RetiredResourceDisposal();
+        retired.Add(_sharedRoute, "shared reference blend route");
+        retired.Add(_grassRoute, "direct grass blend route");
+        retired.Add(_instancedGrassBlendRoute, "instanced grass blend route");
+        retired.Add(_independentSkinPipelines, "independent classic-skin pipelines");
+        for (var index = _pipelineFamilies.Count - 1; index >= 0; index--)
         {
-            if (_owned.Add(pipeline))
-            {
-                _creationOrder.Add(pipeline);
-            }
+            retired.Add(_pipelineFamilies[index], "reference pipeline family");
         }
-
-        internal void Forget(ID3D12PipelineState pipeline)
-        {
-            _owned.Remove(pipeline);
-        }
-
-        internal void Commit()
-        {
-            _owned.Clear();
-            _creationOrder.Clear();
-        }
-
-        public void Dispose()
-        {
-            for (var index = _creationOrder.Count - 1; index >= 0; index--)
-            {
-                var pipeline = _creationOrder[index];
-                if (_owned.Remove(pipeline))
-                {
-                    pipeline.Dispose();
-                }
-            }
-
-            _creationOrder.Clear();
-        }
+        return retired;
     }
 
-    private readonly record struct BlendPipelineKey(
-        byte SrcBlendMode, byte DstBlendMode, bool DoubleSided, bool Decal, bool DepthTestOff = false);
-
-    /// <summary>
-    ///     One blend shader route: a vertex+pixel bytecode pair plus its OWN blend and
-    ///     depth-writing-blend PSO caches. The shared reference pair is the always-active route; a
-    ///     per-game <see cref="GameShaderPair" /> (grass is pair #1) becomes a route that is active
-    ///     only while its shaders compiled. Routes never share a cache: the
-    ///     <see cref="BlendPipelineKey" />s are identical between routes — only the shaders differ —
-    ///     so one cache would hand back another route's pipeline after the first draw.
-    /// </summary>
-    private sealed class ShaderRoutePsos
+    /// <summary>Rejects cross-thread lifetime changes before native ownership or stopped state can mutate.</summary>
+    /// <exception cref="InvalidOperationException">Called from a thread other than the creating thread.</exception>
+    private void VerifyAccess()
     {
-        private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendPsos = new();
-        private readonly Dictionary<BlendPipelineKey, ID3D12PipelineState> _blendDepthWritePsos = new();
-        private GameShaderPair _profile;
-        private byte[]? _vsBytecode;
-        private byte[]? _psBytecode;
-
-        /// <summary>A per-game route: inactive (= shared path) until <see cref="Set" /> compiles a pair.</summary>
-        public ShaderRoutePsos()
+        if (Environment.CurrentManagedThreadId != _ownerThreadId)
         {
-        }
-
-        /// <summary>The always-active route over the pre-compiled shared shaders.</summary>
-        public ShaderRoutePsos(byte[] vsBytecode, byte[] psBytecode)
-        {
-            _vsBytecode = vsBytecode;
-            _psBytecode = psBytecode;
-        }
-
-        /// <summary>True when this route's shaders are available to draw with.</summary>
-        public bool Active => _vsBytecode is not null && _psBytecode is not null;
-
-        /// <summary>
-        ///     Selects this route's shader pair, compiling it on first use. A no-op when the profile
-        ///     is unchanged; a change drops the bytecode and every cached PSO. FAIL-SOFT on a compile
-        ///     failure (<see cref="GameShaderPair.TryCompile(string)" /> logs and returns null): the route
-        ///     goes inactive so callers keep the shared shaders, and the stored profile resets so a
-        ///     later Set of the same pair retries the compile instead of no-oping on the equality
-        ///     check.
-        /// </summary>
-        /// <param name="vsMacros">
-        ///     Preprocessor defines for the VERTEX stage only — how one shader text serves two ABIs
-        ///     (see GRASS_INSTANCED in reference_grass_oblivion.vert.hlsl). The pixel stage is shared
-        ///     between the variants, so it deliberately takes none.
-        /// </param>
-        public void Set(GameShaderPair profile, string consumerName, ShaderMacro[]? vsMacros = null)
-        {
-            if (profile.Equals(_profile)) return;
-
-            _profile = profile;
-            _vsBytecode = null;
-            _psBytecode = null;
-            DisposeAll();
-
-            if (!profile.Enabled) return;
-
-            var compiled = vsMacros is { Length: > 0 }
-                ? profile.TryCompile(consumerName, vsMacros, [])
-                : profile.TryCompile(consumerName);
-            if (compiled is null)
-            {
-                _profile = default;
-                return;
-            }
-
-            (_vsBytecode, _psBytecode) = compiled.Value;
-        }
-
-        /// <summary>
-        ///     Route-local PSO lookup; builds via <paramref name="create" /> (handed this route's
-        ///     bytecode) on first miss. <paramref name="state" /> keeps call sites closure-free —
-        ///     this runs per blended draw, so a capturing lambda would allocate every frame.
-        /// </summary>
-        public ID3D12PipelineState GetOrCreate<TState>(
-            BlendPipelineKey key,
-            bool depthWrite,
-            TState state,
-            Func<TState, byte[], byte[], ID3D12PipelineState> create)
-        {
-            var cache = depthWrite ? _blendDepthWritePsos : _blendPsos;
-            if (cache.TryGetValue(key, out var existing))
-            {
-                return existing;
-            }
-
-            var pso = create(state, _vsBytecode!, _psBytecode!);
-            cache[key] = pso;
-            return pso;
-        }
-
-        public void DisposeAll()
-        {
-            foreach (var pso in _blendPsos.Values)
-            {
-                pso.Dispose();
-            }
-            _blendPsos.Clear();
-            foreach (var pso in _blendDepthWritePsos.Values)
-            {
-                pso.Dispose();
-            }
-            _blendDepthWritePsos.Clear();
+            throw new InvalidOperationException("Reference pipelines must be accessed on their creating thread.");
         }
     }
+
 }
-#endif

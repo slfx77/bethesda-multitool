@@ -1,5 +1,6 @@
 #if WINDOWS_GUI
 using System.Numerics;
+using Slfx77.Multitool.Core.Lifetime;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -22,7 +23,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.Animation;
 ///         stale override must never survive.
 ///     </para>
 /// </summary>
-internal sealed class CpuMeshSkinner12
+internal sealed class CpuMeshSkinner12 : IDisposable
 {
     // Budget gates (env-tunable). Overflow → the mesh simply draws its static rest pose.
     private static readonly int MaxAnimatedMeshes = ReadEnvInt("FALLOUT_VIEWER_ANIM_MAX_MESHES", 32);
@@ -37,31 +38,10 @@ internal sealed class CpuMeshSkinner12
     // rebuild and snapping back to rest whenever the scene settled.
     private const int ResolvePassGrace = 2;
 
-    private sealed class Entry
-    {
-        public required CachedNifMesh12 Mesh;
-
-        /// <summary>Nearest instance distance² from the LAST COMPLETE sighting — drives the radius
-        /// gate and nearest-first priority. Never decays in place: it is replaced wholesale from
-        /// <see cref="PendingDistanceSq" /> when a resolve pass re-sights the mesh, so it stays
-        /// valid across arbitrarily long frozen (batch-reuse) streaks where Register cannot run.</summary>
-        public float NearestDistanceSq;
-
-        /// <summary>Min-accumulator for the CURRENT resolve pass's Register calls; consumed (and
-        /// reset) by the same frame's Tick. Register runs BEFORE Tick within a frame, so decaying
-        /// <see cref="NearestDistanceSq" /> directly in Tick erased the refresh it had just
-        /// received — every frozen streak then saw MaxValue and the radius gate stopped playback
-        /// the moment the camera parked (the "only animates while the camera moves" report).</summary>
-        public float PendingDistanceSq = float.MaxValue;
-
-        public long LastSeenResolvePass;
-        public Matrix4x4[] BoneWorlds = [];
-        public Matrix4x4[] SkinMatrices = [];
-    }
-
-    private readonly Dictionary<CachedNifMesh12, Entry> _entries = new();
-    private readonly List<Entry> _tickScratch = new();
+    private readonly Dictionary<CachedNifMesh12, CpuMeshSkinnerEntry12> _entries = new();
+    private readonly List<CpuMeshSkinnerEntry12> _tickScratch = new();
     private long _resolvePassCounter;
+    private readonly RetiredResourceDisposal _retiredEntries = new();
 
     /// <summary>True when any submesh carries a fresh animated VBV this frame — the host ORs this
     /// into its shadow-refresh condition (same contract as the wind-leaves flag).</summary>
@@ -74,7 +54,7 @@ internal sealed class CpuMeshSkinner12
     /// </summary>
     public void Register(CachedNifMesh12 mesh, float nearestDistanceSq)
     {
-        if (mesh.Animation is null)
+        if (mesh.IsDisposed || mesh.Animation is null)
         {
             return;
         }
@@ -101,14 +81,9 @@ internal sealed class CpuMeshSkinner12
             return; // rig without skinnable submeshes — nothing to pose
         }
 
-        _entries[mesh] = new Entry
-        {
-            Mesh = mesh,
-            NearestDistanceSq = nearestDistanceSq,
-            LastSeenResolvePass = _resolvePassCounter,
-            BoneWorlds = new Matrix4x4[boneCount],
-            SkinMatrices = new Matrix4x4[maxSkinBones],
-        };
+        entry = new CpuMeshSkinnerEntry12(mesh, nearestDistanceSq, _resolvePassCounter, boneCount, maxSkinBones);
+        try { _entries.Add(mesh, entry); }
+        catch { entry.Dispose(); throw; }
     }
 
     /// <summary>
@@ -128,6 +103,7 @@ internal sealed class CpuMeshSkinner12
         }
 
         AnyAnimatedThisFrame = false;
+        _retiredEntries.Dispose();
 
         if (_entries.Count == 0)
         {
@@ -161,7 +137,7 @@ internal sealed class CpuMeshSkinner12
                 entry.PendingDistanceSq = float.MaxValue;
             }
 
-            if (_resolvePassCounter - entry.LastSeenResolvePass > ResolvePassGrace)
+            if (entry.Mesh.IsDisposed || _resolvePassCounter - entry.LastSeenResolvePass > ResolvePassGrace)
             {
                 (expired ??= []).Add(entry.Mesh);
                 continue;
@@ -174,10 +150,12 @@ internal sealed class CpuMeshSkinner12
         {
             foreach (var mesh in expired)
             {
+                _retiredEntries.Add(_entries[mesh], "expired mesh animation residency");
                 _entries.Remove(mesh);
             }
         }
 
+        _retiredEntries.Dispose();
         if (!enabled || _tickScratch.Count == 0)
         {
             return;
@@ -204,8 +182,27 @@ internal sealed class CpuMeshSkinner12
         }
     }
 
-    private static bool SkinMesh(Entry entry, int frameIndex, GpuRingBuffer12 ring, double clockSeconds, ref int vertexBudget)
+    /// <summary>Clears all frame-local overrides and returns grace-period residency, retaining failed returns.</summary>
+    public void Clear()
     {
+        AnyAnimatedThisFrame = false;
+        _tickScratch.Clear();
+        foreach (var (mesh, entry) in _entries.ToArray())
+        {
+            _retiredEntries.Add(entry, "cleared mesh animation residency");
+            _entries.Remove(mesh);
+        }
+        _retiredEntries.Dispose();
+        _resolvePassCounter = 0;
+    }
+
+    /// <summary>Clears animation overrides and returns owned residency, retaining failed returns for retry.</summary>
+    public void Dispose() => Clear();
+
+    /// <summary>Evaluates one retained live mesh into this frame's ring allocations within the vertex budget.</summary>
+    private static bool SkinMesh(CpuMeshSkinnerEntry12 entry, int frameIndex, GpuRingBuffer12 ring, double clockSeconds, ref int vertexBudget)
+    {
+        if (entry.Mesh.IsDisposed) { return false; }
         var animation = entry.Mesh.Animation!;
         NifAnimationPoseEvaluator.EvaluateBoneWorlds(animation, (float)clockSeconds, entry.BoneWorlds);
 

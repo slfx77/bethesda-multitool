@@ -27,7 +27,8 @@ internal static class WorldMapOverlayBuilder
     /// </summary>
     public static WorldViewData BuildFromRecords(RecordCollection semantic, string? sourceFilePath)
     {
-        var game = DetectGame(sourceFilePath);
+        var game = semantic.Game != BethesdaGame.Unknown ? semantic.Game : DetectGame(sourceFilePath);
+        var waterCatalog = WorldWaterCatalog.Create(semantic.Worldspaces, game);
 
         // Morrowind authors its entire weather/sky model in Morrowind.ini rather than WTHR/CLMT
         // records — synthesize record equivalents from the install's INI (vanilla-Clear fallback)
@@ -53,9 +54,9 @@ internal static class WorldMapOverlayBuilder
         float? defaultWaterHeight = null;
         if (semantic.Worldspaces.Count > 0 && semantic.Worldspaces[0].Cells.Count > 0)
         {
-            defaultWaterHeight = semantic.Worldspaces[0].DefaultWaterHeight;
+            defaultWaterHeight = waterCatalog.Get(semantic.Worldspaces[0].FormId).Height;
             var result = HeightmapRenderer.ComputeHeightmapData(
-                semantic.Worldspaces[0].Cells, defaultWaterHeight);
+                semantic.Worldspaces[0].Cells, defaultWaterHeight, waterCatalog: waterCatalog);
             if (result.HasValue)
             {
                 (hmGrayscale, hmWaterMask, hmWidth, hmHeight, hmMinX, hmMaxY) = result.Value;
@@ -99,6 +100,7 @@ internal static class WorldMapOverlayBuilder
         return new WorldViewData
         {
             Worldspaces = semantic.Worldspaces,
+            WaterCatalog = waterCatalog,
             InteriorCells = semantic.Cells.Where(c => c.IsInterior).ToList(),
             UnlinkedExteriorCells = unlinkedExterior,
             UnlinkedMapMarkers = unlinkedMarkers,
@@ -273,7 +275,8 @@ internal static class WorldMapOverlayBuilder
         List<PlacedReference> overlayMarkers,
         (float X, float Y, float Z)? playerPos)
     {
-        var game = DetectGame(supplementaryEsmPath);
+        var game = suppRecords.Game != BethesdaGame.Unknown ? suppRecords.Game : DetectGame(supplementaryEsmPath);
+        var waterCatalog = WorldWaterCatalog.Create(suppRecords.Worldspaces, game);
         var (boundsIndex, categoryIndex) = ObjectBoundsIndex.BuildCombined(suppRecords);
         var modelPathIndex = ObjectBoundsIndex.BuildModelPathIndex(suppRecords);
 
@@ -283,9 +286,9 @@ internal static class WorldMapOverlayBuilder
         float? defaultWaterHeight = null;
         if (suppRecords.Worldspaces.Count > 0 && suppRecords.Worldspaces[0].Cells.Count > 0)
         {
-            defaultWaterHeight = suppRecords.Worldspaces[0].DefaultWaterHeight;
+            defaultWaterHeight = waterCatalog.Get(suppRecords.Worldspaces[0].FormId).Height;
             var hmResult = HeightmapRenderer.ComputeHeightmapData(
-                suppRecords.Worldspaces[0].Cells, defaultWaterHeight);
+                suppRecords.Worldspaces[0].Cells, defaultWaterHeight, waterCatalog: waterCatalog);
             if (hmResult.HasValue)
             {
                 (hmGrayscale, hmWaterMask, hmWidth, hmHeight, hmMinX, hmMaxY) = hmResult.Value;
@@ -318,6 +321,7 @@ internal static class WorldMapOverlayBuilder
         return new WorldViewData
         {
             Worldspaces = suppRecords.Worldspaces,
+            WaterCatalog = waterCatalog,
             InteriorCells = suppRecords.Cells.Where(c => c.IsInterior).ToList(),
             UnlinkedExteriorCells = unlinkedExterior,
             UnlinkedMapMarkers = unlinkedMarkers,

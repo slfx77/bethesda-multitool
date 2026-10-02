@@ -1,4 +1,5 @@
 using System.Text;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Ddx;
@@ -48,6 +49,23 @@ internal sealed class NifGpuTextureResolver : IDisposable
     private readonly ReferenceDecodedTextureDiskCache12? _persistentCache;
     private readonly List<INifTextureSource> _sources;
     private readonly string _sourceSetIdentity;
+    internal AssetSelectionSession? AssetSelection { get; }
+    private readonly AssetDependencyCache _dependencies = new();
+
+    internal NifGpuTextureResolver(AssetSourcePlan plan)
+    {
+        var source = new SelectedAssetTextureSource(plan);
+        AssetSelection = source.Selection;
+        _sources = [source];
+        _sourceSetIdentity = plan.Identity;
+        // This contract records actual read/fallback provenance. The existing persistent cache
+        // stores only pixels, so keep its per-session bounded cache until receipts are persisted too.
+        _persistentCache = null;
+        _cache = CreateCache().RegisterWith(ResourceRegistry.Instance);
+    }
+
+    internal NifGpuTextureResolver(AssetSourcePlan plan, IReadOnlyDictionary<string, DecodedTexture> generatedTextures)
+        : this(plan) => _generatedTextures = generatedTextures;
 
     public NifGpuTextureResolver(params string[] textureSourcePaths)
     {
@@ -84,6 +102,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
     public int CacheHits => (int)_cache.Hits;
 
     public int CacheMisses => (int)_cache.Misses;
+    internal int CacheEntryCount => _cache.Count;
 
     public void Dispose()
     {
@@ -141,13 +160,26 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     public GpuTexturePayload? GetTexture(string texturePath)
     {
-        return _cache.GetOrCreate(NormalizeKey(texturePath));
+        var key = texturePath != AssetCacheIdentity.PathOf(texturePath)
+            ? texturePath : GetCacheKey(texturePath);
+        var payload = _cache.GetOrCreate(key);
+        if (AssetSelection is not null &&
+            (payload is null || key != GetCacheKey(AssetCacheIdentity.PathOf(key)))) _cache.Evict(key);
+        return payload;
     }
 
     /// <summary>
     ///     Normalizes the path portion of a texture cache key, preserving the leaf-mip and
     ///     Starfield material-slot variant markers outside the normalization.
     /// </summary>
+    internal string GetCacheKey(string path)
+    {
+        var normalized = NormalizeKey(AssetCacheIdentity.PathOf(path));
+        var source = SplitVariantKey(normalized).SourcePath;
+        if (_generatedTextures?.ContainsKey(source) == true) return normalized;
+        return _dependencies.Qualify(AssetSelection, normalized, source);
+    }
+
     internal static string NormalizeKey(string texturePath)
     {
         var variants = SplitVariantKey(texturePath);
@@ -317,7 +349,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
     /// </summary>
     public void Release(string texturePath)
     {
-        _cache.Release(NormalizeKey(texturePath));
+        _cache.Release(texturePath != AssetCacheIdentity.PathOf(texturePath) ? texturePath : GetCacheKey(texturePath));
     }
 
     private ConcurrentLazyCache<string, GpuTexturePayload> CreateCache()
@@ -325,13 +357,22 @@ internal sealed class NifGpuTextureResolver : IDisposable
         return new ConcurrentLazyCache<string, GpuTexturePayload>(
             nameof(NifGpuTextureResolver),
             ResourceCategory.CpuCache,
-            LoadTexture,
+            path =>
+            {
+                using var scope = AssetSelection?.CaptureReads();
+                var payload = LoadTexture(path);
+                if (scope is null) return payload;
+                var receipts = scope.Receipts;
+                _dependencies.Remember(AssetCacheIdentity.PathOf(path), receipts);
+                return payload is not null ? payload with { AssetReadReceipts = receipts } : null;
+            },
             static payload => payload.ByteSize,
             StringComparer.OrdinalIgnoreCase);
     }
 
     private GpuTexturePayload? LoadTexture(string path)
     {
+        path = AssetCacheIdentity.PathOf(path);
         if (string.Equals(path, OblivionEyeCubePayload.RequestPath, StringComparison.OrdinalIgnoreCase))
         {
             // Resolve the original through the usual archive/cache path, but keep the cube under
@@ -476,6 +517,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
         {
             return texture;
         }
+        if (AssetSelection?.Probe(path).Status == AssetSelectionStatus.Ambiguous) return null;
 
         // Older NIFs (Morrowind, some Oblivion) reference textures by their authoring extension
         // (.tga / .bmp) while archives store the compiled .dds — fall back to the .dds variant.
@@ -499,6 +541,8 @@ internal sealed class NifGpuTextureResolver : IDisposable
 
     private GpuTexturePayload? TryLoadFromSources(string path, bool leafAtlasMips = false)
     {
+        if (AssetSelection is not null)
+            return AssetSelection.Read(path, bytes => DecodeRawTexture(bytes, path, leafAtlasMips)).Value;
         foreach (var source in _sources)
         {
             var rawData = source.TryLoadRaw(path);
@@ -532,10 +576,9 @@ internal sealed class NifGpuTextureResolver : IDisposable
 
     private GpuTexturePayload? DecodeRawTexture(byte[] rawData, string path, bool leafAtlasMips = false)
     {
+        string? pairStatus = null;
         var ddsData = NifTextureLoader.ConvertDdxNormalPairIfNeeded(
-            rawData,
-            path,
-            TryLoadRawFromSources);
+            rawData, path, TryLoadRawFromSources, status => pairStatus = status);
 
         // Leaf atlases skip the BCn pass-through: their shipped mips average foliage color with the
         // atlas background (white for the Oblivion dogwood/maple composites), which washes distant
@@ -550,7 +593,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
                     MipLevels = AlphaWeightedMipChainBuilder.Build(
                         leafDecoded.Pixels, leafDecoded.Width, leafDecoded.Height)
                 };
-                return GpuTexturePayload.FromRgba(rebuilt);
+                return GpuTexturePayload.FromRgba(rebuilt) with { Derivation = pairStatus };
             }
             // Undecodable as RGBA → fall through to the standard path (better polluted mips than none).
         }
@@ -558,7 +601,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
         var compressed = DdsGpuTexturePayloadParser.Parse(ddsData);
         if (compressed is not null)
         {
-            return compressed;
+            return compressed with { Derivation = pairStatus };
         }
 
         var decoded = DdsTextureDecoder.Decode(ddsData);
@@ -567,7 +610,7 @@ internal sealed class NifGpuTextureResolver : IDisposable
             return null;
         }
 
-        var payload = GpuTexturePayload.FromRgba(decoded);
+        var payload = GpuTexturePayload.FromRgba(decoded) with { Derivation = pairStatus };
         // BCn parse failed → uncompressed RGBA fallback. This is the slow/large branch: it both
         // costs a full CPU decode here and produces a 4× larger upload than a BCn payload. Large
         // ones are a known per-frame upload spike, so make them visible in the log.

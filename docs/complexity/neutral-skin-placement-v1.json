@@ -1,0 +1,428 @@
+{
+  "schema": "bmt-neutral-skin-placement-source-review/v1",
+  "created_utc": "2026-09-14T01:46:38.524072+00:00",
+  "base_commit": "59c63252d1d983f919d1d01bfc30b205965fc0a9",
+  "shared_pin": "2d498be3aac356795a983f34088bfddfd93686f8",
+  "scope": "Only the four enumerated adapter/helper/test files. No production dispatch, native writer, builder, material exporter, dependency or license edits.",
+  "verification": "Tree-sitter C# source parse, pinned API review, declaration hashes and git diff --check. No SDK/compiler/test/corpus invocation.",
+  "variables": {
+    "P": "original mesh-part count",
+    "D": "drawable occurrence count",
+    "R": "distinct rigid owner count",
+    "S": "drawable skinned occurrence count",
+    "N": "original node count",
+    "V/I/J": "summed drawable vertex/index/joint counts",
+    "W": "total authored influence count",
+    "F": "sum of vertex count times maximum influence width per primitive",
+    "v/i/f": "corresponding one-primitive counts",
+    "L": "JSON metadata length",
+    "Q/q": "total geometry-array elements copied by DeepClone across all occurrences / one primitive; includes optional bind-pose and bitangent arrays"
+  },
+  "findings": [
+    "Legacy GlbWriter emits each skin through AddSkinnedMesh with its own joint/inverse-bind tuples and ignores the optional part.NodeIndex on that branch.",
+    "Existing NifExportSceneBuilder successful skin branch omits NodeIndex; generated neutral placements admit this production-shaped input without inventing source-node identity.",
+    "Rigid grouping remains by sorted original owner index. Every skin occurrence receives its own mesh, palette and identity-transform placement after the unchanged original node prefix.",
+    "Source ordinal provenance disambiguates duplicate names, repeated object references and filtered occurrences.",
+    "Geometry normalization uses existing DeepClone and winding implementation, preserving caller-owned arrays.",
+    "Shared evaluator applies inverse-bind times joint-world for skin deformation; generated node identity transforms avoid extra mesh-owner placement.",
+    "Corpus assertions retain triangle and normal checks and now verify exact source prefix, original child edges, every extra skin occurrence, palette/binds, and source metadata.",
+    "Real-corpus class now uses Collection(SequentialIntegrationGroup.Name), as required by CLAUDE.md, without changing its existing callable bodies or geometry assertions.",
+    "One additional synthetic case asserts a hierarchical noncommuting transform against fixed converted world position (8,30,-21) using actual parent/child AddNode calls and native/shared serialized GLB output."
+  ],
+  "synthetic_cases_authored": 11,
+  "synthetic_cases_executed": 0,
+  "changed_callables_reviewed": 29,
+  "unchanged_callables": 12,
+  "generated_members": "NifNeutralSkinPlacement record primary constructor and equality/accessors are compiler-generated; its authored positional signature stores four fixed-size fields/references with O(1) work/storage.",
+  "limitations": [
+    "No compiler or runtime validation per assigned scope.",
+    "Private NIF corpus is not present/read; corpus gate remains pending.",
+    "No production legacy-to-shared dispatch replacement or rendering parity acceptance is claimed.",
+    "Animated-pose behavior and private skinned-model acceptance remain open; no synthetic or corpus execution is claimed."
+  ],
+  "files": [
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Export/NifNeutralSceneAdapter.cs",
+      "sha256": "486132a0f8227b6a5567f290b5302083bc5d4ee91f434d9b9868be0801e36d2b",
+      "parse_errors": [],
+      "callables": [
+        {
+          "name": "TryAdapt",
+          "line": 40,
+          "declaration_sha256_lf": "333558e3a96d4efcd45f07ec5ee4ea5659d6a3fd7ccbf17969d16b9f0ef64e1d",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(P + D log(max(2,R)) + N + V + I + F + J + Q) plus external costs",
+          "auxiliary_space_bound": "O(P + N + D + V + I + F + J + max(q)) plus prepared images and external scratch",
+          "assumptions_and_external_costs": "Material preparation, no-draw resolution, tangent generation, dictionaries with bounded integer/reference hashing, immutable buffer copying, and SceneValidation are explicit external costs; scene validation may walk joint ancestry."
+        },
+        {
+          "name": "Drawable",
+          "line": 156,
+          "declaration_sha256_lf": "896fe4a5f88da74e27f5ae4183baec0841e9f795b6a16449dc5bb0cd9030b0dd",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(P) plus no-draw resolver cost",
+          "auxiliary_space_bound": "O(P)",
+          "assumptions_and_external_costs": "No-draw material/database resolution is external; retains original ordinals rather than filtered indices."
+        },
+        {
+          "name": "Nodes",
+          "line": 176,
+          "declaration_sha256_lf": "7fa6abfc707e6e83c2c8dff6c57d73db34b92598ed0044f140ed1c392eafcfad",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(N + S)",
+          "auxiliary_space_bound": "O(N + S)",
+          "assumptions_and_external_costs": "Each original parent edge is visited once; generated JSON is fixed-size numeric metadata; SceneNode copies ordered child lists."
+        },
+        {
+          "name": "Primitive",
+          "line": 220,
+          "declaration_sha256_lf": "b8fb437fcf44743e264eacdeea7962d18d229617cf70b185d4010e971a18a8e7",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(v + i + f + q) plus tangent generation",
+          "auxiliary_space_bound": "O(v + i + f + q)",
+          "assumptions_and_external_costs": "DeepClone owns all geometry arrays before winding normalization; maximum influence width determines f=v*k; immutable output constructors copy buffers."
+        },
+        {
+          "name": "LitTangents",
+          "line": 261,
+          "declaration_sha256_lf": "fc0159e8bf4b5e931e793a95d099e9b147585efb67f0d6192766c5c8a9a5cc8f",
+          "review_status": "unchanged_from_base"
+        },
+        {
+          "name": "TexCoord",
+          "line": 275,
+          "declaration_sha256_lf": "ecc932b5d2207da0c7428fa052c33c4d92cf6ae86cada9ddd2b24532440d05c2",
+          "review_status": "unchanged_from_base"
+        },
+        {
+          "name": "Tangents",
+          "line": 287,
+          "declaration_sha256_lf": "8a85b8f5f10bd33abda58327482fb1b384377b380ef7efde91d9857bd223863f",
+          "review_status": "unchanged_from_base"
+        },
+        {
+          "name": "Handedness",
+          "line": 310,
+          "declaration_sha256_lf": "ded152c51a4203b98090f88afe4283ca8ea35ec51105e1f2e8da97e01c719e36",
+          "review_status": "unchanged_from_base"
+        },
+        {
+          "name": "Influences",
+          "line": 327,
+          "declaration_sha256_lf": "70d97097e645ab680743ebb5e7d3e8933014729f68ecf584e12ba7040be1135d",
+          "review_status": "unchanged_from_base"
+        },
+        {
+          "name": "Material",
+          "line": 353,
+          "declaration_sha256_lf": "da09c81ffc3babd5a3126be674fa102b48eb63ec9bd906971bcc628515baf83a",
+          "review_status": "unchanged_from_base"
+        },
+        {
+          "name": "Binding",
+          "line": 396,
+          "declaration_sha256_lf": "54f7ca07fd46a4d8e023e9bc8dcf86ae81058859e1cd980dea16cf6918dc44e1",
+          "review_status": "unchanged_from_base"
+        },
+        {
+          "name": "PreparedMaterialReason",
+          "line": 410,
+          "declaration_sha256_lf": "84c583ec735546cb618b24db87b4ab12a6b74b93e4318ed574181f90f28b6054",
+          "review_status": "unchanged_from_base"
+        },
+        {
+          "name": "UnsupportedReason",
+          "line": 433,
+          "declaration_sha256_lf": "7e55d42eb26cc369eda682995a04b0c95359e69f63cabfaa378fe97f366fe971",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(D + I + W)",
+          "auxiliary_space_bound": "O(1)",
+          "assumptions_and_external_costs": "Existing material/vegetation capability predicates are constant-size; geometry indices and all source influences are inspected."
+        },
+        {
+          "name": "VegetationReason",
+          "line": 502,
+          "declaration_sha256_lf": "124b2761f3bfa2deb2774911e7fc48f3a335a7375e3a21ed5ed6fcdd82dd4161",
+          "review_status": "unchanged_from_base"
+        },
+        {
+          "name": "MaterialReason",
+          "line": 519,
+          "declaration_sha256_lf": "ff1fd54c521d49db0756b47e405e35e893aa2b8065c35c992e8744f154050112",
+          "review_status": "unchanged_from_base"
+        }
+      ],
+      "sha256_lf": "65a636d1ba21284e3f204cea73768ba74001b82a387b4b929407cfa5b62da2ba",
+      "git_filtered_blob_sha1": "da41979158316bf020980020b1ece06939e94603"
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Export/NifNeutralSkinPlacement.cs",
+      "sha256": "d33aef169de335a37b2d04452ea9a0ee9282dbb2c6927f2060770b76e11a33b5",
+      "parse_errors": [],
+      "callables": [
+        {
+          "name": "CreateNode",
+          "line": 18,
+          "declaration_sha256_lf": "4216f7601f61effe9923eea1cf7b662ef96b6b3ff546ba2cf759c88c0e5fc3e0",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1)",
+          "auxiliary_space_bound": "O(1)",
+          "assumptions_and_external_costs": "Fixed three numeric provenance fields; display name is passed through, not an identity key; SceneNode validates fixed-size JSON."
+        }
+      ],
+      "sha256_lf": "d33aef169de335a37b2d04452ea9a0ee9282dbb2c6927f2060770b76e11a33b5",
+      "git_filtered_blob_sha1": "2cccf4c57c0731fe4ff710813aa6d6680fc5e178"
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/Formats/Nif/Rendering/Export/NifNeutralSkinPlacementTests.cs",
+      "sha256": "0b8504d5733651c44b81e7db8b72c45cc54436280dc764ff568614e188028b25",
+      "parse_errors": [],
+      "callables": [
+        {
+          "name": "AnonymousSkinPreservesSourceHierarchyAndNativeWorldPlacement",
+          "line": 16,
+          "declaration_sha256_lf": "12c3bdad371a1dca51374b846dba6e6f51262fd2d31e790a85593997f422c667",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) fixture orchestration plus invoked production/evaluator/encoder costs",
+          "auxiliary_space_bound": "O(1) fixture arrays plus invoked output/workspace buffers",
+          "assumptions_and_external_costs": "Fixed tiny synthetic scene. Independently derived world positions, exact identities, immutable source buffers, and actual serialized GLB state are checked as applicable; assertions have not executed."
+        },
+        {
+          "name": "HierarchicalSkinPreservesNoncommutingTransformOrder",
+          "line": 53,
+          "declaration_sha256_lf": "18e8c77aeef4fc7834b0eb17d0bc5e653efb464bf2f4b26aab256a53dbd3c5fc",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) fixture orchestration plus invoked production/evaluator/encoder costs",
+          "auxiliary_space_bound": "O(1) fixture arrays plus invoked output/workspace buffers",
+          "assumptions_and_external_costs": "Fixed root/parent/child scene with an actual hierarchical child world transform. Independently derived row-vector expected (8,30,-21) checks bind, nonuniform scale, noncommuting rotations, translations and basis order through the shared pose evaluator and actual native/shared GLB artifacts. Original node objects, local transforms, parent/child edges and child world matrix are checked; runtime assertions have not executed."
+        },
+        {
+          "name": "ExplicitSkinOwnerTransformIsPreservedWithoutDoubleApplyingIt",
+          "line": 95,
+          "declaration_sha256_lf": "8d08d25c6d19db2fc4a452968d7a9693b7c06116ba9fa50cf61b774db5360dcf",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) fixture orchestration plus invoked production/evaluator/encoder costs",
+          "auxiliary_space_bound": "O(1) fixture arrays plus invoked output/workspace buffers",
+          "assumptions_and_external_costs": "Fixed tiny synthetic scene. Independently derived world positions, exact identities, immutable source buffers, and actual serialized GLB state are checked as applicable; assertions have not executed."
+        },
+        {
+          "name": "IncompatiblePalettesOnOneNodeKeepIndependentInstances",
+          "line": 115,
+          "declaration_sha256_lf": "4b729ae6f935b16239726605ec83155a33d08dba24d7344fa8613e16d2d01b1d",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) fixture orchestration plus invoked production/evaluator/encoder costs",
+          "auxiliary_space_bound": "O(1) fixture arrays plus invoked output/workspace buffers",
+          "assumptions_and_external_costs": "Fixed tiny synthetic scene. Independently derived world positions, exact identities, immutable source buffers, and actual serialized GLB state are checked as applicable; assertions have not executed."
+        },
+        {
+          "name": "DifferentInverseBindsOnOneNodeAreNotMerged",
+          "line": 143,
+          "declaration_sha256_lf": "68660fd0509e253695db4bd8ebe8971dbd513d7613547cfcb0233a882390c96b",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) fixture orchestration plus invoked production/evaluator/encoder costs",
+          "auxiliary_space_bound": "O(1) fixture arrays plus invoked output/workspace buffers",
+          "assumptions_and_external_costs": "Fixed tiny synthetic scene. Independently derived world positions, exact identities, immutable source buffers, and actual serialized GLB state are checked as applicable; assertions have not executed."
+        },
+        {
+          "name": "MixedRigidAndSkinnedPartsDoNotShareAMeshOrSkin",
+          "line": 161,
+          "declaration_sha256_lf": "a71391cf755b87d13df449231f62c4bd27a85600702355a7b801d3cb2607e78e",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) fixture orchestration plus invoked production/evaluator/encoder costs",
+          "auxiliary_space_bound": "O(1) fixture arrays plus invoked output/workspace buffers",
+          "assumptions_and_external_costs": "Fixed tiny synthetic scene. Independently derived world positions, exact identities, immutable source buffers, and actual serialized GLB state are checked as applicable; assertions have not executed."
+        },
+        {
+          "name": "RepeatedPartObjectsRetainTheirUnfilteredOccurrenceOrdinals",
+          "line": 182,
+          "declaration_sha256_lf": "89b2bf524596b1e572069a810269831334a5debc212ba56f3afd5e902accc6e7",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) fixture orchestration plus invoked production/evaluator/encoder costs",
+          "auxiliary_space_bound": "O(1) fixture arrays plus invoked output/workspace buffers",
+          "assumptions_and_external_costs": "Fixed tiny synthetic scene. Independently derived world positions, exact identities, immutable source buffers, and actual serialized GLB state are checked as applicable; assertions have not executed."
+        },
+        {
+          "name": "AnonymousSkinRetainsEveryInfluenceBeyondTheLegacyFourSlotLimit",
+          "line": 208,
+          "declaration_sha256_lf": "d569e9380c5040b92bb19d6668d3f979fe8bd12ec93e507509981f30c36ea811",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) fixture orchestration plus invoked production/evaluator/encoder costs",
+          "auxiliary_space_bound": "O(1) fixture arrays plus invoked output/workspace buffers",
+          "assumptions_and_external_costs": "Fixed tiny synthetic scene. Independently derived world positions, exact identities, immutable source buffers, and actual serialized GLB state are checked as applicable; assertions have not executed."
+        },
+        {
+          "name": "RigidGroupingAndWindingStayCompatibleWhileSourceArraysRemainUntouched",
+          "line": 227,
+          "declaration_sha256_lf": "687dcb408b0d449af29c03e12af052047cb13a52970ac31a956feeda1d958811",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) fixture orchestration plus invoked production/evaluator/encoder costs",
+          "auxiliary_space_bound": "O(1) fixture arrays plus invoked output/workspace buffers",
+          "assumptions_and_external_costs": "Fixed tiny synthetic scene. Independently derived world positions, exact identities, immutable source buffers, and actual serialized GLB state are checked as applicable; assertions have not executed."
+        },
+        {
+          "name": "InvalidOwnerReferencesStillDeclineWithoutPartialOutput",
+          "line": 256,
+          "declaration_sha256_lf": "d88ec24296620642a513f82f8188742ed4977396452eaa0ce2789448204a4f04",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) fixture orchestration plus invoked production/evaluator/encoder costs",
+          "auxiliary_space_bound": "O(1) fixture arrays plus invoked output/workspace buffers",
+          "assumptions_and_external_costs": "Fixed tiny synthetic scene. Independently derived world positions, exact identities, immutable source buffers, and actual serialized GLB state are checked as applicable; assertions have not executed."
+        },
+        {
+          "name": "AddNode",
+          "line": 273,
+          "declaration_sha256_lf": "82241ec03230db1dcb90be035ea934ed37aa7bdb2daf93d6cf85f46b0ebf9180",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1) amortized plus name hashing",
+          "auxiliary_space_bound": "O(1) per inserted node",
+          "assumptions_and_external_costs": "Delegates to existing GlbScene list/dictionary; repeated labels remain independent source indices."
+        },
+        {
+          "name": "Part",
+          "line": 279,
+          "declaration_sha256_lf": "5da722330b892632946594a4185bae7569679bdcd893f2dbb4f0da645a3714a3",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1)",
+          "auxiliary_space_bound": "O(1)",
+          "assumptions_and_external_costs": "Fixed three-vertex fixture, no external files."
+        },
+        {
+          "name": "Skin",
+          "line": 293,
+          "declaration_sha256_lf": "1e86be4b69cf76820457973e06182091eb61ea618f2006553ad0d71a2d7eab7c",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1)",
+          "auxiliary_space_bound": "O(1)",
+          "assumptions_and_external_costs": "Retains caller-owned palette/bind arrays for nonmutation assertions and allocates a fixed three-vertex influence table."
+        },
+        {
+          "name": "Adapt",
+          "line": 301,
+          "declaration_sha256_lf": "5a09bb88f0ea515123f76f4aa9f1a172f1f9a4484d2aff99c840c3e455cf0c35",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "T_adapter",
+          "auxiliary_space_bound": "S_adapter",
+          "assumptions_and_external_costs": "Executes actual adapter and disposable texture-free resolver; adapter costs reviewed above."
+        },
+        {
+          "name": "WorldPosition",
+          "line": 312,
+          "declaration_sha256_lf": "ccbe9e72b720f652c6013871387dd2f16e76c64692a8d990320ee9dd5054c3ed",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "T_evaluator + T_workspace + T_rest + O(N + D)",
+          "auxiliary_space_bound": "S_evaluator + S_workspace",
+          "assumptions_and_external_costs": "Shared pose evaluator validation, matrix/palette work, double-buffer allocation, and all-influence deformation are external; final exact-node search is linear over draw instances."
+        },
+        {
+          "name": "Shared",
+          "line": 323,
+          "declaration_sha256_lf": "c43daab28c46f959ec297b672ce2196149a7ef410f19865a52b951b78c8c56df",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "T_build + T_encode + T_parse",
+          "auxiliary_space_bound": "S_build + S_encode + S_parse",
+          "assumptions_and_external_costs": "Actual shared normalized builder/GLB encoder and SharpGLTF parser, including serialized buffer size, are explicit external costs."
+        },
+        {
+          "name": "EncodedSingleJointPosition",
+          "line": 329,
+          "declaration_sha256_lf": "0dd4577c206712ec4cd5ff1f4aada82e595d7471cc62ae9af2006575445da36d",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(n + p) plus accessor decoding",
+          "auxiliary_space_bound": "O(1) plus accessor decoding",
+          "assumptions_and_external_costs": "n/p are encoded node/primitive counts; xUnit singleton enumeration and SharpGLTF accessor views are external; fixtures have one joint and one primitive."
+        },
+        {
+          "name": "Ordinal",
+          "line": 343,
+          "declaration_sha256_lf": "48fa6969a3e960c75cf3fb3a6c3944b6e059dd960d0c3f09f35af97f59e63782",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(L)",
+          "auxiliary_space_bound": "O(L)",
+          "assumptions_and_external_costs": "System.Text.Json parses metadata of L characters; generated metadata is bounded numeric content."
+        },
+        {
+          "name": "SourceNode",
+          "line": 351,
+          "declaration_sha256_lf": "70dd4af60b070e34e53b1a19a2f5f3135fdf2c43ff248795e0a75a4ca579b76a",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(L)",
+          "auxiliary_space_bound": "O(L)",
+          "assumptions_and_external_costs": "Same fixed-shape metadata parse; null remains absent provenance."
+        },
+        {
+          "name": "SourceBlock",
+          "line": 360,
+          "declaration_sha256_lf": "860423ce20718f1947430a8e7956771c6735b4681d887ba294d23ad337ab8ea8",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(L)",
+          "auxiliary_space_bound": "O(L)",
+          "assumptions_and_external_costs": "Same fixed-shape metadata parse; negative source block is represented as null."
+        },
+        {
+          "name": "AssertNear",
+          "line": 369,
+          "declaration_sha256_lf": "e2f60cf8e264edee1407840276a42e29143d9481a001fcfbe321a6d3a3a1e6c7",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(1)",
+          "auxiliary_space_bound": "O(1)",
+          "assumptions_and_external_costs": "Three scalar xUnit comparisons with explicit four-decimal tolerance."
+        }
+      ],
+      "sha256_lf": "0b8504d5733651c44b81e7db8b72c45cc54436280dc764ff568614e188028b25",
+      "git_filtered_blob_sha1": "5823a81db29508260eb6bf797f19e31d0739bde4"
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/Formats/Nif/Rendering/Export/NifNeutralSceneCorpusTests.cs",
+      "sha256": "bff0372dad17484b7976908639c56f35845285c0c9d7c4ab2f050d8434531d67",
+      "parse_errors": [],
+      "callables": [
+        {
+          "name": "CorpusFiles",
+          "line": 36,
+          "declaration_sha256_lf": "75dd02d851bb47eeca29563a603e16468129aec68cc6a74f380aa2db4c7a99b6",
+          "review_status": "unchanged_from_base"
+        },
+        {
+          "name": "EveryAdaptedFileAgreesWithTheNativeWriterOnGeometry",
+          "line": 52,
+          "declaration_sha256_lf": "24ba4b9356676a94be0963ad0bf26db6e316a921b54070d141183e1d4c7ff2cb",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(A log A) + sum(T_read + T_parseNif + T_buildSource + T_adapter + T_nativeEncode + T_nativeParse + V + I + N + P + J)",
+          "auxiliary_space_bound": "O(A) + maximum per-file source/export/document buffers",
+          "assumptions_and_external_costs": "A is discovered corpus-path count, capped sample is 120 after discovery/sort; discovery sorting O(A log A) is included in external CorpusFiles. Native geometry counts/normals remain asserted unchanged. Corpus unavailable in this checkout; no runtime result claimed."
+        },
+        {
+          "name": "AssertOriginalNodesAndSkinPlacements",
+          "line": 146,
+          "declaration_sha256_lf": "d72e8fd9ff5b7f536ee898fbe8373583d31b315b381838e7850d10d8e826ea85",
+          "review_status": "source_reviewed_runtime_pending",
+          "time_bound": "O(P + N + S + J) plus no-draw resolution and assertion enumeration",
+          "auxiliary_space_bound": "O(P + N + S)",
+          "assumptions_and_external_costs": "One source child-edge table avoids repeated scans; independent palettes/binds and source ordinals are asserted for every extra placement. JSON parse is fixed shape; HashSet expected O(1) integer operations."
+        },
+        {
+          "name": "DeclinesCarryAReasonAndNeverProduceAPartialDocument",
+          "line": 202,
+          "declaration_sha256_lf": "c23ed5c21b3e51ecab008d723631fed58e5fe697cd0abd114dec3a1c5fe27571",
+          "review_status": "unchanged_from_base"
+        }
+      ],
+      "sha256_lf": "b8b5edf5e31c16dbd63d1eeef5b6cce6658bbd5e00da55bc9de1739f6673c0fc",
+      "git_filtered_blob_sha1": "6cc0f1efc01965caacff0fdbfee493c23f0ed6dd"
+    }
+  ],
+  "updated_utc": "2026-09-14T02:01:25.756146+00:00",
+  "review_revision": 3,
+  "previous_review_sha256": "7e78f54b52f2fdd9bc7a5e929f61228412e51f5ed8395c8aed019bd75f3aed9d",
+  "hash_identity_note": "Per-file sha256 identifies the exact measured working-file bytes. sha256_lf identifies the same text bytes with CRLF replaced by LF. git_filtered_blob_sha1 is the Git blob SHA-1 returned by git hash-object -- <relative path>, with repository clean filters/attributes applied and without -w or an object write. The LF and filtered Git identities support verification across normal LF/CRLF checkouts; the working-byte hash remains unchanged as historical evidence. Callable declaration_sha256_lf likewise normalizes CRLF to LF.",
+  "review_history": [
+    {
+      "revision": 1,
+      "sha256": "2b1c6c04bab273d999fad169c92af0d000b62c48e95a8f7f2c77aaeb63386656"
+    },
+    {
+      "revision": 2,
+      "sha256": "7e78f54b52f2fdd9bc7a5e929f61228412e51f5ed8395c8aed019bd75f3aed9d"
+    }
+  ]
+}

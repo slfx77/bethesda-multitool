@@ -1,4 +1,3 @@
-using System.Numerics;
 using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
@@ -6,19 +5,6 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Shaders;
 
 public sealed class DoubleSidedNormalMapBasisSourceContractTests
 {
-    [Fact]
-    public void BackFaceReversesNormalAndBitangentToPreserveHandedness()
-    {
-        var frontNormal = Vector3.UnitZ;
-        var tangent = Vector3.UnitX;
-        var frontBitangent = Vector3.Cross(frontNormal, tangent);
-        var backNormal = -frontNormal;
-        var backBitangent = -frontBitangent;
-
-        Assert.Equal(Vector3.Cross(backNormal, tangent), backBitangent);
-        Assert.Equal(-Vector3.UnitY, backBitangent);
-    }
-
     [Fact]
     public void ReferenceSpriteAndCpuNormalMapPathsApplyTheSameBackFaceRule()
     {

@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
@@ -89,7 +90,7 @@ internal sealed record DecodedBethesdaViewerScene12(
     IReadOnlyList<DecodedBethesdaViewerMeshPart12> MeshParts,
     IReadOnlyList<BethesdaViewerAnimationClip> AnimationClips,
     IReadOnlyList<DecodedBethesdaViewerBoundaryStitchGroup12> BoundaryStitchGroups,
-    DecodedNifMesh12 Mesh);
+    DecodedNifMesh12 Mesh, AssetSourcePlan? TexturePlan = null);
 
 /// <summary>
 ///     Converts the renderer-neutral native scene into the established D3D12 CPU payload without
@@ -178,7 +179,7 @@ internal static class BethesdaViewerSceneDecoder12
             parts,
             animationClips,
             stitchGroups,
-            mesh);
+            mesh, scene.TexturePlan);
     }
 
     private static BethesdaViewerAnimationClip[] SnapshotValidAnimationClips(

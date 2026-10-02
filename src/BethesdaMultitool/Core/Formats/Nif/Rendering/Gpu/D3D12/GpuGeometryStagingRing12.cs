@@ -1,3 +1,4 @@
+using Slfx77.Multitool.Core.Lifetime;
 using BethesdaMultitool.Core.Diagnostics;
 using Vortice.Direct3D12;
 
@@ -40,6 +41,7 @@ internal sealed unsafe class GpuGeometryStagingRing12 : ITrackableResource, IDis
     private ID3D12Resource? _buffer;
     private byte* _cpu;
     private bool _disposed;
+    private RetiredResourceDisposal? _retiredResources;
     private IDisposable? _footprint;
     private ResourceRegistration? _registration;
 
@@ -58,27 +60,31 @@ internal sealed unsafe class GpuGeometryStagingRing12 : ITrackableResource, IDis
 
     public long OverflowCount { get; private set; }
 
+    /// <summary>Retires staging allocation state while retaining each incomplete child release for retry.</summary>
     public void Dispose()
     {
-        if (_disposed)
+        if (_retiredResources is null)
         {
-            return;
+            _disposed = true;
+            _retiredResources = new RetiredResourceDisposal();
+            _retiredResources.Add(_registration, "resource registration");
+            _registration = null;
+            _retiredResources.Add(_footprint, "staging accounting");
+            _footprint = null;
+            if (_buffer is { } buffer)
+            {
+                var mapped = true;
+                _retiredResources.Add(() =>
+                {
+                    if (mapped) { buffer.Unmap(0); mapped = false; }
+                    buffer.Dispose();
+                }, "staging buffer");
+                _buffer = null;
+            }
+            _cpu = null;
+            _allocator = null;
         }
-
-        _disposed = true;
-        _registration?.Dispose();
-        _registration = null;
-        _footprint?.Dispose();
-        _footprint = null;
-        if (_buffer is not null)
-        {
-            _buffer.Unmap(0);
-            _buffer.Dispose();
-            _buffer = null;
-        }
-
-        _cpu = null;
-        _allocator = null;
+        _retiredResources.Dispose();
     }
 
     public string ResourceName => nameof(GpuGeometryStagingRing12);
@@ -141,18 +147,22 @@ internal sealed unsafe class GpuGeometryStagingRing12 : ITrackableResource, IDis
             return false;
         }
 
+        // Allocate the release owner before taking a FIFO range: failure to allocate this small
+        // wrapper must not strand a ring reservation that the caller never receives.
+        var release = new ReleaseHandle(this);
         if (!EnsureCreated(bytes) || !_allocator!.TryAllocate(bytes, out var offset, out _, out var sequence))
         {
             OverflowCount++;
             return false;
         }
 
+        release.Sequence = sequence;
         ServedCount++;
         region = new StagedRegion(
             _buffer!,
             (ulong)offset,
             (IntPtr)(_cpu + offset),
-            new ReleaseHandle(this, sequence));
+            release);
         return true;
     }
 
@@ -217,10 +227,14 @@ internal sealed unsafe class GpuGeometryStagingRing12 : ITrackableResource, IDis
         IntPtr CpuPtr,
         IDisposable Release);
 
-    private sealed class ReleaseHandle(GpuGeometryStagingRing12 ring, ulong sequence) : IDisposable
+    private sealed class ReleaseHandle(GpuGeometryStagingRing12 ring) : IDisposable
     {
         private bool _released;
 
+        /// <summary>Gets or sets the exact reservation immediately after allocation, before exposing this handle.</summary>
+        internal ulong Sequence { get; set; }
+
+        /// <summary>Returns the captured FIFO reservation once; failure remains retryable.</summary>
         public void Dispose()
         {
             if (_released)
@@ -228,8 +242,8 @@ internal sealed unsafe class GpuGeometryStagingRing12 : ITrackableResource, IDis
                 return;
             }
 
+            ring.Release(Sequence);
             _released = true;
-            ring.Release(sequence);
         }
     }
 }

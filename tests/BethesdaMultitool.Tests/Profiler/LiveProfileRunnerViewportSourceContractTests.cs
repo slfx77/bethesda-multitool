@@ -8,7 +8,7 @@ public sealed class LiveProfileRunnerViewportSourceContractTests
     [Fact]
     public void Runner_preserves_historical_dimensions_but_accepts_explicit_window_and_viewport_pairs()
     {
-        var harness = SourceContract.ReadSource("scratchpad", "live_profiles", "run_live.ps1");
+        var harness = SourceContract.ReadLocalReference("scratchpad", "live_profiles", "run_live.ps1");
 
         Assert.Contains("[int]$WindowWidth = 1450", harness, StringComparison.Ordinal);
         Assert.Contains("[int]$WindowHeight = 900", harness, StringComparison.Ordinal);
@@ -27,7 +27,7 @@ public sealed class LiveProfileRunnerViewportSourceContractTests
     [Fact]
     public void Runner_rejects_invalid_or_aspect_changing_pairs_and_asserts_the_actual_client_viewport()
     {
-        var harness = SourceContract.ReadSource("scratchpad", "live_profiles", "run_live.ps1");
+        var harness = SourceContract.ReadLocalReference("scratchpad", "live_profiles", "run_live.ps1");
 
         Assert.Contains("$WindowWidth -lt 640 -or $WindowWidth -gt 16384", harness,
             StringComparison.Ordinal);

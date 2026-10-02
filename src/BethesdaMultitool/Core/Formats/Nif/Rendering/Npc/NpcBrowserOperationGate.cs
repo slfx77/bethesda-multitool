@@ -9,6 +9,7 @@ internal sealed class NpcBrowserOperationGate
 {
     private readonly object _sync = new();
     private bool _disposed;
+    private bool _resourcesDisposed;
 
     public IDisposable Enter()
     {
@@ -31,15 +32,15 @@ internal sealed class NpcBrowserOperationGate
 
         lock (_sync)
         {
-            if (_disposed)
+            if (_resourcesDisposed)
             {
                 return;
             }
 
             _disposed = true;
+            disposeResources();
+            _resourcesDisposed = true;
         }
-
-        disposeResources();
     }
 
     private sealed class Lease(object syncRoot) : IDisposable

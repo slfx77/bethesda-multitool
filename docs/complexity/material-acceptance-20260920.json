@@ -1,0 +1,46 @@
+{
+  "schema": "bmt-material-acceptance-delta-review/v1",
+  "baseCommit": "9f08c55d2631803a5e39f691e0ad71dc93c250cc",
+  "sharedPin": "2d498be3aac356795a983f34088bfddfd93686f8",
+  "scope": "Incremental review of production material and legacy skin fixes; original extraction review remains separately source-bound. N is the used node count. No dispatch or Shared implementation change.",
+  "callables": [
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Export/NifMaterialPreparation.cs",
+      "sourceSha256Lf": "a266664c5bf80247d6419dc04599b84a2d62d9928cbb447e20d713e4f608369e",
+      "callable": "Prepare",
+      "declarationSha256Lf": "51682b32abc24cac97033a71926daf21ac267f4f4c74daad39a78ab4f94e334b",
+      "line": 21,
+      "incrementalBound": "O(1) added time and storage per preparation, before the existing cache hit boundary",
+      "review": "Captures the nullable tint only when diffuse pixels resolved; existing original key fields, material decisions and packing are unchanged."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Export/GlbWriter.cs",
+      "sourceSha256Lf": "055d66ca907963f50f6db3bcbf916f82b94dde414429c175ac80979e2afbd81f",
+      "callable": "BuildGltfScene",
+      "declarationSha256Lf": "ff36c0518d8bb0b44da0671151b0f4f4b1269bc06815308678573e2f08660347",
+      "line": 45,
+      "incrementalBound": "O(N) added time, O(1) added auxiliary space",
+      "review": "After all AddSkinnedMesh calls, restore each source label through the existing index-to-builder dictionary; no transform/bind/index changes."
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Export/GlbWriter.cs",
+      "sourceSha256Lf": "055d66ca907963f50f6db3bcbf916f82b94dde414429c175ac80979e2afbd81f",
+      "callable": "BuildNodeBuilders",
+      "declarationSha256Lf": "988f036f29600046765eaa4398ed3df944c1806878b8f3cd08d0acd656cf399c",
+      "line": 158,
+      "incrementalBound": "Unchanged O(N + ancestor traversal) time and O(N) storage",
+      "review": "Temporary builders receive null names to avoid Toolkit 1.0.6 duplicate-label armature rejection. Node indices still bind hierarchy and joints."
+    }
+  ],
+  "otherProductionChanges": [
+    "NifMaterialCacheKey adds one fixed-size nullable tint value; equality/hash remain O(1).",
+    "NifPreparedMaterial documentation follows revised tint-aware key.",
+    "Program adds pex to existing registered CLI names; matching algorithm and argument precedence are unchanged.",
+    "Portable lock uses the exact existing portable target groups and package versions; full graph lock remains unchanged."
+  ],
+  "limits": [
+    "No measured rendering/performance or release claim from source analysis.",
+    "Corpus helper and sampled-pose acceptance are test evidence, not NIF animation track transport.",
+    "Legacy production dispatch remains enabled."
+  ]
+}

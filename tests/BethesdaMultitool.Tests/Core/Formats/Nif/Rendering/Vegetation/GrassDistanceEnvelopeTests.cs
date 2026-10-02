@@ -153,6 +153,9 @@ public sealed class GrassDistanceEnvelopeTests
         var batches = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
             "OpaqueBatchRegistry12.cs");
+        var blendedDraw = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "BlendedReferenceDraw.cs");
         var compactRenderer = RemoveWhitespace(renderer);
 
         Assert.Contains(
@@ -211,8 +214,10 @@ public sealed class GrassDistanceEnvelopeTests
 
         // Non-opaque grass keeps identity and is gated before reservation/draw without deleting a
         // retained entry, so moving back inside the envelope works on frozen batches.
-        Assert.Contains("bool IsGrass,", renderer, StringComparison.Ordinal);
-        Assert.Contains("float GrassWaveMultiplier,", renderer, StringComparison.Ordinal);
+        SourceContract.AssertContainsIgnoringWhitespace("bool IsGrass,", blendedDraw);
+        SourceContract.AssertContainsIgnoringWhitespace("float GrassWaveMultiplier,", blendedDraw);
+        SourceContract.AssertOrderIgnoringWhitespace(renderer,
+            "new BlendedReferenceDraw(", "r.IsGrass,", "r.GrassWaveMultiplier,");
         Assert.Equal(
             2,
             SourceContract.CountOccurrences(renderer,

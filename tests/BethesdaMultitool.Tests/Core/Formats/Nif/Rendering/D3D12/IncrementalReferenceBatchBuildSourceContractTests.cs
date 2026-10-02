@@ -91,9 +91,13 @@ public sealed class IncrementalReferenceBatchBuildSourceContractTests
     {
         var source = RendererSource();
 
-        Assert.Contains("Dictionary<uint, BatchMeshSnapshot>", source, StringComparison.Ordinal);
-        Assert.Contains("bool TexturesReady", source, StringComparison.Ordinal);
-        Assert.Contains("bool MainAdmitted", source, StringComparison.Ordinal);
+        var batchSet = SourceContract.ReadSource("src", "BethesdaMultitool", "Core", "Formats", "Nif",
+            "Rendering", "D3D12", "ReferenceBatchSet.cs");
+        var snapshot = SourceContract.ReadSource("src", "BethesdaMultitool", "Core", "Formats", "Nif",
+            "Rendering", "D3D12", "BatchMeshSnapshot.cs");
+        Assert.Contains("Dictionary<uint, BatchMeshSnapshot>", batchSet, StringComparison.Ordinal);
+        Assert.Contains("bool TexturesReady", snapshot, StringComparison.Ordinal);
+        Assert.Contains("bool MainAdmitted", snapshot, StringComparison.Ordinal);
         Assert.Contains("resolveRan: buildPublished", source, StringComparison.Ordinal);
         SourceContract.AssertOrder(
             source,
@@ -220,7 +224,9 @@ public sealed class IncrementalReferenceBatchBuildSourceContractTests
     {
         var source = RendererSource();
 
-        Assert.Contains("Vector4 ReferenceBounds", source, StringComparison.Ordinal);
+        Assert.Contains("Vector4 ReferenceBounds", SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "BlendedReferenceDraw.cs"), StringComparison.Ordinal);
         Assert.Contains("PassesExactCull(draw.ReferenceBounds)", source, StringComparison.Ordinal);
     }
 }

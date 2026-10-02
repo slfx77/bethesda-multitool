@@ -21,6 +21,15 @@ internal sealed class NifConversionContext(
     public string BlockType { get; } = blockType;
 
     /// <summary>
+    ///     Whether the field walk could not read the block as declared: an array's count exceeded the remaining
+    ///     bytes and its field was skipped. Conversion (<c>TryConvert</c>) tolerates
+    ///     this for resilience over header-sized blocks; measurement must not, because its output IS the layout, so
+    ///     <see cref="NifSchemaConverter.MeasureBlock" /> reports failure when this is set (the corrupted-body and
+    ///     truncation controls in <c>NifKf2004LegacyDecodeTests</c> demand refused offsets, never wrong ones).
+    /// </summary>
+    public bool Incomplete { get; set; }
+
+    /// <summary>
     ///     Current template type parameter (#T#) for generic structs like KeyGroup&lt;float&gt;.
     ///     This is set when processing a field with a template attribute and propagates
     ///     to nested structs.

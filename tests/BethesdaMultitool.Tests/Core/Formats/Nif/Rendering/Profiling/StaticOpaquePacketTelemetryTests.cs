@@ -100,7 +100,7 @@ public sealed class StaticOpaquePacketTelemetryTests
         var profiler = SourceContract.ReadSource("src", "BethesdaRendererProfiler", "Program.cs");
         Assert.Contains("[\"referenceStaticOpaquePacket\"]", profiler, StringComparison.Ordinal);
 
-        var harness = SourceContract.ReadSource("scratchpad", "live_profiles", "run_live.ps1");
+        var harness = SourceContract.ReadLocalReference("scratchpad", "live_profiles", "run_live.ps1");
         Assert.Contains("[string]$ExpectedStaticOpaquePacket = ''", harness, StringComparison.Ordinal);
         Assert.Contains("refsStaticOpaquePacketHitRate", harness, StringComparison.Ordinal);
         Assert.Contains("FALLOUT_VIEWER_REFERENCE_STATIC_OPAQUE_PACKET", harness,

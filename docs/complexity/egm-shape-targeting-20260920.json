@@ -1,0 +1,534 @@
+{
+  "schema": "bmt-egm-shape-targeting-delta-review/v1",
+  "createdUtc": "2026-09-21T04:49:55.573847+00:00",
+  "baseCommit": "862d3add7a48ef6e50123ce8346b77cda78586c7",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "status": "applied_source_review_only",
+  "hashConvention": {
+    "source": "SHA-256 of UTF-8 source after CRLF/CR to LF normalization; no trimming.",
+    "declaration": "Exact Tree-sitter declaration byte span, excluding preceding XML comments and trailing whitespace.",
+    "signature": "Declaration start through block, arrow-expression or accessor-list start, with trailing whitespace removed.",
+    "body": "Exact block, arrow-expression clause or accessor-list bytes."
+  },
+  "scope": "Two new proof/loader classes, two new bounded archive read methods, and all changed production forwarding/guard declarations. Complexity for existing large methods covers this increment only, not an audit of their unchanged bodies. No EGM statistical-basis adoption.",
+  "variables": {
+    "Bn": "Original NIF bytes, <=64 MiB for optional proof.",
+    "Bt": "Encoded TRI bytes, <=16 MiB under existing TriReader.",
+    "N": "Complete TRI V+K, <=500,000 under existing TriReader.",
+    "V": "Base TRI vertex count.",
+    "S": "Parsed shape owners examined during classification/extraction.",
+    "A": "Eligible owner binding attempts, <=8.",
+    "T": "Candidate NIF facet count.",
+    "Tr": "TRI triangle count.",
+    "P_N": "Inherited NIF parse cost/storage, delegated; encoded-size limit is not a new decoded-structure memory guarantee.",
+    "P_T": "Inherited full TRI parse cost/storage, including morph data; not just topology parsing.",
+    "C_N": "Inherited full NIF block classification and its dictionaries/lists. Expected/amortized dictionary work differs from collision worst case.",
+    "R_resolve": "Existing ordered archive/loose resolver cost, including cache, rename mapping and optional fuzzy search; not replaced or claimed O(1).",
+    "B": "Selected extracted payload bytes, <= supplied maximum for the new bounded operation."
+  },
+  "files": [
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/FaceGen/NifPreSkinMorphTarget.cs",
+      "sourceSha256Lf": "83064c0195a2ad5a084131fa263014b34f4fa3f0a0becc4373c4ed2dd81cf0d3",
+      "declarations": [
+        {
+          "name": "NifPreSkinMorphTarget",
+          "kind": "constructor_declaration",
+          "line": 16,
+          "endLine": 27,
+          "declarationSha256Lf": "bcb6da51359cabb0a98c6dabeecd1dcf4ad3873be8154b5d1ce343eb22093dc0",
+          "signatureSha256Lf": "5b005ec9e9152398752570fdb7535f51e487c84f80b3a4132b18bfa1a491e0a1",
+          "bodySha256Lf": "a48e8aefaca32fb424c2cd0705eccb23898e5a32c2389e82092a9057118c3ac1",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) fixed fields and retained source/hash/topology references.",
+          "review": "Copies source identities, owner/data indices and counts. Does not retain parsed documents, source payloads or reference/delta arrays."
+        },
+        {
+          "name": "NifSource",
+          "kind": "property_declaration",
+          "line": 29,
+          "endLine": 29,
+          "declarationSha256Lf": "0e8aa11d911ffd438a37972c6410c23803688190ce3eeb49ae49ae50fe29673a",
+          "signatureSha256Lf": "d6ae434c5a16e0d1349aa33584ebcd81e0b3867a6eab6e5ef85001b3d7e19236",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Read-only access to one retained identity/count/topology field."
+        },
+        {
+          "name": "NifSourceHash",
+          "kind": "property_declaration",
+          "line": 30,
+          "endLine": 30,
+          "declarationSha256Lf": "abaaed97684e2a59dd14c32853efa45d2bb4ea225c0dbf44c35581b18f5de744",
+          "signatureSha256Lf": "739758c12de2f48b597f05eadb49003072238bbacef25953c256005b38604ae8",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Read-only access to one retained identity/count/topology field."
+        },
+        {
+          "name": "TriSource",
+          "kind": "property_declaration",
+          "line": 31,
+          "endLine": 31,
+          "declarationSha256Lf": "872c0c7d71432dfad17622c7da239cf35d1ea95ca7d9ae4c5b60c9338e6a5891",
+          "signatureSha256Lf": "34b7f39555bc8961beca232840a29a49e244f8c20958c4b4449b6130d56eb220",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Read-only access to one retained identity/count/topology field."
+        },
+        {
+          "name": "TriSourceHash",
+          "kind": "property_declaration",
+          "line": 32,
+          "endLine": 32,
+          "declarationSha256Lf": "e654ffa57cd308cc34fe1609f1951bb3c65fd7b3eff9a57630f55d3666e44a5d",
+          "signatureSha256Lf": "46d2fb85d5dac715e824ca83a2fe7cee9e319e821a3f06d626b839d060f5d723",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Read-only access to one retained identity/count/topology field."
+        },
+        {
+          "name": "ShapeBlockIndex",
+          "kind": "property_declaration",
+          "line": 33,
+          "endLine": 33,
+          "declarationSha256Lf": "1755902288f015615f4512f563c4c500487d62451532d64bf74225784a3436d1",
+          "signatureSha256Lf": "4a3b1fdf9e5186ca4037430ef8997be295484d4466f40d4773cfe656f57de7fd",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Read-only access to one retained identity/count/topology field."
+        },
+        {
+          "name": "DataBlockIndex",
+          "kind": "property_declaration",
+          "line": 34,
+          "endLine": 34,
+          "declarationSha256Lf": "d381791a117d52476c063f36f30b1ea6a046c2c8c8a4e829c84f482c1f441b94",
+          "signatureSha256Lf": "5cf5af9b95198e4cbc53af853c9afcf3674ea2edc18d97ff31d6405f712c84ed",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Read-only access to one retained identity/count/topology field."
+        },
+        {
+          "name": "BaseVertexCount",
+          "kind": "property_declaration",
+          "line": 35,
+          "endLine": 35,
+          "declarationSha256Lf": "6a233083af82b9e5c02c97bb11b0d35ada2c692043cb657fbdf268128edcc0e9",
+          "signatureSha256Lf": "b6383d737efb22c9a5b610f1d1d8eaee29502990eef45a0d1d5d28e251a1ce95",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Read-only access to one retained identity/count/topology field."
+        },
+        {
+          "name": "FullVertexCount",
+          "kind": "property_declaration",
+          "line": 36,
+          "endLine": 36,
+          "declarationSha256Lf": "9deb25edc1ccddc021d502d5504f75b6adf32a17fe7e13ba1f0c5f43c3ce0a6f",
+          "signatureSha256Lf": "ae2742abde4aa6aa8e9e94908934e3a9e09336b5ccf1245ef5a296e8f08c1091",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Read-only access to one retained identity/count/topology field."
+        },
+        {
+          "name": "Topology",
+          "kind": "property_declaration",
+          "line": 37,
+          "endLine": 37,
+          "declarationSha256Lf": "84bb17a80913da056d1b2e0342aa9c372e19687fde6d54f9c0d4c03d1781a213",
+          "signatureSha256Lf": "00bf87206bba03bb750445e3656c4862eddf7beb42df9f763e0d06f360d41f5c",
+          "bodySha256Lf": "1328bde4746744e3eb0b7d515371e2d8471ce7d273bff0027564a564ed13fb49",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Read-only access to one retained identity/count/topology field."
+        },
+        {
+          "name": "Find",
+          "kind": "method_declaration",
+          "line": 48,
+          "endLine": 84,
+          "declarationSha256Lf": "f20a969a6915b4166170a69a506f919295367df36b502f7eccc67ae96f910ac9",
+          "signatureSha256Lf": "a88e0fe0c8eddcd97bdabb790ee45efe23952f248f539816f2b341e4d917e03e",
+          "bodySha256Lf": "b9a96169244fef450520708ebf401bcc4b8c5b496ec5840e4bf2565b2bfe7cff",
+          "changeScope": "new",
+          "timeBound": "P_T(Bt) + P_N(Bn) + C_N + O(N) + up to A binding attempts as defined for TryBind; A <= 8.",
+          "spaceBound": "Owned proof inputs belong to caller; delegated parsed documents/classification plus O(N) reference array and transient per-attempt binding storage.",
+          "review": "Rejects NIF >64 MiB and big endian; TRI parsing is bounded by its existing 16 MiB profile and V+K <=500,000. Full displacement domain must match V+K. A second matching owner returns null. Reference positions are used only for existing topology binding, not adopted as an actor statistical domain."
+        },
+        {
+          "name": "FindCandidates",
+          "kind": "method_declaration",
+          "line": 87,
+          "endLine": 110,
+          "declarationSha256Lf": "1bf105ebb4b08a6a55dee4cadecb946a49e5df57948b2e9b1a874f0b91d05701",
+          "signatureSha256Lf": "d69d86d242bf59f41c804263f3851db0a01b49f883e2848738816b08b2b37f56",
+          "bodySha256Lf": "defdbc45fa723ed709752a4adee9196b36e01a15b02f11692a46b75585d915b5",
+          "changeScope": "new",
+          "timeBound": "C_N plus O(S) expected dictionary lookup/iteration and candidate checks. Pathological dictionary collisions can degrade lookup complexity.",
+          "spaceBound": "Delegated classification dictionaries/lists plus at most 9 temporary candidate tuples (the ninth triggers refusal).",
+          "review": "Classifies the parsed NIF before limiting visible matching-count legacy skinned owners to eight. The cap bounds binding repetitions, not initial classification or inherited parser work."
+        },
+        {
+          "name": "TryBind",
+          "kind": "method_declaration",
+          "line": 113,
+          "endLine": 128,
+          "declarationSha256Lf": "de8ea43096c1ffec32e952c358743e899f65e16be989e6991523288caf216e9c",
+          "signatureSha256Lf": "2f4e7cd5d2e2bf8e8dc29b5df89b7d5732ee4d5b10683cac8f3343e711d8680c",
+          "bodySha256Lf": "2ac973be44ddacf62c3dc9f0eca305399728e08cfa6124ed4ee42cc75db6b46b",
+          "changeScope": "new",
+          "timeBound": "Delegates one bounded NIF parse/hash, local geometry extraction and oriented-facet comparison: P_N(Bn) + O(Bn + V + N + T log T + Tr log Tr), with geometry/dependency costs retained explicitly.",
+          "spaceBound": "Delegated parsed NIF/geometry storage plus O(V + N + T + Tr) temporary vertices, references, maps and facet keys; no fixed total-byte ceiling is inferred from encoded limits.",
+          "review": "Calls existing TriNifBinding.Bind. InvalidDataException/NotSupportedException produce no proof. Oriented topology uses sorted cyclic facet keys, preserves multiplicity and drops repeated-index degenerates; it is not a coordinate-equality or coefficient-basis proof."
+        },
+        {
+          "name": "ValidateSource",
+          "kind": "method_declaration",
+          "line": 134,
+          "endLine": 142,
+          "declarationSha256Lf": "2cf3c4a7888a1b0632898e0c02d046fe6b624c6b1bac2ada05273e349a70e28a",
+          "signatureSha256Lf": "0580066bc0132c05ad2d10420c4b621431c8fe1515b12c5b51e7d8e29d0c726c",
+          "bodySha256Lf": "efc8a2d8b9cee85ab21c2b80d2aae9fc62360c0d2109d10b64b7014d4c3cc2e9",
+          "changeScope": "new",
+          "timeBound": "O(Bn) SHA-256 on admitted source, or O(1) early refusal.",
+          "spaceBound": "O(1) digest/hash-string storage.",
+          "review": "Checks <=64 MiB, exact checked FullVertexCount*3 delta length and original NIF hash before extraction. Assumes the caller-supplied parsed NifInfo corresponds to those bytes."
+        },
+        {
+          "name": "Matches",
+          "kind": "method_declaration",
+          "line": 145,
+          "endLine": 146,
+          "declarationSha256Lf": "dfe12e3486c55bc0180015ee5eec9f4643a9469112b619143478b2f9eca6fdb5",
+          "signatureSha256Lf": "4736cf11fbb7842f3c0de327f0c148074b57202aec3bf2d01c93a20d0485bf1f",
+          "bodySha256Lf": "a928b7f5f10063510dea830c41b71c6b1ebc484d76ee29c5b513dad4dbbaf418",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "Requires both exact shape owner and geometry-data block indices."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Npc/Composition/NpcHeadMorphTargetLoader.cs",
+      "sourceSha256Lf": "f1f0dc25e7df145bdf6c3752bcab4a2adba72ee60fbf128f656641d3c0c11dda",
+      "declarations": [
+        {
+          "name": "Load",
+          "kind": "method_declaration",
+          "line": 17,
+          "endLine": 52,
+          "declarationSha256Lf": "d962d138cce762eb4dab9ed3c1551ebb981e5bb5ed6a1c85a7835afd71e1ff7d",
+          "signatureSha256Lf": "36512b5fddaf2cb28164acb3c6c2a4ecbdb312a1083d0feb32298d26951febb7",
+          "bodySha256Lf": "5ff8ff43bf03e7230bb4d485ef03226cfd9fec88bbd4ebbe2907f7035f5b983a",
+          "changeScope": "new",
+          "timeBound": "R_resolve for at most two selected paths + bounded source read/decompression + Find proof cost.",
+          "spaceBound": "At most 64 MiB NIF and 16 MiB TRI payload arrays plus delegated proof allocations and source-locator/log strings.",
+          "review": "Uses only explicit selected NIF/TRI through existing ordered resolver. Missing/unsupported/ambiguous proof returns null and retains the old route; expected read/profile errors are logged. No cache, long-lived handle or new cancellation is added."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Esm/Plugin/AssetPacking/MeshArchiveSet.cs",
+      "sourceSha256Lf": "6df885573ad32efd3b74e7345c991165bce7dc54a8c5caf7e9e6ee509a75e0e4",
+      "declarations": [
+        {
+          "name": "TryExtractFileBounded",
+          "kind": "method_declaration",
+          "line": 132,
+          "endLine": 149,
+          "declarationSha256Lf": "233ccbf2ff239ccd3cf9e26057921a48cf1e7e758c688d6bd6b3dc015d0438b7",
+          "signatureSha256Lf": "2d3fd1fe6a2658840659203133d6c2baf0661797da19cc64a9ab89ebcc5efbe2",
+          "bodySha256Lf": "5ba09377056563699871671a5829a1b2a02c7fd55d383c13f24799b4d9894b31",
+          "changeScope": "new",
+          "timeBound": "O(request path length) normalization + R_resolve + bounded read/decompression.",
+          "spaceBound": "Normalized path plus bounded returned byte array and inherited extraction workspace.",
+          "review": "Rejects negative maximum; preserves existing resolver/cache, donor order, rename/fuzzy/loose policy and actual backing/resolved-path provenance. Resolver average/amortized dictionary behavior is not a worst-case constant-time guarantee."
+        },
+        {
+          "name": "ReadSourceBounded",
+          "kind": "method_declaration",
+          "line": 152,
+          "endLine": 188,
+          "declarationSha256Lf": "aafb5bd5f04e2614f51c5a89ec4545c29b5e4b50832b677b16a54fc34aeeefc9",
+          "signatureSha256Lf": "98cc032677978877be57631d2256c84ebf838eec8ff61fcfb74c92d1b18d83a6",
+          "bodySha256Lf": "a8ff1a286808bc3cf4cb8aaec4167e91c9146f3d3f3e2f5a05f20d32cf344f5d",
+          "changeScope": "new",
+          "timeBound": "O(B) loose read; delegated BSA/BA2 read and decompression for admitted stored/decoded lengths.",
+          "spaceBound": "O(B) returned array plus existing archive decompressor workspace, with B <= supplied maximum.",
+          "review": "BSA uses existing bounded extraction; BA2 requires General and RealSize/PackedSize <= maximum before extraction. Loose length check precedes allocation, exact read plus an EOF probe detects growth. The stream is disposed. Final decoded length is rechecked; wall-clock I/O is not bounded."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/NifGeometryExtractor.cs",
+      "sourceSha256Lf": "9e03591605566540e7b9d339c3d43344262b564e4ae1b6e04875fffae8cc8152",
+      "declarations": [
+        {
+          "name": "Extract",
+          "kind": "method_declaration",
+          "line": 158,
+          "endLine": 1199,
+          "declarationSha256Lf": "a9539e44233d1ad8c40f0188c4b791d2d4592f36fa2ce091430af159e08ef8c0",
+          "signatureSha256Lf": "c96e115b2e8d10fe07486195b90d57a9e39c7770aa4ea0d11fd4239f675ce0ad",
+          "bodySha256Lf": "3e0330249834b8c5e2c5956bcb92ee5a20a28aeaa7fb248f888a63509a287e64",
+          "changeScope": "changed",
+          "timeBound": "Increment: O(Bn) source validation when target supplied, plus O(1) owner/data comparison per encountered shape (O(S)).",
+          "spaceBound": "Increment: fixed hash/target references; existing extraction allocations unchanged.",
+          "review": "Validates before geometry extraction; only the matching skinned owner consumes deltas, before skinning. Null target preserves first-skinned behavior; filtering the target cannot redirect its deltas. Only the changed forwarding/guard behavior is reviewed; unchanged method internals are outside this delta review."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Export/NifExportExtractor.cs",
+      "sourceSha256Lf": "7e0fc28e3608b25a44e582f64de8b17a96f0ee324e8fa98043bd967ac41f83a1",
+      "declarations": [
+        {
+          "name": "Extract",
+          "kind": "method_declaration",
+          "line": 18,
+          "endLine": 65,
+          "declarationSha256Lf": "6195784b55214730725628d8d3ddac5c95240c63d0f2ba2db5290715f9ef3000",
+          "signatureSha256Lf": "1acf941ebe65140a06237c95b929230bbea116fe74727affa2ababe9fcb441b9",
+          "bodySha256Lf": "f36b59ac054024e4cb54a51f5270d530bff6de82a1b9614096c66efd9f56c4fd",
+          "changeScope": "changed",
+          "timeBound": "Increment: O(Bn) validation when target supplied, plus delegated changed ExtractMeshParts cost.",
+          "spaceBound": "Increment: fixed digest/reference storage.",
+          "review": "Checks source/full domain before extraction and forwards the optional target. Only the changed forwarding/guard behavior is reviewed; unchanged method internals are outside this delta review."
+        },
+        {
+          "name": "ExtractMeshParts",
+          "kind": "method_declaration",
+          "line": 189,
+          "endLine": 298,
+          "declarationSha256Lf": "a30610ef4541f49554c092b19cdacb4be58dae6b71abd9ab1a0008435f6f9d86",
+          "signatureSha256Lf": "6bf7b3d4cac6cbc18786adb15f39b43bdb0cfbf08ec11a7cfe24843d7002c2a4",
+          "bodySha256Lf": "006bbf32f2d7a4ac1019f74c7c45cdf02e2f92eb02d6ce8426565dda00c59b49",
+          "changeScope": "changed",
+          "timeBound": "Increment: O(1) exact target comparison per encountered shape (O(S)).",
+          "spaceBound": "Increment: O(1) target reference.",
+          "review": "Consumes the displacement array only after the matching skinned owner, preserving local export placement and null-target behavior. Only the changed forwarding/guard behavior is reviewed; unchanged method internals are outside this delta review."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Npc/Composition/NpcHeadCompositionPlan.cs",
+      "sourceSha256Lf": "34366c0294b436be1ba1de67f339ac350baae449807a186c11c5c0bb2034f29f",
+      "declarations": [
+        {
+          "name": "HeadPreSkinMorphTarget",
+          "kind": "property_declaration",
+          "line": 46,
+          "endLine": 46,
+          "declarationSha256Lf": "c21dec02b49efe6edf8d0b63a1dcab0247ccd6b42f300cd440af5719ab25d862",
+          "signatureSha256Lf": "30fa85c512cf967373db74e80286b6796e2e2c371b3e8b9b5142dcc7925ac0a5",
+          "bodySha256Lf": "522639bfcbe076e17832230a36346a27457cb7f26708d4e0bd1c2288edf78483",
+          "changeScope": "new",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1) optional retained proof reference.",
+          "review": "Adds a Core-owned optional proof; no source blob/parsed document ownership."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Npc/Composition/NpcCompositionPlanner.cs",
+      "sourceSha256Lf": "6fef3b372ec4e9e951bed7f9a5b48793d3ef80c2fb9aa4e7542ed69bbdfc9af3",
+      "declarations": [
+        {
+          "name": "BuildHeadPlan",
+          "kind": "method_declaration",
+          "line": 226,
+          "endLine": 385,
+          "declarationSha256Lf": "e41640dbceabd3671f55bcc53c7ed189c6259c89b97dde488a48c66f280f3865",
+          "signatureSha256Lf": "5235b9b2db5e3b37395cac3292859c65c61e27bbf35fde2f28be7cf860b871ba",
+          "bodySha256Lf": "293f49d6b3ae74fb062d24c81e4d60137b649d5b0688dc35a2543251bdf40716",
+          "changeScope": "changed",
+          "timeBound": "Increment: optional Load proof cost, plus O(1) plan reference assignment.",
+          "spaceBound": "Increment: delegated temporary proof allocations plus fixed retained target.",
+          "review": "Uses explicit BaseHeadNifPath/BaseHeadTriPath and the unchanged legacy full displacement array. Only the changed forwarding/guard behavior is reviewed; unchanged method internals are outside this delta review."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Npc/Assembly/NpcExportSceneBuilder.cs",
+      "sourceSha256Lf": "93b66085707494f312f9acd0922a64a83c2d3aa950ff469554af2c237b3e88cd",
+      "declarations": [
+        {
+          "name": "LoadExtractedNif",
+          "kind": "method_declaration",
+          "line": 168,
+          "endLine": 181,
+          "declarationSha256Lf": "98b4208d9bfd1ea5759633a273ad9383da1bc5dbd5b3ab33feab0ab1ab7b3ac1",
+          "signatureSha256Lf": "32670d2f4ed1f66bf7068cd27439637444b28aaeb9801cc1725d478392729b60",
+          "bodySha256Lf": "4735e2dc62013698d17d199f4f79984437b4d1c034e44a8e57722f4b84f102ab",
+          "changeScope": "changed",
+          "timeBound": "Increment: O(1) forwarding plus delegated extractor validation.",
+          "spaceBound": "Increment: O(1) optional reference.",
+          "review": "Appends the optional parameter and forwards it; unrelated callers retain null. Only the changed forwarding/guard behavior is reviewed; unchanged method internals are outside this delta review."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Npc/Assembly/NpcExportHeadAssembler.cs",
+      "sourceSha256Lf": "cb216a7fdaa18600c58c33e454db2d312dbf2fe7ac7edd098db9f7163855c7cf",
+      "declarations": [
+        {
+          "name": "AddHeadContent",
+          "kind": "method_declaration",
+          "line": 19,
+          "endLine": 148,
+          "declarationSha256Lf": "f66058bed35b2d5366cb8abf9d0192c2c308d234df93c1038212f58eb48ee345",
+          "signatureSha256Lf": "4b96c6364511db1f5fff0413d007b2f319d7cf08e8f149e3228df6d64a62942f",
+          "bodySha256Lf": "9aa8501304f6e3f61809ec1345d006530326fd4569304e94c46420c1de160c69",
+          "changeScope": "changed",
+          "timeBound": "Increment: O(1) forwarding plus delegated extractor validation.",
+          "spaceBound": "Increment: O(1) proof reference.",
+          "review": "Forwards the head-plan proof for the base-head load. Only the changed forwarding/guard behavior is reviewed; unchanged method internals are outside this delta review."
+        },
+        {
+          "name": "AddHeadContent",
+          "kind": "method_declaration",
+          "line": 150,
+          "endLine": 290,
+          "declarationSha256Lf": "4b860913d25edc304e3785387845033b842c4b3e6b65dae2b2e9d2499ceee093",
+          "signatureSha256Lf": "e6aba2e8d391721f24c90e2ee6c2e277303c67513052d1d58171817a4ffb77ae",
+          "bodySha256Lf": "c806dad9f3a70caf46359de0ce702841e6be6454b53f000ee5f1309683ef5bf8",
+          "changeScope": "changed",
+          "timeBound": "Increment: optional Load proof cost plus forwarding/validation.",
+          "spaceBound": "Increment: delegated proof allocations plus fixed proof reference.",
+          "review": "Legacy overload obtains optional proof from explicit paths and unchanged legacy deltas; no new coefficient computation. Only the changed forwarding/guard behavior is reviewed; unchanged method internals are outside this delta review."
+        }
+      ]
+    },
+    {
+      "path": "src/BethesdaMultitool/CLI/Rendering/Npc/NpcHeadBuilder.cs",
+      "sourceSha256Lf": "281f50374769d95f14227a6822d1879aa45b5ae98888de894ab431f86fb3c462",
+      "declarations": [
+        {
+          "name": "BuildFromPlan",
+          "kind": "method_declaration",
+          "line": 59,
+          "endLine": 235,
+          "declarationSha256Lf": "06b8333d13705ccb26f51308a5bd276f0b961ae5ad57d3e6fe206edf6641ff20",
+          "signatureSha256Lf": "f24a7eb30a14eaf8da1e06595e5e4ee05599d04fa19380ee1113eadb8d9d4d89",
+          "bodySha256Lf": "0bb1878f2516c3a189b1130efe796fa1f2b216c2f294ffcf33830381f6713912",
+          "changeScope": "changed",
+          "timeBound": "Increment: O(1) proof forwarding plus delegated extractor validation.",
+          "spaceBound": "Increment: O(1) proof reference.",
+          "review": "Both head-loading branches carry the plan proof. Only the changed forwarding/guard behavior is reviewed; unchanged method internals are outside this delta review."
+        },
+        {
+          "name": "ApplyHeadRenderOverrides",
+          "kind": "method_declaration",
+          "line": 237,
+          "endLine": 287,
+          "declarationSha256Lf": "dfd2dd6ad2bb0436133b12805e7cd25aef34e4ec9b35043b14b8eb1f864870f9",
+          "signatureSha256Lf": "ab7c9676200d97be7e4ed3db4d87d4af313a29b5a63c865f80a79acf65f90913",
+          "bodySha256Lf": "cf4fb8ce98cb309f2111cc293923a5fb2aec57bd5e24327dc828c79ff8dd2854",
+          "changeScope": "changed",
+          "timeBound": "Increment: O(1)",
+          "spaceBound": "Increment: O(1) retained reference in the existing replacement plan.",
+          "review": "Preserves HeadPreSkinMorphTarget when copying render overrides. Only the changed forwarding/guard behavior is reviewed; unchanged method internals are outside this delta review."
+        },
+        {
+          "name": "LoadHeadWithPreSkinMorphs",
+          "kind": "method_declaration",
+          "line": 289,
+          "endLine": 308,
+          "declarationSha256Lf": "010b290e430efa259da2dad91c7853e3cbfac111ce59228eb7cbbb0a54d072fa",
+          "signatureSha256Lf": "d4cc67c095a70cf18c6a173bfd1e20482e7cb46a970f3fd531aa7e8ac1a6f5f1",
+          "bodySha256Lf": "2cfcb30f6df24d76f0d2393c832e68e4fa1644d5241e46cc2752e01449380c93",
+          "changeScope": "changed",
+          "timeBound": "Increment: O(1) forwarding plus delegated extractor validation.",
+          "spaceBound": "Increment: O(1) optional reference.",
+          "review": "Forwards the proof to native geometry extraction without changing texture or coefficient policy. Only the changed forwarding/guard behavior is reviewed; unchanged method internals are outside this delta review."
+        }
+      ]
+    }
+  ],
+  "resourceBounds": {
+    "selectedInputs": "Optional proof reads at most 64 MiB NIF +16 MiB TRI. Existing archive indexes, EGM parsing and no-proof legacy extraction are not newly bounded.",
+    "repetition": "At most eight binding attempts after initial classification; each can parse/hash NIF and sort oriented-facet keys. No retained proof cache is added.",
+    "ownership": "Target retains fixed identity/count/topology fields only. Source payload, parsed documents, V+K reference and per-candidate binding arrays are temporary. Caller original NIF/TRI/deltas are not changed.",
+    "inheritedCosts": "NIF/TRI parser and decompressor work remain delegated. Input byte ceilings are not a measured process-peak or wall-clock bound. Synchronous composition adds no cancellation."
+  },
+  "policy": {
+    "proof": "Exact source owner/data plus indexed oriented topology and complete V+K length. Distinct matching owners decline the optional proof.",
+    "fallback": "Missing, unsupported or ambiguous optional proof, and the loader's explicitly caught InvalidDataException/NotSupportedException/IOException/ArgumentException, preserve legacy first-skinned consumption. This is not universal corrected head identification or a guarantee to catch every unexpected failure.",
+    "basis": "Actor coefficient basis, EGM-to-TRI pairing and actor neutral/coordinate-domain evidence remain unverified. Raw TRI V+K reference is not adopted as an actor statistical domain.",
+    "legacyArithmetic": "EgmParser and FaceGenMeshMorpher unchanged: coefficient-family truncation, accumulation order, 1e-7 epsilon, near-zero-result policy and full V+K storage; visible geometry consumes V.",
+    "parsedObjectTrust": "ValidateSource checks original bytes and delta length, not an independently supplied/mutated NifInfo graph."
+  },
+  "validation": {
+    "sourceReview": "Applied declarations reviewed and hashed without builds or tests by this review.",
+    "newCases": 13,
+    "focusedCases": 50,
+    "focusedClasses": [
+      "NifPreSkinMorphTargetTests",
+      "MeshArchiveSetTests",
+      "EgmReaderTests",
+      "EgmShapeDomainTests",
+      "TriReaderTests",
+      "TriGeometryBindingTests",
+      "FaceGenMeshMorpherTests",
+      "PackedHeadRuntimeParityTests"
+    ],
+    "discriminators": [
+      "Two visible skinned owners with equal counts but only the later owner matching oriented topology.",
+      "Rotation/translation distinguish pre-skin application under both linear and dual-quaternion skinning.",
+      "Export local displacement; filtered target cannot transfer deltas; original arrays unchanged.",
+      "Duplicate owners, unsupported quad topology, lost K, stale source and truncated deltas cannot gain proof.",
+      "Bounded archive/loose reads retain selected-source provenance and legacy fallback."
+    ],
+    "executionAtCreation": "Root Linux label 20260920-nif-egm is active (291 focused +2 accessibility); results pending."
+  },
+  "followUps": [
+    "Execute focused changed-source tests and retain platform/source correspondence before claiming integration.",
+    "Retail actor-specific basis provenance remains required before statistical-domain adoption.",
+    "Native rendering, current GUI/CLI workflows, real actor selection/fallback and BA2 bounded-read runtime coverage remain separate acceptance.",
+    "No performance measurement or release acceptance is established by this receipt."
+  ],
+  "testSources": [
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/Formats/Nif/Rendering/Npc/NifPreSkinMorphTargetTests.cs",
+      "sourceSha256Lf": "07f2fe917edd9d67b6630a7c6e532b1e9b7063530a2618d5b6da815b9fa551c8"
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/Formats/Nif/Rendering/Npc/NifMorphTargetFixture.cs",
+      "sourceSha256Lf": "41ff8fa9919023fd07a1225699a78fffcce7340474b80bb461ca690db339702d"
+    },
+    {
+      "path": "tests/BethesdaMultitool.Tests/CLI/MeshArchiveSetTests.cs",
+      "sourceSha256Lf": "b33af6f422051bb97534377776b0fcf43b638a3f6da0428d99c7e2372a947e35"
+    }
+  ],
+  "appliedArtifact": {
+    "path": "TestOutput/egm-shape-targeting-20260920/egm-shape-targeting.patch",
+    "sha256": "0bcdb2956e44e822c4c84bc490bb64497ba502000a57557dbe44d6fe28eb86f5",
+    "scope": "Reviewed candidate applied by root after checkpoint 862d3add; this receipt hashes actual applied production and test files."
+  },
+  "independentReview": {
+    "reviewer": "completion_scope_review",
+    "scope": "Read-only documentation/receipt resource, policy and validation scope; no source hash audit, build or test execution by this reviewer.",
+    "result": "No concrete scope or resource-bound overclaim found. Source-review/pending execution, lookup budget versus payload cost, and topology routing versus statistical-domain admission remain explicit."
+  }
+}

@@ -20,9 +20,16 @@ internal static class NpcCompositionExportAdapter
         ArgumentNullException.ThrowIfNull(textureResolver);
         ArgumentNullException.ThrowIfNull(compositionCaches);
 
-        return plan.Options.HeadOnly
+        var scene = plan.Options.HeadOnly
             ? BuildHeadOnlyScene(plan, meshArchives, textureResolver, compositionCaches)
             : BuildFullBodyScene(plan, meshArchives, textureResolver, compositionCaches);
+        if (scene is not null)
+        {
+            scene.AssetUses = BethesdaMultitool.Core.Formats.Nif.Rendering.Scene.SceneAssetUses.WithMeshes(
+                plan.Appearance.AssetUses, scene.MeshParts.Select(part => part.Submesh));
+            scene.AssetUses = BethesdaMultitool.Core.Formats.Nif.Rendering.Scene.SceneAssetUses.WithGeneratedInputs(scene.AssetUses, textureResolver);
+        }
+        return scene;
     }
 
     internal static GlbScene? BuildCreature(
@@ -95,6 +102,8 @@ internal static class NpcCompositionExportAdapter
             }
         }
 
+        scene.AssetUses = BethesdaMultitool.Core.Formats.Nif.Rendering.Scene.SceneAssetUses.WithMeshes(
+            plan.AssetUses, scene.MeshParts.Select(part => part.Submesh));
         return scene.MeshParts.Count > 0 ? scene : null;
     }
 

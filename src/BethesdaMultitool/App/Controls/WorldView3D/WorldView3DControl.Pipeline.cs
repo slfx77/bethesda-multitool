@@ -20,10 +20,7 @@ public sealed partial class WorldView3DControl
     ///     Collects texture-BSA paths from the primary data file plus every Load Order entry.
     ///     Each unique parent directory is globbed once (so a load order with 5 ESMs in the same
     ///     Data folder doesn't issue 5 identical filesystem scans). The result preserves Load
-    ///     Order ordering: primary file first, then load-order entries in order, so a later DLC
-    ///     ESM's BSAs win lookups for textures shared with the base game — matching the engine's
-    ///     "later file overrides earlier" semantics that <see cref="NifTextureResolver" /> already
-    ///     implements via source iteration order.
+    ///     Order ordering: primary file first, then load-order entries in order, with first-source priority under the declared BMT policy. This is not engine archive-order evidence.
     /// </summary>
     private static string[] DiscoverTextureBsaPaths(WorldViewData data)
         => WorldDataBsaPathResolver.DiscoverTextureBsaPaths(data);
@@ -36,45 +33,8 @@ public sealed partial class WorldView3DControl
     ///     same BSA twice. Result order is priority order — <c>MeshArchiveSet</c> layers the
     ///     archives first-write-wins, so an earlier donor build outranks a later one.
     /// </summary>
-    private static string[] DiscoverMeshBsaPaths(WorldViewData data)
-    {
-        var seenDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var seenBsas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var result = new List<string>();
-
-        AddFrom(data.SourceFilePath);
-        if (data.AdditionalDataPaths is not null)
-        {
-            foreach (var path in data.AdditionalDataPaths) AddFrom(path);
-        }
-
-        // Asset-only donor builds, in declared priority order, after the load order — see
-        // WorldViewData.AssetDataDirectories.
-        if (data.AssetDataDirectories is not null)
-        {
-            foreach (var dir in data.AssetDataDirectories) AddFromDirectory(dir);
-        }
-
-        return result.ToArray();
-
-        void AddFrom(string? candidatePath)
-        {
-            if (string.IsNullOrEmpty(candidatePath)) return;
-            AddFromDirectory(Path.GetDirectoryName(Path.GetFullPath(candidatePath)));
-        }
-
-        void AddFromDirectory(string? candidateDir)
-        {
-            if (string.IsNullOrEmpty(candidateDir)) return;
-            var dir = Path.GetFullPath(candidateDir);
-            if (!seenDirs.Add(dir)) return;
-            var discovery = BsaDiscovery.DiscoverInDirectory(dir);
-            foreach (var bsa in discovery.MeshesBsaPaths)
-            {
-                if (seenBsas.Add(bsa)) result.Add(bsa);
-            }
-        }
-    }
+    private static string[] DiscoverMeshBsaPaths(WorldViewData data) =>
+        WorldDataBsaPathResolver.DiscoverSources(data).MeshesBsaPaths;
 
     /// <summary>
     ///     "Resolve Renames" (memory dumps only): runs the DMP→ESM conversion's donor fuzzy pass
@@ -90,23 +50,26 @@ public sealed partial class WorldView3DControl
         try
         {
             var donorDirs = CollectRenameDonorDataDirs(data);
+            var assetRevision = data.AssetRevision;
             var meshPaths = data.ModelPathIndex.Values.ToArray();
             var sidecar = MeshRenameMapService.SidecarPathFor(dumpPath);
             var built = await Task.Run(() =>
-            {
-                var result = MeshRenameMapService.Build(meshPaths, donorDirs, CancellationToken.None);
-                MeshRenameMapService.Save(sidecar, result.Renames, donorDirs);
-                return result;
-            });
+                MeshRenameMapService.Build(meshPaths, donorDirs, CancellationToken.None));
 
+            if (!ReferenceEquals(_data, data)) return;
+            if (data.AssetRevision != assetRevision)
+            {
+                ShowStatus("Assets changed; retry rename resolution.");
+                return;
+            }
+            MeshRenameMapService.Save(sidecar, built.Renames, donorDirs);
             data.MeshPathRenames = built.Renames;
             Log.Info(
                 "ResolveRenames: {0} mesh paths considered, {1} renamed, {2} exact, {3} missing, {4} cross-root declined -> {5}",
                 built.Considered, built.Renamed, built.Exact, built.Missing,
                 built.CrossRootDeclined, sidecar);
 
-            // Reopen the archive set (and everything downstream of it) so the map takes effect.
-            TryInitReferencePipeline();
+            // The shared asset revision retires both views' bindings and the old worker pipelines.
         }
         catch (Exception ex)
         {
@@ -160,7 +123,7 @@ public sealed partial class WorldView3DControl
     ///     discovery in addition to the textures BSAs. Soft-fails when no Meshes BSA is found
     ///     (REFRs simply don't render — terrain still does).
     /// </summary>
-    private void TryInitReferencePipeline()
+    private void TryInitReferencePipeline(BsaDiscoveryResult? selectedSources = null)
     {
         var data = _data;
         if (data is null) return;
@@ -169,8 +132,9 @@ public sealed partial class WorldView3DControl
         {
             // Clear any prior failure — this runs again on every ESM switch.
             _referencePipelineInitError = null;
-            var meshBsas = DiscoverMeshBsaPaths(data);
-            if (meshBsas.Length == 0)
+            var assetSources = selectedSources ?? WorldDataBsaPathResolver.DiscoverSources(data);
+            var meshBsas = assetSources.MeshesBsaPaths;
+            if (!assetSources.HasMeshes)
             {
                 Log.Warn(
                     "WorldView3DControl: no *Meshes*.bsa from '{0}' or {1} Load Order paths — REFRs will be skipped. Add an ESM whose Data folder contains a Meshes BSA to the Load Order.",
@@ -179,19 +143,17 @@ public sealed partial class WorldView3DControl
                 return;
             }
 
-            var textureBsas = DiscoverTextureBsaPaths(data);
+            var textureBsas = assetSources.TexturePlan?.Mounts.Select(m => m.Path).ToArray() ?? [];
+            var meshPlan = assetSources.MeshPlan!;
+            var texturePlan = assetSources.TexturePlan!;
             // Memory dumps reference prototype mesh paths that were renamed before the shipped
             // archives, so enable the fuzzy renamed-asset fallback (+ loose-file overrides) for
             // dumps only; ESM/ESP browsing stays exact-only.
-            _meshArchives = MeshArchiveSet.Open(
-                meshBsas[0],
-                meshBsas.Length > 1 ? meshBsas[1..] : null,
-                enableFuzzy: data.IsMemoryDump,
-                includeLooseFiles: data.IsMemoryDump,
-                pathRenames: data.MeshPathRenames);
-            _referenceTextureResolver = new NifTextureResolver(textureBsas);
+            _meshArchives = MeshArchiveSet.Open(meshPlan,
+                enableFuzzy: data.IsMemoryDump, pathRenames: data.MeshPathRenames);
+            _referenceTextureResolver = new NifTextureResolver(texturePlan);
             _referenceGpuTextureResolver12 =
-                new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver(textureBsas);
+                new BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12.NifGpuTextureResolver(texturePlan);
 
             if (_gpu12 is null ||
                 _commandRecorder12 is null ||
@@ -229,7 +191,11 @@ public sealed partial class WorldView3DControl
                 // Authoritative leaf atlas from the TREE record's ICON (the .spt's dev material often never shipped).
                 speedTreeLeafTextures: data.SpeedTreeLeafTextures,
                 // TREE CNAM canopy-depth dimming (leaf + branch scalars) — engine-applied per tree.
-                speedTreeDimming: data.SpeedTreeDimming);
+                speedTreeDimming: data.SpeedTreeDimming,
+                actorScenes: data.ActorCatalog is { } actorCatalog && data.SourceFilePath is { } actorSource
+                    ? new BethesdaMultitool.Core.WorldData.WorldActorSceneSource(
+                        actorCatalog, actorSource, meshBsas, textureBsas, meshPlan, texturePlan)
+                    : null);
             _references = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.ReferenceRenderer12(
                 _gpu12, _commandRecorder12, _ringBuffer12, _rootSignature12,
                 _cbvSrvUavHeap12, _referenceMeshCache12, _deletionQueue12, data.Game,

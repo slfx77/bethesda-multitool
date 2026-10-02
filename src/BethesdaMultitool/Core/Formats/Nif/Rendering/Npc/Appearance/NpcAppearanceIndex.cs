@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Semantic.LoadOrder;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -11,6 +12,18 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 internal sealed class NpcAppearanceIndex
 {
     public BethesdaGame Game { get; init; } = BethesdaGame.Unknown;
+
+    internal Dictionary<uint, LoadOrderRecordVersion> Sources { get; } = [];
+    internal Dictionary<string, string> SourceHashes { get; } = new(StringComparer.OrdinalIgnoreCase);
+    internal Dictionary<uint, BethesdaMultitool.Core.Assets.AssetRecordOwner> StoredOwners { get; } = [];
+
+    internal BethesdaMultitool.Core.Assets.AssetRecordOwner Owner(uint? id, string signature)
+    {
+        if (id is { } value && Sources.TryGetValue(value, out var source))
+            return BethesdaMultitool.Core.Assets.AssetRecordOwner.Selected(source, SourceHashes.GetValueOrDefault(source.FilePath));
+        if (id is { } local && StoredOwners.TryGetValue(local, out var stored)) return stored;
+        return BethesdaMultitool.Core.Assets.AssetRecordOwner.Unavailable(signature, id);
+    }
 
     public Dictionary<uint, NpcScanEntry> Npcs { get; } =
         new();

@@ -31,6 +31,7 @@ internal static class NpcAppearanceIndexBuilder
             esmData.LongLength));
 
         var index = new NpcAppearanceIndex { Game = format.Game };
+        var sourceHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(esmData));
         var decodeTimer = Stopwatch.StartNew();
         var decodedRecords = 0;
         long decodedBytes = 0;
@@ -46,6 +47,8 @@ internal static class NpcAppearanceIndexBuilder
             decodedRecords++;
             decodedBytes += record.DataSize;
             ProcessRecord(index, esmData, bigEndian, record);
+            RetainOwner(index, record.FormId, new("StoredBytes", record.Signature, record.FormId,
+                null, null, null, record.Offset, record.Flags, sourceHash));
         }
 
         decodeTimer.Stop();
@@ -105,6 +108,8 @@ internal static class NpcAppearanceIndexBuilder
             decodedRecords++;
             decodedBytes += analyzedRecord.DataSize;
             ProcessRecord(index, recordData, bigEndian, record);
+            RetainOwner(index, record.FormId, new("MappedRecord", record.Signature, record.FormId,
+                null, null, null, analyzedRecord.Offset, record.Flags));
         }
 
         decodeTimer.Stop();
@@ -115,6 +120,15 @@ internal static class NpcAppearanceIndexBuilder
             decodedRecords,
             decodedBytes));
         return index;
+    }
+
+    private static void RetainOwner(NpcAppearanceIndex index, uint id, BethesdaMultitool.Core.Assets.AssetRecordOwner owner)
+    {
+        if (index.StoredOwners.ContainsKey(id))
+            owner = owner with { Status = "AmbiguousStoredOccurrence", RecordOffset = null };
+        index.StoredOwners[id] = owner;
+        if (index.Creatures.TryGetValue(id, out var creature))
+            index.Creatures[id] = creature with { AssetOwner = owner };
     }
 
     private static bool TryReadLocalRecord(
@@ -179,7 +193,7 @@ internal static class NpcAppearanceIndexBuilder
             : PluginFormat.Fnv;
     }
 
-    private static bool IsAppearanceRecord(string signature)
+    internal static bool IsAppearanceRecord(string signature)
     {
         return signature is
             "NPC_" or "CREA" or "RACE" or "HAIR" or "EYES" or "HDPT" or

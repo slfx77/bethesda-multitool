@@ -2,6 +2,7 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 
@@ -80,7 +81,7 @@ internal static class NifExportSceneBuilder
         }
 
         var scene = new GlbScene();
-        var sourceName = Path.GetFileNameWithoutExtension(sourceLabel);
+        var sourceName = EnginePath.FileNameWithoutExtension(sourceLabel);
         for (var index = 0; index < model.Submeshes.Count; index++)
         {
             var submesh = model.Submeshes[index];

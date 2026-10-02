@@ -18,7 +18,7 @@ internal static class NpcEarTextureComposer
         NifTextureResolver textureResolver,
         string? baseTexturePath,
         bool applyEgt,
-        Func<EgtParser?> loadEgt)
+        Func<EgtParser?> loadEgt, string? egtPath = null)
     {
         ArgumentNullException.ThrowIfNull(npc);
         ArgumentNullException.ThrowIfNull(textureResolver);
@@ -54,7 +54,10 @@ internal static class NpcEarTextureComposer
         // single diffuse, so bake that final multiplication once here, after the optional ear EGT.
         texture = FaceGenHeadShaderFamilyResolver.ApplyDefaultDetailModulation(texture);
         var generatedTextureKey = NpcTextureHelpers.BuildNpcEarEgtTextureKey(npc);
-        textureResolver.InjectTexture(generatedTextureKey, texture);
+        textureResolver.InjectTexture(generatedTextureKey, texture,
+            new("Ear FaceGen / default Map1 modulation",
+                source == NpcHeadTextureSource.GeneratedEgt && egtPath is not null ? [baseTexturePath, egtPath] : [baseTexturePath],
+                source == NpcHeadTextureSource.GeneratedEgt, [new(baseTexturePath, [.. baseTexture.AssetReadReceipts])]));
         return new NpcEarTextureResolution(
             generatedTextureKey,
             source,

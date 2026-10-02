@@ -176,7 +176,7 @@ public sealed class OpaqueFrontToBackPolicyTests
         Assert.Contains("_refOpaqueFrontToBackFallbacks.Clear();", accumulator,
             StringComparison.Ordinal);
 
-        var harness = SourceContract.ReadSource("scratchpad", "live_profiles", "run_live.ps1");
+        var harness = SourceContract.ReadLocalReference("scratchpad", "live_profiles", "run_live.ps1");
         Assert.Contains("[string]$ExpectedOpaqueFrontToBack = ''", harness,
             StringComparison.Ordinal);
         Assert.Contains("FALLOUT_VIEWER_REFERENCE_OPAQUE_FRONT_TO_BACK", harness,

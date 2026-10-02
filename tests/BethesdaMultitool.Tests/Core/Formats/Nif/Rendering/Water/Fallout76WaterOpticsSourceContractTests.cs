@@ -37,10 +37,14 @@ public sealed class Fallout76WaterOpticsSourceContractTests
             source, StringComparison.Ordinal);
     }
 
+    /// <summary>Preserves single-target dual-source transmission and capture alpha in the production factory.</summary>
     [Fact]
     public void DedicatedPsoUsesSingleTargetDualSourceTransmissionAndPreservesAlpha()
     {
-        var source = ReadRenderer();
+        var renderer = ReadRenderer();
+        var source = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "WaterPipelineFactory12.cs");
         var standardBlendStart = source.IndexOf("var blend = new D12.BlendDescription",
             StringComparison.Ordinal);
         var blendStart = source.IndexOf(
@@ -65,7 +69,7 @@ public sealed class Fallout76WaterOpticsSourceContractTests
 
         var psoStart = source.IndexOf("var psoDesc = new GraphicsPipelineStateDescription",
             compileStart, StringComparison.Ordinal);
-        var psoEnd = source.IndexOf("_depthPsoTemplate = psoDesc;", psoStart,
+        var psoEnd = source.IndexOf("var depthTemplate = CopyDescription(psoDesc);", psoStart,
             StringComparison.Ordinal);
         Assert.True(psoStart > compileStart);
         Assert.True(psoEnd > psoStart);
@@ -76,12 +80,11 @@ public sealed class Fallout76WaterOpticsSourceContractTests
 
         Assert.Contains("new ShaderMacro(\"FO76_WATER_OPTICS\", \"1\")", source,
             StringComparison.Ordinal);
-        Assert.Contains("_psoFo76Optics = TrackConstructionResource(", source,
+        Assert.Contains("_psoFo76Optics = pipelines.Fo76Optics;", renderer, StringComparison.Ordinal);
+        Assert.Contains("_psoFo76OpticsDepthSample = pipelines.Fo76OpticsDepthSample;", renderer,
             StringComparison.Ordinal);
-        Assert.Contains("_psoFo76OpticsDepthSample = TrackConstructionResource(", source,
-            StringComparison.Ordinal);
-        Assert.Contains("_psoFo76Optics.Dispose();", source, StringComparison.Ordinal);
-        Assert.Contains("_psoFo76OpticsDepthSample.Dispose();", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("_psoFo76Optics.Dispose();", renderer, StringComparison.Ordinal);
+        Assert.DoesNotContain("_psoFo76OpticsDepthSample.Dispose();", renderer, StringComparison.Ordinal);
     }
 
     [Fact]

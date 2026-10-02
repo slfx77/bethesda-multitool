@@ -447,7 +447,7 @@ public sealed class FnvTerrainNormalMapTests
 
         var cacheRoute = Slice(
             textureCache,
-            "public Entry GetOrUpload(string path, bool isNormalMap = false)",
+            "public Entry GetOrUpload(",
             "internal static string NormalizeCacheKey");
         Assert.Contains("var fallback = isNormalMap ? FlatNormal : WhitePixel;", cacheRoute,
             StringComparison.Ordinal);

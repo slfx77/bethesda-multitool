@@ -17,6 +17,8 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Resources;
+using Slfx77.Multitool.Core.Lifetime;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
@@ -118,7 +120,9 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
     private readonly GpuDeletionQueue12 _deletionQueue;
     private readonly TerrainTextureResolver12 _textureResolver;
-    private readonly GpuRootSignature12 _rootSignature;
+    private readonly ShaderPipelineResources _pipelineResources;
+    private RetiredResourceDisposal? _retiredResources;
+    private readonly int _threadId = Environment.CurrentManagedThreadId;
     // Colour PSOs indexed by the cell's blend-quad count (1..MaxBlendQuads; slot 0 stays null). A
     // cell uploads only the layer-weight quads its slot count reaches, and the vertex shader has to
     // declare exactly that many inputs, so the permutation is a property of the CELL rather than of
@@ -170,7 +174,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private bool _budgetUnreachableWarned;
     private IndexBufferView _sharedIbv;
 
-    private LruCache<(int gx, int gy), CachedCellMesh12> _meshCache;
+    private GpuTerrainCellCache12<CachedCellMesh12> _meshCache;
     private readonly HashSet<(int gx, int gy)> _knownUnusableCells = new();
 
     // Transient build/upload failures get retried before a cell is permanently blacklisted for
@@ -215,6 +219,15 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     private bool _showVertexColors = true;
     private bool _disposed;
 
+    /// <summary>Creates the terrain pipeline family and cache on the world rendering thread.</summary>
+    /// <param name="gpu">Borrowed device retained until terrain disposal succeeds.</param>
+    /// <param name="recorder">Borrowed recorder whose submissions the caller retires before disposal.</param>
+    /// <param name="ringBuffer">Borrowed per-frame constant buffer allocator.</param>
+    /// <param name="rootSignature">World root shared with other renderers and retained by this pipeline family.</param>
+    /// <param name="cbvSrvUavHeap">Borrowed world descriptor allocator.</param>
+    /// <param name="deletionQueue">Borrowed deferred geometry-release queue.</param>
+    /// <param name="textureResolver">Borrowed terrain texture resolver retained throughout rendering.</param>
+    /// <remarks>Creation, native pipeline access and disposal use the same managed thread.</remarks>
     public TerrainRenderer12(
         GpuDevice12 gpu,
         GpuCommandRecorder12 recorder,
@@ -230,51 +243,84 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         _cbvSrvUavHeap = cbvSrvUavHeap;
         _deletionQueue = deletionQueue;
         _textureResolver = textureResolver;
-        _rootSignature = rootSignature;
+        try
+        {
+            // Retain the family before compilation or native allocation can fail. Its root is
+            // shared with the world, while every terrain PSO has exactly one owner here.
+            _pipelineResources = rootSignature.CreatePipelineResources(2 + 2 * TerrainVertexLayout.MaxBlendQuads);
 
-        // The two depth passes are the only PSOs built eagerly: they are quad-count 0, so one vertex
-        // shader covers every cell no matter how many layers it paints, and both are wanted before
-        // the first cell exists. The colour and mirror PSOs arrive with their first cell.
-        var depthVsBytecode = TerrainPipelineFactory12.CompileVertexShader(0);
-        var depthElements = TerrainVertexLayout.ElementsFor(0);
-        _depthOnlyPso = TerrainPipelineFactory12.BuildDepthOnlyPipelineState(
-            gpu, rootSignature, depthVsBytecode, depthElements);
-        _shadowDepthPso = TerrainPipelineFactory12.BuildShadowPipelineState(
-            gpu, rootSignature, depthVsBytecode, depthElements);
+            // The two depth passes are the only PSOs built eagerly: they are quad-count 0, so one vertex
+            // shader covers every cell no matter how many layers it paints, and both are wanted before
+            // the first cell exists. The color and mirror PSOs arrive with their first cell.
+            var depthVsBytecode = TerrainPipelineFactory12.CompileVertexShader(0);
+            var depthElements = TerrainVertexLayout.ElementsFor(0);
+            _depthOnlyPso = TerrainPipelineFactory12.BuildDepthOnlyPipelineState(
+                gpu, _pipelineResources, depthVsBytecode, depthElements);
+            _shadowDepthPso = TerrainPipelineFactory12.BuildShadowPipelineState(
+                _pipelineResources, depthVsBytecode, depthElements);
 
-        _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData();
-        _terrainArena = new GpuTerrainArena12(gpu)
-            .RegisterWith(ResourceRegistry.Instance, "terrain-geometry");
-        _meshCache = CreateMeshCache(MinCacheCapacity, byteBudget: 0); // re-created with a plan at LoadData
+            _sharedIndexData = TerrainMeshBuilder.BuildSharedIndexBufferData();
+            _terrainArena = new GpuTerrainArena12(gpu);
+            _terrainArena.RegisterWith(ResourceRegistry.Instance, "terrain-geometry");
+            _meshCache = CreateMeshCache(MinCacheCapacity, byteBudget: 0); // re-created with a plan at LoadData
+        }
+        catch
+        {
+            // No command recording occurs during construction. Roll back unpublished resources
+            // in dependency order without separately releasing the borrowed pipeline handles.
+            var rollback = new RetiredResourceDisposal();
+            rollback.Add(_meshCache, "terrain construction cache");
+            rollback.Add(_terrainArena, "terrain construction arena", 1);
+            rollback.Add(_pipelineResources, "terrain construction pipeline family", 2);
+            rollback.Dispose();
+            throw;
+        }
     }
 
+    /// <summary>Drains CPU builds and releases caller-retired terrain resources before their pipeline family.</summary>
+    /// <remarks>The caller must prove GPU completion or device removal before calling on the creating thread.</remarks>
+    /// <exception cref="InvalidOperationException">Called outside the creating thread, before any resource is retired.</exception>
+    /// <exception cref="AggregateException">A release failed; retain this renderer and retry disposal.</exception>
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        VerifyAccess();
+        if (!_disposed)
+        {
+            var retired = new RetiredResourceDisposal();
+            retired.Add(DrainBuildTasksForDispose, "terrain background builds");
+            retired.Add(_meshCache.ReleaseAfterRetirement, "terrain cell cache", 1);
+            retired.Add(RetireSharedIndexBuffer, "terrain shared index buffer", 1);
+            retired.Add(_sharedIndexFootprint, "terrain shared index footprint", 1);
+            // Cache eviction enqueues each cell's deferred arena free, so the arena must outlive
+            // that cascade. Its blocks are released only after the caller has retired GPU use.
+            retired.Add(_terrainArena, "terrain geometry arena", 2);
+            retired.Add(_pipelineResources, "terrain pipeline family", 3);
+            _retiredResources = retired;
+            _disposed = true;
+        }
 
-        // Drain any in-flight background builds before tearing down GPU/cache state they could
-        // still be feeding. Their results land in _buildResults (gen-checked) and are harmless.
-        DrainBuildTasksForDispose();
+        // The stopped marker prevents rebuilding the release list, but never suppresses a retry.
+        _retiredResources!.Dispose();
+        _sharedIndexFootprint = null;
+        Array.Clear(_colorPsoByQuads);
+        Array.Clear(_mirrorPsoByQuads);
+    }
 
-        _meshCache.Dispose();
+    /// <summary>Rejects foreign-thread disposal before stopping workers or releasing native resources.</summary>
+    private void VerifyAccess()
+    {
+        if (Environment.CurrentManagedThreadId != _threadId)
+            throw new InvalidOperationException("Terrain resources belong to their creating thread.");
+    }
+
+    /// <summary>Transfers the shared index buffer once to the existing deferred-release queue.</summary>
+    /// <remarks>The field remains owned here if transfer fails, allowing the disposal stage to retry.</remarks>
+    private void RetireSharedIndexBuffer()
+    {
         if (_sharedIndexBuffer is not null)
         {
             _deletionQueue.EnqueueDispose(_sharedIndexBuffer);
-        }
-        _sharedIndexFootprint?.Dispose();
-        _sharedIndexFootprint = null;
-        // After _meshCache.Dispose() above: eviction enqueues each cell's deferred arena free, so
-        // the arena must outlive that cascade. Its blocks are released here regardless.
-        _terrainArena.Dispose();
-        _shadowDepthPso.Dispose();
-        _depthOnlyPso.Dispose();
-        for (var quads = 0; quads < _colorPsoByQuads.Length; quads++)
-        {
-            _colorPsoByQuads[quads]?.Dispose();
-            _mirrorPsoByQuads[quads]?.Dispose();
-            _colorPsoByQuads[quads] = null;
-            _mirrorPsoByQuads[quads] = null;
+            _sharedIndexBuffer = null;
         }
     }
 
@@ -289,6 +335,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     ///         <c>CreateGraphicsPipelineState</c> here.
     ///     </para>
     /// </summary>
+    /// <param name="blendQuadCount">Requested layer-weight width, clamped to the supported terrain range.</param>
+    /// <returns>A borrowed color handle whose matching mirror handle is also ready.</returns>
     private ID3D12PipelineState EnsureBlendPipelines(int blendQuadCount)
     {
         var quads = Math.Clamp(blendQuadCount, 1, TerrainVertexLayout.MaxBlendQuads);
@@ -300,7 +348,8 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         var elements = TerrainVertexLayout.ElementsFor(quads);
         var (pso, mirrorPso) = TerrainPipelineFactory12.BuildColorPipelineStates(
             _gpu,
-            _rootSignature,
+            _pipelineResources,
+            quads,
             TerrainPipelineFactory12.CompileVertexShader(quads),
             TerrainPipelineFactory12.CompilePixelShader(quads),
             elements);
@@ -311,6 +360,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         return pso;
     }
 
+    /// <summary>Observes all outstanding CPU terrain builds without pumping the UI message loop.</summary>
     private void DrainBuildTasksForDispose()
     {
         var pending = _buildTasks.PendingCount;
@@ -367,33 +417,17 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     /// <summary>
-    ///     Render-thread-only LRU of per-cell terrain meshes (replaces the bespoke
-    ///     CellMeshLruCache): evicted/replaced entries are disposed, and the cache reports its
-    ///     entry counts to the resource registry under the "terrain-cells" tag.
+    ///     Preserves terrain LRU/distance policy while Shared owns each candidate and retiring range.
+    ///     The backstop includes unreleased charges; it does not infer GPU completion from eviction.
     /// </summary>
-    private LruCache<(int gx, int gy), CachedCellMesh12> CreateMeshCache(int capacity, long byteBudget) =>
-        new LruCache<(int gx, int gy), CachedCellMesh12>(
-                "CellMeshLru",
-                ResourceCategory.GpuResident,
-                maxEntries: capacity,
-                // The LRU's own byte cap is a BACKSTOP at 1.25× the plan, not the enforcer. The
-                // per-frame distance sweep (EnforceCellByteBudget) is the enforcer: it knows camera
-                // distance and pins the retain + shadow-caster rings, whereas this cascade is blind
-                // LRU order — and shadow draws deliberately TryPeek (no recency bump), so an active
-                // up-sun caster can sit at the LRU tail. With the headroom, the cascade fires only
-                // if the sweep somehow failed to keep us under plan.
-                maxBytes: byteBudget > 0
-                    ? (long)(byteBudget * TerrainCellResidencyPolicy.BackstopHeadroom)
-                    : null,
-                // Real bytes, not the 1-byte-per-entry default. This cache owns its two committed
-                // DEFAULT-heap buffers outright — nothing else accounts for them — so the size is
-                // reported rather than attributed, and it is what the byte budget is enforced
-                // against. Known at Set time (unlike the reference-mesh cache, whose nodes are
-                // populated after an async decode), so no UpdateSize is needed here.
-                sizeOf: static (_, mesh) => mesh.ByteSize,
-                onEvicted: (_, mesh) =>
+    private GpuTerrainCellCache12<CachedCellMesh12> CreateMeshCache(int capacity, long byteBudget) =>
+        new GpuTerrainCellCache12<CachedCellMesh12>(capacity,
+                byteBudget > 0 ? checked((long)(byteBudget * TerrainCellResidencyPolicy.BackstopHeadroom)) : 0,
+                _terrainArena.Free,
+                new GpuTerrainCellCacheLifetime12(_recorder.EnqueueDisposeAfterCurrentFrame,
+                    _recorder.EnlistCurrentFrame, _deletionQueue.EnqueueDispose),
+                () =>
                 {
-                    mesh.Dispose();
                     // A cell leaving residency changes what the shadow pass can draw: bump the
                     // content version so the throttled shadow re-render heals the vanished
                     // caster instead of the published cascades keeping its stale depth. The
@@ -404,8 +438,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                         unchecked { ContentVersion++; }
                     }
                 })
-            .WithSegment(Core.Diagnostics.GpuMemorySegment.Local)
-            .RegisterWith(ResourceRegistry.Instance, "terrain-cells");
+            .RegisterWith(ResourceRegistry.Instance);
 
     public void LoadData(Dictionary<(int gx, int gy), CellRecord> cells)
         => LoadData(cells, spatialIndex: null, renderCache: null);
@@ -1177,14 +1210,12 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             }
             if (uploadBudget <= 0) return null; // keep the result; upload on a later frame
 
+            var entry = UploadBuiltCell(key, cpu);
+            // Pending GPU retirement is backpressure, not a corrupt cell. Retain the completed
+            // CPU build and its queue identity until a later frame can admit the upload.
+            if (entry is null) return null;
             RemoveBuildResult(key);
             _queuedOrBuilding.Remove(key);
-            var entry = UploadBuiltCell(key, cpu);
-            if (entry is null)
-            {
-                MarkCellBuildFailure(key);
-                return null;
-            }
             uploadBudget--;
             LastStats.NewUploads++;
             unchecked { ContentVersion++; } // new resident cell → sun shadow map re-renders
@@ -1263,7 +1294,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     /// </summary>
     private void EnforceCellByteBudget()
     {
-        if (_cellByteBudget <= 0 || _meshCache.EstimatedBytes <= _cellByteBudget)
+        if (_cellByteBudget <= 0 || _meshCache.ResidentBytes <= _cellByteBudget)
         {
             return;
         }
@@ -1292,7 +1323,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
         {
             foreach (var (key, _) in _evictScratch)
             {
-                if (_meshCache.EstimatedBytes <= _cellByteBudget)
+                if (_meshCache.ResidentBytes <= _cellByteBudget)
                 {
                     break;
                 }
@@ -1314,7 +1345,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             LastStats.CellsEvictedForBudget += evicted;
         }
 
-        if (_meshCache.EstimatedBytes > _cellByteBudget)
+        if (_meshCache.ResidentBytes > _cellByteBudget)
         {
             WarnBudgetUnreachable();
         }
@@ -1332,7 +1363,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             "TerrainRenderer12: visible terrain ({0:N0} MB resident) exceeds the {1:N0} MB budget — " +
             "every remaining cell is inside the retain or shadow-caster ring. Running over budget " +
             "rather than evicting visible terrain.",
-            _meshCache.EstimatedBytes / (1024 * 1024), _cellByteBudget / (1024 * 1024));
+            _meshCache.ResidentBytes / (1024 * 1024), _cellByteBudget / (1024 * 1024));
     }
 
     private void StartQueuedBuilds()
@@ -1470,25 +1501,32 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     }
 
     /// <summary>
-    ///     Render-thread upload of an already-built cell: creates the two GPU buffers from the
-    ///     per-task CPU arrays, resolves the 4 diffuse SRVs (NOT thread-safe — render thread only),
-    ///     and inserts into the LRU cache. The analog of <c>ReferenceMeshCache12.UploadDecodedMesh</c>.
+    ///     Uploads a completed CPU cell into one retained arena range and resolves texture descriptors
+    ///     on the rendering thread. Actual command submission publishes the prepared cache entry.
     /// </summary>
+    /// <param name="key">Cell identity in the current world.</param>
+    /// <param name="cpu">Completed vertices, weights and texture interpretation.</param>
+    /// <returns>Prepared draw metadata, or null while pending releases prevent admission.</returns>
     private CachedCellMesh12? UploadBuiltCell((int gx, int gy) key, BuiltCellCpuData cpu)
     {
         var started = StartTiming();
         var success = false;
+        ResourceResidencyEntry<(int gx, int gy), GpuTerrainCellResources12>? candidate = null;
         try
         {
             // Before the arena range exists, so a PSO failure cannot strand an allocation — and
             // because a cell must never enter the cache without the pipeline its width needs.
             EnsureBlendPipelines(cpu.BlendQuadCount);
-            var geometry = _terrainArena.Upload(
+            var bytes = GpuResourceFootprint.ArenaSubAllocationBytes(
+                checked(cpu.Vertices!.Length * TerrainVertex.SizeInBytes),
+                checked(cpu.BlendWeights!.Length * sizeof(ushort)));
+            if (!_meshCache.TryReserve(key, bytes, out candidate)) return null;
+            var geometry = candidate.Resource.AcquireGeometry(retain => _terrainArena.Upload(
                 _recorder.CommandList,
                 _deletionQueue,
                 MemoryMarshal.AsBytes<TerrainVertex>(cpu.Vertices!),
                 MemoryMarshal.AsBytes<ushort>(cpu.BlendWeights!),
-                debugTag: null);
+                debugTag: null, retainAllocation: retain));
 
             var textureIndices = ResolveSlotTextureIndices(cpu.TextureSet, out var normalTextureEntries);
 
@@ -1498,14 +1536,17 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 Grid = cpu.Grid,
                 HeightBounds = cpu.HeightBounds,
                 BlendQuadCount = cpu.BlendQuadCount,
-                Arena = _terrainArena,
                 TextureIndices = textureIndices,
                 NormalTextureEntries = normalTextureEntries,
-                DeletionQueue = _deletionQueue,
             };
-            _meshCache.Set(key, entry);
+            _meshCache.Complete(candidate, entry);
             success = true;
             return entry;
+        }
+        catch
+        {
+            if (candidate is not null) _meshCache.Abort(candidate);
+            throw;
         }
         finally
         {
@@ -1535,6 +1576,7 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
     {
         var started = StartTiming();
         var success = false;
+        ResourceResidencyEntry<(int gx, int gy), GpuTerrainCellResources12>? candidate = null;
         try
         {
             if (!TerrainMeshBuilder.TryBuildVertices(cell, _vertexScratch, _renderCache, out var grid))
@@ -1554,12 +1596,15 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
             EnsureBlendPipelines(blendQuadCount);
             // One arena range for both streams — so the blend weights must be populated BEFORE the
             // upload (the old code created the vertex buffer first, then built the weights).
-            var geometry = _terrainArena.Upload(
+            var bytes = GpuResourceFootprint.ArenaSubAllocationBytes(
+                checked(_vertexScratch.Length * TerrainVertex.SizeInBytes), checked(blendUshorts * sizeof(ushort)));
+            if (!_meshCache.TryReserve(key, bytes, out candidate)) return null;
+            var geometry = candidate.Resource.AcquireGeometry(retain => _terrainArena.Upload(
                 _recorder.CommandList,
                 _deletionQueue,
                 MemoryMarshal.AsBytes<TerrainVertex>(_vertexScratch),
                 MemoryMarshal.AsBytes<ushort>(_blendWeightScratch.AsSpan(0, blendUshorts)),
-                debugTag: null);
+                debugTag: null, retainAllocation: retain));
 
             var textureIndices = ResolveSlotTextureIndices(textureSet, out var normalTextureEntries);
             var heightBounds = TerrainCellHeightBounds.FromVertices(_vertexScratch);
@@ -1570,14 +1615,17 @@ internal sealed class TerrainRenderer12 : Abstractions.ITerrainRenderer
                 Grid = grid,
                 HeightBounds = heightBounds,
                 BlendQuadCount = blendQuadCount,
-                Arena = _terrainArena,
                 TextureIndices = textureIndices,
                 NormalTextureEntries = normalTextureEntries,
-                DeletionQueue = _deletionQueue,
             };
-            _meshCache.Set(key, entry);
+            _meshCache.Complete(candidate, entry);
             success = true;
             return entry;
+        }
+        catch
+        {
+            if (candidate is not null) _meshCache.Abort(candidate);
+            throw;
         }
         finally
         {

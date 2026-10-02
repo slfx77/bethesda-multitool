@@ -136,7 +136,7 @@ public sealed class GpuReferencePipelineStatisticsTests
     [Fact]
     public void Strict_harness_requires_explicit_state_and_one_sample_per_scored_frame()
     {
-        var harness = SourceContract.ReadSource("scratchpad", "live_profiles", "run_live.ps1");
+        var harness = SourceContract.ReadLocalReference("scratchpad", "live_profiles", "run_live.ps1");
 
         Assert.Contains("[string]$ExpectedReferencePipelineStatistics = ''", harness,
             StringComparison.Ordinal);

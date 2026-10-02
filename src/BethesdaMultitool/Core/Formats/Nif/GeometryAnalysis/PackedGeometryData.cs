@@ -8,8 +8,19 @@ internal sealed class PackedGeometryData
     public ushort NumVertices { get; set; }
     public float[]? Positions { get; set; }
     public float[]? Normals { get; set; }
+
+    /// <summary>
+    ///     The PC NiGeometryData "Tangents" array (written first), three floats per vertex: the HIGHER-offset packed frame
+    ///     stream, which runs along +dP/dv in retail files.
+    /// </summary>
     public float[]? Tangents { get; set; }
+
+    /// <summary>
+    ///     The PC NiGeometryData "Bitangents" array (written second), three floats per vertex: the LOWER-offset packed
+    ///     frame stream, which runs along +dP/du in retail files (NifPackedDataExtractor.AssignUnitLengthStreams).
+    /// </summary>
     public float[]? Bitangents { get; set; }
+
     public float[]? UVs { get; set; }
 
     /// <summary>Vertex colors as RGBA bytes (4 bytes per vertex).</summary>

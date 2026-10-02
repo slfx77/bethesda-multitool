@@ -152,12 +152,12 @@ public sealed class OblivionClassicSkinIndependentAlbedoTests
     {
         ShaderCompileTestGuard.SkipUnlessEnabled();
         using var vertex = Compiler.Reflect<ID3D12ShaderReflection>(GpuShaderCompiler12.Compile(
-            "reference.vert.hlsl", "main", "vs_5_1", new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1")));
+            "reference.vert.hlsl", "main", "vs_5_1", new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1")).Span);
         using var pixel = Compiler.Reflect<ID3D12ShaderReflection>(GpuShaderCompiler12.Compile(
             factorOne
                 ? "reference_classic_skin_independent_factor_one.frag.hlsl"
                 : "reference_classic_skin_independent.frag.hlsl",
-            factorOne ? "mainIndependentFactorOne" : "mainIndependent", "ps_5_1"));
+            factorOne ? "mainIndependentFactorOne" : "mainIndependent", "ps_5_1").Span);
         var outputs = new List<ShaderParameterDescription>();
         for (var index = 0u; index < vertex.Description.OutputParameters; index++)
             outputs.Add(vertex.GetOutputParameterDescription(index));

@@ -1,14 +1,15 @@
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using Slfx77.Multitool.Core.Lifetime;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Gpu;
 
+/// <summary>Retains BMT allocator workload coverage against the shared implementation.</summary>
 public sealed class GeometryArenaAllocatorTests
 {
     [Fact]
     public void Allocate_AdvancesOffset_AndRoundsSizeUpToAlignment()
     {
-        var arena = new GeometryArenaAllocator(256);
+        var arena = new ByteArenaAllocator(256);
 
         var a = arena.Allocate(10);
         var b = arena.Allocate(20);
@@ -28,7 +29,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void AllocatedOffsets_AreAlignmentAligned()
     {
-        var arena = new GeometryArenaAllocator(1024);
+        var arena = new ByteArenaAllocator(1024);
 
         for (var i = 0; i < 20; i++)
         {
@@ -40,7 +41,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Free_ThenAllocate_ReusesTheFreedRange()
     {
-        var arena = new GeometryArenaAllocator(256);
+        var arena = new ByteArenaAllocator(256);
         var a = arena.Allocate(16); // [0,16)
         var b = arena.Allocate(16); // [16,32)
 
@@ -54,7 +55,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void AdjacentFrees_Coalesce_IntoOneReusableSpan()
     {
-        var arena = new GeometryArenaAllocator(256);
+        var arena = new ByteArenaAllocator(256);
         var a = arena.Allocate(16); // [0,16)
         var b = arena.Allocate(16); // [16,32)
         arena.Allocate(16); // [32,48) — kept allocated
@@ -71,7 +72,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Allocate_AddsNewBlock_WhenCurrentBlocksAreFull()
     {
-        var arena = new GeometryArenaAllocator(64);
+        var arena = new ByteArenaAllocator(64);
 
         var a = arena.Allocate(64); // fills block 0
         Assert.Equal(0, a.BlockIndex);
@@ -86,7 +87,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void FreeBytesInBlock_TracksUsageAndAllocatedBytes()
     {
-        var arena = new GeometryArenaAllocator(256);
+        var arena = new ByteArenaAllocator(256);
         var a = arena.Allocate(10); // aligned 16
 
         Assert.Equal(240L, arena.FreeBytesInBlock(0));
@@ -102,7 +103,7 @@ public sealed class GeometryArenaAllocatorTests
     {
         // Monolithic meshes (RepBay.NIF ~25 MB vs the 16 MB standard block) must not fail —
         // they get a dedicated block exactly as large as the aligned allocation.
-        var arena = new GeometryArenaAllocator(64);
+        var arena = new ByteArenaAllocator(64);
         arena.Allocate(16); // block 0 (standard)
 
         var big = arena.Allocate(100); // 100 → 112 > 64 → dedicated block
@@ -124,7 +125,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void Allocate_NonPositiveSize_Throws()
     {
-        var arena = new GeometryArenaAllocator(64);
+        var arena = new ByteArenaAllocator(64);
 
         Assert.Throws<ArgumentOutOfRangeException>(() => arena.Allocate(0));
     }
@@ -134,14 +135,14 @@ public sealed class GeometryArenaAllocatorTests
     [InlineData(64, 24)] // alignment not a power of two
     public void Constructor_RejectsInvalidArguments(long blockSize, int alignment)
     {
-        Assert.Throws<ArgumentOutOfRangeException>(() => new GeometryArenaAllocator(blockSize, alignment));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new ByteArenaAllocator(blockSize, alignment));
     }
 
     [Fact]
     public void InterleavedAllocateAndFree_KeepsLiveRangesNonOverlapping()
     {
-        var arena = new GeometryArenaAllocator(1024);
-        var live = new List<ArenaAllocation>();
+        var arena = new ByteArenaAllocator(1024);
+        var live = new List<ByteArenaAllocation>();
 
         for (var i = 0; i < 12; i++)
         {
@@ -167,7 +168,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void AllocationIds_AreUniqueAndMonotonic()
     {
-        var arena = new GeometryArenaAllocator(256);
+        var arena = new ByteArenaAllocator(256);
 
         var a = arena.Allocate(16);
         var b = arena.Allocate(16);
@@ -181,7 +182,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void StrictFree_SecondFreeOfSameAllocation_Throws()
     {
-        var arena = new GeometryArenaAllocator(256) { StrictValidation = true };
+        var arena = new ByteArenaAllocator(256) { StrictValidation = true };
         var a = arena.Allocate(16);
 
         arena.Free(a);
@@ -191,7 +192,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void StrictFree_OfARecycledRange_Throws()
     {
-        var arena = new GeometryArenaAllocator(256) { StrictValidation = true };
+        var arena = new ByteArenaAllocator(256) { StrictValidation = true };
         var a = arena.Allocate(16); // [0,16) id=1
         arena.Free(a);
         var b = arena.Allocate(16); // first-fit reuses [0,16) with a NEW id
@@ -205,39 +206,41 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void QueryLiveness_ReportsLiveFreedAndRecycled()
     {
-        var arena = new GeometryArenaAllocator(256) { StrictValidation = true };
+        var arena = new ByteArenaAllocator(256) { StrictValidation = true };
         var a = arena.Allocate(16); // [0,16)
-        Assert.Equal(ArenaLiveness.Live, arena.QueryLiveness(a));
+        Assert.Equal(ByteArenaLiveness.Live, arena.QueryLiveness(a));
 
         arena.Free(a);
-        Assert.Equal(ArenaLiveness.NotLive, arena.QueryLiveness(a));
+        Assert.Equal(ByteArenaLiveness.NotLive, arena.QueryLiveness(a));
 
         var b = arena.Allocate(16); // reuses [0,16) with a new id
-        Assert.Equal(ArenaLiveness.Live, arena.QueryLiveness(b));
-        Assert.Equal(ArenaLiveness.Recycled, arena.QueryLiveness(a)); // old handle now points at b's bytes
+        Assert.Equal(ByteArenaLiveness.Live, arena.QueryLiveness(b));
+        Assert.Equal(ByteArenaLiveness.Recycled, arena.QueryLiveness(a)); // old handle now points at b's bytes
     }
 
     [Fact]
-    public void QueryLiveness_IsUntracked_WhenStrictModeIsOff()
+    public void QueryLiveness_RemainsTracked_WhenStrictModeIsOff()
     {
-        var arena = new GeometryArenaAllocator(256); // strict off (default)
+        var arena = new ByteArenaAllocator(256); // strict off (default)
         var a = arena.Allocate(16);
-        Assert.Equal(ArenaLiveness.Untracked, arena.QueryLiveness(a));
+        Assert.Equal(ByteArenaLiveness.Live, arena.QueryLiveness(a));
     }
 
     [Fact]
-    public void StrictModeOff_FreeBehaviorUnchanged()
+    public void StrictModeOff_RejectsRepeatedFreeWithoutChangingAccounting()
     {
-        // Regression guard: with strict off, a repeated free of an already-freed range still
-        // returns to the free-list without throwing (the pre-existing behavior).
-        var arena = new GeometryArenaAllocator(256);
+        // Shared validates exact ownership even when optional overlap diagnostics are off.
+        // A repeated return must not corrupt free spans or make accounting negative.
+        var arena = new ByteArenaAllocator(256);
         var a = arena.Allocate(16);
         arena.Free(a);
-        var ex = Record.Exception(() => arena.Free(a));
-        Assert.Null(ex);
+        Assert.Throws<InvalidOperationException>(() => arena.Free(a));
+        Assert.Equal(0, arena.AllocatedBytes);
+        Assert.Equal(256, arena.FreeBytesInBlock(0));
+        Assert.True(arena.IsBlockEmpty(0));
     }
 
-    private static void AssertPairwiseNonOverlapping(List<ArenaAllocation> live)
+    private static void AssertPairwiseNonOverlapping(List<ByteArenaAllocation> live)
     {
         for (var i = 0; i < live.Count; i++)
         {
@@ -263,7 +266,7 @@ public sealed class GeometryArenaAllocatorTests
     {
         // This predicate is what authorizes releasing a block's memory back to the OS, so a false
         // positive would hand back memory the GPU is still reading.
-        var arena = new GeometryArenaAllocator(256);
+        var arena = new ByteArenaAllocator(256);
         var a = arena.Allocate(64);
         var b = arena.Allocate(64);
 
@@ -279,7 +282,7 @@ public sealed class GeometryArenaAllocatorTests
     [Fact]
     public void IsBlockEmpty_IsFalseForABlockThatDoesNotExist()
     {
-        var arena = new GeometryArenaAllocator(256);
+        var arena = new ByteArenaAllocator(256);
 
         Assert.False(arena.IsBlockEmpty(0));
         Assert.False(arena.IsBlockEmpty(-1));
@@ -292,7 +295,7 @@ public sealed class GeometryArenaAllocatorTests
         // The point of best-fit is not tidiness, it is that empty-block release has something to
         // release. First fit always retries block 0, so a small allocation lands there and block 0
         // never drains; best fit puts it in the tight hole it actually belongs in.
-        var arena = new GeometryArenaAllocator(256);
+        var arena = new ByteArenaAllocator(256);
 
         // Fill block 0 completely, then force a second block.
         var big = arena.Allocate(256);
@@ -317,7 +320,7 @@ public sealed class GeometryArenaAllocatorTests
     public void BestFit_StillAllocatesWhenOnlyALargerSpanIsAvailable()
     {
         // Best fit must not become "exact fit or nothing".
-        var arena = new GeometryArenaAllocator(256);
+        var arena = new ByteArenaAllocator(256);
 
         var allocation = arena.Allocate(48);
 

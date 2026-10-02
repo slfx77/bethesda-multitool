@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
@@ -24,6 +25,21 @@ internal sealed class NifTextureResolver : IDisposable
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly List<INifTextureSource> _sources;
+    internal AssetSelectionSession? AssetSelection { get; }
+    private readonly AssetDependencyCache _dependencies = new();
+    private readonly ConcurrentDictionary<string, GeneratedAssetDependency> _generatedInputs = new(StringComparer.OrdinalIgnoreCase);
+    internal GeneratedAssetDependency? GeneratedInput(string path) => _generatedInputs.GetValueOrDefault(NifTexturePathUtility.Normalize(path));
+    internal IReadOnlyList<AssetSelectionReceipt> ObservedReads(string path) => _dependencies.Recall(NifTexturePathUtility.Normalize(path));
+
+    internal NifTextureResolver(AssetSourcePlan plan)
+    {
+        var source = new SelectedAssetTextureSource(plan);
+        AssetSelection = source.Selection;
+        _sources = [source];
+        StarfieldMaterialDatabaseCacheIdentity =
+            plan.Identity + "|" + MaterialTexturePathResolver.ResolveStarfieldMaterialDatabaseCacheIdentity(_sources);
+        _cache = CreateCache().RegisterWith(ResourceRegistry.Instance);
+    }
 
     public NifTextureResolver(params string[] texturesBsaPaths)
     {
@@ -63,10 +79,15 @@ internal sealed class NifTextureResolver : IDisposable
     public int CacheHits => (int)_cache.Hits;
 
     public int CacheMisses => (int)_cache.Misses;
+    internal int CacheEntryCount => _cache.Count;
+
+    /// <summary>Releases rebuildable pixel buffers after a world actor's scene captured its generated pixels.</summary>
+    internal void ReleaseDecodedTextures() => _cache.Trim(TrimLevel.Aggressive);
 
     public void Dispose()
     {
         _cache.Dispose();
+        _generatedInputs.Clear();
         foreach (var source in _sources)
         {
             source.Dispose();
@@ -121,9 +142,13 @@ internal sealed class NifTextureResolver : IDisposable
     /// <summary>
     ///     Injects a pre-built texture into the cache under the given path key.
     /// </summary>
-    public void InjectTexture(string texturePath, DecodedTexture texture)
+    public void InjectTexture(string texturePath, DecodedTexture texture,
+        GeneratedAssetDependency? dependency = null)
     {
-        _cache.Inject(NifTexturePathUtility.Normalize(texturePath), texture);
+        var path = NifTexturePathUtility.Normalize(texturePath);
+        _cache.Inject(_dependencies.Qualify(AssetSelection, path, path), texture);
+        if (dependency is not null) _generatedInputs[path] = dependency;
+        else _generatedInputs.TryRemove(path, out _);
     }
 
     /// <summary>
@@ -131,7 +156,9 @@ internal sealed class NifTextureResolver : IDisposable
     /// </summary>
     public void EvictTexture(string texturePath)
     {
-        _cache.Evict(NifTexturePathUtility.Normalize(texturePath));
+        var path = NifTexturePathUtility.Normalize(texturePath);
+        _cache.Evict(_dependencies.Qualify(AssetSelection, path, path));
+        _generatedInputs.TryRemove(path, out _);
     }
 
     /// <summary>
@@ -139,7 +166,13 @@ internal sealed class NifTextureResolver : IDisposable
     /// </summary>
     public DecodedTexture? GetTexture(string texturePath)
     {
-        return _cache.GetOrCreate(NifTexturePathUtility.Normalize(texturePath));
+        var path = NifTexturePathUtility.Normalize(texturePath);
+        var key = _dependencies.Qualify(AssetSelection, path, path);
+        var texture = _cache.GetOrCreate(key);
+        if (AssetSelection is not null &&
+            (texture is null || key != _dependencies.Qualify(AssetSelection, path, path))) _cache.Evict(key);
+        if (texture is not null) AssetSelection?.ObserveCached(texture.AssetReadReceipts);
+        return texture;
     }
 
     /// <summary>
@@ -155,7 +188,18 @@ internal sealed class NifTextureResolver : IDisposable
         return new ConcurrentLazyCache<string, DecodedTexture>(
             nameof(NifTextureResolver),
             ResourceCategory.CpuCache,
-            LoadTexture,
+            path =>
+            {
+                using var scope = AssetSelection?.CaptureReads();
+                var texture = LoadTexture(path);
+                if (scope is not null)
+                {
+                    var receipts = scope.Receipts;
+                    _dependencies.Remember(AssetCacheIdentity.PathOf(path), receipts);
+                    if (texture is not null) texture.AssetReadReceipts = receipts;
+                }
+                return texture;
+            },
             static texture =>
                 texture.MipLevels.Sum(static mip => (long)mip.Pixels.Length) + ByteSize.ObjectOverhead,
             StringComparer.OrdinalIgnoreCase);
@@ -163,6 +207,7 @@ internal sealed class NifTextureResolver : IDisposable
 
     private DecodedTexture? LoadTexture(string path)
     {
+        path = AssetCacheIdentity.PathOf(path);
         if (_loadTextureOverride is not null)
         {
             return _loadTextureOverride(path);
@@ -218,6 +263,7 @@ internal sealed class NifTextureResolver : IDisposable
         {
             return texture;
         }
+        if (AssetSelection?.Probe(path).Status == AssetSelectionStatus.Ambiguous) return null;
 
         // Older NIFs (Morrowind, some Oblivion) reference textures by their authoring extension
         // (.tga / .bmp) while the archive stores the compiled .dds. Bethesda's loader swaps to .dds;
@@ -282,6 +328,8 @@ internal sealed class NifTextureResolver : IDisposable
     /// </summary>
     internal BgsmMaterial? TryGetMaterial(string materialPath)
     {
+        if (AssetSelection is not null)
+            return MaterialTexturePathResolver.ResolveMaterial(materialPath, _sources);
         return _materialCache.GetOrAdd(
             materialPath,
             static (path, sources) => MaterialTexturePathResolver.ResolveMaterial(path, sources),

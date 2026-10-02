@@ -6,6 +6,7 @@ namespace BethesdaMultitool.Core.Formats.Dds;
 internal sealed class DecodedTexture
 {
     public required IReadOnlyList<DecodedTextureMipLevel> MipLevels { get; init; }
+    internal IReadOnlyList<BethesdaMultitool.Core.Assets.AssetSelectionReceipt> AssetReadReceipts { get; set; } = [];
 
     /// <summary>RGBA pixel data for mip 0.</summary>
     public byte[] Pixels => MipLevels[0].Pixels;

@@ -355,6 +355,44 @@ public sealed class NifControllerSequenceNameTrackReaderTests
             });
     }
 
+    /// <summary>
+    ///     Cut 2: the Oblivion path reads a compact B-spline transform interpolator as the 20.2.0.7 path does (its layout
+    ///     is identical at 20.0.0.4), so the clip carries it as a B-spline track instead of counting it unsupported.
+    ///     Control: a BSTreadTransfInterpolator block, which neither path reads, is still counted unsupported and
+    ///     yields no track.
+    /// </summary>
+    [Fact]
+    public void ReadAll_OblivionBs11ReadsCompactBsplineTransformInterpolators()
+    {
+        var fixture = new OblivionFixture(NifVersions.Gamebryo20004);
+        var paletteRef = fixture.AddPalette("Bip01 Head\0Bip01 R Hand\0");
+        var bsplineDataRef = fixture.AddBlock("NiBSplineData", 40);
+        var bsplineBasisRef = fixture.AddBlock("NiBSplineBasisData", 4);
+        var bsplineInterpolatorRef = fixture.AddBlock("NiBSplineCompTransformInterpolator", 84);
+        var treadRef = fixture.AddBlock("BSTreadTransfInterpolator", 8);
+        var sequenceRef = fixture.AddSequenceBlock("Idle", "Bip01 Pelvis", 2);
+
+        fixture.WriteCompactQuaternionBsplineData(bsplineDataRef);
+        fixture.WriteBsplineBasis(bsplineBasisRef, 4);
+        fixture.WriteCompactQuaternionBsplineInterpolator(bsplineInterpolatorRef, bsplineDataRef, bsplineBasisRef, 0f, 1f);
+        fixture.WriteSequence(
+            sequenceRef,
+            "Idle",
+            "Bip01 Pelvis",
+            [
+                (bsplineInterpolatorRef, paletteRef, 0u),
+                (treadRef, paletteRef, 11u)
+            ],
+            paletteRef);
+
+        var clip = Assert.Single(NifControllerSequenceNameTrackReader.ReadAll(fixture.Data, fixture.Nif));
+
+        Assert.Empty(clip.Tracks);
+        var spline = Assert.Single(clip.BsplineTracks!);
+        Assert.Equal("Bip01 Head", spline.NodeName);
+        Assert.Equal(1, clip.UnsupportedTransformTrackCount);
+    }
+
     [Fact]
     public void ReadAll_OblivionPaletteRejectsInteriorOutOfRangeAndBadRepeatedLengthOffsets()
     {
@@ -589,6 +627,61 @@ public sealed class NifControllerSequenceNameTrackReaderTests
             var pos = Nif.Blocks[blockRef].DataOffset;
             var length = BinaryPrimitives.ReadUInt32LittleEndian(Data.AsSpan(pos, 4));
             WriteUInt32(pos + 4 + (int)length, length + 1);
+        }
+
+        /// <summary>The 40-byte compact B-spline store the 20.2.0.7 fixture writes: no floats, 16 shorts (4 unit quaternions).</summary>
+        internal void WriteCompactQuaternionBsplineData(int blockRef)
+        {
+            var pos = Nif.Blocks[blockRef].DataOffset;
+            WriteUInt32(pos, 0);
+            WriteUInt32(pos + 4, 16);
+            pos += 8;
+            for (var controlPoint = 0; controlPoint < 4; controlPoint++)
+            {
+                BinaryPrimitives.WriteInt16LittleEndian(Data.AsSpan(pos, 2), short.MaxValue);
+                BinaryPrimitives.WriteInt16LittleEndian(Data.AsSpan(pos + 2, 2), 0);
+                BinaryPrimitives.WriteInt16LittleEndian(Data.AsSpan(pos + 4, 2), 0);
+                BinaryPrimitives.WriteInt16LittleEndian(Data.AsSpan(pos + 6, 2), 0);
+                pos += 8;
+            }
+        }
+
+        internal void WriteBsplineBasis(int blockRef, uint controlPointCount)
+        {
+            WriteUInt32(Nif.Blocks[blockRef].DataOffset, controlPointCount);
+        }
+
+        /// <summary>
+        ///     The 84-byte NiBSplineCompTransformInterpolator the 20.2.0.7 fixture writes (the layout is identical at
+        ///     20.0.0.4): clock, data and basis refs, sentinel static transform, a rotation handle at 0, absent
+        ///     translation and scale handles, and the offsets and half ranges.
+        /// </summary>
+        internal void WriteCompactQuaternionBsplineInterpolator(
+            int blockRef,
+            int dataRef,
+            int basisRef,
+            float startTime,
+            float stopTime)
+        {
+            var pos = Nif.Blocks[blockRef].DataOffset;
+            WriteSingle(pos, startTime);
+            WriteSingle(pos + 4, stopTime);
+            WriteInt32(pos + 8, dataRef);
+            WriteInt32(pos + 12, basisRef);
+            for (var scalar = 0; scalar < 8; scalar++)
+            {
+                WriteSingle(pos + 16 + scalar * sizeof(float), float.MaxValue);
+            }
+
+            WriteUInt32(pos + 48, NifBsplineTransformReader.AbsentChannelHandle);
+            WriteUInt32(pos + 52, 0);
+            WriteUInt32(pos + 56, NifBsplineTransformReader.AbsentChannelHandle);
+            WriteSingle(pos + 60, 0f);
+            WriteSingle(pos + 64, 0f);
+            WriteSingle(pos + 68, 0f);
+            WriteSingle(pos + 72, 1f);
+            WriteSingle(pos + 76, 0f);
+            WriteSingle(pos + 80, 0f);
         }
 
         internal int AddSequenceBlock(string name, string accumRoot, int controlledBlockCount)

@@ -1,17 +1,15 @@
 #if WINDOWS_GUI
 using System.Diagnostics;
 using System.Numerics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
-using Vortice.D3DCompiler;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
-using D12 = Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -72,6 +70,8 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
+    private readonly ShaderPipelineResources _pipelineResources;
+    private readonly int _threadId = Environment.CurrentManagedThreadId;
     private readonly ID3D12PipelineState _psoGradient;
     private readonly ID3D12PipelineState _psoStars;
     private readonly ID3D12PipelineState _psoClouds;
@@ -86,6 +86,13 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
     private readonly ushort[] _fallbackIndices;
     private bool _disposed;
 
+    /// <summary>Creates the three sky geometry pipelines and fallback dome on the world rendering thread.</summary>
+    /// <param name="gpu">Borrowed device retained through renderer disposal.</param>
+    /// <param name="recorder">Borrowed command recorder whose submitted work the caller retires before disposal.</param>
+    /// <param name="ringBuffer">Borrowed allocator for per-frame geometry and constants.</param>
+    /// <param name="rootSignature">World root retained by the renderer's shared pipeline family.</param>
+    /// <param name="cbvSrvUavHeap">Borrowed world descriptor heap.</param>
+    /// <remarks>Construction, native rendering and disposal use the same managed thread.</remarks>
     public SkyGeometryRenderer12(
         GpuDevice12 gpu,
         GpuCommandRecorder12 recorder,
@@ -97,21 +104,14 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         _ringBuffer = ringBuffer;
         _cbvSrvUavHeap = cbvSrvUavHeap;
 
-        ID3D12PipelineState? gradient = null;
-        ID3D12PipelineState? stars = null;
-        ID3D12PipelineState? clouds = null;
+        _pipelineResources = rootSignature.CreatePipelineResources(3);
         try
         {
-            var vs = CompileEmbeddedShader("sky_geo.vert.hlsl", "main", "vs_5_1");
-            var ps = CompileEmbeddedShader("sky_geo.frag.hlsl", "main", "ps_5_1");
-
-            gradient = CreatePso(gpu, rootSignature, vs, ps, SkyBlend.Opaque);
-            stars = CreatePso(gpu, rootSignature, vs, ps, SkyBlend.Additive);
-            clouds = CreatePso(gpu, rootSignature, vs, ps, SkyBlend.Alpha);
+            var (gradient, stars, clouds) = SkyPipelineFactory12.CreateGeometryPipelines(gpu, _pipelineResources);
             var fallback = GenerateGradientDome();
 
-            // Publish only after the whole renderer is viable. Before this assignment the local
-            // transaction below is the sole owner, so a failed later PSO cannot leak earlier ones.
+            // Publish borrowed handles only after the whole renderer is viable. The retained
+            // family owns all successful allocations if a later pipeline or fallback build fails.
             _psoGradient = gradient;
             _psoStars = stars;
             _psoClouds = clouds;
@@ -119,9 +119,7 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         }
         catch
         {
-            clouds?.Dispose();
-            stars?.Dispose();
-            gradient?.Dispose();
+            _pipelineResources.Dispose();
             throw;
         }
     }
@@ -528,14 +526,23 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         cmd.DrawIndexedInstanced((uint)indices.Length, 1, 0, 0, 0);
     }
 
+    /// <summary>Stops drawing and releases the caller-retired sky pipeline family, retaining failed releases for retry.</summary>
+    /// <remarks>The caller must prove GPU completion or device removal before disposal.</remarks>
+    /// <exception cref="InvalidOperationException">Disposal is attempted outside the creating thread.</exception>
+    /// <exception cref="AggregateException">A native release failed; retain the renderer and retry disposal.</exception>
     public void Dispose()
     {
-        if (_disposed) return;
+        VerifyAccess();
         _disposed = true;
-        _psoGradient.Dispose();
-        _psoStars.Dispose();
-        _psoClouds.Dispose();
+        _pipelineResources.Dispose();
         _layers.Clear();
+    }
+
+    /// <summary>Rejects disposal on another thread before changing the renderer's drawing state.</summary>
+    private void VerifyAccess()
+    {
+        if (Environment.CurrentManagedThreadId != _threadId)
+            throw new InvalidOperationException("Sky geometry rendering belongs to its creating thread.");
     }
 
     private static int ModeFor(SkyObjectType type) => type switch
@@ -544,87 +551,6 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
         SkyObjectType.Clouds => 2,
         _ => 0, // Sky / SkyTexture / sun-glare / mask -> gradient background
     };
-
-    private enum SkyBlend { Opaque, Additive, Alpha }
-
-    private static ID3D12PipelineState CreatePso(
-        GpuDevice12 gpu, GpuRootSignature12 rootSignature, byte[] vs, byte[] ps, SkyBlend mode)
-    {
-        var inputElements = new[]
-        {
-            new InputElementDescription("TEXCOORD", 0, Format.R32G32B32_Float, 0, 0),
-            new InputElementDescription("TEXCOORD", 1, Format.R32G32_Float, 12, 0),
-            new InputElementDescription("COLOR", 0, Format.R8G8B8A8_UNorm, 20, 0),
-        };
-
-        // Depth OFF — the sky is the background; depth-written geometry overwrites it afterward (the DSV
-        // stays bound for the geometry passes that follow, so the format must still match).
-        var depth = new D12.DepthStencilDescription
-        {
-            DepthEnable = false,
-            DepthWriteMask = D12.DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunction.Always,
-            StencilEnable = false,
-        };
-
-        var rasterizer = new D12.RasterizerDescription
-        {
-            FillMode = D12.FillMode.Solid,
-            CullMode = D12.CullMode.None, // view the inside of the dome; winding is irrelevant
-            FrontCounterClockwise = true,
-            DepthClipEnable = true, // clip the back hemisphere at the near plane
-            MultisampleEnable = gpu.SceneSampleCount > 1,
-        };
-
-        var blend = new D12.BlendDescription { AlphaToCoverageEnable = false, IndependentBlendEnable = false };
-        blend.RenderTarget[0] = mode switch
-        {
-            SkyBlend.Additive => new D12.RenderTargetBlendDescription
-            {
-                BlendEnable = true,
-                SourceBlend = D12.Blend.SourceAlpha,
-                DestinationBlend = D12.Blend.One,
-                BlendOperation = D12.BlendOperation.Add,
-                SourceBlendAlpha = D12.Blend.One,
-                DestinationBlendAlpha = D12.Blend.One,
-                BlendOperationAlpha = D12.BlendOperation.Add,
-                RenderTargetWriteMask = D12.ColorWriteEnable.All,
-            },
-            SkyBlend.Alpha => new D12.RenderTargetBlendDescription
-            {
-                BlendEnable = true,
-                SourceBlend = D12.Blend.SourceAlpha,
-                DestinationBlend = D12.Blend.InverseSourceAlpha,
-                BlendOperation = D12.BlendOperation.Add,
-                SourceBlendAlpha = D12.Blend.One,
-                DestinationBlendAlpha = D12.Blend.InverseSourceAlpha,
-                BlendOperationAlpha = D12.BlendOperation.Add,
-                RenderTargetWriteMask = D12.ColorWriteEnable.All,
-            },
-            _ => new D12.RenderTargetBlendDescription
-            {
-                BlendEnable = false, // opaque background fill
-                RenderTargetWriteMask = D12.ColorWriteEnable.All,
-            },
-        };
-
-        var psoDesc = new GraphicsPipelineStateDescription
-        {
-            RootSignature = rootSignature.RootSignature,
-            VertexShader = vs,
-            PixelShader = ps,
-            BlendState = blend,
-            RasterizerState = rasterizer,
-            DepthStencilState = depth,
-            InputLayout = new InputLayoutDescription(inputElements),
-            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
-            RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.SceneColor },
-            DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
-            SampleMask = uint.MaxValue,
-        };
-        return gpu.Device.CreateGraphicsPipelineState(psoDesc);
-    }
 
     [StructLayout(LayoutKind.Sequential)]
     private struct SkyGeoConstants
@@ -643,14 +569,6 @@ internal sealed class SkyGeometryRenderer12 : IDisposable
 
         public const uint ByteSize = 64 + (7 * 16); // 176
     }
-
-    /// <summary>
-    ///     Forwards to the one shared compiler — see <see cref="GpuShaderCompiler12" />.
-    ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
-    ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
-    /// </summary>
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
-        GpuShaderCompiler12.Compile(name, entryPoint, profile);
 }
 
 /// <summary>

@@ -17,8 +17,13 @@ public sealed class StarfieldMaterialNormalBindingSourceContractTests
             "ReferenceMeshCache12.cs");
 
         Assert.Contains("StarfieldMaterialNormalPolicy.Resolve(", source, StringComparison.Ordinal);
-        Assert.Contains("GetOrUpload(normalBinding.TexturePath!, isNormalMap: true)", source,
+        Assert.Contains("resources.AcquireTexture(() => ResolveTexture(normalBinding.TexturePath!, isNormalMap: true))", source,
             StringComparison.Ordinal);
+        var resolveTexture = SourceContract.Extract(source,
+            "GpuTextureCache12.Entry ResolveTexture(", "var started =");
+        SourceContract.AssertOrder(resolveTexture,
+            "decoded.GeneratedTextures?.TryGetValue(NifTexturePathUtility.Normalize(path), out generated);",
+            "return textureCache.GetOrUpload(path, isNormalMap, generated);");
         Assert.Contains("RenderState = BuildRenderState(sub, normalBinding.HasBump)", source,
             StringComparison.Ordinal);
         Assert.Contains("HasBump = normalBinding.HasBump", source, StringComparison.Ordinal);
@@ -114,7 +119,7 @@ public sealed class StarfieldMaterialNormalBindingSourceContractTests
 
         Assert.Contains("NormalizeCacheKey(path, isNormalMap)", cache, StringComparison.Ordinal);
         Assert.Contains("BuildStarfieldNormalMapRequest(normalizedPath)", cache, StringComparison.Ordinal);
-        Assert.Contains("!_resolver.IsUnauthoredStarfieldNormalMap(cacheKey)", cache,
+        Assert.Contains("!_resolver.IsUnauthoredStarfieldNormalMap(BethesdaMultitool.Core.Assets.AssetCacheIdentity.PathOf(cacheKey))", cache,
             StringComparison.Ordinal);
         SourceContract.AssertContainsIgnoringWhitespace(
             "MaterialTexturePathResolver.ResolveStarfieldSlot(path, _sources, starfieldNormalMap)", resolver);

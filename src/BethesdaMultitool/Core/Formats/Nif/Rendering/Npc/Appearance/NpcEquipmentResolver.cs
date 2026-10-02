@@ -27,17 +27,19 @@ internal sealed class NpcEquipmentResolver
         _game = game;
     }
 
+    /// <summary>Selects renderable armor while optionally forbidding recursive expansion of generated inventory references.</summary>
     internal List<EquippedItem>? Resolve(
         List<InventoryItem>? inventoryItems,
         bool isFemale,
-        ResolutionMode mode = ResolutionMode.StaticDefault)
+        ResolutionMode mode = ResolutionMode.StaticDefault,
+        bool concreteInventoryOnly = false)
     {
         if (inventoryItems is not { Count: > 0 })
         {
             return null;
         }
 
-        var armorChoices = ResolveRenderableArmorChoices(inventoryItems, isFemale);
+        var armorChoices = ResolveRenderableArmorChoices(inventoryItems, isFemale, concreteInventoryOnly);
         var useOblivionDefaultWornSelection =
             _game == BethesdaGame.Oblivion && mode == ResolutionMode.StaticDefault;
         if (useOblivionDefaultWornSelection)
@@ -89,9 +91,11 @@ internal sealed class NpcEquipmentResolver
         return equippedItems.Count > 0 ? equippedItems : null;
     }
 
+    /// <summary>Resolves positive-count armor entries without expanding lists when the caller already generated concrete items.</summary>
     private List<ResolvedArmorChoice> ResolveRenderableArmorChoices(
         List<InventoryItem> inventoryItems,
-        bool isFemale)
+        bool isFemale,
+        bool concreteInventoryOnly)
     {
         var choices = new List<ResolvedArmorChoice>();
 
@@ -103,7 +107,10 @@ internal sealed class NpcEquipmentResolver
                 continue;
             }
 
-            var armor = ResolveArmor(inventoryItem.ItemFormId);
+            var resolvedArmorId = inventoryItem.ItemFormId;
+            var armor = concreteInventoryOnly
+                ? _armors.GetValueOrDefault(inventoryItem.ItemFormId)
+                : ResolveArmor(inventoryItem.ItemFormId, out resolvedArmorId);
             if (armor == null || armor.BipedFlags == 0 || !HasRenderableVisual(armor, isFemale))
             {
                 continue;
@@ -112,7 +119,8 @@ internal sealed class NpcEquipmentResolver
             choices.Add(new ResolvedArmorChoice(
                 inventoryItem.ItemFormId,
                 armor,
-                inventoryIndex));
+                inventoryIndex,
+                resolvedArmorId));
         }
 
         return choices;
@@ -194,8 +202,9 @@ internal sealed class NpcEquipmentResolver
         return left.InventoryIndex.CompareTo(right.InventoryIndex);
     }
 
-    private ArmoScanEntry? ResolveArmor(uint formId, int depth = 0)
+    private ArmoScanEntry? ResolveArmor(uint formId, out uint resolvedFormId, int depth = 0)
     {
+        resolvedFormId = formId;
         if (_armors.TryGetValue(formId, out var armor))
         {
             return armor;
@@ -208,9 +217,10 @@ internal sealed class NpcEquipmentResolver
 
         foreach (var entryFormId in entries)
         {
-            var resolved = ResolveArmor(entryFormId, depth + 1);
+            var resolved = ResolveArmor(entryFormId, out var resolvedId, depth + 1);
             if (resolved != null)
             {
+                resolvedFormId = resolvedId;
                 return resolved;
             }
         }
@@ -230,6 +240,8 @@ internal sealed class NpcEquipmentResolver
             SelectMeshPath(armor, isFemale),
             armor.BipedFlags,
             armor.IsPowerArmor,
+            new EquipmentAssetOwner(armorChoice.SourceFormId, null,
+                isFemale && armor.FemaleBipedModelPath is not null ? "FemaleBipedModelPath" : "MaleBipedModelPath", armorChoice.FormId),
             seenMeshes,
             equippedItems);
 
@@ -258,6 +270,8 @@ internal sealed class NpcEquipmentResolver
                 SelectAddonMeshPath(addon, isFemale),
                 addon.BipedFlags,
                 armor.IsPowerArmor,
+                new EquipmentAssetOwner(armorChoice.SourceFormId, addonFormId,
+                    isFemale && addon.FemaleModelPath is not null ? "FemaleModelPath" : "MaleModelPath", armorChoice.FormId, armor.BipedModelListFormId),
                 seenMeshes,
                 equippedItems);
         }
@@ -286,10 +300,11 @@ internal sealed class NpcEquipmentResolver
         string? meshPath,
         uint bipedFlags,
         bool isPowerArmor,
+        EquipmentAssetOwner owner,
         HashSet<string> seenMeshes,
         List<EquippedItem> equippedItems)
     {
-        if (meshPath == null || !seenMeshes.Add(meshPath))
+        if (meshPath == null)
         {
             return;
         }
@@ -300,13 +315,23 @@ internal sealed class NpcEquipmentResolver
             return;
         }
 
-        equippedItems.Add(new EquippedItem
+        if (!seenMeshes.Add(meshPath))
+        {
+            var existing = equippedItems.FirstOrDefault(item =>
+                string.Equals(item.MeshPath, normalizedPath, StringComparison.OrdinalIgnoreCase));
+            if (existing is not null && !existing.AssetOwners.Contains(owner)) existing.AssetOwners.Add(owner);
+            return;
+        }
+
+        var item = new EquippedItem
         {
             BipedFlags = bipedFlags,
             IsPowerArmor = isPowerArmor,
             AttachmentMode = ResolveAttachmentMode(bipedFlags, _game),
             MeshPath = normalizedPath
-        });
+        };
+        item.AssetOwners.Add(owner);
+        equippedItems.Add(item);
     }
 
     private static EquipmentAttachmentMode ResolveAttachmentMode(uint bipedFlags, BethesdaGame game)
@@ -412,5 +437,5 @@ internal sealed class NpcEquipmentResolver
     private readonly record struct ResolvedArmorChoice(
         uint FormId,
         ArmoScanEntry Armor,
-        int InventoryIndex);
+        int InventoryIndex, uint SourceFormId);
 }

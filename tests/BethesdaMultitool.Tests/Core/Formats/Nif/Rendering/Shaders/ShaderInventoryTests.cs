@@ -161,30 +161,29 @@ public sealed class ShaderInventoryTests
         Assert.True(duplicates.Length == 0, $"Duplicate permutations: {string.Join(" ; ", duplicates)}");
     }
 
+    /// <summary>Shared owns the unconditional descriptor-table flag and native compilation; BMT supplies only its adapter.</summary>
     [Fact]
     public void UnboundedDescriptorTableFlagHasExactlyOneDecisionSite()
     {
-        // D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES used to be inferred by substring-scanning each
-        // shader's TOP-LEVEL text, via six divergent rules across ~14 call sites — one of which was
-        // satisfied by a comment rather than a declaration. Any future move of a `[] : register`
-        // declaration into a shared header would have stopped them firing, giving FXC X3596, which the
-        // GUI degrades to a warning and a blank viewport. It is now unconditional in one place.
+        // The shared compiler owns this flag independently of top-level or nested shader text.
         var compiler = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
             "GpuShaderCompiler12.cs");
+        var sharedCompiler = SourceContract.ReadSource(
+            "shared", "Multitool.Shared", "src", "Slfx77.Multitool.WinUI.Direct3D12.Shaders", "ShaderCompiler.cs");
         Assert.Contains(
-            "private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;",
-            compiler,
+            "public const ShaderFlags AllowUnboundedDescriptorTables = (ShaderFlags)0x00100000;",
+            sharedCompiler,
             StringComparison.Ordinal);
-        Assert.Contains("EnableUnboundedDescriptorTables,", compiler, StringComparison.Ordinal);
+        Assert.Equal(1, SourceContract.CountOccurrences(sharedCompiler, "(ShaderFlags)0x00100000"));
+        Assert.Contains("ShaderCompiler.CompileSource(", compiler, StringComparison.Ordinal);
+        Assert.Contains("ShaderCompiler.AllowUnboundedDescriptorTables", compiler, StringComparison.Ordinal);
 
-        // No renderer may re-derive the flag from shader text, and none may call the D3D compiler
-        // directly — both would reintroduce a second decision site.
-        foreach (var file in Directory.EnumerateFiles(
-                     Path.Combine(SourceContract.RepoRoot, "src"), "*.cs", SearchOption.AllDirectories))
+        // No BMT source, including its compiler adapter, may define a second flag or invoke native compilation.
+        foreach (var file in SourceContract.ProductionSourcePaths.Where(
+                     path => Path.GetExtension(path).Equals(".cs", StringComparison.OrdinalIgnoreCase)))
         {
-            if (Path.GetFileName(file).Equals("GpuShaderCompiler12.cs", StringComparison.Ordinal)) continue;
-            var text = File.ReadAllText(file);
+            var text = SourceContract.ReadSourceFile(file);
             Assert.DoesNotContain("Compiler.Compile(", text, StringComparison.Ordinal);
             Assert.DoesNotContain("(ShaderFlags)0x00100000", text, StringComparison.Ordinal);
         }
@@ -207,7 +206,7 @@ public sealed class ShaderInventoryTests
     [Fact]
     public void EveryIncludeDirectiveResolvesToAnEmbeddedHeader()
     {
-        // #include is resolved by EmbeddedShaderInclude against the same flat embedded index as
+        // #include is resolved by EmbeddedShaderSourceProvider against the same flat embedded index as
         // top-level shaders, ignoring directory components. Without this guard a typo'd or
         // un-embedded header only surfaces as a runtime FXC error under RUN_SHADER_COMPILE_TESTS —
         // which the default CI suite does not exercise for most permutations.

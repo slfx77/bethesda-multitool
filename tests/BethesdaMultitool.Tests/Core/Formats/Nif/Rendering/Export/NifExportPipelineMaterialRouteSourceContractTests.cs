@@ -8,19 +8,23 @@ public sealed class NifExportPipelineMaterialRouteSourceContractTests
     [Fact]
     public void CliModernExportResolvesMaterialsBeforeChoosingHierarchyOrRigidFallback()
     {
-        var source = SourceContract.ReadSource(
+        var pipeline = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "CLI", "Rendering", "Nif", "NifExportPipeline.cs");
-        var run = SourceContract.Extract(
-            source,
-            "internal static void Run(NifExportSettings settings)",
-            "private static GlbScene? BuildScene(");
-        var route = source[source.IndexOf("private static GlbScene? BuildScene(", StringComparison.Ordinal)..];
+        var run = pipeline[pipeline.IndexOf("internal static void Run(NifExportSettings settings)", StringComparison.Ordinal)..];
 
+        // The scene assembly moved to Core unchanged; the CLI pipeline still owns the resolver
+        // lifetime and the writer call, in this order.
         SourceContract.AssertOrder(
             run,
+            "NifExportSceneAssembly.TryParseForExport(rawData, out var nifData, out var nif, out var error)",
             "using var textureResolver",
-            "BuildScene(nifData, nif, settings.InputPath, textureResolver)",
+            "NifExportSceneAssembly.BuildForExport(nifData, nif, settings.InputPath, textureResolver)",
             "GlbWriter.Write(scene, textureResolver, settings.OutputPath)");
+
+        var assembly = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Export", "NifExportSceneAssembly.cs");
+        var route = assembly[assembly.IndexOf("internal static GlbScene? BuildForExport(", StringComparison.Ordinal)..];
+
         SourceContract.AssertOrder(
             route,
             "NifGeometryExtractor.Extract(data, nif, textureResolver)",

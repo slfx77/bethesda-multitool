@@ -1,9 +1,11 @@
+using BethesdaMultitool.Core.Actors;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Esm.Runtime;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Semantic.LoadOrder;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
@@ -29,6 +31,32 @@ internal sealed class NpcAppearanceResolver
 
     /// <summary>The game family established while the appearance index was decoded.</summary>
     internal BethesdaGame Game => _index.Game;
+
+    internal IReadOnlyDictionary<uint, LoadOrderRecordVersion> Sources => _index.Sources;
+
+    /// <summary>Names the single input already supplied by the caller; selected multi-plugin identities stay intact.</summary>
+    internal void DescribeSingleSource(string sourcePath)
+    {
+        if (_index.Sources.Count != 0) return;
+        foreach (var (id, owner) in _index.StoredOwners.ToArray())
+        {
+            var named = owner with { FilePath = Path.GetFullPath(sourcePath), Plugin = Path.GetFileName(sourcePath) };
+            _index.StoredOwners[id] = named;
+            if (_index.Creatures.TryGetValue(id, out var creature))
+                _index.Creatures[id] = creature with { AssetOwner = named };
+        }
+    }
+
+    internal BethesdaMultitool.Core.Assets.AssetRecordOwner WeaponAssetOwner(WeapScanEntry weapon)
+    {
+        var ids = _index.Weapons.Where(pair => ReferenceEquals(pair.Value, weapon)).Select(pair => pair.Key).ToArray();
+        return ids.Length == 1 ? _index.Owner(ids[0], "WEAP") :
+            BethesdaMultitool.Core.Assets.AssetRecordOwner.Unavailable("WEAP", null);
+    }
+
+    internal static NpcAppearanceResolver Build(PluginLoadOrder order, LoadOrderRecordIndex selection,
+        CancellationToken cancellationToken = default) =>
+        new(NpcAppearanceSelection.Build(order, selection, cancellationToken));
 
     /// <summary>Scans an ESM and builds a resolver over its NPC/creature/race/weapon records.</summary>
     public static NpcAppearanceResolver Build(byte[] esmData, bool bigEndian)
@@ -74,18 +102,19 @@ internal sealed class NpcAppearanceResolver
         return new NpcAppearanceResolver(index);
     }
 
-    /// <summary>Resolves the head-only appearance of a single NPC by FormID, or <c>null</c> if not found.</summary>
+    /// <summary>Resolves an NPC by FormID, using exact generated inventory when supplied, or returns null for a missing NPC.</summary>
     public NpcAppearance? ResolveHeadOnly(
         uint formId,
         string pluginName,
-        ushort? previewPlayerLevel = null)
+        ushort? previewPlayerLevel = null,
+        ActorInventoryGeneration? generation = null)
     {
         if (!_index.Npcs.TryGetValue(formId, out var npc))
         {
             return null;
         }
 
-        return _appearanceFactory.Build(formId, npc, pluginName, previewPlayerLevel);
+        return _appearanceFactory.Build(formId, npc, pluginName, previewPlayerLevel, generation);
     }
 
     /// <summary>Resolves the head-only appearance of every NPC, optionally skipping unnamed ones.</summary>

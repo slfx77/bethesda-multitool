@@ -33,7 +33,8 @@ internal static class NpcExportHeadAssembler
             var extracted = NpcExportSceneBuilder.LoadExtractedNif(
                 headPlan.BaseHeadNifPath,
                 meshArchives,
-                preSkinMorphDeltas: headPlan.HeadPreSkinMorphDeltas);
+                preSkinMorphDeltas: headPlan.HeadPreSkinMorphDeltas,
+                preSkinMorphTarget: headPlan.HeadPreSkinMorphTarget);
             if (extracted != null)
             {
                 var classicSkin2000 = npc.Game == BethesdaGame.Oblivion;
@@ -166,10 +167,13 @@ internal static class NpcExportHeadAssembler
         if (npc.BaseHeadNifPath != null)
         {
             var headPreSkinDeltas = ComputeHeadPreSkinDeltas(npc, meshArchives, egmCache, settings);
+            var headMorphTarget = NpcHeadMorphTargetLoader.Load(npc.BaseHeadNifPath, npc.BaseHeadTriPath,
+                headPreSkinDeltas, meshArchives);
             var extracted = NpcExportSceneBuilder.LoadExtractedNif(
                 npc.BaseHeadNifPath,
                 meshArchives,
-                preSkinMorphDeltas: headPreSkinDeltas);
+                preSkinMorphDeltas: headPreSkinDeltas,
+                preSkinMorphTarget: headMorphTarget);
             if (extracted != null)
             {
                 fullHeadTexturePath = npc.HeadDiffuseOverride != null
@@ -266,7 +270,7 @@ internal static class NpcExportHeadAssembler
                 textureResolver,
                 npc.EarTexturePath,
                 !settings.NoEgt,
-                LoadEarEgt).EffectiveTexturePath;
+                LoadEarEgt, earEgtPath).EffectiveTexturePath;
         }
 
         AddRaceFaceParts(scene, npc, meshArchives, textureResolver, egmCache, usedBaseRaceMesh,
@@ -751,7 +755,7 @@ internal static class NpcExportHeadAssembler
         }
 
         var textureKey = NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc);
-        textureResolver.InjectTexture(textureKey, morphedTexture);
+        textureResolver.InjectTexture(textureKey, morphedTexture, new("FaceGen EGT", [fullHeadTexturePath, egtPath], true, [new(fullHeadTexturePath, [.. baseTexture.AssetReadReceipts])]));
         return textureKey;
     }
 }

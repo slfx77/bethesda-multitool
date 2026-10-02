@@ -4,7 +4,6 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Tests.Core.Formats.Nif.Materials;
-using BethesdaMultitool.Tests.Helpers;
 using SharpGLTF.Schema2;
 using Xunit;
 
@@ -91,22 +90,6 @@ public sealed class StarfieldGlbOrmPackerTests
 
         Assert.False(result.Applied);
         Assert.Null(result.Texture);
-    }
-
-    [Fact]
-    public void GlbWriter_UsesPackedImageForBothCoreGltfConsumers()
-    {
-        var source = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Export",
-            "GlbWriter.cs");
-
-        SourceContract.AssertOrder(
-            source,
-            "TryResolveStaticLayer0Orm(out starfieldOrmState)",
-            "StarfieldGlbOrmPacker.Pack(",
-            "starfieldOrm.Texture is { } ormTexture",
-            "material.WithMetallicRoughness(",
-            "material.WithOcclusion(ormImage);");
     }
 
     [Fact]

@@ -138,9 +138,9 @@ public sealed class OblivionClassicSkinVaryingTests
     public void RecoveredPairAndUnchangedGenericVertex_CompileThroughTheProductionCompiler()
     {
         ShaderCompileTestGuard.SkipUnlessEnabled();
-        Assert.NotEmpty(GpuShaderCompiler12.Compile("reference.vert.hlsl", "main", "vs_5_1",
-            new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1")));
-        Assert.NotEmpty(GpuShaderCompiler12.Compile("reference_classic_skin.frag.hlsl", "main", "ps_5_1"));
-        Assert.NotEmpty(GpuShaderCompiler12.Compile("reference.vert.hlsl", "main", "vs_5_1"));
+        Assert.False(GpuShaderCompiler12.Compile("reference.vert.hlsl", "main", "vs_5_1",
+            new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1")).IsEmpty);
+        Assert.False(GpuShaderCompiler12.Compile("reference_classic_skin.frag.hlsl", "main", "ps_5_1").IsEmpty);
+        Assert.False(GpuShaderCompiler12.Compile("reference.vert.hlsl", "main", "vs_5_1").IsEmpty);
     }
 }

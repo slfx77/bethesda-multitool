@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.IO.MemoryMappedFiles;
 using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.Core.Actors;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
@@ -17,6 +19,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Minidump;
+using Slfx77.Multitool.Core.Lifetime;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 
@@ -46,6 +49,27 @@ internal sealed class NpcBrowserService : IDisposable
     private readonly NpcAppearanceResolver _resolver;
     private readonly NifTextureResolver _textureResolver;
     private readonly string[] _textureSourcePaths;
+    private RetiredResourceDisposal? _retiredResources;
+    private readonly AssetDependencyCache _actorMeshDependencies = new();
+    private readonly AssetDependencyCache _actorTextureDependencies = new();
+    internal string GetAssetCacheIdentity(string key) =>
+        _actorMeshDependencies.Qualify(_meshArchives.Selection, key, "meshes/__actor_dependencies__.nif") +
+        _actorTextureDependencies.Qualify(_textureResolver.AssetSelection, key, "textures/__actor_dependencies__.dds");
+    internal void RememberActorAssets(string key, IReadOnlyList<AssetSelectionReceipt> receipts)
+    {
+        _actorMeshDependencies.Remember(key, receipts.Where(r => r.PlanIdentity == _meshArchives.Selection.Plan.Identity).ToArray());
+        if (_textureResolver.AssetSelection is { } textures)
+            _actorTextureDependencies.Remember(key, receipts.Where(r => r.PlanIdentity == textures.Plan.Identity).ToArray());
+    }
+    private void ClearSelectedCompositionCaches()
+    {
+        if (!_meshArchives.RequiresActualReadReceipt) return;
+        _compositionCaches.EgmFiles.Clear();
+        _compositionCaches.EgtFiles.Clear();
+        _compositionCaches.SkeletonPlans.Clear();
+    }
+    internal IReadOnlyList<AssetSelectionReceipt> AssetReceipts => _meshArchives.Selection.Receipts()
+        .Concat(_textureResolver.AssetSelection?.Receipts() ?? []).ToArray();
 
     private NpcBrowserService(
         NpcAppearanceResolver resolver,
@@ -73,8 +97,14 @@ internal sealed class NpcBrowserService : IDisposable
     {
         _operationGate.DisposeResources(() =>
         {
-            _meshArchives.Dispose();
-            _textureResolver.Dispose();
+            if (_retiredResources is null)
+            {
+                var retired = new RetiredResourceDisposal();
+                retired.Add(_meshArchives, "actor mesh archives");
+                retired.Add(_textureResolver, "actor texture sources");
+                _retiredResources = retired;
+            }
+            _retiredResources.Dispose();
         });
     }
 
@@ -173,6 +203,20 @@ internal sealed class NpcBrowserService : IDisposable
             cancellationToken);
     }
 
+    /// <summary>Opens configured assets around an explicitly selected appearance resolver.</summary>
+    internal static NpcBrowserService? TryCreateFromResolver(
+        NpcAppearanceResolver resolver,
+        string primaryPath,
+        BsaDiscoveryResult bsaPaths,
+        IProgress<NpcBrowserLoadProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resolver);
+        if (!bsaPaths.HasMeshes) { return null; }
+        return TryCreateCore(() => resolver, primaryPath, bsaPaths, progress,
+            "selected-load-order", cancellationToken);
+    }
+
     private static NpcBrowserService? TryCreateCore(
         Func<NpcAppearanceResolver> resolverFactory,
         string esmPath,
@@ -198,16 +242,17 @@ internal sealed class NpcBrowserService : IDisposable
 
         var resolver = TimeLoadStage(
             NpcBrowserLoadStage.DecodingAppearanceRecords,
-            "Reading NPC appearance records...",
+            recordSource == "selected-load-order" ? "Using selected NPC appearance records..." : "Reading NPC appearance records...",
             resolverFactory,
             progress,
             $"source={recordSource}");
         cancellationToken.ThrowIfCancellationRequested();
+        resolver.DescribeSingleSource(esmPath);
 
         var meshArchives = TimeLoadStage(
             NpcBrowserLoadStage.IndexingMeshArchives,
             "Indexing mesh archives...",
-            () => MeshArchiveSet.Open(
+            () => bsaPaths.MeshPlan is { } meshPlan ? MeshArchiveSet.Open(meshPlan) : MeshArchiveSet.Open(
                 bsaPaths.MeshesBsaPaths[0],
                 bsaPaths.MeshesBsaPaths.Length > 1 ? bsaPaths.MeshesBsaPaths[1..] : null),
             progress,
@@ -221,7 +266,7 @@ internal sealed class NpcBrowserService : IDisposable
             textureResolver = TimeLoadStage(
                 NpcBrowserLoadStage.IndexingTextureArchives,
                 "Indexing texture archives...",
-                () => new NifTextureResolver(bsaPaths.TexturesBsaPaths),
+                () => new NifTextureResolver(bsaPaths.TexturePlan ?? AssetSourcePlan.FromPaths(bsaPaths.TexturesBsaPaths)),
                 progress,
                 $"archives={bsaPaths.TexturesBsaPaths.Length}");
             cancellationToken.ThrowIfCancellationRequested();
@@ -230,7 +275,7 @@ internal sealed class NpcBrowserService : IDisposable
                 resolver,
                 meshArchives,
                 textureResolver,
-                bsaPaths.TexturesBsaPaths,
+                (bsaPaths.TexturePlan?.Mounts.Select(m => m.Path) ?? bsaPaths.TexturesBsaPaths).ToArray(),
                 Path.GetFileName(esmPath));
             textureResolver = null;
 
@@ -331,6 +376,7 @@ internal sealed class NpcBrowserService : IDisposable
         }
 
         var resolver = NpcAppearanceResolver.Build(esmData, esmBigEndian);
+        resolver.DescribeSingleSource(esmPath);
         var meshArchives = MeshArchiveSet.Open(
             bsaPaths.MeshesBsaPaths[0],
             bsaPaths.MeshesBsaPaths.Length > 1 ? bsaPaths.MeshesBsaPaths[1..] : null);
@@ -475,11 +521,17 @@ internal sealed class NpcBrowserService : IDisposable
         bool noEquip,
         bool noWeapon,
         bool bindPose = false,
-        ushort? previewPlayerLevel = null)
+        ushort? previewPlayerLevel = null,
+        ActorInventoryGeneration? generation = null,
+        CancellationToken cancellationToken = default)
     {
         using var operation = _operationGate.Enter();
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var appearance = ResolveAppearance(npcFormId, previewPlayerLevel);
+        ClearSelectedCompositionCaches();
+        using var meshReads = _meshArchives.Selection.CaptureReads();
+        using var textureReads = _textureResolver.AssetSelection?.CaptureReads();
+        var appearance = ResolveAppearance(npcFormId, previewPlayerLevel, generation);
         if (appearance == null)
         {
             return null;
@@ -504,11 +556,13 @@ internal sealed class NpcBrowserService : IDisposable
                 _textureResolver,
                 _compositionCaches,
                 NpcCompositionOptions.From(settings));
+            cancellationToken.ThrowIfCancellationRequested();
             var exportScene = NpcCompositionExportAdapter.BuildNpc(
                 plan,
                 _meshArchives,
                 _textureResolver,
                 _compositionCaches);
+            cancellationToken.ThrowIfCancellationRequested();
 
             if (exportScene == null || exportScene.MeshParts.Count == 0)
             {
@@ -517,10 +571,14 @@ internal sealed class NpcBrowserService : IDisposable
 
             var viewerScene = BethesdaViewerSceneGlbAdapter.FromGlbScene(
                 exportScene,
-                BuildNpcSourceLabel(appearance),
+                BuildNpcSourceLabel(appearance, generation),
                 BethesdaViewerScenePurpose.NpcAppearance,
                 game: _game,
                 textureSourcePaths: _textureSourcePaths);
+            viewerScene.TexturePlan = _textureResolver.AssetSelection?.Plan;
+            viewerScene.AssetReadReceipts = meshReads.Receipts.Concat(textureReads?.Receipts ?? []).Distinct().ToArray();
+            viewerScene.AssetUses = BethesdaMultitool.Core.Formats.Nif.Rendering.Scene.SceneAssetUses.WithResolvedTextureReads(
+                viewerScene.AssetUses, _textureResolver, viewerScene.AssetReadReceipts).Bind(viewerScene.AssetReadReceipts);
             CaptureReferencedGeneratedTextures(viewerScene, appearance);
             NpcBoundaryVertexStitcher.PopulateViewerSceneBoundaryGroups(viewerScene);
             return viewerScene;
@@ -536,10 +594,15 @@ internal sealed class NpcBrowserService : IDisposable
     ///     creature can't be resolved. The existing record-driven skeleton, body, weapon, and skin
     ///     assembly remains unchanged.
     /// </summary>
-    public BethesdaViewerScene? BuildCreatureViewerScene(uint creatureFormId, bool bindPose = false)
+    public BethesdaViewerScene? BuildCreatureViewerScene(uint creatureFormId, bool bindPose = false,
+        CancellationToken cancellationToken = default)
     {
         using var operation = _operationGate.Enter();
+        cancellationToken.ThrowIfCancellationRequested();
 
+        using var meshReads = _meshArchives.Selection.CaptureReads();
+        using var textureReads = _textureResolver.AssetSelection?.CaptureReads();
+        ClearSelectedCompositionCaches();
         var creatures = _resolver.GetAllCreatures();
         if (!creatures.TryGetValue(creatureFormId, out var creature))
         {
@@ -569,7 +632,9 @@ internal sealed class NpcBrowserService : IDisposable
                 plan.AnimationOverrides?.Count ?? 0);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         var exportScene = plan == null ? null : NpcCompositionExportAdapter.BuildCreature(plan, _meshArchives);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (exportScene == null || exportScene.MeshParts.Count == 0)
         {
@@ -582,8 +647,36 @@ internal sealed class NpcBrowserService : IDisposable
             BethesdaViewerScenePurpose.CreatureAppearance,
             game: _game,
             textureSourcePaths: _textureSourcePaths);
+        viewerScene.TexturePlan = _textureResolver.AssetSelection?.Plan;
+        viewerScene.AssetReadReceipts = meshReads.Receipts.Concat(textureReads?.Receipts ?? []).Distinct().ToArray();
+        viewerScene.AssetUses = BethesdaMultitool.Core.Formats.Nif.Rendering.Scene.SceneAssetUses.WithResolvedTextureReads(
+                viewerScene.AssetUses, _textureResolver, viewerScene.AssetReadReceipts).Bind(viewerScene.AssetReadReceipts);
         NpcBoundaryVertexStitcher.PopulateViewerSceneBoundaryGroups(viewerScene);
         return viewerScene;
+    }
+
+    /// <summary>
+    /// Static world preview through the same actor assembler. Morph/skeleton working caches do not
+    /// accumulate across a world's actor population; retained scenes belong to the mesh LRU.
+    /// </summary>
+    internal BethesdaViewerScene? BuildWorldViewerScene(uint formId, bool creature,
+        CancellationToken cancellationToken)
+    {
+        using var operation = _operationGate.Enter();
+        try
+        {
+            return creature
+                ? BuildCreatureViewerScene(formId, cancellationToken: cancellationToken)
+                : BuildViewerScene(formId, headOnly: false, noEquip: false, noWeapon: false,
+                    cancellationToken: cancellationToken);
+        }
+        finally
+        {
+            _compositionCaches.EgmFiles.Clear();
+            _compositionCaches.EgtFiles.Clear();
+            _compositionCaches.SkeletonPlans.Clear();
+            _textureResolver.ReleaseDecodedTextures();
+        }
     }
 
     /// <summary>
@@ -618,7 +711,8 @@ internal sealed class NpcBrowserService : IDisposable
     /// <summary>Composes and exports an NPC to GLB bytes, or <c>null</c> if the NPC can't be resolved.</summary>
     public byte[]? BuildGlb(uint npcFormId, bool headOnly, bool noEquip, bool noWeapon,
         bool bindPose = false,
-        ushort? previewPlayerLevel = null)
+        ushort? previewPlayerLevel = null,
+        ActorInventoryGeneration? generation = null)
     {
         using var operation = _operationGate.Enter();
 
@@ -628,7 +722,8 @@ internal sealed class NpcBrowserService : IDisposable
             noEquip,
             noWeapon,
             bindPose,
-            previewPlayerLevel);
+            previewPlayerLevel,
+            generation);
         return scene == null ? null : ExportViewerSceneToGlb(scene);
     }
 
@@ -650,11 +745,12 @@ internal sealed class NpcBrowserService : IDisposable
         int spriteSize,
         float azimuth,
         float elevation,
-        ushort? previewPlayerLevel = null)
+        ushort? previewPlayerLevel = null,
+        ActorInventoryGeneration? generation = null)
     {
         using var operation = _operationGate.Enter();
 
-        var appearance = ResolveAppearance(npcFormId, previewPlayerLevel);
+        var appearance = ResolveAppearance(npcFormId, previewPlayerLevel, generation);
         if (appearance == null)
         {
             return null;
@@ -876,16 +972,23 @@ internal sealed class NpcBrowserService : IDisposable
         }, ct);
     }
 
+    /// <summary>Resolves plugin appearance from a captured generation, preserving authoritative DMP appearance and rejecting simulated overrides there.</summary>
     private NpcAppearance? ResolveAppearance(
         uint npcFormId,
-        ushort? previewPlayerLevel = null)
+        ushort? previewPlayerLevel = null,
+        ActorInventoryGeneration? generation = null)
     {
         if (_dmpAppearances != null)
         {
+            if (generation is not null)
+            {
+                throw new InvalidOperationException("Generated inventory previews require a plugin NPC source.");
+            }
+
             return _dmpAppearances.GetValueOrDefault(npcFormId);
         }
 
-        return _resolver.ResolveHeadOnly(npcFormId, _pluginName, previewPlayerLevel);
+        return _resolver.ResolveHeadOnly(npcFormId, _pluginName, previewPlayerLevel, generation);
     }
 
     private void CaptureReferencedGeneratedTextures(
@@ -921,7 +1024,13 @@ internal sealed class NpcBrowserService : IDisposable
         }
     }
 
-    private static string BuildNpcSourceLabel(NpcAppearance appearance)
+    /// <summary>Labels the actor and the supplied preview context without presenting generated equipment as observed runtime state.</summary>
+    /// <param name="appearance">Resolved actor identity and any authored leveled-weapon context.</param>
+    /// <param name="generation">The exact retained inventory preview, or null for authored equipment resolution.</param>
+    /// <returns>A display label describing actor identity and supplied preview provenance.</returns>
+    private static string BuildNpcSourceLabel(
+        NpcAppearance appearance,
+        ActorInventoryGeneration? generation)
     {
         var actorName = appearance.FullName ?? appearance.EditorId ?? $"0x{appearance.NpcFormId:X8}";
         var variant = string.IsNullOrWhiteSpace(appearance.RenderVariantLabel)
@@ -936,7 +1045,13 @@ internal sealed class NpcBrowserService : IDisposable
                 : $" [weapon LVLI 0x{leveledWeapon.ListFormId:X8} omitted: preview level required]";
         }
 
-        return $"{actorName}{variant} (NPC_ 0x{appearance.NpcFormId:X8}){weaponContext}";
+        var generatedContext = string.Empty;
+        if (generation is not null)
+        {
+            var suffix = generation.Complete ? "]" : ", incomplete]";
+            generatedContext = $" [generated inventory seed {generation.Seed}, preview level {generation.Level}{suffix}";
+        }
+        return $"{actorName}{variant} (NPC_ 0x{appearance.NpcFormId:X8}){weaponContext}{generatedContext}";
     }
 
     private static string BuildCreatureSourceLabel(uint creatureFormId, CreatureScanEntry creature)

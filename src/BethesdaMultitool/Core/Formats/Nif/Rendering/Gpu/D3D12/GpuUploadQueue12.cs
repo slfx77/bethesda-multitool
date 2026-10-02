@@ -1,3 +1,4 @@
+using Slfx77.Multitool.Core.Lifetime;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -48,12 +49,20 @@ internal sealed class GpuUploadQueue12 : IDisposable
     private readonly ID3D12GraphicsCommandList[] _lists = new ID3D12GraphicsCommandList[RingSize];
     private readonly ulong[] _slotFenceValues = new ulong[RingSize];
     private readonly Queue<StagingRetirement> _stagingRetire = new();
+    private readonly GpuDevice12 _gpu;
+    private readonly RetiredResourceDisposal _retiredStaging = new();
+    private RetiredResourceDisposal? _retiredResources;
     private bool _disposed;
+    private bool _stopping;
+    private bool _disposing;
+    private bool _submissionFailed;
+    private bool _retirementProven;
     private ulong _nextFenceValue = 1;
     private int _ringIndex;
 
     public GpuUploadQueue12(GpuDevice12 gpu)
     {
+        _gpu = gpu;
         var queueDesc = new CommandQueueDescription(CommandListType.Copy, CommandQueuePriority.Normal);
         _copyQueue = gpu.Device.CreateCommandQueue<ID3D12CommandQueue>(queueDesc);
         for (var i = 0; i < RingSize; i++)
@@ -77,22 +86,42 @@ internal sealed class GpuUploadQueue12 : IDisposable
     /// <summary>Staging buffers awaiting copy completion before they can be freed.</summary>
     public int PendingStagingCount => _stagingRetire.Count;
 
+    /// <summary>Stops admission and proves copy completion or actual device removal before retryable staged cleanup.</summary>
+    /// <remarks>A failed fence or release retains its resource and every later prerequisite for another Dispose call.</remarks>
     public void Dispose()
     {
         if (_disposed) return;
-        Flush();
-        _disposed = true;
-        // Any staging left after Flush (none expected) — release defensively.
-        while (_stagingRetire.TryDequeue(out var pending))
+#pragma warning disable S3877 // A reentrant Dispose cannot report success while this dependent still owns live resources.
+        if (_disposing) { throw new InvalidOperationException("Copy-queue retirement is already in progress."); }
+#pragma warning restore S3877
+        _disposing = true;
+        _stopping = true;
+        try
         {
-            pending.Resource.Dispose();
-        }
+            if (!_retirementProven) { EstablishRetirement(); }
+            if (_retiredResources is null)
+            {
+                // The proof covers even an Execute that threw or was followed by a failed Signal.
+                while (_stagingRetire.TryPeek(out var pending))
+                {
+                    _retiredStaging.Add(pending.Resource, "copy staging");
+                    _stagingRetire.Dequeue();
+                }
 
-        foreach (var list in _lists) list.Dispose();
-        foreach (var allocator in _allocators) allocator.Dispose();
-        _fence.Dispose();
-        _fenceEvent.Dispose();
-        _copyQueue.Dispose();
+                var resources = new RetiredResourceDisposal();
+                resources.Add(_retiredStaging, "copy staging", 0);
+                foreach (var list in _lists) { resources.Add(list, "copy list", 1); }
+                foreach (var allocator in _allocators) { resources.Add(allocator, "copy allocator", 2); }
+                resources.Add(_fence, "copy fence", 3);
+                resources.Add(_fenceEvent, "copy fence event", 3);
+                resources.Add(_copyQueue, "copy queue", 3);
+                _retiredResources = resources;
+            }
+
+            _retiredResources.Dispose();
+            _disposed = true;
+        }
+        finally { _disposing = false; }
     }
 
     /// <summary>
@@ -103,10 +132,18 @@ internal sealed class GpuUploadQueue12 : IDisposable
     ///     this fence completes). <paramref name="staging" /> resources are released once the
     ///     returned fence value completes. Uploader-thread only.
     /// </summary>
-    public ulong Submit(Action<ID3D12GraphicsCommandList> record, IReadOnlyList<IDisposable> staging)
+    /// <param name="record">Records copies synchronously before ownership transfer or execution.</param>
+    /// <param name="staging">Resources transferred to this queue immediately before Execute.</param>
+    /// <param name="stagingOwnershipTransferred">True even on a later exception when this queue owns all staging until proven retirement.</param>
+    /// <returns>The signaled copy-fence value.</returns>
+    public ulong Submit(Action<ID3D12GraphicsCommandList> record, IReadOnlyList<IDisposable> staging,
+        out bool stagingOwnershipTransferred)
     {
+        stagingOwnershipTransferred = false;
         ArgumentNullException.ThrowIfNull(record);
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(staging);
+        ObjectDisposedException.ThrowIf(_stopping || _disposed, this);
+        if (_submissionFailed) { throw new InvalidOperationException("The copy queue requires retirement after a failed submission."); }
 
         RetireCompletedStaging();
 
@@ -121,51 +158,97 @@ internal sealed class GpuUploadQueue12 : IDisposable
         record(list);
         list.Close();
 
-        _copyQueue.ExecuteCommandList(list);
         var value = _nextFenceValue++;
-        _copyQueue.Signal(_fence, value).CheckError();
+        var ownedStaging = staging.ToArray();
+        foreach (var resource in ownedStaging) { ArgumentNullException.ThrowIfNull(resource); }
+        _stagingRetire.EnsureCapacity(checked(_stagingRetire.Count + ownedStaging.Length));
+        foreach (var resource in ownedStaging) { _stagingRetire.Enqueue(new StagingRetirement(resource, value)); }
+        stagingOwnershipTransferred = true;
+        _retirementProven = false;
+        try
+        {
+            _copyQueue.ExecuteCommandList(list);
+            _copyQueue.Signal(_fence, value).CheckError();
+        }
+        catch
+        {
+            // Execute may already have reached the GPU. No later upload may reuse this slot, and
+            // the caller must retain its destination until this queue can establish retirement.
+            _submissionFailed = true;
+            throw;
+        }
         _slotFenceValues[slot] = value;
         _ringIndex = (slot + 1) % RingSize;
-
-        for (var i = 0; i < staging.Count; i++)
-        {
-            _stagingRetire.Enqueue(new StagingRetirement(staging[i], value));
-        }
 
         return value;
     }
 
     /// <summary>
-    ///     Disposes staging buffers whose copy has completed. Uploader-thread only (also
-    ///     invoked from <see cref="Flush" /> / <see cref="Dispose" /> once the uploader is stopped).
+    ///     Disposes staging buffers whose copy has completed, retaining failed releases for retry.
+    ///     Uploader-thread only, or called by <see cref="Flush" /> after the uploader has stopped.
     /// </summary>
     public void RetireCompletedStaging()
     {
-        var completed = _fence.CompletedValue;
+        ObjectDisposedException.ThrowIf(_stopping || _disposed, this);
+        var completed = CompletedValueWithRemovalProof();
         while (_stagingRetire.TryPeek(out var head) && head.FenceValue <= completed)
         {
+            _retiredStaging.Add(head.Resource, "completed copy staging");
             _stagingRetire.Dequeue();
-            head.Resource.Dispose();
         }
+        _retiredStaging.Dispose();
     }
 
     /// <summary>
-    ///     Signals and waits for all outstanding copy work, then retires every staging buffer.
+    ///     Proves completion of all outstanding copy work or actual device removal, then retires staging.
     ///     Call from the render thread only after the owning uploader thread has stopped (so no
     ///     concurrent <see cref="Submit" /> can race the ring/staging state).
     /// </summary>
     public void Flush()
     {
         if (_disposed) return;
-        var value = _nextFenceValue++;
-        _copyQueue.Signal(_fence, value).CheckError();
-        WaitForFence(value);
+        ObjectDisposedException.ThrowIf(_stopping, this);
+        EstablishRetirement();
         RetireCompletedStaging();
     }
 
+    /// <summary>Establishes all-copy retirement; a failed wait alone never authorizes releasing submitted resources.</summary>
+    private void EstablishRetirement()
+    {
+        try
+        {
+            var value = _nextFenceValue++;
+            _copyQueue.Signal(_fence, value).CheckError();
+            WaitForFence(value);
+        }
+        catch
+        {
+            if (!_gpu.TryForceDeviceRemoval("texture-copy-retirement")) { throw; }
+        }
+        _retirementProven = true;
+    }
+
+    /// <summary>Reads completion without mistaking a removal sentinel for an unverified ordinary fence value.</summary>
+    /// <returns>The completed value, including the removal sentinel only after actual removal is established.</returns>
+    private ulong CompletedValueWithRemovalProof()
+    {
+        var completed = _fence.CompletedValue;
+        if (completed == ulong.MaxValue && !_gpu.TryForceDeviceRemoval("texture-copy-completion"))
+        {
+            throw new InvalidOperationException("Copy-fence completion could not establish device retirement.");
+        }
+        return completed;
+    }
+
+    /// <summary>Waits without pumping UI messages and verifies the requested fence really completed.</summary>
+    /// <param name="value">Copy-fence value requiring completion.</param>
     private void WaitForFence(ulong value)
     {
         D3D12FenceWaiter.WaitForFence(_fence, value, _fenceEvent);
+        if (CompletedValueWithRemovalProof() < value)
+        {
+            throw new InvalidOperationException("The copy-fence wait returned before its requested submission completed.");
+        }
     }
 
     private readonly record struct StagingRetirement(IDisposable Resource, ulong FenceValue);

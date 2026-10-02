@@ -1,48 +1,20 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Diagnostics;
-using System.Globalization;
 using System.Text;
 using BethesdaMultitool.Core.Diagnostics;
-using Vortice.D3DCompiler;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using Vortice.Direct3D;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
-///     The single entry point for compiling an embedded HLSL shader. Replaces a dozen copy-pasted
-///     private <c>CompileEmbeddedShader</c> helpers that had each drifted apart.
-///     <para>
-///         NOT guarded by <c>#if WINDOWS_GUI</c> on purpose: the <c>net10.0</c> test build must reach
-///         it so tests and the runtime can never diverge on flags, lookup, or include handling again
-///         (<c>GpuTonemapPass12</c> sets the same precedent; the Vortice.D3DCompiler package
-///         reference is unconditional).
-///     </para>
+///     Resolves Bethesda shader sources and permutations, caches DXBC, and records compilation
+///     diagnostics. Shared owns native compilation and its include/blob lifetimes. This adapter
+///     remains available to the portable test build; native compilation requires Windows.
 /// </summary>
 internal static class GpuShaderCompiler12
 {
-    /// <summary>
-    ///     <c>D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES</c>. Not present in Vortice's
-    ///     <see cref="ShaderFlags" /> enum, hence the cast.
-    ///     <para>
-    ///         THE ONLY OCCURRENCE OF THIS CONSTANT IN THE REPO, and it is applied UNCONDITIONALLY.
-    ///         It previously varied by SIX divergent rules that each tried to infer the need by
-    ///         substring-scanning the top-level shader text — <c>Contains("textures[]")</c>,
-    ///         <c>Contains("[] : register")</c>, an explicit <see cref="ShaderFlags.None" />, a short
-    ///         overload passing no flags at all, a test-side regex, and one always-on test. Two
-    ///         consequences made that untenable: in one shader the check was satisfied by a *comment*
-    ///         rather than a declaration, and any future move of a <c>[] : register</c> declaration
-    ///         into a shared header would have silently stopped every heuristic from firing, giving
-    ///         FXC error X3596 — which the GUI turns into a warning and a blank viewport, not a crash.
-    ///     </para>
-    ///     <para>
-    ///         Unconditional is correct because the flag only PERMITS unbounded descriptor ranges; it
-    ///         is inert for a shader that declares none. <c>FnvTerrainNormalMapTests</c> already
-    ///         proved this by compiling always-on for a long time.
-    ///     </para>
-    /// </summary>
-    private const ShaderFlags EnableUnboundedDescriptorTables = (ShaderFlags)0x00100000;
-
     /// <summary>Logical-name prefix stamped onto every shader by the csproj EmbeddedResource item.</summary>
     private const string ResourcePrefix = "BethesdaMultitool.Shaders.";
 
@@ -50,11 +22,13 @@ internal static class GpuShaderCompiler12
 
     private static readonly Lazy<FrozenDictionary<string, string>> Index = new(BuildIndex);
 
+    private static readonly EmbeddedShaderSourceProvider Sources = new();
+
     private static readonly Lazy<GpuShaderBytecodePack12?> ShippedBytecodePack = new(
         LoadShippedBytecodePack,
         LazyThreadSafetyMode.ExecutionAndPublication);
 
-    private static readonly ConcurrentDictionary<string, byte[]> BytecodeCache = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, ReadOnlyMemory<byte>> BytecodeCache = new(StringComparer.Ordinal);
 
     private static readonly ConcurrentDictionary<string, byte> MissingShippedKeys = new(StringComparer.Ordinal);
 
@@ -64,21 +38,22 @@ internal static class GpuShaderCompiler12
     private static double _totalCompileMilliseconds;
 
     /// <summary>
-    ///     Compile settings that participate in the shipped-pack fingerprint. Keep the API revision
-    ///     in this one decision site if compiler behavior changes; the actual enum values are derived
-    ///     from the same constants passed to <c>Compiler.Compile</c> below.
+    ///     Shared compiler settings, including source encoding, that participate in the shipped-pack
+    ///     fingerprint. The same unbounded-descriptor permission is passed to compilation.
     /// </summary>
-    internal static string BytecodeCompilerContract { get; } = string.Create(
-        CultureInfo.InvariantCulture,
-        $"Vortice.D3DCompiler={typeof(Compiler).Assembly.GetName().Version};Compiler.Compile/v1;ShaderFlags={(int)EnableUnboundedDescriptorTables};EffectFlags={(int)EffectFlags.None}");
+    internal static string BytecodeCompilerContract { get; } = ShaderCompiler.GetCompilerContract(
+        ShaderCompiler.AllowUnboundedDescriptorTables);
 
     /// <summary>Shader file name → manifest resource name. Exact, case-insensitive on the file name.</summary>
     internal static FrozenDictionary<string, string> ResourceIndex => Index.Value;
 
+    /// <summary>Gets the number of successful source compilations, including concurrent cache misses.</summary>
     internal static long CompileCount => Interlocked.Read(ref _compileCount);
 
+    /// <summary>Gets the number of requests satisfied by an existing process-lifetime cache entry.</summary>
     internal static long CacheHitCount => Interlocked.Read(ref _cacheHitCount);
 
+    /// <summary>Gets the number of shipped-pack entries first installed in the process-lifetime cache.</summary>
     internal static long PrecompiledHitCount => Interlocked.Read(ref _precompiledHitCount);
 
     /// <summary>
@@ -86,7 +61,14 @@ internal static class GpuShaderCompiler12
     ///     bytecode. Repeat requests for the same (file, entry, profile, macros) are served from a
     ///     process-lifetime cache.
     /// </summary>
-    internal static byte[] Compile(
+    /// <param name="fileName">Exact embedded shader file name, resolved case-insensitively.</param>
+    /// <param name="entryPoint">HLSL entry point for the requested permutation.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <param name="macros">Permutation definitions, extended by the active shadow-comparison policy.</param>
+    /// <returns>Read-only DXBC retaining the same backing storage for every cached permutation.</returns>
+    /// <exception cref="FileNotFoundException">The embedded shader cannot be resolved.</exception>
+    /// <exception cref="InvalidOperationException">Source compilation fails after pack fallback.</exception>
+    internal static ReadOnlyMemory<byte> Compile(
         string fileName, string entryPoint, string profile, params ShaderMacro[] macros)
     {
         var effectiveMacros = ShadowComparisonPcf12.ApplyRuntimeOptIn(fileName, profile, macros);
@@ -95,15 +77,15 @@ internal static class GpuShaderCompiler12
         {
             Interlocked.Increment(ref _cacheHitCount);
             ShadowComparisonPcf12.TraceSuccessfulShader(
-                fileName, entryPoint, profile, effectiveMacros, key, cached, true);
+                fileName, entryPoint, profile, effectiveMacros, key, cached.Span, true);
             return cached;
         }
 
         var shippedPack = ShippedBytecodePack.Value;
         if (shippedPack is not null && shippedPack.TryGetBytecode(key, out var precompiled))
         {
-            // TryAdd makes the race accounting unambiguous. Entries are immutable process-lifetime
-            // arrays, and this dictionary never removes a key.
+            // TryAdd makes the race accounting unambiguous. Read-only views retain the pack-owned
+            // backing storage without cloning it, and this dictionary never removes a key.
             var added = BytecodeCache.TryAdd(key, precompiled);
             var selectedPrecompiled = added ? precompiled : BytecodeCache[key];
             if (added)
@@ -121,7 +103,7 @@ internal static class GpuShaderCompiler12
             }
 
             ShadowComparisonPcf12.TraceSuccessfulShader(
-                fileName, entryPoint, profile, effectiveMacros, key, selectedPrecompiled,
+                fileName, entryPoint, profile, effectiveMacros, key, selectedPrecompiled.Span,
                 !added);
             return selectedPrecompiled;
         }
@@ -136,78 +118,67 @@ internal static class GpuShaderCompiler12
                 key);
         }
 
-        var bytecode = CompileSource(
+        ReadOnlyMemory<byte> bytecode = CompileSource(
             ReadSource(fileName), fileName, entryPoint, profile, effectiveMacros);
         // GetOrAdd rather than indexer assignment: a concurrent duplicate compile is wasteful but
-        // harmless, and callers must all observe the same array instance.
+        // harmless, and callers must all observe the same backing memory.
         var selectedBytecode = BytecodeCache.GetOrAdd(key, bytecode);
         ShadowComparisonPcf12.TraceSuccessfulShader(
-            fileName, entryPoint, profile, effectiveMacros, key, selectedBytecode,
-            !ReferenceEquals(selectedBytecode, bytecode));
+            fileName, entryPoint, profile, effectiveMacros, key, selectedBytecode.Span,
+            !selectedBytecode.Equals(bytecode));
         return selectedBytecode;
     }
 
     /// <summary>
-    ///     Compiles shader text that did not come from the manifest — used by tests that mutate a
-    ///     source before compiling. Shares the flag rule and include handling with
-    ///     <see cref="Compile" /> so a test can never validate a different configuration than ships;
-    ///     deliberately NOT cached.
+    ///     Compiles caller-prepared shader text with the production flags and embedded include
+    ///     policy. The result is independently owned and is not added to the process cache.
     /// </summary>
+    /// <param name="source">Complete HLSL source, including any caller-prepared variations.</param>
+    /// <param name="sourceName">Source identity used in compiler diagnostics.</param>
+    /// <param name="entryPoint">HLSL entry point.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <param name="macros">Exact definitions passed to Shared without runtime policy changes.</param>
+    /// <returns>Caller-owned DXBC with no outstanding native compiler resources.</returns>
+    /// <exception cref="PlatformNotSupportedException">Native compilation is requested outside Windows.</exception>
+    /// <exception cref="InvalidOperationException">Compilation fails; source, macro, and native diagnostics are retained.</exception>
     internal static byte[] CompileSource(
         string source, string sourceName, string entryPoint, string profile, params ShaderMacro[] macros)
     {
         var started = Stopwatch.GetTimestamp();
-        // Owned by this call and disposed with it — see EmbeddedShaderInclude for why a shared
-        // instance cannot be used from more than one thread.
-        using var include = new EmbeddedShaderInclude();
-        var result = Compiler.Compile(
-            source,
-            macros,
-            include,
-            entryPoint,
-            sourceName,
-            profile,
-            EnableUnboundedDescriptorTables,
-            EffectFlags.None,
-            out var bytecode,
-            out var errors);
-
-        if (result.Failure || bytecode is null)
-        {
-            var errorText = errors?.AsString() ?? "(no error blob)";
-            errors?.Dispose();
-            bytecode?.Dispose();
-            throw new InvalidOperationException(
-                $"HLSL compile failed for {sourceName} [{entryPoint}/{profile}{DescribeMacros(macros)}]: {errorText}");
-        }
-
-        errors?.Dispose();
+        byte[] bytecode;
         try
         {
-            var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-            Interlocked.Increment(ref _compileCount);
-            double totalCompileMilliseconds;
-            lock (Index)
-            {
-                _totalCompileMilliseconds += elapsed;
-                totalCompileMilliseconds = _totalCompileMilliseconds;
-            }
-
-            // Compile cost was previously never measured anywhere, so nobody could tell that
-            // water.frag.hlsl was being compiled nine times per startup.
-            Log.Debug(
-                "GpuShaderCompiler12: {0} [{1}/{2}{3}] {4:0.0}ms (compiles={5} cacheHits={6} total={7:0}ms)",
-                sourceName, entryPoint, profile, DescribeMacros(macros), elapsed,
-                CompileCount, CacheHitCount, totalCompileMilliseconds);
-            return bytecode.AsBytes().ToArray();
+            bytecode = ShaderCompiler.CompileSource(
+                new ShaderSource(sourceName, source), entryPoint, profile, Sources, macros,
+                ShaderCompiler.AllowUnboundedDescriptorTables);
         }
-        finally
+        catch (InvalidOperationException exception)
         {
-            bytecode.Dispose();
+            throw new InvalidOperationException(
+                $"HLSL compile failed for {sourceName} [{entryPoint}/{profile}{DescribeMacros(macros)}]: {exception.Message}",
+                exception);
         }
+
+        var elapsed = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        Interlocked.Increment(ref _compileCount);
+        double totalCompileMilliseconds;
+        lock (Index)
+        {
+            _totalCompileMilliseconds += elapsed;
+            totalCompileMilliseconds = _totalCompileMilliseconds;
+        }
+
+        Log.Debug(
+            "GpuShaderCompiler12: {0} [{1}/{2}{3}] {4:0.0}ms (compiles={5} cacheHits={6} total={7:0}ms)",
+            sourceName, entryPoint, profile, DescribeMacros(macros), elapsed,
+            CompileCount, CacheHitCount, totalCompileMilliseconds);
+        return bytecode;
     }
 
     /// <summary>Reads an embedded shader's text by exact file name.</summary>
+    /// <param name="fileName">File name resolved case-insensitively against the manifest index.</param>
+    /// <returns>The complete embedded UTF-8 shader text.</returns>
+    /// <exception cref="FileNotFoundException">No shader has the requested embedded file name.</exception>
     internal static string ReadSource(string fileName)
     {
         if (!Index.Value.TryGetValue(fileName, out var resourceName))
@@ -221,6 +192,9 @@ internal static class GpuShaderCompiler12
         return reader.ReadToEnd();
     }
 
+    /// <summary>Indexes the assembly's flat shader names and rejects ambiguous manifest entries.</summary>
+    /// <returns>An immutable case-insensitive file-name-to-resource-name lookup.</returns>
+    /// <exception cref="InvalidOperationException">Two embedded resources have the same shader file name.</exception>
     private static FrozenDictionary<string, string> BuildIndex()
     {
         var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -228,8 +202,7 @@ internal static class GpuShaderCompiler12
         {
             if (!resource.StartsWith(ResourcePrefix, StringComparison.Ordinal)) continue;
             var fileName = resource[ResourcePrefix.Length..];
-            // The csproj's flat LogicalName already makes a duplicate file name a build error; this
-            // is the belt to that braces, and it fails at startup rather than picking one silently.
+            // Reject duplicate logical names rather than silently selecting one resource.
             if (!map.TryAdd(fileName, resource))
             {
                 throw new InvalidOperationException(
@@ -240,6 +213,9 @@ internal static class GpuShaderCompiler12
         return map.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
     }
 
+    /// <summary>Loads and validates the optional physical DXBC pack unless source compilation is forced.</summary>
+    /// <returns>The compatible pack, or null when absent, disabled, or rejected with a diagnostic.</returns>
+    /// <exception cref="OutOfMemoryException">The pack cannot be loaded within available memory.</exception>
     private static GpuShaderBytecodePack12? LoadShippedBytecodePack()
     {
         if (EnvironmentVariables.IsEnabled(EnvironmentVariables.Viewer.ShaderSourceCompile))
@@ -293,6 +269,12 @@ internal static class GpuShaderCompiler12
         }
     }
 
+    /// <summary>Builds the stable shader permutation identity used by both runtime caching and shipped packs.</summary>
+    /// <param name="fileName">Embedded shader name.</param>
+    /// <param name="entryPoint">HLSL entry point.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <param name="macros">Permutation definitions, sorted for order-independent identity.</param>
+    /// <returns>A stable ordinal cache key with the existing delimiter and macro conventions.</returns>
     internal static string BuildCacheKey(
         string fileName, string entryPoint, string profile, ShaderMacro[] macros)
     {
@@ -300,6 +282,8 @@ internal static class GpuShaderCompiler12
     }
 
     /// <summary>Order-independent macro description, so equivalent permutations share a cache slot.</summary>
+    /// <param name="macros">Definitions to describe, or null for no definitions.</param>
+    /// <returns>An empty string or an ordinally sorted comma-separated list with a leading space.</returns>
     private static string DescribeMacros(ShaderMacro[]? macros)
     {
         if (macros is null || macros.Length == 0) return string.Empty;

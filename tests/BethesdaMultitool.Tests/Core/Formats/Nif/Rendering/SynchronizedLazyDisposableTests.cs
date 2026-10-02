@@ -20,23 +20,25 @@ public sealed class SynchronizedLazyDisposableTests
             return owned;
         });
 
-        var useTask = Task.Run(() => resource.Use(value =>
+        // Both operations deliberately block; dedicated workers keep their rendezvous independent
+        // of thread-pool availability while the rest of the suite runs concurrently.
+        var useTask = Task.Factory.StartNew(() => resource.Use(value =>
         {
             useStarted.Set();
             Assert.True(releaseUse.Wait(TimeSpan.FromSeconds(5), cancellationToken));
             Assert.False(value.IsDisposed);
             return 42;
-        }), cancellationToken);
+        }), cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
         Task? disposeTask = null;
         try
         {
             Assert.True(useStarted.Wait(TimeSpan.FromSeconds(5), cancellationToken));
-            disposeTask = Task.Run(() =>
+            disposeTask = Task.Factory.StartNew(() =>
             {
                 disposeStarted.Set();
                 resource.Dispose();
-            }, cancellationToken);
+            }, cancellationToken, TaskCreationOptions.LongRunning, TaskScheduler.Default);
             Assert.True(disposeStarted.Wait(TimeSpan.FromSeconds(5), cancellationToken));
             Assert.False(disposeTask.IsCompleted);
 

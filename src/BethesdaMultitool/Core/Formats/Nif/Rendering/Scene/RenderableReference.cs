@@ -6,6 +6,7 @@ using BethesdaMultitool.Core.Formats.Esm.Models.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Procedural;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 
@@ -245,7 +246,7 @@ internal readonly record struct RenderableReference(
 
     /// <summary>
     ///     Builds a <see cref="RenderableReference" /> from a <see cref="PlacedReference" />.
-    ///     Returns <c>null</c> for ACHR/ACRE (skinned actors — deferred to v4), refs without a
+    ///     Returns <c>null</c> for actors without a selected appearance catalog, refs without a
     ///     resolved model path, or refs the renderer cannot place (e.g. NaN coordinates).
     ///     <paramref name="category" /> is the base object's <see cref="PlacedObjectCategory" />
     ///     (resolved by the caller from the category index) so the renderer can apply per-category
@@ -256,10 +257,14 @@ internal readonly record struct RenderableReference(
         PlacedObjectCategory category = PlacedObjectCategory.Unknown,
         AlternateTextureSet? alternateTextures = null,
         bool xespDisabled = false,
-        BethesdaGame game = BethesdaGame.Unknown)
+        BethesdaGame game = BethesdaGame.Unknown,
+        WorldActorCatalog? actorCatalog = null)
     {
-        // Skip skinned actors — v3 renders static meshes only.
-        if (placement.RecordType is "ACHR" or "ACRE") return null;
+        // Actors require an explicitly selected composition, never the base's skeleton MODL alone.
+        if (placement.RecordType is "ACHR" or "ACRE")
+            return actorCatalog?.Resolve(placement) is { } actor
+                ? TryBuildActor(placement, actor, category, xespDisabled, game)
+                : null;
         if (string.IsNullOrEmpty(placement.ModelPath)) return null;
 
         // Pathological NaN/Inf coords sometimes appear in DMP-only loads where parser fell back
@@ -305,6 +310,23 @@ internal readonly record struct RenderableReference(
             alternateTextures,
             BaseFormId: placement.BaseFormId,
             ExternalEmittanceFormId: placement.EmittanceFormId);
+    }
+
+    /// <summary>Admits a selected NPC/creature composition through the ordinary placed-mesh transform.</summary>
+    internal static RenderableReference? TryBuildActor(PlacedReference placement, WorldActorDefinition actor,
+        PlacedObjectCategory category = PlacedObjectCategory.Unknown, bool xespDisabled = false,
+        BethesdaGame game = BethesdaGame.Unknown)
+    {
+        if (placement.RecordType != actor.PlacementType || placement.BaseFormId != actor.BaseFormId ||
+            !float.IsFinite(placement.X) || !float.IsFinite(placement.Y) || !float.IsFinite(placement.Z) ||
+            !float.IsFinite(placement.RotX) || !float.IsFinite(placement.RotY) || !float.IsFinite(placement.RotZ) ||
+            !float.IsFinite(placement.Scale))
+            return null;
+        var world = ComposeWorldMatrix(placement);
+        var (center, radius) = ComposeWorldBounds(placement, world, GameProfiles.CellWorldSizeOrDefault(game));
+        return new RenderableReference(placement.FormId, world, actor.CacheKey, center, radius,
+            ComputeMeshId(actor.CacheKey), placement.IsInitiallyDisabled || xespDisabled,
+            false, false, category, BaseFormId: placement.BaseFormId);
     }
 
     /// <summary>

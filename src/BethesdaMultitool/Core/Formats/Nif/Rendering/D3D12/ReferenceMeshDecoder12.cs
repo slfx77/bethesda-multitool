@@ -705,6 +705,9 @@ internal sealed class ReferenceMeshDecoder12
         }
 
         if (decoded.CollisionPositions is { } cp) total += (long)cp.Length * 12;
+        if (decoded.GeneratedTextures is { } textures)
+            foreach (var texture in textures.Values)
+                foreach (var mip in texture.MipLevels) total += mip.Pixels.LongLength;
         if (decoded.CollisionTriangles is { } ct) total += (long)ct.Length * sizeof(int);
         if (decoded.Animation is { } anim)
         {

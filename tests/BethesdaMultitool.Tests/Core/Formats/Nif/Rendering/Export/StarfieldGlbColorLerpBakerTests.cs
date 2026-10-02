@@ -179,6 +179,7 @@ public sealed class StarfieldGlbColorLerpBakerTests
     private static byte[] ReadRgbaPixels(Image image)
     {
         using var decoded = new MagickImage(image.Content.Content.ToArray());
-        return Assert.IsType<byte[]>(decoded.GetPixels().ToByteArray(PixelMapping.RGBA));
+        using var pixelView = decoded.GetPixels();
+        return Assert.IsType<byte[]>(pixelView.ToByteArray(PixelMapping.RGBA));
     }
 }

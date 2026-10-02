@@ -254,6 +254,7 @@ public sealed class FnvGrassShaderTests
         Assert.Equal(1, SourceContract.CountOccurrences(perDraw, "worldPos.w = 1.0;"));
     }
 
+    /// <summary>Preserves both grass draw routes and publishes single-sample coverage aliases as a complete family.</summary>
     [Fact]
     public void RendererRoutesBothGrassDrawSitesThroughTheSameSeam()
     {
@@ -266,13 +267,21 @@ public sealed class FnvGrassShaderTests
 
         // The main pass and the shadow-only caster ring must agree, or the same grass submesh
         // splits into two batches (the PSO is part of the batch key).
-        Assert.Equal(2, SourceContract.CountOccurrences(renderer, "_pipelines.GetGrassCutoutPso(sub.DoubleSided)"));
+        // This is the shared routing contract for FNV and alpha-to-coverage; keep it in one test.
+        SourceContract.AssertContainsIgnoringWhitespace(
+            "if (r.IsGrass && sub.AlphaTest && !sub.IsDecal)", renderer);
+        var compactRenderer = string.Concat(renderer.Where(character => !char.IsWhiteSpace(character)));
+        Assert.Equal(2, SourceContract.CountOccurrences(
+            compactRenderer, "pso=_pipelines.GetGrassCutoutPso(sub.DoubleSided);"));
         Assert.Contains("SetInstancedGrassShaderProfile(", renderer, StringComparison.Ordinal);
 
         // Single-sampled scenes alias A2C onto the plain grass PSOs, so the per-game shader is not
         // silently dropped when MSAA is off.
-        Assert.Contains("_grassOpaqueBackA2CPso = _grassOpaqueBackPso;", factory, StringComparison.Ordinal);
-        Assert.Contains("_grassOpaqueDoubleA2CPso = _grassOpaqueDoublePso;", factory, StringComparison.Ordinal);
+        var create = SourceContract.Extract(factory,
+            "private bool EnsureInstancedGrassPipelines()", "private void DisposeInstancedGrassPipelines()");
+        SourceContract.AssertOrder(create,
+            "var backA2C = back;", "var doubleA2C = doubleSided;", "if (AlphaToCoverageAvailable)",
+            "_grassOpaqueBackA2CPso = backA2C;", "_grassOpaqueDoubleA2CPso = doubleA2C;", "published = true;");
         // Fail-soft: a compile failure keeps the shared pipelines rather than throwing.
         Assert.Contains("return doubleSided ? OpaqueDoubleA2CPso : OpaqueBackA2CPso;", factory,
             StringComparison.Ordinal);

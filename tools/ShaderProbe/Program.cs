@@ -10,13 +10,13 @@ var dumpPath = args.Length > 0
     : Path.Combine(repoRoot, "Sample", "MemoryDumps", "Fallout_Release_MemDebug.xex.dmp");
 var globalsPath = args.Length > 1
     ? Path.GetFullPath(args[1])
-    : Path.Combine(repoRoot, "Sample", "PDB", "Proto", "Fallout_Release_MemDebug", "globals.txt");
+    : Path.Combine(repoRoot, "Sample", "DebugSymbols", "Fallout - New Vegas (X360)", "2010-8-22 Fallout_Release_MemDebug", "globals.txt");
 var outputPath = args.Length > 2
     ? Path.GetFullPath(args[2])
     : Path.Combine(repoRoot, "tools", "GhidraProject", "shader_probe_report.txt");
 var shaderPackagePath = args.Length > 3
     ? Path.GetFullPath(args[3])
-    : Path.Combine(repoRoot, "Sample", "Builds", "Fallout - New Vegas (2010-10-19, X360 - Final)", "Data", "Shaders", "shaderpackage.sdp");
+    : Path.Combine(repoRoot, "Sample", "Builds", "Fallout - New Vegas (2010-8-22, X360 - Final)", "Data", "Shaders", "shaderpackage.sdp");
 
 if (!File.Exists(dumpPath))
 {
@@ -27,6 +27,7 @@ if (!File.Exists(dumpPath))
 if (!File.Exists(globalsPath))
 {
     Console.Error.WriteLine($"PDB globals file not found: {globalsPath}");
+    Console.Error.WriteLine("Generate it beside its PDB: tools/microsoft-pdb/cvdump/cvdump.exe -g Fallout_Release_MemDebug.pdb > globals.txt");
     return 1;
 }
 

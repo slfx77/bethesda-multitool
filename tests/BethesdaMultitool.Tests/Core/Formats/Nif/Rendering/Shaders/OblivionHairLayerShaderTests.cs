@@ -74,6 +74,7 @@ public sealed class OblivionHairLayerShaderTests
         Assert.Contains("& 524288u", source, StringComparison.Ordinal);
     }
 
+    /// <summary>Pins live hair-layer bindings and retains their exact acquisitions through mesh rollback and retirement.</summary>
     [Fact]
     public void NativeDraws_ReadLiveLayerStateThroughTheNamedDescriptorUnion()
     {
@@ -88,10 +89,17 @@ public sealed class OblivionHairLayerShaderTests
         var viewer = ReadRenderingSource("D3D12/Viewer/BethesdaViewerStaticRenderer12.cs");
         Assert.Contains("submesh.ResolveAuxiliaryTextureIndex(_neutralTextureIndex)", viewer, StringComparison.Ordinal);
         var owner = ReadRenderingSource("D3D12/ReferenceMeshCache12.cs");
-        Assert.Contains("Acquire(textureCache.GetOrUpload(sub.OblivionHairLayerTexturePath!))", owner,
-            StringComparison.Ordinal);
-        Assert.Contains("textureCache.Release(submesh.OblivionHairLayer);", owner, StringComparison.Ordinal);
-        Assert.Contains("OblivionHairLayer = oblivionHairLayer", owner, StringComparison.Ordinal);
+        SourceContract.AssertOrder(owner,
+            "var resources = residencyResources ?? GpuMeshResources12.Begin(deletionQueue, geometryArena.Free, textureCache.Release);",
+            "resources.AcquireTexture(() => ResolveTexture(sub.OblivionHairLayerTexturePath!))",
+            "OblivionHairLayer = oblivionHairLayer",
+            "var cached = new CachedNifMesh12(",
+            "resources, deletionQueue,",
+            "resources.Commit();");
+        var mesh = ReadRenderingSource("D3D12/CachedNifMesh12.cs");
+        Assert.Contains("_resources = resources;", mesh, StringComparison.Ordinal);
+        SourceContract.AssertOrder(mesh, "public void Dispose()", "_deletionQueue.EnqueueDispose(_resources);",
+            "_retirementQueued = true;");
         var mapper = ReadRenderingSource("D3D12/ReferenceMeshDecoder12.cs");
         Assert.Equal(2,
             SourceContract.CountOccurrences(mapper, "OblivionHairLayerTexturePath: sub.OblivionHairLayerTexturePath"));

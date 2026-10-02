@@ -16,6 +16,7 @@ internal sealed record CreatureScanEntry(
     List<InventoryItem>? InventoryItems,
     byte CreatureType)
 {
+    internal BethesdaMultitool.Core.Assets.AssetRecordOwner? AssetOwner { get; init; }
     public uint? CombatStyleFormId { get; init; }
     public byte? CombatSkill { get; init; }
     public byte? Strength { get; init; }
@@ -36,7 +37,7 @@ internal sealed record CreatureScanEntry(
             return null;
         }
 
-        var skeletonDir = Path.GetDirectoryName(SkeletonPath);
+        var skeletonDir = CreatureAssetPath.GetDirectoryName(SkeletonPath);
         if (string.IsNullOrEmpty(skeletonDir))
         {
             return null;
@@ -49,7 +50,7 @@ internal sealed record CreatureScanEntry(
             {
                 return path.Contains('\\') || path.Contains('/')
                     ? path
-                    : Path.Combine(skeletonDir, path);
+                    : CreatureAssetPath.Combine(skeletonDir, path);
             }
         }
 
@@ -78,10 +79,10 @@ internal sealed record CreatureScanEntry(
         // Otherwise, combine with skeleton directory
         if (SkeletonPath != null)
         {
-            var skeletonDir = Path.GetDirectoryName(SkeletonPath);
+            var skeletonDir = CreatureAssetPath.GetDirectoryName(SkeletonPath);
             if (!string.IsNullOrEmpty(skeletonDir))
             {
-                return Path.Combine(skeletonDir, bodyFileName);
+                return CreatureAssetPath.Combine(skeletonDir, bodyFileName);
             }
         }
 

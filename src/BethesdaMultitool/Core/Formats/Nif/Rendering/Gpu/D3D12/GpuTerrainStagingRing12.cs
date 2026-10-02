@@ -1,4 +1,6 @@
 using BethesdaMultitool.Core.Diagnostics;
+using Slfx77.Multitool.Core.Lifetime;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -63,17 +65,23 @@ internal sealed unsafe class GpuTerrainStagingRing12 : ITrackableResource, IDisp
     /// </summary>
     public const int GenerationsHeld = GpuCommandRecorder12.FramesInFlight + 1;
 
-    private readonly GpuDevice12 _gpu;
+    private readonly NativeBufferBlocks _backing;
+    private readonly int _threadId = Environment.CurrentManagedThreadId;
     private StagingRingAllocator? _allocator;
     private ID3D12Resource? _buffer;
     private byte* _cpu;
     private bool _disposed;
     private IDisposable? _footprint;
     private ResourceRegistration? _registration;
+    private RetiredResourceDisposal? _retiredResources;
+    private long _plannedCapacity;
 
+    /// <summary>Creates a lazy native owner under the existing staging-capacity ceiling.</summary>
+    /// <param name="gpu">Borrowed device that outlives every staging release.</param>
     public GpuTerrainStagingRing12(GpuDevice12 gpu)
     {
-        _gpu = gpu;
+        ArgumentNullException.ThrowIfNull(gpu);
+        _backing = new NativeBufferBlocks(gpu.Device, HeapType.Upload, MaxCapacityBytes, maximumBlocks: 1);
     }
 
     /// <summary>Committed ring bytes, or 0 before the first upload sizes it.</summary>
@@ -92,26 +100,25 @@ internal sealed unsafe class GpuTerrainStagingRing12 : ITrackableResource, IDisp
     /// </summary>
     public long OverflowCount { get; private set; }
 
+    /// <summary>Stops new reservations and releases GPU-retired backing; failed cleanup remains retryable.</summary>
+    /// <remarks>The caller must prove that all copies have retired before disposal.</remarks>
     public void Dispose()
     {
-        if (_disposed)
+        VerifyAccess();
+        if (_retiredResources is null)
         {
-            return;
-        }
-
-        _disposed = true;
-        _registration?.Dispose();
-        _registration = null;
-        _footprint?.Dispose();
-        _footprint = null;
-        if (_buffer is not null)
-        {
-            _buffer.Unmap(0);
-            _buffer.Dispose();
+            var retired = new RetiredResourceDisposal();
+            retired.Add(_backing, "terrain staging backing");
+            retired.Add(_footprint, "terrain staging footprint", 1);
+            retired.Add(_registration, "terrain staging registration", 1);
+            _retiredResources = retired;
+            _disposed = true;
+            _footprint = null;
+            _registration = null;
             _buffer = null;
+            _cpu = null;
         }
-
-        _cpu = null;
+        _retiredResources.Dispose();
         _allocator = null;
     }
 
@@ -154,6 +161,8 @@ internal sealed unsafe class GpuTerrainStagingRing12 : ITrackableResource, IDisp
     /// </summary>
     public GpuTerrainStagingRing12 RegisterWith(ResourceRegistry registry, string? instanceTag = null)
     {
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         _registration?.Dispose();
         _registration = registry.Register(this, instanceTag);
         return this;
@@ -188,6 +197,7 @@ internal sealed unsafe class GpuTerrainStagingRing12 : ITrackableResource, IDisp
     /// </summary>
     public bool TryReserve(long bytes, out StagedRegion region)
     {
+        VerifyAccess();
         region = default;
         if (_disposed || bytes <= 0)
         {
@@ -200,25 +210,29 @@ internal sealed unsafe class GpuTerrainStagingRing12 : ITrackableResource, IDisp
             return false;
         }
 
+        // Allocate the owner before reserving FIFO space. After admission only field/value writes
+        // remain, so allocation failure cannot strand a reservation without a release handle.
+        var release = new ReleaseHandle(this);
         if (!_allocator!.TryAllocate(bytes, out var offset, out _, out var sequence))
         {
             OverflowCount++;
             return false;
         }
 
+        release.Sequence = sequence;
         ServedCount++;
         region = new StagedRegion(
             _buffer!,
             (ulong)offset,
             (IntPtr)(_cpu + offset),
-            new ReleaseHandle(this, sequence));
+            release);
         return true;
     }
 
     /// <summary>
     ///     Commits and persistently maps the ring on first use, sized from the first upload seen.
-    ///     A failed commit (memory pressure) is not fatal: the ring stays absent, every upload takes
-    ///     the transient path, and a later upload retries the commit once pressure eases.
+    ///     A failed commit or map takes the transient path; Shared retains any failed native cleanup.
+    ///     Later requests retry that cleanup before reusing the stable slot and original planned size.
     /// </summary>
     private bool EnsureCreated(long firstRequestBytes)
     {
@@ -227,52 +241,59 @@ internal sealed unsafe class GpuTerrainStagingRing12 : ITrackableResource, IDisp
             return true;
         }
 
-        var capacity = PlanCapacityBytes(firstRequestBytes);
+        var capacity = _plannedCapacity == 0 ? PlanCapacityBytes(firstRequestBytes) : _plannedCapacity;
         if (capacity <= 0)
         {
             return false;
         }
 
-        ID3D12Resource? buffer = null;
+        _plannedCapacity = capacity;
         try
         {
-            buffer = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
-                HeapProperties.UploadHeapProperties,
-                HeapFlags.None,
-                ResourceDescription.Buffer((ulong)capacity),
-                ResourceStates.GenericRead);
-
-            void* mapped = null;
-            buffer.Map(0, &mapped).CheckError();
-            _cpu = (byte*)mapped;
+            var allocator = new StagingRingAllocator(capacity)
+            {
+                StrictValidation = GeometryArenaDiagnostics.Enabled
+            };
+            var block = _backing.EnsureBlock(0, capacity);
+            // Capture borrowed aliases before publication. Shared already owns the native resource
+            // even if footprint registration or later managed allocation fails.
+            var buffer = block.Resource;
+            var cpu = (byte*)block.MappedPointer;
+            _footprint ??= GpuFixedFootprintTracker12.NonLocalInstance.Add(
+                "terrain-staging-ring", _backing.AllocatedBytes);
             _buffer = buffer;
+            _cpu = cpu;
+            _allocator = allocator;
+            return true;
         }
         catch
         {
-            buffer?.Dispose();
-            _cpu = null;
-            _buffer = null;
+            // The stable native owner retains partial initialization and failed releases. Do not
+            // discard it merely because this upload must fall back to independent staging.
             return false;
         }
-
-        _allocator = new StagingRingAllocator(capacity)
-        {
-            StrictValidation = GeometryArenaDiagnostics.Enabled
-        };
-        // UPLOAD heap = system RAM the GPU reads over the bus, so NonLocal — the same distinction
-        // that stopped the geometry arena being counted as VRAM.
-        _footprint = GpuFixedFootprintTracker12.NonLocalInstance.Add("terrain-staging-ring", capacity);
-        return true;
     }
 
+    /// <summary>Returns the oldest retired reservation; a failed shutdown cannot consume its retry handle.</summary>
+    /// <param name="sequence">Exact FIFO reservation identity.</param>
     private void Release(ulong sequence)
     {
+        VerifyAccess();
         if (_disposed)
         {
+            if (_retiredResources!.HasPending)
+                throw new InvalidOperationException("Terrain staging cleanup must complete before a late reservation is released.");
             return;
         }
 
         _allocator?.Release(sequence);
+    }
+
+    /// <summary>Rejects native and FIFO ownership changes outside the creating render thread.</summary>
+    private void VerifyAccess()
+    {
+        if (Environment.CurrentManagedThreadId != _threadId)
+            throw new InvalidOperationException("Terrain staging lifetime belongs to its creating render thread.");
     }
 
     /// <summary>
@@ -286,10 +307,16 @@ internal sealed unsafe class GpuTerrainStagingRing12 : ITrackableResource, IDisp
         IntPtr CpuPtr,
         IDisposable Release);
 
-    private sealed class ReleaseHandle(GpuTerrainStagingRing12 ring, ulong sequence) : IDisposable
+    /// <summary>Returns one FIFO reservation once, retaining its identity when release fails.</summary>
+    /// <param name="ring">Exact ring owning the reservation.</param>
+    private sealed class ReleaseHandle(GpuTerrainStagingRing12 ring) : IDisposable
     {
         private bool _released;
 
+        /// <summary>Gets or sets the sequence captured immediately after successful reservation.</summary>
+        public ulong Sequence { get; set; }
+
+        /// <summary>Returns the reservation, marking this handle complete only after successful release.</summary>
         public void Dispose()
         {
             if (_released)
@@ -297,8 +324,8 @@ internal sealed unsafe class GpuTerrainStagingRing12 : ITrackableResource, IDisp
                 return;
             }
 
+            ring.Release(Sequence);
             _released = true;
-            ring.Release(sequence);
         }
     }
 }

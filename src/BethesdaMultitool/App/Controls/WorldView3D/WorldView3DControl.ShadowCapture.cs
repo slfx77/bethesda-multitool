@@ -79,6 +79,9 @@ public sealed partial class WorldView3DControl
         });
     }
 
+    /// <summary>Copies and hashes each completed shadow cascade while retaining readbacks through their final GPU use.</summary>
+    /// <returns>One hash per cascade, or null when the shadow map has no published content.</returns>
+    /// <remarks>A rejected recorder transfer aborts the unsubmitted copy and releases only the locally owned readback.</remarks>
     private string[]? ReadCaptureShadowFingerprints()
     {
         if (_shadowMap is not { HasContent: true } map) return null;
@@ -89,22 +92,31 @@ public sealed partial class WorldView3DControl
             // One readback buffer at a time bounds diagnostic RAM. No scene work and no awaits
             // intervene between the final prime, these copies, and the real color binding.
             recorder.BeginFrame();
-            Vortice.Direct3D12.ID3D12Resource readback;
+            Vortice.Direct3D12.ID3D12Resource? readback = null;
             uint rowPitch;
+            var transferred = false;
             try
             {
                 readback = map.RecordDiagnosticReadback(recorder.CommandList, cascade, out rowPitch);
+                // Transfer before submission. Successful registration protects both fenced and
+                // unfenced work; rejection leaves the unsubmitted readback owned here.
+                recorder.EnqueueDisposeAfterCurrentFrame(readback);
+                transferred = true;
             }
             catch
             {
-                recorder.AbortFrame();
+                try
+                {
+                    recorder.AbortFrame();
+                }
+                finally
+                {
+                    if (!transferred) { readback?.Dispose(); }
+                }
                 throw;
             }
 
-            // Transfer ownership BEFORE submission. The recorder retains an unfenced submission
-            // on signal failure and a fenced one on wait failure. On success, the next BeginFrame
-            // retires this buffer only AFTER the synchronous hash below has finished.
-            recorder.EnqueueDisposeAfterCurrentFrame(readback);
+            // The next BeginFrame retires this buffer only after the synchronous hash has finished.
             recorder.EndFrame();
             WaitForFrameFence(_gpu12!.FrameFence, recorder.LastSubmittedFenceValue);
             fingerprints[cascade] = WorldViewCaptureTelemetry.ComputeShadowFingerprint(

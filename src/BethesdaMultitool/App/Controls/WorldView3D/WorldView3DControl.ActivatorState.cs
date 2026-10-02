@@ -13,7 +13,7 @@ public sealed partial class WorldView3DControl
 
     /// <summary>
     ///     Whether the selected placement owns output this viewer can preview: a supported static
-    ///     reference mesh (including any embedded water) or a valid placed-LIGH emitter. Actor refs,
+    ///     reference/selected actor mesh (including embedded water) or a valid placed-LIGH emitter. Unresolved actors,
     ///     missing-model ordinary refs, and malformed placements do not get a success-looking no-op UI.
     /// </summary>
     internal bool CanPreviewReferenceVisibility(PlacedReference reference) =>

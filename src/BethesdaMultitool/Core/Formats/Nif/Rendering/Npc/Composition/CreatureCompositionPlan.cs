@@ -9,6 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 /// </summary>
 internal sealed class CreatureCompositionPlan
 {
+    internal BethesdaMultitool.Core.Assets.AssetUseGraph AssetUses { get; set; } = BethesdaMultitool.Core.Assets.AssetUseGraph.Empty;
     public required CreatureScanEntry Creature { get; init; }
 
     public required CreatureCompositionOptions Options { get; init; }

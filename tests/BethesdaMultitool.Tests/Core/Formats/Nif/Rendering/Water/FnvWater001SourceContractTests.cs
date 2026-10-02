@@ -6,17 +6,18 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Water;
 /// <summary>Source contracts for the Windows-only PSO/split-draw and one-shot snapshot plumbing.</summary>
 public sealed class FnvWater001SourceContractTests
 {
+    /// <summary>Keeps the dedicated WATER001 shader bound through the retained shared pipeline family.</summary>
     [Fact]
-    public void RendererCompilesDedicatedDepthSamplePermutationAndDisposesIt()
+    public void RendererUsesDedicatedDepthSamplePermutationThroughRetainedFamily()
     {
         var source = ReadRenderer();
+        var factory = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "WaterPipelineFactory12.cs");
 
-        Assert.Contains("\"water_fnv001.frag.hlsl\", \"main\", \"ps_5_1\"", source, StringComparison.Ordinal);
-        // Creation goes through TrackConstructionResource (constructor-failure cleanup), which
-        // spans lines, so the pin stops at the wrapper call rather than the full expression.
-        Assert.Contains("_psoFnvWater001DepthSample = TrackConstructionResource(",
-            source, StringComparison.Ordinal);
-        Assert.Contains("_psoFnvWater001DepthSample.Dispose();", source, StringComparison.Ordinal);
+        Assert.Contains("\"water_fnv001.frag.hlsl\", \"main\", \"ps_5_1\"", factory, StringComparison.Ordinal);
+        Assert.Matches(@"_psoFnvWater001DepthSample\s*=\s*\w+\.FnvWater001DepthSample;", source);
+        Assert.DoesNotContain("_psoFnvWater001DepthSample.Dispose();", source, StringComparison.Ordinal);
         Assert.DoesNotContain("_psoFnvWater001 =", source, StringComparison.Ordinal);
     }
 

@@ -14,7 +14,7 @@ internal enum WaterAppearanceSelectionSource : uint
 }
 
 /// <summary>
-///     Pure result of resolving a CELL's XCWT override against its WRLD NAM2 fallback.
+///     Pure result of resolving a CELL's XCWT override against its selected WRLD water route.
 ///     The selected record is retained so renderer and telemetry use the same lookup result.
 /// </summary>
 internal readonly record struct ResolvedWaterAppearanceSelection(
@@ -24,6 +24,7 @@ internal readonly record struct ResolvedWaterAppearanceSelection(
     uint? WorldspaceFormId)
 {
     internal uint? WaterFormId => Water?.FormId;
+    internal WorldWaterSelection? WorldWater { get; init; }
 
     internal string SourceTelemetry => Source switch
     {
@@ -36,7 +37,7 @@ internal readonly record struct ResolvedWaterAppearanceSelection(
 
 /// <summary>
 ///     Resolves the usable WATR for the current cell. A non-zero, retained CELL XCWT wins; missing,
-///     zero, or unresolved XCWT falls back to the retained WRLD NAM2 record, and finally — for FO3/FNV
+///     zero, or unresolved XCWT falls back to the selected WRLD NAM2 record, and finally — for FO3/FNV
 ///     — to the engine's own default WATR forms.
 ///     <para>
 ///         That last tier exists because interiors have no worldspace, so a watery interior with no
@@ -74,7 +75,16 @@ internal static class WaterAppearanceSelectionResolver
         WorldspaceRecord? worldspace,
         IReadOnlyDictionary<uint, WaterRecord>? watersByFormId,
         BethesdaGame game = BethesdaGame.Unknown,
-        bool isInterior = false)
+        bool isInterior = false,
+        WorldWaterCatalog? worldWaterCatalog = null)
+    {
+        var worldWater = worldWaterCatalog?.Get(worldspace?.FormId)
+            ?? WorldWaterCatalog.Create(worldspace is null ? [] : [worldspace], game).Get(worldspace?.FormId);
+        return ResolveSelected(cell, worldWater, watersByFormId, game, isInterior);
+    }
+
+    internal static ResolvedWaterAppearanceSelection ResolveSelected(CellRecord? cell, WorldWaterSelection worldWater,
+        IReadOnlyDictionary<uint, WaterRecord>? watersByFormId, BethesdaGame game, bool isInterior)
     {
         if (TryResolve(cell?.WaterFormId, watersByFormId, out var cellWater))
         {
@@ -82,16 +92,16 @@ internal static class WaterAppearanceSelectionResolver
                 cellWater,
                 WaterAppearanceSelectionSource.CellXcwt,
                 cell?.FormId,
-                worldspace?.FormId);
+                worldWater.ContextFormId) { WorldWater = worldWater };
         }
 
-        if (TryResolve(worldspace?.WaterFormId, watersByFormId, out var worldspaceWater))
+        if (TryResolve(worldWater.WaterFormId, watersByFormId, out var worldspaceWater))
         {
             return new ResolvedWaterAppearanceSelection(
                 worldspaceWater,
                 WaterAppearanceSelectionSource.WorldspaceNam2,
                 cell?.FormId,
-                worldspace?.FormId);
+                worldWater.ContextFormId) { WorldWater = worldWater };
         }
 
         // Scoped to the two games confirmed to ship these forms. Every other game keeps the previous
@@ -107,7 +117,7 @@ internal static class WaterAppearanceSelectionResolver
                     engineDefault,
                     WaterAppearanceSelectionSource.EngineDefault,
                     cell?.FormId,
-                    worldspace?.FormId);
+                    worldWater.ContextFormId) { WorldWater = worldWater };
             }
         }
 
@@ -115,7 +125,7 @@ internal static class WaterAppearanceSelectionResolver
             null,
             WaterAppearanceSelectionSource.Unavailable,
             cell?.FormId,
-            worldspace?.FormId);
+            worldWater.ContextFormId) { WorldWater = worldWater };
     }
 
     private static EngineDefaultWaters ResolveEngineDefaults(

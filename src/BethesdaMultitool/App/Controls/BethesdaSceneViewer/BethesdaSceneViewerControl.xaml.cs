@@ -1,6 +1,5 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -22,20 +21,13 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     // collision, cell navigation, or fly/walk state leaks into the asset viewer.
     private uint? _capturedPointerId;
     private bool _disposed;
-    private bool _frameInvalidated;
-    private BethesdaSceneViewerGraphicsContext12.BethesdaSceneViewerGraphicsLease12? _graphicsLease;
-    private bool _hasPresentedFrame;
+    private string _emptySceneMessage = "No Bethesda scene selected.";
     private string? _hostFaultMessage;
     private bool _isAnimationPlaying;
-    private bool _isLoaded;
-    private bool _isPresentationActive = true;
-    private long _lastFrameTimestamp;
     private BethesdaSceneViewerRenderState? _lastNotifiedRenderState;
     private string? _lastNotifiedRenderStatusMessage;
     private BethesdaSceneViewerPointerGesture _pointerGesture;
     private Vector2 _previousPointerPosition;
-    private bool _renderingFrame;
-    private bool _renderLoopAttached;
     private IBethesdaSceneViewerRenderSession12? _renderSession;
     private BethesdaSceneViewerRenderState _renderState = BethesdaSceneViewerRenderState.Initializing;
     private string? _renderStatusMessage = "Waiting for the native Bethesda renderer session.";
@@ -44,11 +36,16 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     private int _streamingGpuIdleDrainCount;
     private double _streamingGpuIdleDrainMilliseconds;
     private bool _streamingGpuIdleDrainSummaryLogged;
-    private GpuSwapChainSurface12? _surface;
 
     public BethesdaSceneViewerControl()
     {
         InitializeComponent();
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(RenderPanel, "Native Bethesda scene viewer");
+        Viewport.StateChanged += OnViewportStateChanged;
+        Viewport.FrameCompleted += OnViewportFrameCompleted;
+        Viewport.PresentationSuspended += OnViewportPresentationSuspended;
+        Viewport.SurfaceRetiring += OnViewportSurfaceRetiring;
+        Viewport.Failed += OnViewportFailed;
         _inputTrace?.Write("trace-start", new
         {
             enabled = true,
@@ -64,6 +61,20 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     internal BethesdaSceneViewerRenderState RenderState => _renderState;
 
     internal string? RenderStatusMessage => _renderStatusMessage;
+
+    /// <summary>Lets each scene owner describe its empty selection without replacing renderer diagnostics.</summary>
+    internal string EmptySceneMessage
+    {
+        get => _emptySceneMessage;
+        set
+        {
+            VerifyUiThread();
+            ArgumentNullException.ThrowIfNull(value);
+            if (string.Equals(_emptySceneMessage, value, StringComparison.Ordinal)) { return; }
+            _emptySceneMessage = value;
+            ApplyRenderStateVisuals();
+        }
+    }
 
     internal bool IsAnimationPlaying
     {
@@ -89,31 +100,8 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     internal void SetPresentationActive(bool active)
     {
         VerifyUiThread();
-        if (_disposed) return;
-        if (_isPresentationActive == active)
-        {
-            // TabView can unload/rebuild its visual subtree without changing the host's logical
-            // selected-tab state. In that case the render loop/surface may have been detached while
-            // _isPresentationActive stayed true. Treat an idempotent true publication as a wake-up
-            // signal so selecting/loading a scene cannot sit Ready until the user toggles tabs.
-            if (active)
-            {
-                InvalidateViewport();
-            }
-
-            return;
-        }
-
-        _isPresentationActive = active;
-        if (!active)
-        {
-            DetachRenderLoop();
-            CancelPendingCapture(
-                "The native Bethesda viewer was hidden before capture could run.");
-            return;
-        }
-
-        InvalidateViewport();
+        if (_disposed) { return; }
+        Viewport.SetPresentationActive(active);
     }
 
     /// <summary>
@@ -133,14 +121,10 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
         _renderSession = renderSession;
         _renderSession.StateChanged += OnRenderSessionStateChanged;
         SynchronizeAnimationControls();
-        if (_isLoaded)
-        {
-            EnsureGraphicsAndInitializeSession();
-        }
-        else
-        {
-            SynchronizeRenderState();
-        }
+        _viewportAdapter = new BethesdaNativeViewportRenderer(this);
+        Viewport.Configure(new BethesdaNativeViewportGraphicsProvider(RenderPanel), _viewportAdapter,
+            (operation, exception) => Log.Warn("BethesdaSceneViewer: {0} failed: {1}", operation, exception.Message));
+        SynchronizeRenderState();
     }
 
     /// <summary>Publishes a renderer-neutral scene directly, with no GLB serialization boundary.</summary>
@@ -237,22 +221,17 @@ public sealed partial class BethesdaSceneViewerControl : UserControl, IDisposabl
     internal new void InvalidateViewport()
     {
         VerifyUiThread();
-        if (_disposed) return;
-
-        _frameInvalidated = true;
-        if (_isLoaded &&
-            _isPresentationActive &&
-            _renderState == BethesdaSceneViewerRenderState.Ready &&
-            _scene is not null)
-        {
-            TryEnsureSurface();
-            AttachRenderLoop();
-        }
+        if (_disposed) { return; }
+        Viewport.Invalidate();
     }
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+        {
+            Viewport.Dispose();
+            return;
+        }
         _disposed = true;
         unchecked
         {

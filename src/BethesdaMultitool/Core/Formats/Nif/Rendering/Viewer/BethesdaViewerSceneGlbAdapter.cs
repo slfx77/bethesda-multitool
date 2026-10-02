@@ -33,6 +33,8 @@ internal static class BethesdaViewerSceneGlbAdapter
             game,
             textureSourcePaths);
         target.Nodes.Clear();
+        target.AssetReadReceipts = source.AssetReadReceipts;
+        target.AssetUses = source.AssetUses;
 
         foreach (var node in source.Nodes)
         {
@@ -81,7 +83,7 @@ internal static class BethesdaViewerSceneGlbAdapter
                 $"Bethesda viewer scene contract v{source.ContractVersion} is not supported.");
         }
 
-        var target = new GlbScene();
+        var target = new GlbScene { AssetReadReceipts = source.AssetReadReceipts, AssetUses = source.AssetUses };
         target.Nodes.Clear();
 
         foreach (var node in source.Nodes)

@@ -394,7 +394,7 @@ public sealed class RenderingShaderCompilationTests
     {
         ShaderCompileTestGuard.SkipUnlessEnabled();
         var bytecode = GpuShaderCompiler12.Compile(name, entryPoint, profile, macros);
-        Assert.NotEmpty(bytecode);
+        Assert.False(bytecode.IsEmpty);
     }
 
     private static string ReadEmbeddedShader(string name)

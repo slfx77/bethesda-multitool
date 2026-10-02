@@ -284,7 +284,7 @@ internal static class NpcCompositionPlanner
             textureResolver,
             effectiveHeadTexturePath,
             options.ApplyEgt,
-            LoadGeneratedEgt);
+            LoadGeneratedEgt, npc.BaseHeadNifPath is null ? null : Path.ChangeExtension(npc.BaseHeadNifPath, ".egt"));
         effectiveHeadTexturePath = headTexture.EffectiveTexturePath;
         var sourcePath = headTexture.Source switch
         {
@@ -325,7 +325,7 @@ internal static class NpcCompositionPlanner
                 textureResolver,
                 npc.EarTexturePath,
                 options.ApplyEgt,
-                LoadEarEgt);
+                LoadEarEgt, earEgtPath);
             effectiveEarTexturePath = earTexture.EffectiveTexturePath;
             Log.Info(
                 "NPC ear texture selected formId=0x{0:X8} source={1} sourcePath={2} effectivePath={3} " +
@@ -364,6 +364,9 @@ internal static class NpcCompositionPlanner
             BaseHeadNifPath = npc.BaseHeadNifPath,
             FaceGenNifPath = npc.FaceGenNifPath,
             HeadPreSkinMorphDeltas = headPreSkinMorphDeltas,
+            HeadPreSkinMorphTarget = npc.BaseHeadNifPath is { } headPath
+                ? NpcHeadMorphTargetLoader.Load(headPath, npc.BaseHeadTriPath, headPreSkinMorphDeltas, meshArchives)
+                : null,
             EffectiveHeadTexturePath = effectiveHeadTexturePath,
             EffectiveHeadTextureSource = headTexture.Source,
             AuthoredSkinAlbedo = headTexture.AuthoredAlbedo,

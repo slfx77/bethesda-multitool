@@ -21,22 +21,10 @@ internal static class HeightmapRenderer
         ComputeHeightmapData(
             List<CellRecord> cellSource,
             float? defaultWaterHeight = null,
-            WorldRenderCache? cache = null)
+            WorldRenderCache? cache = null,
+            WorldWaterCatalog? waterCatalog = null)
     {
-        var cells = new List<(CellRecord Cell, DecodedTerrainCell Terrain)>();
-        foreach (var cell in cellSource)
-        {
-            if (!cell.GridX.HasValue || !cell.GridY.HasValue)
-            {
-                continue;
-            }
-
-            var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
-            if (terrain.HasTerrain)
-            {
-                cells.Add((cell, terrain));
-            }
-        }
+        var cells = GetTerrainCells(cellSource, cache);
 
         if (cells.Count == 0)
         {
@@ -102,10 +90,10 @@ internal static class HeightmapRenderer
             var imgCellX = cell.GridX!.Value - minX;
             var imgCellY = maxY - cell.GridY!.Value;
 
-            // Determine effective water height. Explicit "no water" sentinel on the cell
-            // suppresses water entirely. Null (no XCLW) falls back to worldspace DNAM.
-            // Out-of-range numeric values fall back too as a safety net.
-            var waterH = WorldRenderCache.ResolveEffectiveWaterHeight(cell, defaultWaterHeight);
+            // Explicit XCLW wins; sentinel/unset values use the selected world route.
+            var waterH = cache is not null ? cache.GetWaterHeight(cell, defaultWaterHeight)
+                : waterCatalog is not null ? waterCatalog.ResolveHeight(cell, defaultWaterHeight)
+                : WorldRenderCache.ResolveEffectiveWaterHeight(cell, defaultWaterHeight);
 
             for (var py = 0; py < HmGridSize; py++)
             {
@@ -133,6 +121,20 @@ internal static class HeightmapRenderer
         BlurWaterMask(waterMask, imgW, imgH);
 
         return (grayscale, waterMask, imgW, imgH, minX, maxY);
+    }
+
+    /// <summary>The shared physical-cell admission/order for aggregate water masks and their palettes.</summary>
+    internal static List<(CellRecord Cell, DecodedTerrainCell Terrain)> GetTerrainCells(
+        IEnumerable<CellRecord> source, WorldRenderCache? cache = null)
+    {
+        var cells = new List<(CellRecord, DecodedTerrainCell)>();
+        foreach (var cell in source)
+        {
+            if (!cell.GridX.HasValue || !cell.GridY.HasValue) continue;
+            var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
+            if (terrain.HasTerrain) cells.Add((cell, terrain));
+        }
+        return cells;
     }
 
     /// <summary>

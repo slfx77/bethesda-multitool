@@ -142,7 +142,8 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
         // v96: classic PC Oblivion tangent-extra recovery changes cached decoded vertex bases.
         // v97: strict ordinary TES4 source eligibility controls live normal-format specular.
         // v98: the independent TES4 actor-hair layer texture path joins the persistent payload.
-        Assert.Equal(99, ReferenceDecodedMeshDiskCache12.DecoderVersion);
+        // v100: a Starfield .mesh without the optional meshlet + cull tail decodes instead of failing.
+        Assert.Equal(100, ReferenceDecodedMeshDiskCache12.DecoderVersion);
     }
 
     [Theory]
@@ -655,6 +656,7 @@ public sealed class ReferenceDecodedMeshDiskCache12Tests
     [InlineData(95)] // Missing PC Oblivion authored tangent-extra bases.
     [InlineData(97)] // Missing independent TES4 actor-hair LayerMap path.
     [InlineData(98)] // Missing authored quadratic Vector3 animation tangents.
+    [InlineData(99)] // Persisted the tail-less Starfield .mesh shapes as decode failures.
     public void TryLoad_PredecessorEntryReturnsMissAndDeletesFile(int staleDecoderVersion)
     {
         using var tempDir = new TempDirectory();

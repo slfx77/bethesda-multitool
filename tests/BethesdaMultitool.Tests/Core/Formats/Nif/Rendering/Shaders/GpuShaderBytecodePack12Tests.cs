@@ -1,6 +1,8 @@
+using System.Runtime.InteropServices;
 using BethesdaMultitool.CLI.Commands.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Tests.Helpers;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Shaders;
@@ -28,8 +30,69 @@ public sealed class GpuShaderBytecodePack12Tests
         foreach (var (key, expectedBytecode) in entries)
         {
             Assert.True(pack.TryGetBytecode(key, out var actualBytecode));
-            Assert.Equal(expectedBytecode, actualBytecode);
+            Assert.True(expectedBytecode.AsSpan().SequenceEqual(actualBytecode.Span));
         }
+    }
+
+    /// <summary>Preserves Shared's exact wire bytes and permits each reader to consume the other writer's output.</summary>
+    [Fact]
+    public void AdapterAndSharedWritersProduceInterchangeableIdenticalPacks()
+    {
+        const string secondKey = "another.vert.hlsl|main|vs_5_1|";
+        var fingerprint = TestFingerprint(0x31);
+        var entries = new Dictionary<string, byte[]>(StringComparer.Ordinal)
+        {
+            [SampleKey] = FakeDxbc(0xA1),
+            [secondKey] = FakeDxbc(0xB2)
+        };
+        using var adapterOutput = new MemoryStream();
+        using var sharedOutput = new MemoryStream();
+
+        GpuShaderBytecodePack12.Write(adapterOutput, fingerprint, entries);
+        ShaderBytecodePack.Write(sharedOutput, fingerprint, entries);
+
+        Assert.True(adapterOutput.TryGetBuffer(out var adapterBytes));
+        Assert.True(sharedOutput.TryGetBuffer(out var sharedBytes));
+        Assert.True(adapterBytes.AsSpan().SequenceEqual(sharedBytes.AsSpan()));
+        adapterOutput.Position = 0;
+        sharedOutput.Position = 0;
+        var sharedRead = ShaderBytecodePack.Read(adapterOutput, fingerprint, entries.Keys);
+        var adapterRead = GpuShaderBytecodePack12.Read(sharedOutput, fingerprint, entries.Keys);
+        foreach (var (key, expected) in entries)
+        {
+            Assert.True(sharedRead.TryGetBytecode(key, out var fromAdapter));
+            Assert.True(adapterRead.TryGetBytecode(key, out var fromShared));
+            Assert.True(expected.AsSpan().SequenceEqual(fromAdapter.Span));
+            Assert.True(expected.AsSpan().SequenceEqual(fromShared.Span));
+        }
+    }
+
+    /// <summary>Reuses one owned bytecode buffer per entry after the input stream has been mutated and closed.</summary>
+    [Fact]
+    public void RepeatedAdapterLookupsBorrowTheSameOwnedMemory()
+    {
+        var fingerprint = TestFingerprint(0x32);
+        using var stream = WriteSamplePack(fingerprint);
+        var pack = GpuShaderBytecodePack12.Read(stream, fingerprint, [SampleKey]);
+
+        Assert.True(pack.TryGetBytecode(SampleKey, out var first));
+        Assert.True(pack.TryGetBytecode(SampleKey, out var second));
+        Assert.True(first.Equals(second));
+        Assert.True(MemoryMarshal.TryGetArray(first, out var firstBacking));
+        Assert.True(MemoryMarshal.TryGetArray(second, out var secondBacking));
+        Assert.Same(firstBacking.Array, secondBacking.Array);
+        Assert.Equal(firstBacking.Offset, secondBacking.Offset);
+        Assert.Equal(firstBacking.Count, secondBacking.Count);
+        Assert.NotSame(stream.GetBuffer(), firstBacking.Array);
+
+        Array.Fill(stream.GetBuffer(), (byte)0);
+        stream.Dispose();
+
+        Assert.True(pack.TryGetBytecode(SampleKey, out var retained));
+        Assert.True(first.Equals(retained));
+        Assert.True(FakeDxbc(0x77).AsSpan().SequenceEqual(retained.Span));
+        Assert.False(pack.TryGetBytecode("missing.frag.hlsl|main|ps_5_1|", out var missing));
+        Assert.True(missing.IsEmpty);
     }
 
     [Fact]
@@ -124,7 +187,7 @@ public sealed class GpuShaderBytecodePack12Tests
             await using var stream = File.OpenRead(path);
             var pack = GpuShaderBytecodePack12.Read(stream, fingerprint, [SampleKey]);
             Assert.True(pack.TryGetBytecode(SampleKey, out var bytecode));
-            Assert.Equal(FakeDxbc(0x55), bytecode);
+            Assert.True(FakeDxbc(0x55).AsSpan().SequenceEqual(bytecode.Span));
             Assert.Empty(Directory.EnumerateFiles(directory, "*.tmp"));
         }
         finally
@@ -247,7 +310,7 @@ public sealed class GpuShaderBytecodePack12Tests
         var packLookup = compiler.IndexOf("shippedPack.TryGetBytecode", StringComparison.Ordinal);
         Assert.True(packLookup >= 0);
         var sourceFallback = compiler.IndexOf(
-            "var bytecode = CompileSource(",
+            "ReadOnlyMemory<byte> bytecode = CompileSource(",
             packLookup,
             StringComparison.Ordinal);
         Assert.True(sourceFallback > packLookup);

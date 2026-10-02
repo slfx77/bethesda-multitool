@@ -69,6 +69,7 @@ public sealed class FnvSunRenderPassOrderTests
             StringComparison.Ordinal);
     }
 
+    /// <summary>Retains the recovered sun-base/glare routing and the factory's matching alpha/additive blend equations.</summary>
     [Fact]
     public void FalloutSunBase_IsAlphaBlended_AndGlareIsAdditive()
     {
@@ -90,10 +91,13 @@ public sealed class FnvSunRenderPassOrderTests
         Assert.Contains("Draw(_psoAdditive", sunGlare, StringComparison.Ordinal);
         Assert.DoesNotContain("Draw(_psoAlpha", sunGlare, StringComparison.Ordinal);
 
-        Assert.Contains("SourceBlend = D12.Blend.SourceAlpha", source, StringComparison.Ordinal);
+        var pipelines = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "SkyPipelineFactory12.cs");
+        Assert.Contains("SourceBlend = D12.Blend.SourceAlpha", pipelines, StringComparison.Ordinal);
         Assert.Contains(
             "DestinationBlend = additive ? D12.Blend.One : D12.Blend.InverseSourceAlpha",
-            source,
+            pipelines,
             StringComparison.Ordinal);
     }
 }

@@ -1,13 +1,10 @@
 #if WINDOWS_GUI
 using System.Numerics;
-using System.Reflection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
-using Vortice.D3DCompiler;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
-using Vortice.DXGI;
-using D12 = Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -71,10 +68,19 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
+    private readonly ShaderPipelineResources _pipelineResources;
+    private readonly int _threadId = Environment.CurrentManagedThreadId;
     private readonly ID3D12PipelineState _psoAdditive;
     private readonly ID3D12PipelineState _psoAlpha;
     private bool _disposed;
 
+    /// <summary>Creates the two celestial billboard pipelines on the world rendering thread.</summary>
+    /// <param name="gpu">Borrowed device retained through renderer disposal.</param>
+    /// <param name="recorder">Borrowed command recorder whose submitted work the caller retires before disposal.</param>
+    /// <param name="ringBuffer">Borrowed allocator for per-draw constants.</param>
+    /// <param name="rootSignature">World root retained by the renderer's shared pipeline family.</param>
+    /// <param name="cbvSrvUavHeap">Borrowed world descriptor heap.</param>
+    /// <remarks>Construction, native rendering and disposal use the same managed thread.</remarks>
     public SkyBillboardRenderer12(
         GpuDevice12 gpu,
         GpuCommandRecorder12 recorder,
@@ -86,64 +92,18 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
         _ringBuffer = ringBuffer;
         _cbvSrvUavHeap = cbvSrvUavHeap;
 
-        var vs = CompileEmbeddedShader("sky_billboard.vert.hlsl", "main", "vs_5_1");
-        var ps = CompileEmbeddedShader("sky_billboard.frag.hlsl", "main", "ps_5_1");
-
-        // Depth OFF (DSV stays bound — terrain follows in the same pass and overwrites these).
-        var depth = new D12.DepthStencilDescription
+        _pipelineResources = rootSignature.CreatePipelineResources(2);
+        try
         {
-            DepthEnable = false,
-            DepthWriteMask = D12.DepthWriteMask.Zero,
-            DepthFunc = ComparisonFunction.Always,
-            StencilEnable = false,
-        };
-
-        var rasterizer = new D12.RasterizerDescription
+            var (additive, alpha) = SkyPipelineFactory12.CreateBillboardPipelines(gpu, _pipelineResources);
+            _psoAdditive = additive;
+            _psoAlpha = alpha;
+        }
+        catch
         {
-            FillMode = D12.FillMode.Solid,
-            CullMode = D12.CullMode.None,
-            FrontCounterClockwise = true,
-            DepthClipEnable = false,
-            MultisampleEnable = gpu.SceneSampleCount > 1,
-        };
-
-        _psoAdditive = CreatePso(gpu, rootSignature, vs, ps, depth, rasterizer, additive: true);
-        _psoAlpha = CreatePso(gpu, rootSignature, vs, ps, depth, rasterizer, additive: false);
-    }
-
-    private static ID3D12PipelineState CreatePso(
-        GpuDevice12 gpu, GpuRootSignature12 rootSignature, byte[] vs, byte[] ps,
-        D12.DepthStencilDescription depth, D12.RasterizerDescription rasterizer, bool additive)
-    {
-        var blend = new D12.BlendDescription { AlphaToCoverageEnable = false, IndependentBlendEnable = false };
-        blend.RenderTarget[0] = new D12.RenderTargetBlendDescription
-        {
-            BlendEnable = true,
-            SourceBlend = D12.Blend.SourceAlpha,
-            DestinationBlend = additive ? D12.Blend.One : D12.Blend.InverseSourceAlpha,
-            BlendOperation = D12.BlendOperation.Add,
-            SourceBlendAlpha = D12.Blend.One,
-            DestinationBlendAlpha = D12.Blend.InverseSourceAlpha,
-            BlendOperationAlpha = D12.BlendOperation.Add,
-            RenderTargetWriteMask = D12.ColorWriteEnable.All,
-        };
-
-        var psoDesc = new GraphicsPipelineStateDescription
-        {
-            RootSignature = rootSignature.RootSignature,
-            VertexShader = vs,
-            PixelShader = ps,
-            BlendState = blend,
-            RasterizerState = rasterizer,
-            DepthStencilState = depth,
-            InputLayout = new InputLayoutDescription(Array.Empty<InputElementDescription>()),
-            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
-            RenderTargetFormats = new[] { GpuSceneFormats.SceneColor },
-            DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
-            SampleMask = uint.MaxValue,
-        };
-        return gpu.Device.CreateGraphicsPipelineState(psoDesc);
+            _pipelineResources.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
@@ -254,12 +214,22 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
         cmd.DrawInstanced(4, 1, 0, 0); // triangle-strip quad
     }
 
+    /// <summary>Stops drawing and releases the caller-retired billboard family, retaining failed releases for retry.</summary>
+    /// <remarks>The caller must prove GPU completion or device removal before disposal.</remarks>
+    /// <exception cref="InvalidOperationException">Disposal is attempted outside the creating thread.</exception>
+    /// <exception cref="AggregateException">A native release failed; retain the renderer and retry disposal.</exception>
     public void Dispose()
     {
-        if (_disposed) return;
+        VerifyAccess();
         _disposed = true;
-        _psoAdditive.Dispose();
-        _psoAlpha.Dispose();
+        _pipelineResources.Dispose();
+    }
+
+    /// <summary>Rejects disposal on another thread before changing the renderer's drawing state.</summary>
+    private void VerifyAccess()
+    {
+        if (Environment.CurrentManagedThreadId != _threadId)
+            throw new InvalidOperationException("Sky billboard rendering belongs to its creating thread.");
     }
 
     [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
@@ -278,13 +248,5 @@ internal sealed class SkyBillboardRenderer12 : IDisposable
 
         public const uint ByteSize = 64 + (6 * 16); // 160
     }
-
-    /// <summary>
-    ///     Forwards to the one shared compiler — see <see cref="GpuShaderCompiler12" />.
-    ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
-    ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
-    /// </summary>
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
-        GpuShaderCompiler12.Compile(name, entryPoint, profile);
 }
 #endif

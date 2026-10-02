@@ -307,10 +307,15 @@ public sealed class StarfieldWaterMaterialRouteTests
         var glbWriter = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Export",
             "GlbWriter.cs");
-        Assert.Contains("NpcGlbAlphaTexturePacker.Prepare(submesh, diffuseTexture)", glbWriter,
+        Assert.Contains("NifMaterialPreparation.Prepare(submesh, textureResolver, materialCache.Prepared, vertexLerpProjection)",
+            glbWriter, StringComparison.Ordinal);
+        var materialPreparation = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Export",
+            "NifMaterialPreparation.cs");
+        Assert.Contains("NpcGlbAlphaTexturePacker.Prepare(submesh, diffuseTexture)", materialPreparation,
             StringComparison.Ordinal);
         Assert.Contains("NpcGlbTintColorEncoder.BuildBaseColor(submesh, preparedAlpha.Texture != null)",
-            glbWriter,
+            materialPreparation,
             StringComparison.Ordinal);
     }
 
@@ -428,6 +433,7 @@ public sealed class StarfieldWaterMaterialRouteTests
             ParameterAt(Assert.IsType<MaterialChannel>(material.FindChannel("ClearCoatRoughness")), 0),
             3);
         var normal = Assert.IsType<MaterialChannel>(material.FindChannel("Normal"));
+        Assert.Equal(1f, normal.GetFactor("NormalScale"));
         var normalTexture = Assert.IsType<Texture>(normal.Texture);
         var normalSampler = Assert.IsType<TextureSampler>(normal.TextureSampler);
         Assert.Equal(TextureWrapMode.REPEAT, normalSampler.WrapS);

@@ -1,7 +1,6 @@
 #if WINDOWS_GUI
 using System.Diagnostics;
 using System.Numerics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
@@ -10,24 +9,23 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
 using BethesdaMultitool.Core.Games;
-using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
-using D12 = Vortice.Direct3D12;
 using BethesdaMultitool.Core.WorldData;
+using Slfx77.Multitool.Core.Lifetime;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
-///     v3 Pass 4 Step 2e — D3D12 port of <c>WaterRenderer</c>. Renders one
-///     alpha-blended flat quad per visible cell whose water height resolves, plus authored
+///     Renders game-specific water for visible cells whose water height resolves, plus authored
 ///     WaterShaderProperty triangles from placed NIFs. No vertex buffer: <c>water.vert.hlsl</c>
 ///     reads six world-space vertices from each structured-buffer packet via <c>SV_VertexID</c>.
 ///     <para>
-///         Single PSO (no double-sided variants — water is always rendered with
-///         CullMode.None). One root CBV at b0 for the viewProj, one structured-buffer
-///         SRV at t0 read by the VS (visible to all shader stages per
+///         The shared-owned pipeline family retains each game's shader, blending and depth variants.
+///         Water uses CullMode.None, a root CBV at b0 and a structured-buffer SRV at t0
+///         read by the vertex shader (visible to all shader stages per
 ///         <see cref="GpuRootSignature12" /> slot 3).
 ///     </para>
 /// </summary>
@@ -89,9 +87,12 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private readonly GpuCommandRecorder12 _recorder;
     private readonly GpuRingBuffer12 _ringBuffer;
     private readonly GpuDescriptorHeapAllocator12 _cbvSrvUavHeap;
-    private readonly GpuPersistentDescriptorAllocator12 _persistentSrvs;
     private readonly GpuDeletionQueue12 _deletionQueue;
     private readonly ID3D12RootSignature _sharedRootSignature;
+    private readonly GpuRootSignature12 _rootSignature;
+    private readonly ShaderPipelineResources _pipelineResources;
+    private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
+    private RetiredResourceDisposal? _retiredResources;
     // _pso: depth-test variant (writable DSV bound) used when no scene-depth SRV is available.
     // _psoDepthSample: same hardware GreaterEqual test against the host's READ-ONLY DSV while the
     // scene depth is simultaneously the shader's SRV (depth fade, FNV WATER000 path); its pixel
@@ -135,6 +136,8 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     // after an explicit opt-in on FO4/FO76. Any initialization or transient-prepass failure selects
     // the established _psoFo4 path for that frame.
     private ModernWaterResources12? _modernWater;
+    // Failed optional initialization remains reachable if native cleanup itself fails.
+    private ModernWaterResources12? _pendingModernWater;
     private bool _modernWaterInitializationFailed;
     private uint _modernCubeBindlessIndex = NoNormalMap;
     private BethesdaGame _game = GameProfiles.DefaultGame;
@@ -283,6 +286,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         int PacketCount,
         float FarthestDepth);
 
+    /// <summary>Creates the base water pipeline family and fixed noise resources on the render thread.</summary>
+    /// <param name="gpu">Borrowed native device and scene sampling configuration.</param>
+    /// <param name="recorder">Borrowed frame and command ownership.</param>
+    /// <param name="ringBuffer">Borrowed per-frame constant-buffer allocator.</param>
+    /// <param name="rootSignature">World root whose dependent family retains root lifetime.</param>
+    /// <param name="cbvSrvUavHeap">Borrowed shared bindless heap.</param>
+    /// <param name="deletionQueue">Borrowed queue retiring submitted texture and descriptor uses.</param>
+    /// <remarks>Construction rolls back unpublished resources. If rollback itself throws, the constructor
+    /// cannot publish an owner for a subsequent retry; runtime disposal retains failed actions.</remarks>
     public WaterRenderer12(
         GpuDevice12 gpu,
         GpuCommandRecorder12 recorder,
@@ -297,351 +309,133 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         _ringBuffer = ringBuffer;
         _cbvSrvUavHeap = cbvSrvUavHeap;
         _deletionQueue = deletionQueue;
+        _rootSignature = rootSignature;
         _sharedRootSignature = rootSignature.RootSignature;
         try
         {
-        _persistentSrvs = TrackConstructionResource(new GpuPersistentDescriptorAllocator12(
-            gpu,
-            DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView,
-            capacity: 1));
+            _pipelineResources = TrackConstructionResource(rootSignature.CreatePipelineResources(18));
+            var pipelines = WaterPipelineFactory12.CreateBasePipelines(gpu, _pipelineResources);
+            _fnvNoiseScrollBlendPso = pipelines.NoiseScrollBlend;
+            _fnvNoiseNormalPso = pipelines.NoiseNormal;
+            _fnvNoiseDownsamplePso = pipelines.NoiseDownsample;
+            _pso = pipelines.Water;
+            _psoOblivion = pipelines.Oblivion;
+            _psoFo4 = pipelines.Fo4;
+            _psoFo76Optics = pipelines.Fo76Optics;
+            _psoMorrowind = pipelines.Morrowind;
+            _psoStarfield = pipelines.Starfield;
+            _psoFlat = pipelines.Flat;
+            _psoDepthSample = pipelines.DepthSample;
+            _psoFnvWater001DepthSample = pipelines.FnvWater001DepthSample;
+            _psoSkyrimOpaqueSnapshotDepthSample = pipelines.SkyrimOpaqueSnapshotDepthSample;
+            _psoOblivionDepthSample = pipelines.OblivionDepthSample;
+            _psoFo4DepthSample = pipelines.Fo4DepthSample;
+            _psoFo76OpticsDepthSample = pipelines.Fo76OpticsDepthSample;
+            _psoMorrowindDepthSample = pipelines.MorrowindDepthSample;
+            _psoStarfieldDepthSample = pipelines.StarfieldDepthSample;
+            _depthPsoTemplate = pipelines.DepthTemplate;
+            _depthSamplePsoTemplate = pipelines.DepthSampleTemplate;
 
-        var noiseScrollBlendBytecode = CompileEmbeddedShader(
-            "water_noise.comp.hlsl", "mainScrollBlend", "cs_5_1");
-        var noiseNormalBytecode = CompileEmbeddedShader(
-            "water_noise.comp.hlsl", "mainNormal", "cs_5_1");
-        var noiseDownsampleBytecode = CompileEmbeddedShader(
-            "water_noise.comp.hlsl", "mainDownsample", "cs_5_1");
-        _fnvNoiseScrollBlendPso = TrackConstructionResource(gpu.Device.CreateComputePipelineState(
-            new ComputePipelineStateDescription
+            var noiseTextureDescription = ResourceDescription.Texture2D(
+                Format.R8G8B8A8_UNorm,
+                FnvNoiseDimension,
+                FnvNoiseDimension,
+                1,
+                1,
+                1,
+                0,
+                ResourceFlags.AllowUnorderedAccess);
+            // The normal tile carries the full chain (see FnvNoiseMipCount); with the switch off it
+            // still allocates the chain but the SRVs below expose one level and the downsample never
+            // runs — byte-identical to the previous single-mip behaviour.
+            var noiseNormalTextureDescription = ResourceDescription.Texture2D(
+                Format.R8G8B8A8_UNorm,
+                FnvNoiseDimension,
+                FnvNoiseDimension,
+                1,
+                FnvNoiseMipCount,
+                1,
+                0,
+                ResourceFlags.AllowUnorderedAccess);
+            var noiseSrvDescription = new ShaderResourceViewDescription
             {
-                RootSignature = rootSignature.RootSignature,
-                ComputeShader = noiseScrollBlendBytecode,
-            }));
-        _fnvNoiseNormalPso = TrackConstructionResource(gpu.Device.CreateComputePipelineState(
-            new ComputePipelineStateDescription
+                Format = Format.R8G8B8A8_UNorm,
+                ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
+                Shader4ComponentMapping = ShaderComponentMapping.Default,
+                Texture2D = new Texture2DShaderResourceView
+                {
+                    MostDetailedMip = 0,
+                    MipLevels = 1,
+                },
+            };
+            // The main normal-tile SRV exposes the whole chain so the anisotropic water sampler
+            // (s0, MaxLOD unbounded) starts mip-filtering the moment the levels hold data.
+            var normalSrvDescription = noiseSrvDescription with
             {
-                RootSignature = rootSignature.RootSignature,
-                ComputeShader = noiseNormalBytecode,
-            }));
-        _fnvNoiseDownsamplePso = TrackConstructionResource(gpu.Device.CreateComputePipelineState(
-            new ComputePipelineStateDescription
-            {
-                RootSignature = rootSignature.RootSignature,
-                ComputeShader = noiseDownsampleBytecode,
-            }));
+                Texture2D = new Texture2DShaderResourceView
+                {
+                    MostDetailedMip = 0,
+                    MipLevels = FnvNoiseMipsEnabled ? (uint)FnvNoiseMipCount : 1,
+                },
+            };
 
-        var noiseTextureDescription = ResourceDescription.Texture2D(
-            Format.R8G8B8A8_UNorm,
-            FnvNoiseDimension,
-            FnvNoiseDimension,
-            1,
-            1,
-            1,
-            0,
-            ResourceFlags.AllowUnorderedAccess);
-        // The normal tile carries the full chain (see FnvNoiseMipCount); with the switch off it
-        // still allocates the chain but the SRVs below expose one level and the downsample never
-        // runs — byte-identical to the previous single-mip behaviour.
-        var noiseNormalTextureDescription = ResourceDescription.Texture2D(
-            Format.R8G8B8A8_UNorm,
-            FnvNoiseDimension,
-            FnvNoiseDimension,
-            1,
-            FnvNoiseMipCount,
-            1,
-            0,
-            ResourceFlags.AllowUnorderedAccess);
-        var noiseSrvDescription = new ShaderResourceViewDescription
-        {
-            Format = Format.R8G8B8A8_UNorm,
-            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
-            Shader4ComponentMapping = ShaderComponentMapping.Default,
-            Texture2D = new Texture2DShaderResourceView
+            _fnvNoiseTiles = new FnvNoiseTileSet[FnvNoiseMaterialSlots];
+            for (var slot = 0; slot < FnvNoiseMaterialSlots; slot++)
             {
-                MostDetailedMip = 0,
-                MipLevels = 1,
-            },
-        };
-        // The main normal-tile SRV exposes the whole chain so the anisotropic water sampler
-        // (s0, MaxLOD unbounded) starts mip-filtering the moment the levels hold data.
-        var normalSrvDescription = noiseSrvDescription with
-        {
-            Texture2D = new Texture2DShaderResourceView
-            {
-                MostDetailedMip = 0,
-                MipLevels = FnvNoiseMipsEnabled ? (uint)FnvNoiseMipCount : 1,
-            },
-        };
+                var blendTexture = TrackConstructionResource(gpu.Device.CreateCommittedResource<ID3D12Resource>(
+                    new HeapProperties(HeapType.Default),
+                    HeapFlags.None,
+                    noiseTextureDescription,
+                    ResourceStates.NonPixelShaderResource));
+                blendTexture.Name = $"FNV Water Noise Scroll+Blend {slot}";
+                var normalTexture = TrackConstructionResource(gpu.Device.CreateCommittedResource<ID3D12Resource>(
+                    new HeapProperties(HeapType.Default),
+                    HeapFlags.None,
+                    noiseNormalTextureDescription,
+                    ResourceStates.PixelShaderResource));
+                normalTexture.Name = $"FNV Water Noise Normal {slot}";
 
-        _fnvNoiseTiles = new FnvNoiseTileSet[FnvNoiseMaterialSlots];
-        for (var slot = 0; slot < FnvNoiseMaterialSlots; slot++)
-        {
-            var blendTexture = TrackConstructionResource(gpu.Device.CreateCommittedResource<ID3D12Resource>(
-                new HeapProperties(HeapType.Default),
-                HeapFlags.None,
-                noiseTextureDescription,
-                ResourceStates.NonPixelShaderResource));
-            blendTexture.Name = $"FNV Water Noise Scroll+Blend {slot}";
-            var normalTexture = TrackConstructionResource(gpu.Device.CreateCommittedResource<ID3D12Resource>(
-                new HeapProperties(HeapType.Default),
-                HeapFlags.None,
-                noiseNormalTextureDescription,
-                ResourceStates.PixelShaderResource));
-            normalTexture.Name = $"FNV Water Noise Normal {slot}";
-
-            var blendSrv = cbvSrvUavHeap.AllocatePersistent();
-            TrackConstructionPersistentSlot(blendSrv.BindlessIndex);
-            gpu.Device.CreateShaderResourceView(blendTexture, noiseSrvDescription, blendSrv.Cpu);
-            var normalSrv = cbvSrvUavHeap.AllocatePersistent();
-            TrackConstructionPersistentSlot(normalSrv.BindlessIndex);
-            gpu.Device.CreateShaderResourceView(normalTexture, normalSrvDescription, normalSrv.Cpu);
-            // One single-mip SRV per SOURCE level (0..N-2) feeds each downsample step; persistent
-            // because the texture is.
-            var mipSrvIndices = new uint[FnvNoiseMipCount - 1];
-            for (var mip = 0; mip < FnvNoiseMipCount - 1; mip++)
-            {
-                var mipSrv = cbvSrvUavHeap.AllocatePersistent();
-                TrackConstructionPersistentSlot(mipSrv.BindlessIndex);
-                mipSrvIndices[mip] = mipSrv.BindlessIndex;
-                gpu.Device.CreateShaderResourceView(
-                    normalTexture,
-                    noiseSrvDescription with
-                    {
-                        Texture2D = new Texture2DShaderResourceView
+                var blendSrv = cbvSrvUavHeap.AllocatePersistent();
+                TrackConstructionPersistentSlot(blendSrv.BindlessIndex);
+                gpu.Device.CreateShaderResourceView(blendTexture, noiseSrvDescription, blendSrv.Cpu);
+                var normalSrv = cbvSrvUavHeap.AllocatePersistent();
+                TrackConstructionPersistentSlot(normalSrv.BindlessIndex);
+                gpu.Device.CreateShaderResourceView(normalTexture, normalSrvDescription, normalSrv.Cpu);
+                // One single-mip SRV per SOURCE level (0..N-2) feeds each downsample step; persistent
+                // because the texture is.
+                var mipSrvIndices = new uint[FnvNoiseMipCount - 1];
+                for (var mip = 0; mip < FnvNoiseMipCount - 1; mip++)
+                {
+                    var mipSrv = cbvSrvUavHeap.AllocatePersistent();
+                    TrackConstructionPersistentSlot(mipSrv.BindlessIndex);
+                    mipSrvIndices[mip] = mipSrv.BindlessIndex;
+                    gpu.Device.CreateShaderResourceView(
+                        normalTexture,
+                        noiseSrvDescription with
                         {
-                            MostDetailedMip = (uint)mip,
-                            MipLevels = 1,
+                            Texture2D = new Texture2DShaderResourceView
+                            {
+                                MostDetailedMip = (uint)mip,
+                                MipLevels = 1,
+                            },
                         },
-                    },
-                    mipSrv.Cpu);
+                        mipSrv.Cpu);
+                }
+
+                _fnvNoiseTiles[slot] = new FnvNoiseTileSet(
+                    blendTexture, normalTexture, blendSrv.BindlessIndex, normalSrv.BindlessIndex,
+                    mipSrvIndices);
             }
 
-            _fnvNoiseTiles[slot] = new FnvNoiseTileSet(
-                blendTexture, normalTexture, blendSrv.BindlessIndex, normalSrv.BindlessIndex,
-                mipSrvIndices);
-        }
+            // ~4.7 MB of fixed device-local noise tiles, alive for the renderer's life.
+            _noiseFootprint = TrackConstructionResource(Gpu.D3D12.GpuFixedFootprintTracker12.LocalInstance.Add(
+                "water-noise-tiles",
+                FnvNoiseMaterialSlots *
+                ((long)gpu.Device.GetResourceAllocationInfo(0, noiseTextureDescription).SizeInBytes +
+                 (long)gpu.Device.GetResourceAllocationInfo(0, noiseNormalTextureDescription).SizeInBytes)));
 
-        // ~4.7 MB of fixed device-local noise tiles, alive for the renderer's life.
-        _noiseFootprint = TrackConstructionResource(Gpu.D3D12.GpuFixedFootprintTracker12.LocalInstance.Add(
-            "water-noise-tiles",
-            FnvNoiseMaterialSlots *
-            ((long)gpu.Device.GetResourceAllocationInfo(0, noiseTextureDescription).SizeInBytes +
-             (long)gpu.Device.GetResourceAllocationInfo(0, noiseNormalTextureDescription).SizeInBytes)));
-
-        var vsBytecode = CompileEmbeddedShader("water.vert.hlsl", "main", "vs_5_1");
-        // Per-game water is normally a per-FILE axis (WaterProfile.PixelShaderFile). FO76 is the
-        // intentional exception: its strict float-optics/dual-source output is a real macro axis on
-        // the FO4-family file. The other axes are WATER_HARDWARE_OCCLUSION below and
-        // FO4_WATER_ARCHITECTURAL in ModernWaterResources12. Every direct variant is compiled
-        // eagerly here because the loaded game can change per LoadData without rebuilding PSOs.
-        var psBytecode = CompileEmbeddedShader("water_fnv.frag.hlsl", "main", "ps_5_1");
-
-        var rasterizer = new D12.RasterizerDescription
-        {
-            FillMode = D12.FillMode.Solid,
-            CullMode = D12.CullMode.None, // flat plane, both faces
-            FrontCounterClockwise = true,
-            DepthClipEnable = true,
-            // Antialias edges on the multisampled scene RT (no-op when scene isn't MSAA).
-            MultisampleEnable = gpu.SceneSampleCount > 1,
-        };
-
-        // Read depth so terrain occludes submerged water; don't write depth so layer
-        // order (terrain → references → water → wireframe) stays sane.
-        var depth = new D12.DepthStencilDescription
-        {
-            DepthEnable = true,
-            DepthWriteMask = D12.DepthWriteMask.Zero,
-            // reversed-Z (near→1, far→0; depth clear = 0). GreaterEqual (not Greater) so water WINS a
-            // coplanar tie with the terrain beneath it (3D-2 z-fighting): at a shoreline where the water
-            // plane and the land mesh resolve to the same depth, Greater would reject the water fragment
-            // and the land would flicker through; GreaterEqual draws the water. Water writes no depth, so
-            // letting it pass ties has no knock-on effect on later passes. (This hardware-test PSO is the
-            // no-scene-depth-SRV fallback; the depth-sample PSO does the same tie-break in the shader.)
-            DepthFunc = ComparisonFunction.GreaterEqual,
-            StencilEnable = false,
-        };
-
-        var blend = new D12.BlendDescription
-        {
-            AlphaToCoverageEnable = false,
-            IndependentBlendEnable = false,
-        };
-        blend.RenderTarget[0] = new D12.RenderTargetBlendDescription
-        {
-            BlendEnable = true,
-            SourceBlend = D12.Blend.SourceAlpha,
-            DestinationBlend = D12.Blend.InverseSourceAlpha,
-            BlendOperation = D12.BlendOperation.Add,
-            // Water blends its COLOR translucently (above) but must PRESERVE the destination alpha.
-            // Was DestinationBlendAlpha=Zero, which OVERWROTE the underlying opaque 1.0 with water's
-            // <1 alpha and turned the water surface — and any geometry it overlaps (partially-submerged
-            // rocks) — transparent. HISTORICAL NOTE: that symptom was a downstream effect of the
-            // composition swapchain being created PREMULTIPLIED, so scene-RT alpha reached the
-            // compositor; the swapchain is now AlphaMode.Ignore (GpuSwapChainSurface12) and the live
-            // view no longer composites scene alpha at all. Keep this Max-against-1.0 anyway: it is
-            // still the correct alpha for the offscreen export/capture readback, which DOES consume
-            // the alpha channel, and it keeps this pass consistent with the reference renderer.
-            SourceBlendAlpha = D12.Blend.One,
-            DestinationBlendAlpha = D12.Blend.One,
-            BlendOperationAlpha = D12.BlendOperation.Max,
-            RenderTargetWriteMask = D12.ColorWriteEnable.All,
-        };
-
-        // Skyrim's recovered BSWaterShader output is opaque: transmission comes from the
-        // RefractionSampler RGB value, not destination blending, and oC0.a is always one. Keep a
-        // separate blend state so the snapshot shader overwrites the scene target exactly once;
-        // forcing alpha=1 through the SrcAlpha/InvSrcAlpha PSO would discard the sampled scene lane.
-        var skyrimOpaqueSnapshotBlend = new D12.BlendDescription
-        {
-            AlphaToCoverageEnable = false,
-            IndependentBlendEnable = false,
-        };
-        skyrimOpaqueSnapshotBlend.RenderTarget[0] = new D12.RenderTargetBlendDescription
-        {
-            BlendEnable = false,
-            SourceBlend = D12.Blend.One,
-            DestinationBlend = D12.Blend.Zero,
-            BlendOperation = D12.BlendOperation.Add,
-            SourceBlendAlpha = D12.Blend.One,
-            DestinationBlendAlpha = D12.Blend.Zero,
-            BlendOperationAlpha = D12.BlendOperation.Add,
-            RenderTargetWriteMask = D12.ColorWriteEnable.All,
-        };
-
-        // FO76 per-channel transmission uses the pixel shader's SV_Target1.rgb as the destination
-        // factor: final.rgb = Target0.rgb + scene.rgb * Target1.rgb. D3D12 dual-source blending is
-        // defined for a single bound render target, which is exactly this pass's SceneColor layout.
-        // Alpha remains the established Max(source,destination) contract for capture readback.
-        var fallout76OpticsBlend = new D12.BlendDescription
-        {
-            AlphaToCoverageEnable = false,
-            IndependentBlendEnable = false,
-        };
-        fallout76OpticsBlend.RenderTarget[0] = new D12.RenderTargetBlendDescription
-        {
-            BlendEnable = true,
-            SourceBlend = D12.Blend.One,
-            DestinationBlend = D12.Blend.Source1Color,
-            BlendOperation = D12.BlendOperation.Add,
-            SourceBlendAlpha = D12.Blend.One,
-            DestinationBlendAlpha = D12.Blend.One,
-            BlendOperationAlpha = D12.BlendOperation.Max,
-            RenderTargetWriteMask = D12.ColorWriteEnable.All,
-        };
-
-        var psOblivionBytecode = CompileEmbeddedShader(
-            "water_oblivion.frag.hlsl", "main", "ps_5_1");
-        var psFo4Bytecode = CompileEmbeddedShader(
-            "water_fo4.frag.hlsl", "main", "ps_5_1");
-        var psFo76OpticsBytecode = CompileEmbeddedShader(
-            "water_fo4.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("FO76_WATER_OPTICS", "1"));
-        var psMorrowindBytecode = CompileEmbeddedShader(
-            "water_morrowind.frag.hlsl", "main", "ps_5_1");
-        var psStarfieldBytecode = CompileEmbeddedShader(
-            "water_starfield.frag.hlsl", "main", "ps_5_1");
-        // Un-recovered games (WaterProfile.Flat). Compiled once — see _psoFlat.
-        var psFlatBytecode = CompileEmbeddedShader(
-            "water_flat.frag.hlsl", "main", "ps_5_1");
-        var psFnvWater001Bytecode = CompileEmbeddedShader(
-            "water_fnv001.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
-        var psSkyrimOpaqueSnapshotBytecode = CompileEmbeddedShader(
-            "water_fnv.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("SKYRIM_OPAQUE_REFRACTION", "1"),
-            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
-
-        var psoDesc = new GraphicsPipelineStateDescription
-        {
-            RootSignature = rootSignature.RootSignature,
-            VertexShader = vsBytecode,
-            PixelShader = psBytecode,
-            BlendState = blend,
-            RasterizerState = rasterizer,
-            DepthStencilState = depth,
-            InputLayout = new InputLayoutDescription(Array.Empty<InputElementDescription>()),
-            PrimitiveTopologyType = PrimitiveTopologyType.Triangle,
-            RenderTargetFormats = new[] { Gpu.D3D12.GpuSceneFormats.SceneColor },
-            DepthStencilFormat = Format.D32_Float,
-            SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
-            SampleMask = uint.MaxValue,
-        };
-        _depthPsoTemplate = psoDesc;
-        _pso = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        psoDesc.PixelShader = psOblivionBytecode;
-        _psoOblivion = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        psoDesc.PixelShader = psFo4Bytecode;
-        _psoFo4 = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        var fallout76OpticsPsoDesc = psoDesc;
-        fallout76OpticsPsoDesc.PixelShader = psFo76OpticsBytecode;
-        fallout76OpticsPsoDesc.BlendState = fallout76OpticsBlend;
-        _psoFo76Optics = TrackConstructionResource(
-            gpu.Device.CreateGraphicsPipelineState(fallout76OpticsPsoDesc));
-        psoDesc.PixelShader = psMorrowindBytecode;
-        _psoMorrowind = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        psoDesc.PixelShader = psStarfieldBytecode;
-        _psoStarfield = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        psoDesc.PixelShader = psFlatBytecode;
-        _psoFlat = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        psoDesc.PixelShader = psBytecode;
-
-        // Depth-sample variant: the scene depth buffer is bound BOTH as an SRV (depth-fade /
-        // column math) and as a READ-ONLY DSV, so the same GreaterEqual hardware test as _pso
-        // still rejects water behind opaque geometry — per sample, which antialiases water edges
-        // at MSAA'd mesh silhouettes. The WATER_HARDWARE_OCCLUSION shader variants drop their
-        // pixel-rate occlusion clip (binary keep/kill there left bright fringes around meshes in
-        // front of water). Hosts must bind the read-only DSV while depth sits in
-        // DepthRead | PixelShaderResource; depth state and formats intentionally match _pso.
-        var psDepthSampleBytecode = CompileEmbeddedShader(
-            "water_fnv.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
-        var psOblivionDepthSampleBytecode = CompileEmbeddedShader(
-            "water_oblivion.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
-        var psFo4DepthSampleBytecode = CompileEmbeddedShader(
-            "water_fo4.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
-        var psFo76OpticsDepthSampleBytecode = CompileEmbeddedShader(
-            "water_fo4.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("FO76_WATER_OPTICS", "1"),
-            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
-        var psMorrowindDepthSampleBytecode = CompileEmbeddedShader(
-            "water_morrowind.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
-        var psStarfieldDepthSampleBytecode = CompileEmbeddedShader(
-            "water_starfield.frag.hlsl", "main", "ps_5_1",
-            new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
-        psoDesc.PixelShader = psDepthSampleBytecode;
-        _depthSamplePsoTemplate = psoDesc;
-        _psoDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        // WATER001 always consumes both scene depth and a separate single-sample opaque-scene
-        // snapshot; like every depth-sample PSO it keeps the hardware GreaterEqual test through
-        // the host's read-only DSV (its manual occlusion clip is compiled out above).
-        psoDesc.PixelShader = psFnvWater001Bytecode;
-        _psoFnvWater001DepthSample = TrackConstructionResource(
-            gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        var skyrimOpaqueSnapshotPsoDesc = psoDesc;
-        skyrimOpaqueSnapshotPsoDesc.PixelShader = psSkyrimOpaqueSnapshotBytecode;
-        skyrimOpaqueSnapshotPsoDesc.BlendState = skyrimOpaqueSnapshotBlend;
-        _psoSkyrimOpaqueSnapshotDepthSample = TrackConstructionResource(
-            gpu.Device.CreateGraphicsPipelineState(skyrimOpaqueSnapshotPsoDesc));
-        psoDesc.PixelShader = psOblivionDepthSampleBytecode;
-        _psoOblivionDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        psoDesc.PixelShader = psFo4DepthSampleBytecode;
-        _psoFo4DepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        fallout76OpticsPsoDesc = psoDesc;
-        fallout76OpticsPsoDesc.PixelShader = psFo76OpticsDepthSampleBytecode;
-        fallout76OpticsPsoDesc.BlendState = fallout76OpticsBlend;
-        _psoFo76OpticsDepthSample = TrackConstructionResource(
-            gpu.Device.CreateGraphicsPipelineState(fallout76OpticsPsoDesc));
-        psoDesc.PixelShader = psMorrowindDepthSampleBytecode;
-        _psoMorrowindDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-        psoDesc.PixelShader = psStarfieldDepthSampleBytecode;
-        _psoStarfieldDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));
-
-        _constructionTransaction!.Commit();
-        _constructionTransaction = null;
+            _constructionTransaction!.Commit();
+            _constructionTransaction = null;
         }
         catch
         {
@@ -651,15 +445,20 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         }
     }
 
+    /// <summary>Retains an unpublished allocation for reverse-order constructor rollback.</summary>
+    /// <param name="resource">Allocation to transfer to the active construction transaction.</param>
+    /// <returns>The same allocation for assignment to its runtime field.</returns>
     private T TrackConstructionResource<T>(T resource) where T : IDisposable
     {
         _constructionTransaction?.Track(resource);
         return resource;
     }
 
+    /// <summary>Retains a newly allocated bindless slot until construction commits.</summary>
+    /// <param name="slot">Persistent slot returned immediately if unpublished construction fails.</param>
     private void TrackConstructionPersistentSlot(uint slot)
     {
-        _constructionTransaction?.Track(new PersistentSlotReturn(_cbvSrvUavHeap, slot));
+        _constructionTransaction?.Track(new WaterPersistentSlotReturn12(_cbvSrvUavHeap, slot));
     }
 
     public global::BethesdaMultitool.Core.WorldData.WorldRenderStats LastStats { get; } = new();
@@ -1346,21 +1145,25 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     /// </summary>
     public void SetNifWaterPlanes(IReadOnlyList<NifWaterGeometry> planes) => _nifWaterPlanes = planes;
 
+    /// <summary>Creates the optional water family once, preserving the established fallback on failure.</summary>
+    /// <param name="resources">Complete resources on success, otherwise null.</param>
+    /// <returns>Whether the modern-water resources are ready for command recording.</returns>
+    /// <remarks>A failed cleanup remains retained for the renderer's later disposal retry.</remarks>
     private bool TryEnsureModernWater(out ModernWaterResources12? resources)
     {
+        VerifyAccess();
         resources = _modernWater;
         if (resources is not null) return true;
         if (_modernWaterInitializationFailed) return false;
 
         try
         {
-            resources = ModernWaterResources12.Create(
-                _gpu,
-                _sharedRootSignature,
-                _cbvSrvUavHeap,
-                _depthPsoTemplate,
-                _depthSamplePsoTemplate);
+            _pendingModernWater = new ModernWaterResources12(
+                _gpu, _rootSignature, _cbvSrvUavHeap, _deletionQueue);
+            _pendingModernWater.Initialize(_depthPsoTemplate, _depthSamplePsoTemplate);
+            resources = _pendingModernWater;
             _modernWater = resources;
+            _pendingModernWater = null;
             Log.Info("[Water] Initialized opt-in FO4/FO76 dynamic-water resources.");
             return true;
         }
@@ -1370,6 +1173,15 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
             Log.Warn(
                 "[Water] Opt-in modern-water initialization failed; preserving stand-in pipeline: {0}",
                 ex.Message);
+            try
+            {
+                _pendingModernWater?.Dispose();
+                _pendingModernWater = null;
+            }
+            catch (Exception cleanupException)
+            {
+                Log.Warn("[Water] Optional water cleanup remains pending: {0}", cleanupException.Message);
+            }
             resources = null;
             return false;
         }
@@ -3284,53 +3096,77 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         return $"{shaderName}-{depthName}";
     }
 
+    /// <summary>Releases the pipeline family after the caller retires GPU use, retaining failed actions for retry.</summary>
+    /// <remarks>Submitted textures and bindless slots continue through the existing deletion queue.
+    /// Repeated calls retry only pending releases; this method does not establish GPU retirement.</remarks>
+    /// <exception cref="InvalidOperationException">Called from another managed thread.</exception>
+    /// <exception cref="AggregateException">One or more releases remain pending.</exception>
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _noiseFootprint.Dispose();
-        _instanceFootprint?.Dispose();
-        _instanceFootprint = null;
-        if (_instanceBuffer is not null)
+        VerifyAccess();
+        if (!_disposed)
         {
-            _instanceBuffer.Unmap(0, null);
-            _deletionQueue.EnqueueDispose(_instanceBuffer);
-            _instanceBuffer = null;
+            _retiredResources = PrepareRetiredResources();
+            _disposed = true;
         }
-        _persistentSrvs.Dispose();
-        _pso.Dispose();
-        _psoDepthSample.Dispose();
-        _psoFnvWater001DepthSample.Dispose();
-        _psoSkyrimOpaqueSnapshotDepthSample.Dispose();
-        _psoOblivion.Dispose();
-        _psoOblivionDepthSample.Dispose();
-        _psoFo4.Dispose();
-        _psoFo4DepthSample.Dispose();
-        _psoFo76Optics.Dispose();
-        _psoFo76OpticsDepthSample.Dispose();
-        _psoMorrowind.Dispose();
-        _psoMorrowindDepthSample.Dispose();
-        _psoStarfield.Dispose();
-        _psoStarfieldDepthSample.Dispose();
-        _psoFlat.Dispose();
-        _fnvNoiseScrollBlendPso.Dispose();
-        _fnvNoiseNormalPso.Dispose();
-        _fnvNoiseDownsamplePso.Dispose();
+        _retiredResources!.Dispose();
+    }
+
+    /// <summary>Registers each runtime release once, keeping dependent resources ahead of the pipeline family.</summary>
+    /// <returns>A retained release collection that can retry failed siblings independently.</returns>
+    private RetiredResourceDisposal PrepareRetiredResources()
+    {
+        var retired = new RetiredResourceDisposal();
+        retired.Add(_noiseFootprint, "water noise footprint");
+        retired.Add(_instanceFootprint, "water instance footprint");
+        retired.Add(RetireInstanceBuffer, "water instance buffer");
         foreach (var tiles in _fnvNoiseTiles)
         {
-            _deletionQueue.EnqueueDispose(tiles.BlendTexture);
-            _deletionQueue.EnqueueDispose(tiles.NormalTexture);
-            _deletionQueue.EnqueueDispose(
-                new PersistentSlotReturn(_cbvSrvUavHeap, tiles.BlendBindlessIndex));
-            _deletionQueue.EnqueueDispose(
-                new PersistentSlotReturn(_cbvSrvUavHeap, tiles.NormalBindlessIndex));
+            retired.Add(() => _deletionQueue.EnqueueDispose(tiles.BlendTexture), "water blend texture");
+            retired.Add(() => _deletionQueue.EnqueueDispose(tiles.NormalTexture), "water normal texture");
+            AddDeferredSlot(retired, tiles.BlendBindlessIndex);
+            AddDeferredSlot(retired, tiles.NormalBindlessIndex);
             foreach (var mipSrvIndex in tiles.NormalMipSrvIndices)
             {
-                _deletionQueue.EnqueueDispose(new PersistentSlotReturn(_cbvSrvUavHeap, mipSrvIndex));
+                AddDeferredSlot(retired, mipSrvIndex);
             }
         }
-        _modernWater?.DisposeInto(_deletionQueue, _cbvSrvUavHeap);
-        _modernWater = null;
+        retired.Add(_modernWater, "modern water resources");
+        retired.Add(_pendingModernWater, "incomplete modern water resources");
+        retired.Add(_pipelineResources, "water pipeline family", stage: 1);
+        return retired;
+    }
+
+    /// <summary>Transfers the mapped instance buffer once, retaining its identity if deferred release fails.</summary>
+    private void RetireInstanceBuffer()
+    {
+        if (_instanceBuffer is null) { return; }
+        if (_instanceMapped != IntPtr.Zero)
+        {
+            _instanceBuffer.Unmap(0, null);
+            _instanceMapped = IntPtr.Zero;
+        }
+        _deletionQueue.EnqueueDispose(_instanceBuffer);
+        _instanceBuffer = null;
+    }
+
+    /// <summary>Captures a descriptor return separately so sibling transfer failures cannot return it twice.</summary>
+    /// <param name="retired">Retained collection receiving the transfer callback.</param>
+    /// <param name="slot">Persistent bindless descriptor index to return after GPU retirement.</param>
+    private void AddDeferredSlot(RetiredResourceDisposal retired, uint slot)
+    {
+        var release = new WaterPersistentSlotReturn12(_cbvSrvUavHeap, slot);
+        retired.Add(() => _deletionQueue.EnqueueDispose(release), "water bindless descriptor");
+    }
+
+    /// <summary>Rejects cross-thread lifetime changes before mutating stopped or native ownership state.</summary>
+    /// <exception cref="InvalidOperationException">Called from a thread other than the creating thread.</exception>
+    private void VerifyAccess()
+    {
+        if (Environment.CurrentManagedThreadId != _ownerThreadId)
+        {
+            throw new InvalidOperationException("Water resources must be accessed on their creating thread.");
+        }
     }
 
     private readonly record struct FnvWater001VisibleCellContract(
@@ -3730,19 +3566,6 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
     private static double ElapsedMilliseconds(long started) =>
         started == 0 ? 0 : Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
-    // D3DCOMPILE_ENABLE_UNBOUNDED_DESCRIPTOR_TABLES — required by fxc/D3DCompile for any shader
-    // that declares an unbounded resource array (e.g. `Texture2D gWaterTextures[] : register(t0, space1)`).
-    /// <summary>
-    ///     Forwards to the one shared compiler. The private copy this replaces detected the
-    ///     unbounded-descriptor need by scanning for <c>"[] : register"</c> — a DIFFERENT rule from
-    ///     the sibling renderers' <c>"textures[]"</c>, because water's array is
-    ///     <c>gWaterTextures[]</c>. That divergence is exactly why the flag is now unconditional in
-    ///     <see cref="GpuShaderCompiler12" /> instead of inferred from source text.
-    /// </summary>
-    private static byte[] CompileEmbeddedShader(
-        string name, string entryPoint, string profile, params ShaderMacro[] defines) =>
-        GpuShaderCompiler12.Compile(name, entryPoint, profile, defines);
-
     /// <summary>
     ///     TES4 surface-animation tile. The machine-bound near-field permutation WATER007 samples
     ///     the NormalMap at <c>t7.zw = (worldXY + QPosAdjust) · (3/4096)</c> — a 4096/3 ≈ 1365.33
@@ -3840,175 +3663,6 @@ internal sealed class WaterRenderer12 : Abstractions.IWaterRenderer,
         public Vector4 Scroll1;
         public Vector4 Scroll2;
         public Vector4 Amplitude;
-    }
-
-    private sealed class ModernWaterResources12
-    {
-        internal const int BodyOutput = 0;
-        internal const int NormalOutput = 1;
-        internal const int GlossOutput = 2;
-        internal const int DepthLutOutput = 3;
-
-        private ModernWaterResources12(
-            ID3D12PipelineState pixel,
-            ID3D12PipelineState pixelDepthSample,
-            ID3D12PipelineState[] computePipelines,
-            ID3D12Resource[] outputs,
-            uint[] bindlessIndices)
-        {
-            Pixel = pixel;
-            PixelDepthSample = pixelDepthSample;
-            ComputePipelines = computePipelines;
-            Outputs = outputs;
-            BindlessIndices = bindlessIndices;
-        }
-
-        internal ID3D12PipelineState Pixel { get; }
-        internal ID3D12PipelineState PixelDepthSample { get; }
-        internal ID3D12PipelineState[] ComputePipelines { get; }
-        internal ID3D12Resource[] Outputs { get; }
-        internal uint[] BindlessIndices { get; }
-
-        internal static ModernWaterResources12 Create(
-            GpuDevice12 gpu,
-            ID3D12RootSignature rootSignature,
-            GpuDescriptorHeapAllocator12 heap,
-            GraphicsPipelineStateDescription depthTemplate,
-            GraphicsPipelineStateDescription depthSampleTemplate)
-        {
-            ID3D12PipelineState? pixel = null;
-            ID3D12PipelineState? pixelDepthSample = null;
-            var compute = new List<ID3D12PipelineState>(4);
-            var outputs = new List<ID3D12Resource>(4);
-            var slots = new List<uint>(4);
-            try
-            {
-                var modernPixelBytecode = CompileEmbeddedShader(
-                    "water_fo4.frag.hlsl",
-                    "main",
-                    "ps_5_1",
-                    new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"));
-                // The depth-sample template carries a hardware GreaterEqual test against the
-                // host's read-only DSV, so its pixel shader must be the WATER_HARDWARE_OCCLUSION
-                // compile (occlusion clip dropped) like every other depth-sample PSO.
-                var modernPixelDepthSampleBytecode = CompileEmbeddedShader(
-                    "water_fo4.frag.hlsl",
-                    "main",
-                    "ps_5_1",
-                    new ShaderMacro("FO4_WATER_ARCHITECTURAL", "1"),
-                    new ShaderMacro("WATER_HARDWARE_OCCLUSION", "1"));
-                var pixelDescription = depthTemplate;
-                pixelDescription.PixelShader = modernPixelBytecode;
-                pixel = gpu.Device.CreateGraphicsPipelineState(pixelDescription);
-                var pixelDepthDescription = depthSampleTemplate;
-                pixelDepthDescription.PixelShader = modernPixelDepthSampleBytecode;
-                pixelDepthSample = gpu.Device.CreateGraphicsPipelineState(pixelDepthDescription);
-
-                string[] entryPoints =
-                [
-                    "mainBodyCoverage",
-                    "mainNormal",
-                    "mainGloss",
-                    "mainDepthLut",
-                ];
-                foreach (var entryPoint in entryPoints)
-                {
-                    var bytecode = CompileEmbeddedShader(
-                        "water_modern.comp.hlsl", entryPoint, "cs_5_1");
-                    compute.Add(gpu.Device.CreateComputePipelineState(
-                        new ComputePipelineStateDescription
-                        {
-                            RootSignature = rootSignature,
-                            ComputeShader = bytecode,
-                        }));
-                }
-
-                for (var i = 0; i < entryPoints.Length; i++)
-                {
-                    var width = i == DepthLutOutput
-                        ? ModernWaterPipeline.DepthLutWidth
-                        : ModernWaterPipeline.SurfaceDimension;
-                    var height = i == DepthLutOutput
-                        ? ModernWaterPipeline.DepthLutHeight
-                        : ModernWaterPipeline.SurfaceDimension;
-                    var output = gpu.Device.CreateCommittedResource<ID3D12Resource>(
-                        new HeapProperties(HeapType.Default),
-                        HeapFlags.None,
-                        ResourceDescription.Texture2D(
-                            Format.R16G16B16A16_Float,
-                            width,
-                            height,
-                            1,
-                            1,
-                            1,
-                            0,
-                            ResourceFlags.AllowUnorderedAccess),
-                        ModernWaterPipeline.DynamicReadState);
-                    output.Name = i switch
-                    {
-                        BodyOutput => "Modern Water Body+Coverage",
-                        NormalOutput => "Modern Water Composite Normal",
-                        GlossOutput => "Modern Water Gloss+Flow",
-                        _ => "Modern Water Depth LUT",
-                    };
-                    outputs.Add(output);
-
-                    var allocation = heap.AllocatePersistent();
-                    slots.Add(allocation.BindlessIndex);
-                    gpu.Device.CreateShaderResourceView(
-                        output,
-                        new ShaderResourceViewDescription
-                        {
-                            Format = Format.R16G16B16A16_Float,
-                            ViewDimension = Vortice.Direct3D12.ShaderResourceViewDimension.Texture2D,
-                            Shader4ComponentMapping = ShaderComponentMapping.Default,
-                            Texture2D = new Texture2DShaderResourceView
-                            {
-                                MostDetailedMip = 0,
-                                MipLevels = 1,
-                            },
-                        },
-                        allocation.Cpu);
-                }
-
-                return new ModernWaterResources12(
-                    pixel,
-                    pixelDepthSample,
-                    compute.ToArray(),
-                    outputs.ToArray(),
-                    slots.ToArray());
-            }
-            catch
-            {
-                pixel?.Dispose();
-                pixelDepthSample?.Dispose();
-                foreach (var pipeline in compute) pipeline.Dispose();
-                foreach (var output in outputs) output.Dispose();
-                foreach (var slot in slots) heap.FreePersistent(slot);
-                throw;
-            }
-        }
-
-        internal void DisposeInto(
-            GpuDeletionQueue12 deletionQueue,
-            GpuDescriptorHeapAllocator12 heap)
-        {
-            Pixel.Dispose();
-            PixelDepthSample.Dispose();
-            foreach (var pipeline in ComputePipelines) pipeline.Dispose();
-            foreach (var output in Outputs) deletionQueue.EnqueueDispose(output);
-            foreach (var slot in BindlessIndices)
-            {
-                deletionQueue.EnqueueDispose(new PersistentSlotReturn(heap, slot));
-            }
-        }
-    }
-
-    /// <summary>Returns a bindless descriptor only after the GPU has drained the prepass draws that
-    /// may still index it.</summary>
-    private sealed class PersistentSlotReturn(GpuDescriptorHeapAllocator12 heap, uint slot) : IDisposable
-    {
-        public void Dispose() => heap.FreePersistent(slot);
     }
 
     private sealed class WaterConstructionTransaction : IDisposable

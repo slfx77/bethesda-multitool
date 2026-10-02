@@ -22,7 +22,8 @@ internal unsafe struct TerrainTextureIndices
     public fixed uint NormalDecodeMetadata[4];
 }
 
-internal sealed class CachedCellMesh12 : IDisposable
+/// <summary>Borrowed terrain draw metadata; the cell residency cache owns its range and retirement.</summary>
+internal sealed class CachedCellMesh12
 {
     /// <summary>
     ///     This cell's range inside <see cref="GpuTerrainArena12" />: both stream GPU addresses and
@@ -66,11 +67,6 @@ internal sealed class CachedCellMesh12 : IDisposable
     /// </summary>
     public required GpuTextureCache12.Entry?[]? NormalTextureEntries { get; init; }
 
-    public required GpuDeletionQueue12 DeletionQueue { get; init; }
-
-    /// <summary>The arena that owns <see cref="Geometry" />, for the deferred free on eviction.</summary>
-    public required GpuTerrainArena12 Arena { get; init; }
-
     /// <summary>
     ///     GPU bytes this cell costs the arena: its aligned sub-allocation. Feeds the cell LRU's byte
     ///     budget. Note this is now the SUB-ALLOCATION size, not two 64 KiB-rounded committed
@@ -102,13 +98,5 @@ internal sealed class CachedCellMesh12 : IDisposable
         StrideInBytes = TerrainVertexLayout.BlendWeightStrideFor(BlendQuadCount)
     };
 
-    // Route the arena range through the deletion queue so LRU eviction can't recycle bytes the GPU
-    // is still consuming from the previous frame's command list — a range reused too early would be
-    // overwritten by the next cell mid-read. Textures are owned by TerrainTextureResolver12 and
-    // referenced through stable bindless indices.
-    public void Dispose()
-    {
-        DeletionQueue.EnqueueDispose(Arena.DeferredFreeHandle(Geometry));
-    }
 }
 #endif

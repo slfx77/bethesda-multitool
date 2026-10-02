@@ -1,3 +1,4 @@
+using BethesdaMultitool.Core.Actors;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.Character;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
@@ -45,12 +46,17 @@ internal sealed class NpcAppearanceFactory
             index.LeveledItemRecords);
     }
 
+    /// <summary>Assembles head/body appearance and selects equipment from the supplied concrete generation or legacy inventory.</summary>
     internal NpcAppearance Build(
         uint formId,
         NpcScanEntry npc,
         string pluginName,
-        ushort? previewPlayerLevel = null)
+        ushort? previewPlayerLevel = null,
+        ActorInventoryGeneration? generation = null)
     {
+        var assetOrigin = _index.Sources.GetValueOrDefault(formId);
+        var assetPlugin = assetOrigin?.Plugin ?? pluginName;
+        var assetFormId = assetOrigin?.FileLocalFormId ?? formId;
         var race = ResolveRace(npc.RaceFormId);
         var headModelPath = SelectGenderValue(
             npc.IsFemale,
@@ -143,14 +149,18 @@ internal sealed class NpcAppearanceFactory
         var hair = ResolveHair(npc.HairFormId);
         var eyeTexturePath = ResolveEyeTexture(
             ResolveEffectiveEyesFormId(npc.EyesFormId, race, headModelPath), race);
-        var inventoryItems = _inventoryResolver.ResolveInventoryItems(npc);
+        var inventoryItems = generation is null
+            ? _inventoryResolver.ResolveInventoryItems(npc)
+            : generation.Items.ToList();
         var equippedItems = _equipmentResolver.Resolve(
             inventoryItems,
-            npc.IsFemale);
+            npc.IsFemale,
+            concreteInventoryOnly: generation is not null);
         var weaponVisual = _weaponResolver.Resolve(
             npc,
             inventoryItems,
-            previewPlayerLevel: previewPlayerLevel);
+            previewPlayerLevel: generation?.Level ?? previewPlayerLevel,
+            concreteInventoryOnly: generation is not null);
         var symmetricCoefficients = NpcFaceGenCoefficientMerger.Merge(
             npc.FaceGenSymmetric,
             SelectGenderValue(
@@ -186,7 +196,7 @@ internal sealed class NpcAppearanceFactory
         var baseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath);
         var tailNifPath = NpcAppearancePathDeriver.AsMeshPath(tailPath);
 
-        return new NpcAppearance
+        var appearance = new NpcAppearance
         {
             Game = _index.Game,
             NpcFormId = formId,
@@ -197,12 +207,12 @@ internal sealed class NpcAppearanceFactory
             BaseHeadTriPath = NpcAppearancePathDeriver.DeriveHeadTriPath(baseHeadNifPath),
             HeadDiffuseOverride = headTexturePath,
             FaceGenNifPath = NpcAppearancePathDeriver.BuildFaceGenNifPath(
-                pluginName,
-                formId),
+                assetPlugin,
+                assetFormId),
             AuthoredFaceGenMap0Path = NpcAppearancePathDeriver.BuildAuthoredFaceGenMap0Path(
                 _index.Game,
-                pluginName,
-                formId),
+                assetPlugin,
+                assetFormId),
             HairNifPath = NpcAppearancePathDeriver.AsMeshPath(hair?.ModelPath),
             HairTexturePath = NpcAppearancePathDeriver.AsTexturePath(hair?.TexturePath),
             LeftEyeNifPath = NpcAppearancePathDeriver.AsMeshPath(leftEyeModelPath),
@@ -241,6 +251,10 @@ internal sealed class NpcAppearanceFactory
             LeftHandEgtPath = bodyEgtPaths.LeftHandEgt,
             RightHandEgtPath = bodyEgtPaths.RightHandEgt
         };
+        var effectiveEyes = ResolveEffectiveEyesFormId(npc.EyesFormId, race, headModelPath) ?? race?.DefaultEyesFormId;
+        appearance.AssetUses = NpcAssetUseFactory.Build(_index, appearance, pluginName, npc.RaceFormId,
+            npc.HairFormId, effectiveEyes, npc.HeadPartFormIds);
+        return appearance;
     }
 
     internal NpcAppearance BuildFromDmpRecord(
@@ -365,9 +379,9 @@ internal sealed class NpcAppearanceFactory
             race?.MaleFaceGenTexture,
             race?.FemaleFaceGenTexture);
         // In-game, an ESM NPC's face TEXTURE comes from the GECK prebake of the
-        // AUTHORED coefficients (bLoadFaceGenHeadEGTFiles=0 → FaceMods\<id>_0.dds);
+        // AUTHORED coefficients (bLoadFaceGenHeadEGTFiles=0 â†’ FaceMods\<id>_0.dds);
         // the engine never re-bakes ESM NPCs from the live TESNPC arrays, and those
-        // live arrays drift at runtime (per-NPC materialization/reseeding — see
+        // live arrays drift at runtime (per-NPC materialization/reseeding â€” see
         // docs/facegen_head_rendering_pipeline.md "runtime FGTS drift"). Baking from
         // the drifted live values produces face textures the game never displays
         // (displaced nose-corner shading, tinted lips, brow bands). Prefer authored
@@ -425,7 +439,7 @@ internal sealed class NpcAppearanceFactory
         var baseHeadNifPath = NpcAppearancePathDeriver.AsMeshPath(headModelPath);
         var tailNifPath = NpcAppearancePathDeriver.AsMeshPath(tailPath);
 
-        return new NpcAppearance
+        var appearance = new NpcAppearance
         {
             Game = _index.Game,
             NpcFormId = npcRecord.FormId,
@@ -482,6 +496,9 @@ internal sealed class NpcAppearanceFactory
             LeftHandEgtPath = bodyEgtPaths.LeftHandEgt,
             RightHandEgtPath = bodyEgtPaths.RightHandEgt
         };
+        appearance.AssetUses = NpcAssetUseFactory.Build(_index, appearance, pluginName, npcRecord.Race,
+            npcRecord.HairFormId, eyeFormId, headPartIds, runtimeNpc: true);
+        return appearance;
     }
 
     private string ResolveSkeletonNifPath(string? tailNifPath)

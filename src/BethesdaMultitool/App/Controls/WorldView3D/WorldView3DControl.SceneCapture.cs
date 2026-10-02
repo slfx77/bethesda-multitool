@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Numerics;
 using BethesdaMultitool.Core;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
@@ -1689,6 +1690,29 @@ public sealed partial class WorldView3DControl
             ? Path.GetFileName(sourcePath)
             : null;
         fields["loadOrderPaths"] = _data?.AdditionalDataPaths?.ToArray() ?? [];
+        var assetReceipts = (_meshArchives?.Selection.Receipts() ?? [])
+                .Concat(_referenceTextureResolver?.AssetSelection?.Receipts() ?? [])
+                .Concat(_referenceGpuTextureResolver12?.AssetSelection?.Receipts() ?? [])
+                .Concat(_textureResolver12?.AssetReadReceipts ?? []).Distinct().ToArray();
+        fields["assetReadReceiptsJson"] = AssetSelectionJson.Serialize(assetReceipts);
+        fields["assetReceiptScope"] = "scene-session-recent-reads";
+        fields["assetReceiptsTruncated"] = _meshArchives?.Selection.ReceiptsTruncated == true ||
+            _referenceTextureResolver?.AssetSelection?.ReceiptsTruncated == true ||
+            _referenceGpuTextureResolver12?.AssetSelection?.ReceiptsTruncated == true ||
+            _textureResolver12?.AssetReceiptsTruncated == true;
+        var assetRecords = _data?.AssetRecords ?? WorldAssetRecordCatalog.Unavailable("Unavailable");
+        fields["assetRecordView"] = assetRecords.Mode;
+        fields["assetDeclaredModelUsesJson"] = AssetSelectionJson.SerializeUses(assetRecords.DeclaredModelUses(assetReceipts).Bind(assetReceipts));
+        fields["assetDeclaredModelUseScope"] = "selected-base-fields-sharing-recent-requests; placement-and-draw-unestablished";
+        var selectedPath = _selectedReference?.ModelPath;
+        if (string.IsNullOrEmpty(selectedPath) && _selectedReference is { } selectedPlacement)
+            selectedPath = _data?.ModelPathIndex.GetValueOrDefault(selectedPlacement.BaseFormId);
+        fields["assetSelectedPlacementUsesJson"] = AssetSelectionJson.SerializeUses(_selectedReference is { } placement
+            ? assetRecords.PlacementUses(placement, selectedPath).Bind(assetReceipts) : AssetUseGraph.Empty);
+        fields["assetSelectedPlacementUseScope"] = "selected-placement-declarations; recent-request-bindings";
+        fields["assetComponentOwnerStatus"] = "static-model-fields; actor-components-in-world-actor-mesh-events";
+        fields["assetParsedSourceHashStatus"] = "Unavailable";
+        fields["assetEnginePriorityVerified"] = false;
         fields["loadOrderFileNames"] = _data?.AdditionalDataPaths?
             .Select(static path => Path.GetFileName(path)).ToArray() ?? [];
         fields["masterList"] = null;
@@ -2463,6 +2487,8 @@ public sealed partial class WorldView3DControl
         fields["baseImageSpace"] = new Dictionary<string, object?>
         {
             ["source"] = _tonemapBaseImageSpaceSource,
+            ["worldspaceRouteStatus"] = _tonemapBaseImageSpaceSelection.WorldspaceRouteStatus,
+            ["worldspaceRoutePath"] = _tonemapBaseImageSpaceSelection.WorldspaceRoutePath,
             ["formId"] = _tonemapBaseImageSpaceFormId,
             ["formIdHex"] = _tonemapBaseImageSpaceFormId is { } baseImageSpaceId
                 ? $"0x{baseImageSpaceId:X8}"
@@ -2697,6 +2723,11 @@ public sealed partial class WorldView3DControl
             ? $"0x{waterCellFormId:X8}"
             : null;
         fields["waterRecordWorldspaceFormId"] = waterSelection.WorldspaceFormId;
+        fields["waterSupplyingWorldspaceFormId"] = waterSelection.WorldWater?.SourceFormId;
+        fields["waterWorldRouteStatus"] = waterSelection.WorldWater?.Status;
+        fields["waterWorldRoutePath"] = waterSelection.WorldWater?.Path;
+        fields["waterWorldDefaultHeight"] = waterSelection.WorldWater?.Height;
+        fields["waterWorldDeclaredTypeFormId"] = waterSelection.WorldWater?.WaterFormId;
         string? waterRecordUnavailableReason = null;
         if (waterRecord is null)
         {

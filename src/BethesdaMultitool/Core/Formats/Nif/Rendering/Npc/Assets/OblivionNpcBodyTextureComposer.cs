@@ -122,7 +122,7 @@ internal static class OblivionNpcBodyTextureComposer
 
             var key = NpcTextureHelpers.BuildNpcBodyEgtTextureKey(
                 appearance.NpcFormId, label, appearance.RenderVariantLabel);
-            textureResolver.InjectTexture(key, composed);
+            textureResolver.InjectTexture(key, composed, new("FaceGen EGT", [baseTexture, egtPath], true, [new(baseTexture, [.. decodedBase.AssetReadReceipts])]));
             Log.Debug("Body EGT morph applied: NPC 0x{0:X8} {1} -> {2}", appearance.NpcFormId, label, egtPath);
             return key;
         }

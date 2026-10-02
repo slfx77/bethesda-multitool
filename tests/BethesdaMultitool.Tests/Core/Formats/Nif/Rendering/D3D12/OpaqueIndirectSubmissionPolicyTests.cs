@@ -117,7 +117,17 @@ public sealed class OpaqueIndirectSubmissionPolicyTests
             StringComparison.Ordinal);
         Assert.Contains("catch (Exception ex) when (ex is not OutOfMemoryException)", source,
             StringComparison.Ordinal);
-        Assert.Contains("_opaqueIndirectSignature?.Dispose();", source, StringComparison.Ordinal);
+        var dispose = SourceContract.Extract(source, "public void Dispose()", "private void DiscardBatchBuild()");
+        // Packet retirement owns stage zero; the command signature is a later prerequisite.
+        // Disposal transfers to a retained owner so a failed release can be retried.
+        Assert.Matches(
+            @"retired\.Add\(\s*_opaqueIndirectSignature\s*,\s*""[^""]*""\s*,\s*stage:\s*1\s*\);",
+            dispose);
+        SourceContract.AssertOrderIgnoringWhitespace(dispose,
+            "retired.Add(RetireOpaqueSubmissionPacket,",
+            "retired.Add(_opaqueIndirectSignature,",
+            "_retiredResources = retired;",
+            "_retiredResources!.Dispose();");
     }
 
     private static OpaqueIndirectFallbackReason Resolve(

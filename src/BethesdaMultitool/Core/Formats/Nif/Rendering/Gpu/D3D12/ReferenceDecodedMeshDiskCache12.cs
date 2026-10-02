@@ -127,7 +127,9 @@ internal sealed class ReferenceDecodedMeshDiskCache12 : DiskBlobCache
     // v97: ordinary TES4 specular retains strict source eligibility through warm-cache decode.
     // v98: independent, strictly admitted Oblivion actor hair LayerMap path.
     // v99: authored quadratic Vector3 translation tangents survive warm animation decode.
-    internal const int DecoderVersion = 99;
+    // v100: a Starfield .mesh without the optional meshlet + cull tail (6,470 retail files, all of
+    // FaceMeshes) now decodes. Warm v99 entries persisted those shapes as decode failures (empty).
+    internal const int DecoderVersion = 100;
 
     private const int MaxSubmeshes = 16_384;
     private const int MaxVerticesPerSubmesh = 2_000_000;

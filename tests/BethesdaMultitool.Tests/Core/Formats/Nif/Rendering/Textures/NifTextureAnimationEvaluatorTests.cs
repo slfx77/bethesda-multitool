@@ -165,8 +165,9 @@ public sealed class NifTextureAnimationEvaluatorTests
 
     private static (byte[] Data, NifInfo Info) LoadNif(string relativePath)
     {
-        var fullPath = ResolveSamplePath(relativePath);
-        var sourceData = File.ReadAllBytes(fullPath);
+        var fullPath = TryResolveSamplePath(relativePath);
+        Assert.SkipWhen(fullPath is null, $"Sample asset not available: {relativePath}");
+        var sourceData = File.ReadAllBytes(fullPath!);
         var sourceNif = NifParser.Parse(sourceData);
         Assert.NotNull(sourceNif);
 
@@ -184,7 +185,13 @@ public sealed class NifTextureAnimationEvaluatorTests
         return (sourceData, sourceNif);
     }
 
-    private static string ResolveSamplePath(string relativePath)
+    /// <summary>Locates a repo-relative sample, or null when it is not present on this machine.</summary>
+    /// <param name="relativePath">Sample path beneath the repository root.</param>
+    /// <returns>The resolved full path, or null.</returns>
+    /// <remarks>Absence is not a failure. These samples are dev-machine extracts that are not committed,
+    /// so a machine without them must skip with a reason rather than report a defect, matching how the
+    /// retail-install suites treat a missing game.</remarks>
+    private static string? TryResolveSamplePath(string relativePath)
     {
         if (File.Exists(relativePath))
         {
@@ -203,7 +210,7 @@ public sealed class NifTextureAnimationEvaluatorTests
             dir = Path.GetDirectoryName(dir)!;
         }
 
-        throw new FileNotFoundException($"Could not locate sample asset: {relativePath}");
+        return null;
     }
 
     private static bool IsSprayMesh(RenderableSubmesh submesh)

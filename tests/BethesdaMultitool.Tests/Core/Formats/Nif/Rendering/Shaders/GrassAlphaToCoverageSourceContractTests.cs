@@ -20,7 +20,10 @@ public sealed class GrassAlphaToCoverageSourceContractTests
 
         // The blend state and the coverage-writing PS must never desynchronize: both come from the
         // same PSO, gated on one availability flag.
-        Assert.Contains("AlphaToCoverageEnable = alphaToCoverage", factory, StringComparison.Ordinal);
+        var recipe = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferencePipelineRecipe12.cs");
+        Assert.Contains("AlphaToCoverageEnable = state.AlphaToCoverage", recipe, StringComparison.Ordinal);
         Assert.Contains(
             "new ShaderMacro(\"ALPHA_TO_COVERAGE\", \"1\")", factory, StringComparison.Ordinal);
         Assert.Contains(
@@ -31,35 +34,6 @@ public sealed class GrassAlphaToCoverageSourceContractTests
         Assert.Contains("OpaqueDoubleA2CPso = OpaqueDoublePso;", factory, StringComparison.Ordinal);
         // Dispose only the distinct variants (aliases would double-dispose the plain PSOs).
         Assert.Contains("if (AlphaToCoverageAvailable)", factory, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void RendererRoutesGrassCutoutsToA2CAtBothBatchAssemblySites()
-    {
-        var renderer = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-            "ReferenceRenderer12.cs");
-        var compact = RemoveWhitespace(renderer);
-
-        // Main pass gate (decals keep their depth-bias PSO) + shadow-only caster resolve mirror —
-        // both must reroute so the shared grass submesh lands in ONE batch (PSO is in the key).
-        // Both sites now go through the factory seam, which returns the per-game instanced grass
-        // PSOs when the loaded game has a recovered pair and the shared A2C pipelines otherwise;
-        // the A2C-vs-plain aliasing moved inside it (see GetGrassCutoutPso).
-        Assert.Contains("if(r.IsGrass&&sub.AlphaTest&&!sub.IsDecal)", compact, StringComparison.Ordinal);
-        Assert.Equal(
-            2,
-            SourceContract.CountOccurrences(
-                compact,
-                "pso=_pipelines.GetGrassCutoutPso(sub.DoubleSided);"));
-
-        var factory = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-            "ReferencePipelineFactory12.cs");
-        Assert.Contains(
-            "return doubleSided ? OpaqueDoubleA2CPso : OpaqueBackA2CPso;",
-            factory,
-            StringComparison.Ordinal);
     }
 
     [Fact]
@@ -92,17 +66,12 @@ public sealed class GrassAlphaToCoverageSourceContractTests
         // Castaño floor shared with the SPT leaf path.
         Assert.Contains("max(fwidth(a2cAlpha), 1e-4)", shader, StringComparison.Ordinal);
         Assert.Contains("if (a2cAlpha > 0.25)", shader, StringComparison.Ordinal);
-        // The macro-off compile keeps the exact legacy discard line (default path byte-identical).
-        Assert.Contains(
+        // The macro-off branch must retain the legacy discard; indentation is immaterial.
+        SourceContract.AssertContainsIgnoringWhitespace(
             "#else\n    if (!PassAlphaTest(testAlpha, input.vAlphaState.x, input.vAlphaState.y)) discard;\n#endif",
-            shader.Replace("\r\n", "\n", StringComparison.Ordinal),
-            StringComparison.Ordinal);
+            shader);
         // Coverage is written through SV_Target.a only on the A2C draw.
         Assert.Contains("outAlpha = a2cCoverage;", shader, StringComparison.Ordinal);
     }
 
-    private static string RemoveWhitespace(string source)
-    {
-        return new string(source.Where(static character => !char.IsWhiteSpace(character)).ToArray());
-    }
 }

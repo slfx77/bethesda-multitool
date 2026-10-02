@@ -61,6 +61,9 @@ internal readonly record struct ResolvedImageSpaceSelection(
     uint? ContextWorldspaceFormId,
     uint? SourceWorldspaceFormId)
 {
+    internal string? WorldspaceRouteStatus { get; init; }
+    internal IReadOnlyList<uint>? WorldspaceRoutePath { get; init; }
+
     internal string SourceTelemetry => Source switch
     {
         ImageSpaceSelectionSource.CellXcim => "cell-xcim",
@@ -80,8 +83,6 @@ internal static class ImageSpaceSelectionResolver
 {
     internal const uint DefaultImageSpaceInteriorFormId = 0x160;
     internal const uint DefaultImageSpaceExteriorFormId = 0x161;
-
-    private const ushort UseParentImageSpaceFlag = 1 << 5;
 
     /// <summary>
     ///     Maps a world position to an exterior CELL with the same floor rule used by terrain,
@@ -132,7 +133,7 @@ internal static class ImageSpaceSelectionResolver
 
         if (TryResolveWorldspaceImageSpace(
                 contextWorldspace, allWorldspaces,
-                out var worldImageSpaceId, out var sourceWorldspaceId, out var inherited))
+                out var worldImageSpaceId, out var sourceWorldspaceId, out var inherited, out var route))
         {
             return new ResolvedImageSpaceSelection(
                 worldImageSpaceId,
@@ -141,7 +142,7 @@ internal static class ImageSpaceSelectionResolver
                     : ImageSpaceSelectionSource.WorldspaceInam,
                 cellContext,
                 contextWorldspace?.FormId,
-                sourceWorldspaceId);
+                sourceWorldspaceId) { WorldspaceRouteStatus = route.Status, WorldspaceRoutePath = route.Path };
         }
 
         if (useClassicDefault)
@@ -151,7 +152,7 @@ internal static class ImageSpaceSelectionResolver
                 interior ? ImageSpaceSelectionSource.DefaultInterior : ImageSpaceSelectionSource.DefaultExterior,
                 cellContext,
                 contextWorldspace?.FormId,
-                null);
+                null) { WorldspaceRouteStatus = route.Status, WorldspaceRoutePath = route.Path };
         }
 
         return new ResolvedImageSpaceSelection(
@@ -159,7 +160,7 @@ internal static class ImageSpaceSelectionResolver
             ImageSpaceSelectionSource.GameFamilyDefault,
             cellContext,
             contextWorldspace?.FormId,
-            null);
+            null) { WorldspaceRouteStatus = route.Status, WorldspaceRoutePath = route.Path };
     }
 
     private static bool TryResolveWorldspaceImageSpace(
@@ -167,67 +168,13 @@ internal static class ImageSpaceSelectionResolver
         IReadOnlyList<WorldspaceRecord>? allWorldspaces,
         out uint imageSpaceFormId,
         out uint sourceWorldspaceFormId,
-        out bool inherited)
+        out bool inherited, out WorldspaceComponentRoute route)
     {
-        imageSpaceFormId = 0;
-        sourceWorldspaceFormId = 0;
-        inherited = false;
-        if (contextWorldspace is null)
-        {
-            return false;
-        }
-
-        var current = contextWorldspace;
-        var visited = new HashSet<uint>();
-        while (visited.Add(current.FormId))
-        {
-            var usesParentImageSpace = (current.ParentUseFlags.GetValueOrDefault() & UseParentImageSpaceFlag) != 0;
-            if (!usesParentImageSpace)
-            {
-                var resolvedId = current.ImageSpaceFormId.GetValueOrDefault();
-                if (resolvedId == 0)
-                {
-                    return false;
-                }
-
-                imageSpaceFormId = resolvedId;
-                sourceWorldspaceFormId = current.FormId;
-                return true;
-            }
-
-            var parentId = current.ParentWorldspaceFormId.GetValueOrDefault();
-            if (parentId == 0 || FindWorldspace(allWorldspaces, parentId) is not { } parent)
-            {
-                // PNAM says the parent owns this field. Do not silently fall back to a child INAM
-                // when the retained parent is unavailable; the engine's default is the safe result.
-                return false;
-            }
-
-            inherited = true;
-            current = parent;
-        }
-
-        // Malformed parent cycle: fail closed to the family default.
-        return false;
-    }
-
-    private static WorldspaceRecord? FindWorldspace(
-        IReadOnlyList<WorldspaceRecord>? allWorldspaces,
-        uint formId)
-    {
-        if (allWorldspaces is null)
-        {
-            return null;
-        }
-
-        foreach (var worldspace in allWorldspaces)
-        {
-            if (worldspace.FormId == formId)
-            {
-                return worldspace;
-            }
-        }
-
-        return null;
+        route = WorldspaceInheritanceResolver.Resolve(contextWorldspace, allWorldspaces,
+            WorldspaceComponent.ImageSpace);
+        imageSpaceFormId = route.Source?.ImageSpaceFormId.GetValueOrDefault() ?? 0;
+        sourceWorldspaceFormId = imageSpaceFormId != 0 ? route.Source!.FormId : 0;
+        inherited = route.Path.Count > 1;
+        return imageSpaceFormId != 0;
     }
 }

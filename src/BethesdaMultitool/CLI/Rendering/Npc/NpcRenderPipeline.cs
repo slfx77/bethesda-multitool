@@ -9,6 +9,11 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance.Scanning;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
+using BethesdaMultitool.CLI.Shared;
+using BethesdaMultitool.Core.Formats.Esm.Export.Support;
+using BethesdaMultitool.Core.Semantic.LoadOrder;
+using System.Globalization;
+using System.Security.Cryptography;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Rendering.Npc;
@@ -37,15 +42,29 @@ internal static class NpcRenderPipeline
         AnsiConsole.MarkupLine(
             "Loading ESM: [cyan]{0}[/]",
             Path.GetFileName(settings.EsmPath));
-        var esm = EsmFileLoader.Load(settings.EsmPath, false);
-        if (esm == null)
+        NpcAppearanceResolver resolver;
+        if (settings.LoadOrder is { Length: > 0 })
         {
-            AnsiConsole.MarkupLine("[red]Error:[/] Failed to load ESM file");
-            return;
+            if (settings.DmpPath != null)
+                throw new ArgumentException("Explicit load-order appearance and captured DMP appearance are separate views.");
+            var order = PluginLoadOrder.Open(LoadOrderOptions.ResolvePaths(settings.EsmPath, settings.LoadOrder),
+                settings.AllowMissingMasters);
+            resolver = NpcAppearanceResolver.Build(order, LoadOrderRecordIndex.Build(order));
+            WriteAppearanceSources(settings.OutputDir, order, resolver);
+        }
+        else
+        {
+            if (settings.AllowMissingMasters) throw new ArgumentException("--allow-missing-masters requires --load-order.");
+            var esm = EsmFileLoader.Load(settings.EsmPath, false);
+            if (esm == null)
+            {
+                AnsiConsole.MarkupLine("[red]Error:[/] Failed to load ESM file");
+                return;
+            }
+            resolver = NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian);
         }
 
         AnsiConsole.MarkupLine("Scanning NPC_, CREA, and RACE records...");
-        var resolver = NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian);
         AnsiConsole.MarkupLine(
             "Found [green]{0}[/] NPCs, [green]{1}[/] creatures, [green]{2}[/] races",
             resolver.NpcCount,
@@ -160,6 +179,30 @@ internal static class NpcRenderPipeline
             rendered,
             skipped,
             failed);
+    }
+
+    private static void WriteAppearanceSources(string directory, PluginLoadOrder order, NpcAppearanceResolver resolver)
+    {
+        using var writer = new StreamWriter(new FileStream(Path.Combine(directory, "appearance_sources.csv"), FileMode.CreateNew));
+        writer.WriteLine("LoadOrderFormID,Type,Plugin,FileLocalFormID,Offset,Source,SHA256");
+        var hashes = order.Entries.ToDictionary(entry => entry.Path, entry =>
+        {
+            using var file = File.OpenRead(entry.Path);
+            return Convert.ToHexStringLower(SHA256.HashData(file));
+        }, StringComparer.OrdinalIgnoreCase);
+        foreach (var (id, source) in resolver.Sources.OrderBy(pair => pair.Key))
+        {
+            string[] cells = [id.ToString("X8", CultureInfo.InvariantCulture), source.Signature, source.Plugin,
+                source.FileLocalFormId.ToString("X8", CultureInfo.InvariantCulture),
+                source.Offset.ToString(CultureInfo.InvariantCulture), source.FilePath, hashes[source.FilePath]];
+            writer.WriteLine(string.Join(',', cells.Select(Fmt.CsvEscape)));
+        }
+        using var inputs = new StreamWriter(new FileStream(Path.Combine(directory, "appearance_inputs.csv"), FileMode.CreateNew));
+        inputs.WriteLine("State,Plugin,Source,SHA256");
+        foreach (var entry in order.Entries)
+            inputs.WriteLine(string.Join(',', new[] { "Selected", entry.Name, entry.Path, hashes[entry.Path] }.Select(Fmt.CsvEscape)));
+        foreach (var master in order.MissingMasters)
+            inputs.WriteLine(string.Join(',', new[] { "Unavailable", master, "", "" }.Select(Fmt.CsvEscape)));
     }
 
     private static void ConfigureRenderer(NpcRenderSettings settings)

@@ -12,6 +12,7 @@ internal sealed class EquippedItem
     public bool IsPowerArmor { get; init; }
     public EquipmentAttachmentMode AttachmentMode { get; init; }
     public string MeshPath { get; init; } = "";
+    internal List<EquipmentAssetOwner> AssetOwners { get; } = [];
 
     /// <summary>
     ///     True when the equipment set includes a Pip-Boy. Drives the engine's
@@ -24,3 +25,6 @@ internal sealed class EquippedItem
                items.Any(item => (item.BipedFlags & PipBoyBipedFlag) != 0);
     }
 }
+
+internal sealed record EquipmentAssetOwner(uint ArmorFormId, uint? AddonFormId, string Field,
+    uint? InventoryFormId = null, uint? FormListId = null);

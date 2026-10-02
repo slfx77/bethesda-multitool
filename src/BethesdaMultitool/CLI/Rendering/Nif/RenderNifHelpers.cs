@@ -5,6 +5,7 @@ using BethesdaMultitool.Core.Formats.Esm.Analysis.Coverage;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using Spectre.Console;
+using ArchiveEntry = BethesdaMultitool.Core.Formats.Archives.ArchiveEntry;
 
 namespace BethesdaMultitool.CLI.Rendering.Nif;
 
@@ -16,10 +17,10 @@ internal static class RenderNifHelpers
 {
     private static readonly JsonSerializerOptions JsonOptions = RenderIndexJsonContext.Default.Options;
 
-    internal static List<ArchiveReader.ArchiveEntry> CollectNifFiles(
-        IReadOnlyList<ArchiveReader.ArchiveEntry> files, string? filter)
+    internal static List<ArchiveEntry> CollectNifFiles(
+        IReadOnlyList<ArchiveEntry> files, string? filter)
     {
-        var nifFiles = new List<ArchiveReader.ArchiveEntry>();
+        var nifFiles = new List<ArchiveEntry>();
 
         foreach (var file in files)
         {

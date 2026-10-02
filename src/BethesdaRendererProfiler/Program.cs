@@ -19,6 +19,12 @@ public static class Program
     {
         AttachConsole(AttachParentProcess);
 
+        if (args.Length > 0 && args[0] == "--probe-flc-media")
+        {
+            RunFlicMediaProbe(args);
+            return;
+        }
+
         // Headless single-NIF render: renders one NIF through the real viewer D3D12 stack
         // (ReferenceRenderer12) to a PNG and exits, without launching the profiler window. Used to
         // self-verify viewer-specific NIF rendering (material/alpha/effect) bugs offscreen.
@@ -53,6 +59,27 @@ public static class Program
             SynchronizationContext.SetSynchronizationContext(context);
             var app = new FalloutApp();
             _ = app;
+        });
+    }
+
+    /// <summary>Runs the bounded original-FLC diagnostic through the existing application window factory.</summary>
+    /// <param name="args">Exact diagnostic flag, MAGE.CEL path, KING.FLC path and fresh report path.</param>
+    private static void RunFlicMediaProbe(string[] args)
+    {
+        if (args.Length != 4)
+        {
+            Console.Error.WriteLine("Usage: --probe-flc-media <MAGE.CEL> <KING.FLC> <new-report.json>");
+            Environment.ExitCode = 2;
+            return;
+        }
+        ComWrappersSupport.InitializeComWrappers();
+        FalloutApp.LaunchWindowFactory = () => new FlicMediaProbeWindow(args[1], args[2], args[3]);
+        Application.Start(_ =>
+        {
+            SynchronizationContext.SetSynchronizationContext(
+                new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
+            var app = new FalloutApp();
+            GC.KeepAlive(app);
         });
     }
 

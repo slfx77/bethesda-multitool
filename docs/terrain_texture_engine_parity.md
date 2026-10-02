@@ -7,7 +7,7 @@ names, pass IDs, structure offsets, and material-binding control flow that are
 harder to recover from the stripped PC executable.
 
 The most reliable symbol-rich control-flow evidence is from
-`Sample/DebugSymbols/Fallout - New Vegas (X360)/Proto/Fallout_Release_MemDebug`; its `.text` image maps cleanly at
+`Sample/DebugSymbols/Fallout - New Vegas (X360)/2010-8-22 Fallout_Release_MemDebug`; its `.text` image maps cleanly at
 `0x82250000`. The final-build Xbox PDB symbols are useful for names, but a
 simple section-base mapping does not align all functions cleanly, so final-build
 addresses should not be trusted until OMAP/section translation is handled.

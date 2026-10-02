@@ -47,12 +47,13 @@ internal sealed class TerrainTextureResolver12 : IDisposable
         IReadOnlyDictionary<uint, LandscapeTextureRecord> ltexByFormId,
         IReadOnlyDictionary<uint, TextureSetRecord> txstByFormId,
         string[] texturesBsaPaths,
-        BethesdaGame game = BethesdaGame.Unknown)
+        BethesdaGame game = BethesdaGame.Unknown,
+        BethesdaMultitool.Core.Assets.AssetSourcePlan? assetPlan = null)
     {
         _ltexByFormId = ltexByFormId;
         _txstByFormId = txstByFormId;
         _game = game;
-        _textureResolver = new NifGpuTextureResolver(texturesBsaPaths);
+        _textureResolver = assetPlan is null ? new NifGpuTextureResolver(texturesBsaPaths) : new NifGpuTextureResolver(assetPlan);
         _textureCache = new GpuTextureCache12(gpu, recorder, heap, _textureResolver, deletionQueue)
             .RegisterWith(ResourceRegistry.Instance, "terrain");
     }
@@ -120,6 +121,9 @@ internal sealed class TerrainTextureResolver12 : IDisposable
     public int PendingTextureResolves => _textureCache.PendingResolveCount;
 
     public int PendingTextureUploads => _textureCache.PendingUploadCount;
+    internal IReadOnlyList<BethesdaMultitool.Core.Assets.AssetSelectionReceipt> AssetReadReceipts =>
+        _textureResolver.AssetSelection?.Receipts() ?? [];
+    internal bool AssetReceiptsTruncated => _textureResolver.AssetSelection?.ReceiptsTruncated == true;
 
     public void Dispose()
     {

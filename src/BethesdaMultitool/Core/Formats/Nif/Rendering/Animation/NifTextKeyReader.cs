@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Utils;
@@ -220,6 +221,148 @@ internal static class NifTextKeyReader
 
         keys.Sort(static (a, b) => a.Time.CompareTo(b.Time));
         textKeys = keys.ToArray();
+        return true;
+    }
+
+    /// <summary>
+    ///     Reads an NiTextKeyExtraData block losslessly (<see cref="NifTextKeyExtraDataView" />): the name as stored, then
+    ///     every key's Time bits and label (a string-table index, or the inline SizedString's raw bytes) in file order.
+    ///     Only what bounds the read is checked (each field fits the block); exact consumption is reported, not required.
+    ///     <see cref="Read" />, <see cref="ReadFirst" /> and <see cref="TryReadExact" />, the renderer's readers, are unchanged.
+    /// </summary>
+    internal static bool TryReadView(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo block,
+        [NotNullWhen(true)] out NifTextKeyExtraDataView? view)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(nif);
+        ArgumentNullException.ThrowIfNull(block);
+        view = null;
+        if (block.TypeName != "NiTextKeyExtraData" ||
+            block.DataOffset < 0 || block.Size < 0 ||
+            (long)block.DataOffset + block.Size > data.LongLength)
+        {
+            return false;
+        }
+
+        var be = nif.IsBigEndian;
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+        int? legacyNextExtraDataRef = null;
+        uint? legacyRecordSize = null;
+        var nameIndex = -1;
+        var inlineName = ReadOnlyMemory<byte>.Empty;
+        if (NifVersions.IsLegacyNetImmerse(nif.BinaryVersion))
+        {
+            // Legacy NiExtraData head: Next Extra Data ref + Record Size, and no name.
+            if (pos + 8L > end)
+            {
+                return false;
+            }
+
+            legacyNextExtraDataRef = BinaryUtils.ReadInt32(data, pos, be);
+            legacyRecordSize = BinaryUtils.ReadUInt32(data, pos + 4, be);
+            pos += 8;
+        }
+        else if (nif.HasInlineStrings)
+        {
+            if (!TryReadRawSizedString(data, ref pos, end, be, out inlineName))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            if (pos + 4L > end)
+            {
+                return false;
+            }
+
+            nameIndex = BinaryUtils.ReadInt32(data, pos, be);
+            pos += 4;
+        }
+
+        if (pos + 4L > end)
+        {
+            return false;
+        }
+
+        var numKeys = BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;
+
+        // Every key stores at least a Time and a four-byte index or length, which bounds the allocation.
+        if (numKeys > (uint)((end - pos) / 8))
+        {
+            return false;
+        }
+
+        var keys = new NifTextKeyView[numKeys];
+        for (var index = 0; index < keys.Length; index++)
+        {
+            if (pos + 4L > end)
+            {
+                return false;
+            }
+
+            var timeBits = BinaryUtils.ReadUInt32(data, pos, be);
+            pos += 4;
+            if (nif.HasInlineStrings)
+            {
+                if (!TryReadRawSizedString(data, ref pos, end, be, out var label))
+                {
+                    return false;
+                }
+
+                keys[index] = new NifTextKeyView(timeBits, -1, label);
+            }
+            else
+            {
+                if (pos + 4L > end)
+                {
+                    return false;
+                }
+
+                keys[index] = new NifTextKeyView(timeBits, BinaryUtils.ReadInt32(data, pos, be),
+                    ReadOnlyMemory<byte>.Empty);
+                pos += 4;
+            }
+        }
+
+        view = new NifTextKeyExtraDataView(
+            nif.HasInlineStrings,
+            nameIndex,
+            inlineName,
+            legacyNextExtraDataRef,
+            legacyRecordSize,
+            keys,
+            pos == end);
+        return true;
+    }
+
+    private static bool TryReadRawSizedString(
+        byte[] data,
+        ref int pos,
+        int end,
+        bool be,
+        out ReadOnlyMemory<byte> value)
+    {
+        value = ReadOnlyMemory<byte>.Empty;
+        if (pos + 4L > end)
+        {
+            return false;
+        }
+
+        var length = BinaryUtils.ReadUInt32(data, pos, be);
+        pos += 4;
+        if (length > (uint)(end - pos))
+        {
+            return false;
+        }
+
+        value = data.AsMemory(pos, (int)length);
+        pos += (int)length;
         return true;
     }
 

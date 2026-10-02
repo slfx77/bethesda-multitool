@@ -582,6 +582,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     public void Dispose()
     {
+        UnbindAssetSources();
         DetachRenderLoop();
         DisposeRenderResources();
     }
@@ -608,6 +609,7 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
     internal void LoadData(WorldViewData data)
     {
+        UnbindAssetSources();
         var loadSelectionGeneration = BeginSceneSelection();
         // Overrides are inspection previews, not plugin edits. A newly loaded file starts from its
         // authored REFR + XESP state even when it reuses a FormID from the prior scene.
@@ -680,65 +682,8 @@ public sealed partial class WorldView3DControl : UserControl, IDisposable, ITopD
 
         _stressBookmarkApplied = false;
 
-        // Tear down any prior pipelines (a second LoadData = switching ESMs) so the texture
-        // caches don't leak across data sets. Drain GPU first so disposal can't race with
-        // an in-flight frame. ReferenceRenderer borrows the mesh+texture caches so it's
-        // disposed last; TerrainRenderer borrows the resolver so it goes first.
-        _commandRecorder12?.WaitForGpuIdle();
-        DisposeReferencePipeline();
-        _terrain?.Dispose();
-        _terrain = null;
-        _textureResolver12?.Dispose();
-        _textureResolver12 = null;
-        // The sky textures (sun/moon/cloud/star) are bindless indices INTO this resolver's heap region;
-        // recreating the resolver invalidates them, so force a re-resolve even if the climate key is
-        // unchanged, and blank the indices so nothing samples a stale slot until the re-resolve lands.
-        // The MODL-NIF harvest is keyed by mesh path; drop it too so a new game can't reuse a stale one.
-        _skyTexKey = null;
-        _skyNifTextures = null;
-        _skyNifModlKey = null;
-        _sunDiscTexIndex = _sunGlareTexIndex = _moonTexIndex = _moonSecundaTexIndex = uint.MaxValue;
-        Array.Fill(_moonPhaseTexIndices, uint.MaxValue);
-        Array.Fill(_moonSecundaPhaseTexIndices, uint.MaxValue);
-
-        if (_gpu12 is not null)
-        {
-            try
-            {
-                var bsas = DiscoverTextureBsaPaths(_data);
-                if (bsas.Length == 0)
-                {
-                    Log.Warn(
-                        "WorldView3DControl: no *Textures*.bsa from '{0}' or {1} Load Order paths — terrain will render white-tinted.",
-                        Path.GetDirectoryName(_data.SourceFilePath ?? "") ?? "(unknown)",
-                        _data.AdditionalDataPaths.Count);
-                }
-                else
-                {
-                    Log.Info("WorldView3DControl: discovered {0} texture BSA(s) for terrain.", bsas.Length);
-                }
-
-                _textureResolver12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.TerrainTextureResolver12(
-                    _gpu12, _commandRecorder12!, _cbvSrvUavHeap12!, _deletionQueue12!,
-                    _data.LandTexturesByFormId, _data.TextureSetsByFormId, bsas, _data.Game);
-                var terrain12 = new BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12.TerrainRenderer12(
-                    _gpu12, _commandRecorder12!, _ringBuffer12!, _rootSignature12!,
-                    _cbvSrvUavHeap12!, _deletionQueue12!,
-                    _textureResolver12);
-                terrain12.SetDebugModes(_showTerrainTextures, _showVertexColors);
-                terrain12.DetailedProfilingEnabled = _profileLogging;
-                _terrain = terrain12;
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("WorldView3DControl: terrain pipeline init failed: {0}", ex.Message);
-                _terrain = null;
-                _textureResolver12?.Dispose();
-                _textureResolver12 = null;
-            }
-
-            TryInitReferencePipeline();
-        }
+        BindAssetSources(data);
+        RebuildAssetPipelines();
 
         // Mirror WorldMapControl's worldspace picker: one entry per worldspace, plus a final
         // "Unlinked Exterior" entry when DMP-only loads surface cells with no parent worldspace.

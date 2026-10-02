@@ -61,6 +61,20 @@ internal sealed class CameraState
     /// </summary>
     public float FarPlane { get; set; } = 800_000f;
 
+    /// <summary>
+    ///     Frames an exterior target on the Z=0 ground plane from two cells south and eight cells
+    ///     above it. The direction aims at that target; terrain elevation is not sampled here.
+    ///     Projection and clip settings remain unchanged.
+    /// </summary>
+    public void FrameExterior(Vector2 target, float cellWorldSize)
+    {
+        var offset = new Vector3(0f, -2f * cellWorldSize, 8f * cellWorldSize);
+        var direction = -offset;
+        Position = new Vector3(target, 0f) + offset;
+        Yaw = MathF.Atan2(direction.X, direction.Y);
+        Pitch = MathF.Atan2(direction.Z, direction.Y);
+    }
+
     /// <summary>Forward direction (unit), derived from yaw + pitch.</summary>
     public Vector3 Forward
     {

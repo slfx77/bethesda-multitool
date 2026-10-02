@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 
@@ -155,24 +156,8 @@ public static class AtmosphereState
     {
         // Inherit bits (xEdit LTMP 'Inherit' flags): a set bit takes the field from the TEMPLATE.
         const uint inheritAmbient = 1u << 0;
-        const uint inheritDirectional = 1u << 1;
-        const uint inheritFogColor = 1u << 2;
-        const uint inheritFogNear = 1u << 3;
-        const uint inheritFogFar = 1u << 4;
-        const uint inheritRotation = 1u << 5;
-        const uint inheritFade = 1u << 6;
-        const uint inheritFogPower = 1u << 8;
-        const uint inheritFogMax = 1u << 9;
-
-        object? Pick(string key, uint inheritBit)
-        {
-            var fromTemplate = (inheritanceFlags & inheritBit) != 0;
-            var primary = fromTemplate ? templateLighting : cellLighting;
-            var secondary = fromTemplate ? cellLighting : templateLighting;
-            if (primary is not null && primary.TryGetValue(key, out var v) && v is not null) return v;
-            if (secondary is not null && secondary.TryGetValue(key, out var w) && w is not null) return w;
-            return null;
-        }
+        object? Pick(string key) => InteriorLightingFieldResolver.Resolve(
+            key, cellLighting, templateLighting, inheritanceFlags).Value;
 
         static Vector3? AsColor(object? v)
         {
@@ -228,19 +213,17 @@ public static class AtmosphereState
 
         // Neutral defaults for a cell with neither XCLL nor a template (rare): readable gray ambient,
         // soft white top-down directional, fog effectively off.
-        var ambient = AsColor(Pick("AmbientColor", inheritAmbient)) ?? new Vector3(0.33f, 0.33f, 0.33f);
-        var directional = AsColor(Pick("DirectionalColor", inheritDirectional)) ?? new Vector3(0.45f, 0.45f, 0.45f);
-        var fogColor = AsColor(Pick("FogColor", inheritFogColor)) ?? new Vector3(0.05f, 0.05f, 0.05f);
-        var fogFarColor = AsColor(Pick("FogColorFar", inheritFogColor)) ?? fogColor;
-        var fogNear = AsFloat(Pick("FogNear", inheritFogNear)) ?? DefaultFogNear;
-        var fogFar = AsFloat(Pick("FogFar", inheritFogFar)) ?? DefaultFogFar;
-        // Key-name trap: the XCLL schema names it FogPow, the LGTM DATA schema FogPower — check both.
-        var fogPower = AsFloat(Pick("FogPow", inheritFogPower))
-                       ?? AsFloat(Pick("FogPower", inheritFogPower)) ?? 1f;
-        var fade = AsFloat(Pick("DirectionalFade", inheritFade)) ?? 1f;
-        var rotXy = AsFloat(Pick("DirectionalRotationXY", inheritRotation)) ?? 0f;
-        var rotZ = AsFloat(Pick("DirectionalRotationZ", inheritRotation)) ?? 0f;
-        var fogMaxOpacity = AsFloat(Pick("FogMax", inheritFogMax)) ?? 1f;
+        var ambient = AsColor(Pick("AmbientColor")) ?? new Vector3(0.33f, 0.33f, 0.33f);
+        var directional = AsColor(Pick("DirectionalColor")) ?? new Vector3(0.45f, 0.45f, 0.45f);
+        var fogColor = AsColor(Pick("FogColor")) ?? new Vector3(0.05f, 0.05f, 0.05f);
+        var fogFarColor = AsColor(Pick("FogColorFar")) ?? fogColor;
+        var fogNear = AsFloat(Pick("FogNear")) ?? DefaultFogNear;
+        var fogFar = AsFloat(Pick("FogFar")) ?? DefaultFogFar;
+        var fogPower = AsFloat(Pick("FogPower")) ?? 1f;
+        var fade = AsFloat(Pick("DirectionalFade")) ?? 1f;
+        var rotXy = AsFloat(Pick("DirectionalRotationXY")) ?? 0f;
+        var rotZ = AsFloat(Pick("DirectionalRotationZ")) ?? 0f;
+        var fogMaxOpacity = AsFloat(Pick("FogMax")) ?? 1f;
         // Skyrim XCLL carries the six directional ambient faces inline. If ambient is inherited,
         // do not leak the cell's cube over a template's uniform ambient color; a null cube makes
         // the shader use that resolved uniform ambient. (Skyrim LGTM stores its cube separately in

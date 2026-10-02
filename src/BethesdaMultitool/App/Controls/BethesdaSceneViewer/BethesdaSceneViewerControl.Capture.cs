@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using SharpGen.Runtime;
+using Slfx77.Multitool.WinUI.Rendering;
 using Vortice;
 using Vortice.Direct3D12;
 
@@ -16,7 +17,11 @@ public sealed partial class BethesdaSceneViewerControl
     ///     Captures the next native frame exactly after the live tonemap and before Present. The
     ///     returned pixels are tightly packed BGRA8 in top-to-bottom row order. This is the same
     ///     swap-chain image the panel displays; no offscreen renderer or GLB projection participates.
+    ///     Admission is revalidated after surface preparation: a retired or faulted surface retained
+    ///     for cleanup cannot accept capture, and a replacement scene cannot inherit the request.
     /// </summary>
+    /// <param name="cancellationToken">Cancels admission or the pending frame/readback request.</param>
+    /// <returns>The captured frame, or an observed cancellation or unavailable-presentation failure.</returns>
     internal Task<BethesdaSceneViewerFrameCapture> CaptureFrameAsync(
         CancellationToken cancellationToken = default)
     {
@@ -27,11 +32,20 @@ public sealed partial class BethesdaSceneViewerControl
             return Task.FromCanceled<BethesdaSceneViewerFrameCapture>(cancellationToken);
         }
 
+        var viewportSession = Viewport.Session;
+        var scene = _scene;
+        var renderSession = _renderSession;
+        var graphics = viewportSession?.Graphics;
+        var sourceGeneration = _animationKfLoadGeneration;
         if (!_isLoaded ||
             !_isPresentationActive ||
             !IsEffectivelyVisible() ||
             _renderState != BethesdaSceneViewerRenderState.Ready ||
-            _scene is null ||
+            scene is null || renderSession is null || viewportSession is null ||
+            viewportSession.IsRetired || viewportSession.IsOperating ||
+            viewportSession.RetirementPending || viewportSession.CleanupPending ||
+            !viewportSession.IsInitialized || viewportSession.State != NativeViewportRenderState.Ready ||
+            graphics is null ||
             _graphicsLease is null)
         {
             return Task.FromException<BethesdaSceneViewerFrameCapture>(new InvalidOperationException(
@@ -39,10 +53,26 @@ public sealed partial class BethesdaSceneViewerControl
         }
 
         TryEnsureSurface();
-        if (_surface is null)
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromCanceled<BethesdaSceneViewerFrameCapture>(cancellationToken);
+        }
+
+        // Native sizing/retirement can invoke application callbacks. Source replacement advances
+        // this existing generation even if a callback restores the same scene object; ordinary
+        // surface resizing only changes the viewport generation and remains admissible.
+        if (_disposed || !_isLoaded || !_isPresentationActive || !IsEffectivelyVisible() ||
+            _hostFaultMessage is not null || _renderState != BethesdaSceneViewerRenderState.Ready ||
+            !ReferenceEquals(scene, _scene) || sourceGeneration != _animationKfLoadGeneration ||
+            !ReferenceEquals(renderSession, _renderSession) || !ReferenceEquals(viewportSession, Viewport.Session) ||
+            !ReferenceEquals(graphics, viewportSession.Graphics) ||
+            viewportSession.IsRetired || viewportSession.IsOperating ||
+            viewportSession.RetirementPending || viewportSession.CleanupPending ||
+            !viewportSession.IsInitialized || viewportSession.State != NativeViewportRenderState.Ready ||
+            viewportSession.Surface is null || _surface is null)
         {
             return Task.FromException<BethesdaSceneViewerFrameCapture>(new InvalidOperationException(
-                "The native Bethesda viewer does not have a presentation surface to capture."));
+                "The requested native Bethesda scene no longer has a ready presentation surface to capture."));
         }
 
         var request = new BethesdaSceneViewerCaptureRequest12(cancellationToken);

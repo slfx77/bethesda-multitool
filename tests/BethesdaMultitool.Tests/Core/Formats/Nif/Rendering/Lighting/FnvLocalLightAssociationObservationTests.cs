@@ -76,12 +76,11 @@ public sealed class FnvLocalLightAssociationObservationTests
             sourceRoot,
             "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering",
             "Lighting", "FnvLocalLightAssociationObservation.cs"));
-        var consumers = Directory
-            .EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
+        var consumers = SourceContract.ProductionSourcePaths
             .Where(path => Path.GetExtension(path) is ".cs" or ".hlsl")
             .Where(path => !Path.GetFullPath(path).Equals(
                 contractPath, StringComparison.OrdinalIgnoreCase))
-            .Where(path => File.ReadAllText(path).Contains(
+            .Where(path => SourceContract.ReadSourceFile(path).Contains(
                 nameof(FnvLocalLightAssociationObservation),
                 StringComparison.Ordinal))
             .Select(path => Path.GetRelativePath(root, path))

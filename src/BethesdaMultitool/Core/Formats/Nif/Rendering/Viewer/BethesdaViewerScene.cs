@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -183,6 +184,9 @@ internal sealed class BethesdaViewerScene
     ///     resolver and GPU-cache lifetime that it creates from this snapshot.
     /// </summary>
     internal IReadOnlyList<string> TextureSourcePaths { get; }
+    internal AssetSourcePlan? TexturePlan { get; set; }
+    internal IReadOnlyList<AssetSelectionReceipt> AssetReadReceipts { get; set; } = [];
+    internal AssetUseGraph AssetUses { get; set; } = AssetUseGraph.Empty;
 
     internal BethesdaViewerBounds? Bounds { get; set; }
 
@@ -191,6 +195,13 @@ internal sealed class BethesdaViewerScene
     internal List<BethesdaViewerMeshPart> MeshParts { get; } = [];
 
     internal List<BethesdaViewerAnimationClip> AnimationClips { get; } = [];
+
+    /// <summary>
+    ///     Plain-text statements of approximations the source's assembler made, one line each, for a host to
+    ///     show beside the scene rather than drop (a Redguard placeholder drawn from its loose <c>.3DC</c> in
+    ///     keyframe pose, for one). Empty when the assembler states none. No renderer reads them.
+    /// </summary>
+    internal List<string> SourceNotes { get; } = [];
 
     /// <summary>
     ///     Deterministic external-skeleton/KF discovery metadata for a raw NIF. This is a deep

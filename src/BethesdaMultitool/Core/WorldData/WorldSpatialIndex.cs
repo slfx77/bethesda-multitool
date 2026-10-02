@@ -215,8 +215,11 @@ internal sealed class WorldSpatialIndex
             var chunk = index.GetOrCreateChunk(key.gx, key.gy);
             chunk.Cells.Add(new WorldSpatialCell(key, cell, index.CellCenterCanvas(key.gx, key.gy)));
 
-            var waterHeight = WorldRenderCache.ResolveEffectiveWaterHeight(
-                cell, defaultWaterHeight, defaultWaterRequiresCellHasWater);
+            var waterSelection = data.WaterCatalog.Get(cell.WorldspaceFormId);
+            var cellDefaultWaterHeight = cell.WorldspaceFormId.HasValue ? waterSelection.Height : defaultWaterHeight;
+            var cellDefaultRequiresWater = cell.WorldspaceFormId.HasValue
+                ? waterSelection.RequiresCellHasWater : defaultWaterRequiresCellHasWater;
+            var waterHeight = data.WaterCatalog.ResolveHeight(cell, defaultWaterHeight, defaultWaterRequiresCellHasWater);
 
             // Memory dumps: exterior water exists only where TERRAIN exists to occlude it, and a
             // per-cell override must be plausible against that terrain. This is the engine's own
@@ -235,16 +238,16 @@ internal sealed class WorldSpatialIndex
                     waterHeight = null;
                 }
                 else if (cell.WaterHeight is > -1e6f and < 1e6f &&
-                         (!WorldspaceAuthorsCellWater(worldspacesById, cell) ||
+                         (!WorldspaceAuthorsCellWater(worldspacesById, cell, cellDefaultWaterHeight) ||
                           !IsPlausibleDumpCellWaterOverride(cell.WaterHeight.Value, cell.Heightmap)))
                 {
                     // Corrupt per-cell override — fall back to the worldspace default, exactly what
                     // the engine does for a cell without an authored XCLW.
-                    if (defaultWaterRequiresCellHasWater && !cell.HasWater)
+                    if (cellDefaultRequiresWater && !cell.HasWater)
                     {
                         waterHeight = null;
                     }
-                    else if (defaultWaterHeight is { } dflt &&
+                    else if (cellDefaultWaterHeight is { } dflt &&
                              WorldHeightNormalizer.IsReportableHeight(dflt) &&
                              !WorldHeightNormalizer.IsNoWaterSentinel(dflt))
                     {
@@ -369,11 +372,11 @@ internal sealed class WorldSpatialIndex
     ///     happens to land near ground level, where terrain plausibility alone cannot reject it.
     /// </summary>
     private static bool WorldspaceAuthorsCellWater(
-        Dictionary<uint, WorldspaceRecord> worldspacesById, CellRecord cell)
+        Dictionary<uint, WorldspaceRecord> worldspacesById, CellRecord cell, float? selectedWaterHeight)
     {
         if (cell.WorldspaceFormId is not { } wsId ||
             !worldspacesById.TryGetValue(wsId, out var ws) ||
-            ws.DefaultWaterHeight is not { } water ||
+            selectedWaterHeight is not { } water ||
             WorldHeightNormalizer.IsNoWaterSentinel(water) ||
             ws.DefaultLandHeight is not { } land)
         {

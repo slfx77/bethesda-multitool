@@ -38,11 +38,12 @@ public sealed class GpuGeometryArenaReclamationSourceContractTests
         // One direct allocator call, owned by the helper: normal Free and both upload rollback paths
         // must not grow independent signaling rules that drift apart.
         Assert.Equal(1, CountOccurrences(source, "_allocator.Free("));
-        Assert.Equal(2, CountOccurrences(source, "FreeAllocation(allocation);"));
+        Assert.Equal(2, CountOccurrences(source,
+            "new GpuGeometryUploadRetirement12(allocation => FreeAllocation(allocation), CompleteCopy)"));
         Assert.Equal(1, CountOccurrences(source, "FreeAllocation(allocation.Allocation);"));
         SourceContract.AssertOrder(
             source,
-            "private void FreeAllocation(in ArenaAllocation allocation)",
+            "private void FreeAllocation(in ByteArenaAllocation allocation)",
             "_allocator.Free(allocation);",
             "AdvanceReclamationGeneration();");
     }
@@ -52,7 +53,7 @@ public sealed class GpuGeometryArenaReclamationSourceContractTests
     {
         var source = ArenaSource();
 
-        // GeometryArenaAllocator strict validation throws from _allocator.Free. Because generation
+        // ByteArenaAllocator exact ownership validation throws from _allocator.Free. Because generation
         // follows that call, a rejected double/stale free never reaches the advance.
         SourceContract.AssertOrder(
             source,
@@ -62,7 +63,7 @@ public sealed class GpuGeometryArenaReclamationSourceContractTests
             "FreeAllocation(allocation.Allocation);");
         SourceContract.AssertOrder(
             source,
-            "private void FreeAllocation(in ArenaAllocation allocation)",
+            "private void FreeAllocation(in ByteArenaAllocation allocation)",
             "_allocator.Free(allocation);",
             "AdvanceReclamationGeneration();");
     }
@@ -80,7 +81,13 @@ public sealed class GpuGeometryArenaReclamationSourceContractTests
             "_pendingBlockCopies[blockIndex]--;",
             "PendingCopyCount--;",
             "AdvanceReclamationGeneration();");
-        Assert.Contains("arena.CompleteCopy(blockIndex);", source, StringComparison.Ordinal);
+        var retirement = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
+            "GpuGeometryUploadRetirement12.cs");
+        SourceContract.AssertOrder(retirement, "if (!_copyPending) return;",
+            "_completeCopy(_allocation.BlockIndex);", "_copyPending = false;");
+        SourceContract.AssertOrder(source, "deletionQueue.EnqueueDispose(rollback);",
+            "MarkCopyPending(allocation.BlockIndex);", "rollback.OwnCopyHold();", "cmd.CopyBufferRegion(");
     }
 
     private static int CountOccurrences(string source, string value)

@@ -201,7 +201,8 @@ public sealed class StarfieldMaterialOrmPolicyTests
         string shaderRoute = "Deferred",
         string shaderModel = "BaseMaterial",
         StarfieldEffectSettingsFixture? effectSettings = null,
-        StarfieldEffectOpacityFixture? effectOpacity = null)
+        StarfieldEffectOpacityFixture? effectOpacity = null,
+        string? baseColorTexturePath = null)
     {
         var classNames = new[]
         {
@@ -397,6 +398,10 @@ public sealed class StarfieldMaterialOrmPolicyTests
             StringValue(textureSetId, "BSMaterial::MRTextureFile",
                 @"Data\Textures\Test\surface_ao.dds", 5)
         };
+        if (baseColorTexturePath is not null)
+        {
+            components.Add(StringValue(textureSetId, "BSMaterial::MRTextureFile", baseColorTexturePath, 0));
+        }
         if (clearCase == "layer")
         {
             components.Add(Id(clearBaseObjectId, 0, "BSMaterial::LayerID", layerId));

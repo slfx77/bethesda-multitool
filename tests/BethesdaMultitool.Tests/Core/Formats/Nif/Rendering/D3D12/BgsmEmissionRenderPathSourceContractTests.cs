@@ -11,6 +11,7 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.D3D12;
 /// </summary>
 public sealed class BgsmEmissionRenderPathSourceContractTests
 {
+    /// <summary>Pins the dedicated glow binding to the same retained acquisition owner used by rollback and resident retirement.</summary>
     [Fact]
     public void CacheAcquiresTracksAndReleasesTheDedicatedGlowTexture()
     {
@@ -27,12 +28,17 @@ public sealed class BgsmEmissionRenderPathSourceContractTests
 
         SourceContract.AssertOrder(
             cache,
+            "var resources = residencyResources ?? GpuMeshResources12.Begin(deletionQueue, geometryArena.Free, textureCache.Release);",
             "var bgsmGlowMap = hasBgsmEmission",
-            "Acquire(textureCache.GetOrUpload(sub.BgsmGlowMapTexturePath!))",
+            "resources.AcquireTexture(() => ResolveTexture(sub.BgsmGlowMapTexturePath!))",
             "BgsmGlowMap = bgsmGlowMap",
-            "BgsmEmissionColor = hasBgsmEmission ? sub.BgsmEmissionColor : Vector3.Zero");
-        Assert.Contains("textureCache.Release(submesh.BgsmGlowMap);", cache, StringComparison.Ordinal);
-        Assert.Contains("_textureCache.Release(bgsmGlowMap);", owner, StringComparison.Ordinal);
+            "BgsmEmissionColor = hasBgsmEmission ? sub.BgsmEmissionColor : Vector3.Zero",
+            "var cached = new CachedNifMesh12(",
+            "resources, deletionQueue,",
+            "resources.Commit();");
+        Assert.Contains("_resources = resources;", owner, StringComparison.Ordinal);
+        SourceContract.AssertOrder(owner, "public void Dispose()", "_deletionQueue.EnqueueDispose(_resources);",
+            "_retirementQueued = true;");
     }
 
     [Fact]

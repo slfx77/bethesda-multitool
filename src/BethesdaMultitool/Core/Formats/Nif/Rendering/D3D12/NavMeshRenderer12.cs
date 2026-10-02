@@ -135,8 +135,17 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
         _ldrEdgePso = CreatePso(vsBytecode, psBytecode, inputElements, depth, blend, D12.FillMode.Wireframe, ldr: true);
     }
 
+    /// <summary>Creates a navmesh fill or edge pipeline for the selected scene or LDR target.</summary>
+    /// <param name="vs">Read-only vertex bytecode borrowed during creation.</param>
+    /// <param name="ps">Read-only pixel bytecode borrowed during creation.</param>
+    /// <param name="inputElements">Vertex input layout matching the supplied shaders.</param>
+    /// <param name="depth">Depth and stencil policy.</param>
+    /// <param name="blend">Target blending policy.</param>
+    /// <param name="fillMode">Solid fill or wireframe edges.</param>
+    /// <param name="ldr">Whether to target the single-sample LDR overlay instead of the scene target.</param>
+    /// <returns>An owned native pipeline with the selected target and rasterization state.</returns>
     private ID3D12PipelineState CreatePso(
-        byte[] vs, byte[] ps, InputElementDescription[] inputElements,
+        ReadOnlyMemory<byte> vs, ReadOnlyMemory<byte> ps, InputElementDescription[] inputElements,
         D12.DepthStencilDescription depth, D12.BlendDescription blend, D12.FillMode fillMode, bool ldr)
     {
         var msaa = !ldr && _gpu.SceneSampleCount > 1;
@@ -444,14 +453,12 @@ internal sealed class NavMeshRenderer12 : Abstractions.INavMeshRenderer
     private static double ElapsedMilliseconds(long started) =>
         started == 0 ? 0 : Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
-    /// <summary>
-    ///     Forwards to the one shared compiler. The private copy this replaces used the short
-    ///     <c>Compiler.Compile</c> overload and so passed NO shader flags at all — harmless for
-    ///     cellgrid.*, which declares no unbounded array, but one more variant of a decision that is
-    ///     now made once in <see cref="GpuShaderCompiler12" />. It also means cellgrid.* is compiled
-    ///     once per process now rather than three times (here, SelectionHighlight, CellGridDebug).
-    /// </summary>
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
+    /// <summary>Gets an embedded shader permutation through the application cache and Shared compiler.</summary>
+    /// <param name="name">Embedded shader file name.</param>
+    /// <param name="entryPoint">HLSL entry point.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <returns>Read-only cached DXBC passed directly to native pipeline creation without a payload copy.</returns>
+    private static ReadOnlyMemory<byte> CompileEmbeddedShader(string name, string entryPoint, string profile) =>
         GpuShaderCompiler12.Compile(name, entryPoint, profile);
 
     [StructLayout(LayoutKind.Sequential)]

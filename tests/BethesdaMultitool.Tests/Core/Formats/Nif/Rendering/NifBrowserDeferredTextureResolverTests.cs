@@ -1,6 +1,7 @@
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Tests.Core.Formats.Bsa;
+using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering;
@@ -10,25 +11,22 @@ public sealed class NifBrowserDeferredTextureResolverTests
     [Fact]
     public void CreateAndListDirectory_DoesNotOpenExplicitTextureArchive()
     {
-        var tempRoot = Directory.CreateTempSubdirectory("nifbrowser_deferred_directory_").FullName;
-        try
-        {
-            File.WriteAllBytes(Path.Combine(tempRoot, "visible.nif"), [1, 2, 3]);
-            var missingTextureArchive = Path.Combine(tempRoot, "not-opened-textures.ba2");
+        using var directory = CliExeRunner.CreateTempDirectory();
+        // Discovery inspects the selected directory and its parent. Keep both inside this fixture
+        // so archives created/deleted by other tests under the system temp directory are invisible.
+        var tempRoot = Path.Combine(directory.Path, "nifs");
+        Directory.CreateDirectory(tempRoot);
+        File.WriteAllBytes(Path.Combine(tempRoot, "visible.nif"), [1, 2, 3]);
+        var missingTextureArchive = Path.Combine(tempRoot, "not-opened-textures.ba2");
 
-            using var service = NifBrowserService.CreateFromDirectory(
-                tempRoot,
-                [missingTextureArchive]);
+        using var service = NifBrowserService.CreateFromDirectory(
+            tempRoot,
+            [missingTextureArchive]);
 
-            Assert.Equal(missingTextureArchive, Assert.Single(service.TexturePaths));
-            var entry = Assert.Single(service.ListNifFiles(cancellationToken: TestContext.Current.CancellationToken));
-            Assert.Equal("visible.nif", entry.DisplayName);
-            Assert.False(entry.IsDirectory);
-        }
-        finally
-        {
-            Directory.Delete(tempRoot, true);
-        }
+        Assert.Equal(missingTextureArchive, Assert.Single(service.TexturePaths));
+        var entry = Assert.Single(service.ListNifFiles(cancellationToken: TestContext.Current.CancellationToken));
+        Assert.Equal("visible.nif", entry.DisplayName);
+        Assert.False(entry.IsDirectory);
     }
 
     [Fact]

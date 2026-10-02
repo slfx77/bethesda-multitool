@@ -11,6 +11,26 @@ namespace BethesdaMultitool.Core.WorldData;
 internal static class WorldMapViewportMath
 {
     /// <summary>
+    ///     Uses the measured canvas, including canvases smaller than the initial-layout fallback.
+    ///     Focus is applied before a collapsed map becomes visible, so retain its last complete size.
+    /// </summary>
+    internal static Vector2 ResolveCanvasSize(float width, float height, Vector2 lastSize)
+    {
+        var measured = new Vector2(width, height);
+        if (IsUsableCanvasSize(measured)) return measured;
+        return IsUsableCanvasSize(lastSize) ? lastSize : new Vector2(800f, 600f);
+    }
+
+    internal static bool IsUsableCanvasSize(Vector2 size) =>
+        float.IsFinite(size.X) && float.IsFinite(size.Y) && size.X >= 1f && size.Y >= 1f;
+
+    internal static Vector2 GetCenterWorld(Vector2 canvasSize, float zoom, Vector2 panOffset) =>
+        (canvasSize * 0.5f - panOffset) / zoom;
+
+    internal static Vector2 CenterOnWorld(Vector2 canvasSize, float zoom, Vector2 worldPoint) =>
+        canvasSize * 0.5f - worldPoint * zoom;
+
+    /// <summary>
     ///     Structural terrain test — cheap (no LAND decode), unlike
     ///     <c>DecodedTerrainCell.HasTerrain</c>, which the heightmap builder uses per cell. Both answer
     ///     the same question; this one is the form a whole-worldspace bounds pass can afford.

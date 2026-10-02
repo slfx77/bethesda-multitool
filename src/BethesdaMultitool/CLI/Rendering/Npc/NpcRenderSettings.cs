@@ -7,6 +7,8 @@ internal sealed class NpcRenderSettings
     public required string MeshesBsaPath { get; init; }
     public string[]? ExtraMeshesBsaPaths { get; init; }
     public required string EsmPath { get; init; }
+    public string[]? LoadOrder { get; init; }
+    public bool AllowMissingMasters { get; init; }
     public string[]? ExplicitTexturesBsaPaths { get; init; }
     public required string OutputDir { get; init; }
     public string[]? NpcFilters { get; init; }

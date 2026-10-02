@@ -55,12 +55,16 @@ public sealed class SkyrimWaterOpaqueSnapshotSourceContractTests
         Assert.DoesNotContain("return float4(foggedSurface, alpha)", skyrim, StringComparison.Ordinal);
     }
 
+    /// <summary>Retains opaque snapshot blending in the factory and one-shot eligibility in the renderer.</summary>
     [Fact]
     public void RendererUsesBlendDisabledDepthPsoOnlyWithAValidOneShotSnapshot()
     {
         var renderer = ReadRenderer();
+        var factory = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "WaterPipelineFactory12.cs");
         var constructor = SourceContract.Extract(
-            renderer,
+            factory,
             "var skyrimOpaqueSnapshotBlend = new D12.BlendDescription",
             "var fallout76OpticsBlend = new D12.BlendDescription");
         Assert.Contains("BlendEnable = false", constructor, StringComparison.Ordinal);
@@ -68,13 +72,15 @@ public sealed class SkyrimWaterOpaqueSnapshotSourceContractTests
         Assert.Contains("DestinationBlend = D12.Blend.Zero", constructor, StringComparison.Ordinal);
 
         SourceContract.AssertOrder(
-            renderer,
+            factory,
             "var psSkyrimOpaqueSnapshotBytecode = CompileEmbeddedShader(",
             "new ShaderMacro(\"SKYRIM_OPAQUE_REFRACTION\", \"1\")",
             "new ShaderMacro(\"WATER_HARDWARE_OCCLUSION\", \"1\")",
             "skyrimOpaqueSnapshotPsoDesc.BlendState = skyrimOpaqueSnapshotBlend;",
-            "_psoSkyrimOpaqueSnapshotDepthSample = TrackConstructionResource(");
-        Assert.Contains("_psoSkyrimOpaqueSnapshotDepthSample.Dispose();", renderer,
+            "var skyrimOpaqueSnapshotDepthSample = pipelineResources.CreateGraphics(12, skyrimOpaqueSnapshotPsoDesc);");
+        Assert.Contains("_psoSkyrimOpaqueSnapshotDepthSample = pipelines.SkyrimOpaqueSnapshotDepthSample;",
+            renderer, StringComparison.Ordinal);
+        Assert.DoesNotContain("_psoSkyrimOpaqueSnapshotDepthSample.Dispose();", renderer,
             StringComparison.Ordinal);
 
         var render = SourceContract.Extract(

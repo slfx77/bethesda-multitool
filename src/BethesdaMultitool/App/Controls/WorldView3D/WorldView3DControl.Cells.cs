@@ -130,7 +130,8 @@ public sealed partial class WorldView3DControl
             worldspace: activeWorldspace,
             watersByFormId: _data.WatersByFormId,
             game: _data.Game,
-            isInterior: false);
+            isInterior: false,
+            worldWaterCatalog: _data.WaterCatalog);
         var appearance = WaterAppearance.FromWaterRecord(initialWaterSelection.Water);
         var starfieldApproximation = _data.Game == BethesdaGame.Starfield
             ? StarfieldWaterApproximation.FromWaterRecord(initialWaterSelection.Water)
@@ -162,7 +163,7 @@ public sealed partial class WorldView3DControl
         _water?.SetStarfieldApproximation(starfieldApproximation);
         _water?.SetFnvWater001WaterTypeContext(
             initialWaterSelection.WaterFormId,
-            activeWorldspace?.WaterFormId);
+            initialWaterSelection.WorldWater?.WaterFormId);
         _waterAppearanceSelection = initialWaterSelection;
         _boundWaterAppearanceFormId = initialWaterSelection.WaterFormId;
         _hasBoundWaterAppearance = true;
@@ -357,7 +358,8 @@ public sealed partial class WorldView3DControl
             worldspace,
             _data.WatersByFormId,
             _data.Game,
-            isInterior: _selectedInterior is not null);
+            isInterior: _selectedInterior is not null,
+            worldWaterCatalog: _data.WaterCatalog);
         _waterAppearanceSelection = selection;
 
         if (!force && _hasBoundWaterAppearance &&
@@ -380,7 +382,7 @@ public sealed partial class WorldView3DControl
             ResolveWaterNormalIndices(appearance, starfieldApproximation));
         _water.SetOblivionDetailTexture(ResolveWatrDetailTextureIndex(selection.Water));
         _water.SetStarfieldApproximation(starfieldApproximation);
-        _water.SetFnvWater001WaterTypeContext(selection.WaterFormId, worldspace?.WaterFormId);
+        _water.SetFnvWater001WaterTypeContext(selection.WaterFormId, selection.WorldWater?.WaterFormId);
         _boundWaterAppearanceFormId = selection.WaterFormId;
         _hasBoundWaterAppearance = true;
         Log.Info(
@@ -488,6 +490,8 @@ public sealed partial class WorldView3DControl
     {
         HideInteriorBrowser();
         NavigateToCell(cell);
+        SelectObject(null);
+        InspectCell?.Invoke(this, cell);
         HideStatus();
     }
 
@@ -517,7 +521,8 @@ public sealed partial class WorldView3DControl
             worldspace: null,
             watersByFormId: _data.WatersByFormId,
             game: _data.Game,
-            isInterior: true);
+            isInterior: true,
+            worldWaterCatalog: _data.WaterCatalog);
         var appearance = WaterAppearance.FromWaterRecord(waterSelection.Water);
         BindLegacyAnimatedWaterFrames(appearance);
         var starfieldApproximation = _data.Game == BethesdaGame.Starfield
@@ -598,8 +603,9 @@ public sealed partial class WorldView3DControl
         if (index < data.Worldspaces.Count)
         {
             var ws = data.Worldspaces[index];
-            return (ws.Cells.Where(c => c.GridX is int && c.GridY is int), ws.DefaultWaterHeight,
-                ws.WaterFromParentWorldspace);
+            var water = data.WaterCatalog.Get(ws.FormId);
+            return (ws.Cells.Where(c => c.GridX is int && c.GridY is int), water.Height,
+                water.RequiresCellHasWater);
         }
 
         // Tail entry: unlinked exterior cells. No worldspace → no DefaultWaterHeight fallback.

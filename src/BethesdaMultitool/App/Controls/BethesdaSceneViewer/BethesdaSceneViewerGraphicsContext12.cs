@@ -1,3 +1,4 @@
+using Slfx77.Multitool.Core.Lifetime;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
@@ -30,8 +31,7 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
     private readonly Dictionary<BethesdaGame, ReferencePipelineFactory12> _referencePipelines = [];
     private bool _deviceTerminal;
     private bool _disposed;
-    private bool _gpuDisposed;
-    private bool _recorderDisposed;
+    private RetiredResourceDisposal? _retiredResources;
 
     private BethesdaSceneViewerGraphicsContext12(
         GpuDevice12 gpu,
@@ -63,6 +63,9 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
     internal GpuDeletionQueue12 DeletionQueue { get; }
 
     internal bool IsSoftwareAdapter => Gpu.IsSoftwareAdapter;
+
+    /// <summary>True only after device termination has completed and live GPU resources may be retired.</summary>
+    internal bool IsDeviceTerminal => _deviceTerminal;
 
     /// <summary>
     ///     Acquires the process-wide native-viewer graphics stack. Creation and every heap mutation
@@ -209,97 +212,53 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
         _disposed = true;
-
-        if (!_deviceTerminal)
+        if (_retiredResources is null)
         {
-            try
+            if (!_deviceTerminal)
             {
-                lock (_frameGate)
+                try
                 {
-                    Recorder.WaitForGpuIdle();
+                    lock (_frameGate) { Recorder.WaitForGpuIdle(); }
+                }
+                catch (Exception exception)
+                {
+                    Log.Warn("BethesdaSceneViewer: GPU idle wait during shared teardown failed: {0}", exception.Message);
+                    lock (_frameGate) { TerminalizeDeviceAfterUnfencedSubmissionCore("shared-context-teardown"); }
+                    if (!_deviceTerminal) { throw; }
                 }
             }
-            catch (Exception ex)
+            // No collection is published until the queue is drained or the device is terminal.
+            _retiredResources = new RetiredResourceDisposal(
+                (name, exception) => Log.Warn("BethesdaSceneViewer: {0} teardown failed: {1}", name, exception.Message));
+            foreach (var (game, pipelines) in _referencePipelines)
             {
-                Log.Warn("BethesdaSceneViewer: GPU idle wait during shared teardown failed: {0}", ex.Message);
-                lock (_frameGate)
-                {
-                    TerminalizeDeviceAfterUnfencedSubmissionCore("shared-context-teardown");
-                }
+                _retiredResources.Add(pipelines, $"{game} reference pipelines", 1);
             }
+            _referencePipelines.Clear();
+            // Recorder-held retirements may return descriptors or enqueue deletion work.
+            // Keep those allocators/queues alive until the recorder has drained every child.
+            _retiredResources.Add(() => Recorder.DisposeAfterGpuIdleAttempt(), "command recorder");
+            _retiredResources.Add(DeletionQueue, "deletion queue", 1);
+            _retiredResources.Add(RootSignature, "root signature", 2);
+            _retiredResources.Add(DescriptorHeap, "descriptor heap", 2);
+            _retiredResources.Add(RingBuffer, "ring buffer", 2);
+            _retiredResources.Add(Gpu, "D3D12 device", 3);
         }
-
-        // The idle attempt above is deliberately the only queue signal in shared teardown. A device-
-        // loss failure must not make Recorder.Dispose signal the same dead queue again, nor may one
-        // failing COM release prevent the remaining ownership graph from being dismantled.
-        foreach (var (game, pipelines) in _referencePipelines)
-        {
-            DisposeOwnedNoThrow(pipelines, $"{game} reference pipelines");
-        }
-
-        _referencePipelines.Clear();
-        DisposeOwnedNoThrow(DeletionQueue, "deletion queue");
-        DisposeOwnedNoThrow(RootSignature, "root signature");
-        DisposeOwnedNoThrow(DescriptorHeap, "descriptor heap");
-        DisposeOwnedNoThrow(RingBuffer, "ring buffer");
-        if (!_recorderDisposed)
-        {
-            try
-            {
-                Recorder.DisposeAfterGpuIdleAttempt();
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("BethesdaSceneViewer: command recorder teardown failed: {0}", ex.Message);
-            }
-
-            _recorderDisposed = true;
-        }
-
-        if (!_gpuDisposed)
-        {
-            DisposeOwnedNoThrow(Gpu, "D3D12 device");
-            _gpuDisposed = true;
-        }
+        _retiredResources.Dispose();
     }
 
+    /// <summary>Records actual device removal without releasing borrowed renderer or surface prerequisites.</summary>
+    /// <param name="context">Diagnostic origin of the failed queue handshake.</param>
     private void TerminalizeDeviceAfterUnfencedSubmissionCore(string context)
     {
-        if (_deviceTerminal)
-        {
-            return;
-        }
-
+        if (_deviceTerminal) { return; }
+        // Releasing COM wrappers does not prove that queued GPU work has stopped.
         if (!Gpu.TryForceDeviceRemoval(context))
         {
-            // WinUI's supported Windows baseline exposes ID3D12Device5. Retain a conservative
-            // fallback for an unexpected projection/runtime mismatch: release queue/device before
-            // any recorder-held or persistent frame resource is allowed to tear down.
-            Log.Warn(
-                "BethesdaSceneViewer: explicit D3D12 device removal was unavailable during {0}; " +
-                "falling back to terminal queue/device release.",
-                context);
+            throw new InvalidOperationException("D3D12 retirement is uncertain; the native ownership graph remains retained.");
         }
-
-        Gpu.Dispose();
-        _gpuDisposed = true;
         _deviceTerminal = true;
-        Recorder.DisposeAfterGpuIdleAttempt();
-        _recorderDisposed = true;
-    }
-
-    private static void DisposeOwnedNoThrow(IDisposable resource, string resourceName)
-    {
-        try
-        {
-            resource.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Log.Warn("BethesdaSceneViewer: {0} teardown failed: {1}", resourceName, ex.Message);
-        }
     }
 
     private static BethesdaSceneViewerGraphicsContext12 Create()
@@ -354,36 +313,34 @@ internal sealed class BethesdaSceneViewerGraphicsContext12 : IDisposable
         BethesdaSceneViewerGraphicsContext12 context) : IDisposable
     {
         private BethesdaSceneViewerGraphicsContext12? _context = context;
+        private BethesdaSceneViewerGraphicsContext12? _pendingDisposal;
 
         internal BethesdaSceneViewerGraphicsContext12 Context =>
             _context ?? throw new ObjectDisposedException(nameof(BethesdaSceneViewerGraphicsLease12));
 
-        public void Dispose()
+        /// <summary>Transfers the last counted lease into a retired context exactly once.</summary>
+        /// <param name="released">Context whose lease ownership was cleared by its caller under SharedGate.</param>
+        /// <returns>The last context to dispose, or null while another lease remains.</returns>
+        private static BethesdaSceneViewerGraphicsContext12? ReleaseSharedLease(BethesdaSceneViewerGraphicsContext12? released)
         {
-            var released = Interlocked.Exchange(ref _context, null);
-            if (released is not null)
-            {
-                ReleaseSharedLease(released);
-            }
+            if (released is null || !ReferenceEquals(_shared, released) || _sharedLeaseCount <= 0) { return null; }
+            _sharedLeaseCount--;
+            if (_sharedLeaseCount != 0) { return null; }
+            _shared = null;
+            return released;
         }
 
-        private static void ReleaseSharedLease(BethesdaSceneViewerGraphicsContext12 context)
+        public void Dispose()
         {
             lock (SharedGate)
             {
-                if (!ReferenceEquals(_shared, context) || _sharedLeaseCount <= 0)
-                {
-                    return;
-                }
-
-                _sharedLeaseCount--;
-                if (_sharedLeaseCount != 0)
-                {
-                    return;
-                }
-
-                _shared = null;
-                context.Dispose();
+                var released = _context;
+                _context = null;
+                _pendingDisposal ??= ReleaseSharedLease(released);
+                // The count changes only once. A failed final context release remains owned here
+                // and retries independently of any newly acquired device/context.
+                _pendingDisposal?.Dispose();
+                _pendingDisposal = null;
             }
         }
     }

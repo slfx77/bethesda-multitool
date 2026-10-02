@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Composition;
@@ -40,6 +41,9 @@ internal sealed class NpcHeadCompositionPlan
     public string? FaceGenNifPath { get; init; }
 
     public float[]? HeadPreSkinMorphDeltas { get; init; }
+
+    /// <summary>Optional geometry-routing proof; the coefficient basis and arithmetic remain on the existing legacy path.</summary>
+    public NifPreSkinMorphTarget? HeadPreSkinMorphTarget { get; init; }
 
     public string? EffectiveHeadTexturePath { get; init; }
 

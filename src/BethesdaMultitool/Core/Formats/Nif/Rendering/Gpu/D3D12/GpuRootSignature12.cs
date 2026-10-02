@@ -1,3 +1,4 @@
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -63,25 +64,49 @@ internal sealed class GpuRootSignature12 : IDisposable
     /// </summary>
     public const int TerrainCellGridConstantCount = 4;
 
-    private bool _disposed;
+    private readonly ID3D12Device _device;
+    private readonly ShaderPipelineResources _resources;
 
-    private GpuRootSignature12(ID3D12RootSignature root)
+    /// <summary>Retains the initialized shared signature owner and its borrowed device.</summary>
+    /// <param name="device">Device whose lifetime encloses this signature and every dependent family.</param>
+    /// <param name="resources">Initialized root-only owner transferred from the factory.</param>
+    private GpuRootSignature12(ID3D12Device device, ShaderPipelineResources resources)
     {
-        RootSignature = root;
+        _device = device;
+        _resources = resources;
     }
 
     /// <summary>
     ///     The underlying D3D12 root signature. Bind via
     ///     <c>commandList.SetGraphicsRootSignature(rs.RootSignature)</c> at frame start.
     /// </summary>
-    public ID3D12RootSignature RootSignature { get; }
+    public ID3D12RootSignature RootSignature => _resources.RootSignature;
 
+    /// <summary>Releases the caller-retired root after dependent pipeline families have released their ownership.</summary>
+    /// <exception cref="InvalidOperationException">Called outside the creating thread.</exception>
+    /// <exception cref="AggregateException">Dependents remain or release failed; retain this owner and retry.</exception>
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        RootSignature.Dispose();
+        _resources.Dispose();
     }
+
+    /// <summary>Creates an independent pipeline owner that retains this exact world root until its pipelines are released.</summary>
+    /// <param name="capacity">Explicit maximum graphics and compute pipeline count for the dependent family.</param>
+    /// <returns>The caller-owned family, ready for native creation on the current rendering thread.</returns>
+    /// <remarks>Retain the returned owner before creating pipelines; dispose it after GPU retirement and before this root.</remarks>
+    internal ShaderPipelineResources CreatePipelineResources(int capacity)
+    {
+        var family = new ShaderPipelineResources(_device, capacity);
+        family.InitializeSharedRoot(_resources);
+        return family;
+    }
+
+    /// <summary>Creates an empty keyed cache whose future entries independently retain this world root.</summary>
+    /// <typeparam name="TKey">Application-owned shader permutation identity.</typeparam>
+    /// <returns>A caller-owned cache with no native allocations until the first miss.</returns>
+    /// <remarks>The caller retains the cache before creation and retires all GPU users before clearing or disposal.</remarks>
+    internal ShaderPipelineCache<TKey> CreatePipelineCache<TKey>() where TKey : notnull =>
+        new(_device, _resources);
 
     /// <summary>
     ///     Binds all three bindless alias tables (space1 Texture2D, space2 TextureCube, space3
@@ -98,6 +123,9 @@ internal sealed class GpuRootSignature12 : IDisposable
         cmd.SetGraphicsRootDescriptorTable(Slots.BindlessDepthMsaaSrvTable, heapStart);
     }
 
+    /// <summary>Creates the established world binding layout through Shared's checked native signature owner.</summary>
+    /// <param name="gpu">Borrowed rendering device retained through signature and dependent-family disposal.</param>
+    /// <returns>An owning adapter for the same registers, spaces, flags and static samplers.</returns>
     public static GpuRootSignature12 Create(GpuDevice12 gpu)
     {
         // Slot 0: root CBV b0 (per-frame). Visible to VS + PS — both stages read viewProj.
@@ -391,9 +419,7 @@ internal sealed class GpuRootSignature12 : IDisposable
                 ShaderVisibility.Pixel)
         };
 
-        // Vortice convenience: CreateRootSignature(RootSignatureDescription1) does the
-        // D3D12SerializeVersionedRootSignature + CreateRootSignature pair internally — no
-        // manual blob marshaling.
+        // Shared checks serialization and retains the root independently of its pipeline families.
         // Do NOT set CbvSrvUavHeapDirectlyIndexed here. That flag exists solely to enable the
         // Shader Model 6.6 dynamic-resources syntax (`ResourceDescriptorHeap[]` /
         // `SamplerDescriptorHeap[]`), which nothing in this renderer uses — every shader is
@@ -417,8 +443,17 @@ internal sealed class GpuRootSignature12 : IDisposable
                 terrainCellGrid, pointLightTiles
             },
             staticSamplers);
-        var rs = gpu.Device.CreateRootSignature(desc);
-        return new GpuRootSignature12(rs);
+        var resources = new ShaderPipelineResources(gpu.Device, 0);
+        try
+        {
+            resources.Initialize(new VersionedRootSignatureDescription(desc));
+            return new GpuRootSignature12(gpu.Device, resources);
+        }
+        catch
+        {
+            resources.Dispose();
+            throw;
+        }
     }
 
     /// <summary>Root-parameter slot indices, in the order they are declared in the root signature.</summary>

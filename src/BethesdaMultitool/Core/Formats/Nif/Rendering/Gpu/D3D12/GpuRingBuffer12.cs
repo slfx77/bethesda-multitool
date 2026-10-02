@@ -1,3 +1,4 @@
+using Slfx77.Multitool.Core.Lifetime;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -28,7 +29,7 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     private readonly IDisposable _footprint;
     private readonly int _framesInFlight;
     private readonly ulong[] _gpuAddresses;
-    private bool _disposed;
+    private RetiredResourceDisposal? _retiredResources;
 
     public GpuRingBuffer12(GpuDevice12 gpu, int framesInFlight, uint bytesPerFrame)
     {
@@ -85,19 +86,24 @@ internal sealed unsafe class GpuRingBuffer12 : IDisposable
     /// <summary>Exclusive upper bound currently available to ordinary bump allocations.</summary>
     public uint AllocationLimitBytes => BytesPerFrame - ReservedTailBytes;
 
+    /// <summary>Releases idle upload buffers once each, retaining failed unmap/disposal progress for retry.</summary>
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _footprint.Dispose();
-        for (var i = 0; i < _framesInFlight; i++)
+        if (_retiredResources is null)
         {
-            // Unmap is optional for committed resources (they're released on Dispose) but
-            // makes the intent explicit. Pass null range = "we wrote nothing the runtime
-            // needs to invalidate" — accurate for upload heaps.
-            _buffers[i].Unmap(0);
-            _buffers[i].Dispose();
+            _retiredResources = new RetiredResourceDisposal();
+            _retiredResources.Add(_footprint, "upload accounting");
+            foreach (var buffer in _buffers)
+            {
+                var mapped = true;
+                _retiredResources.Add(() =>
+                {
+                    if (mapped) { buffer.Unmap(0); mapped = false; }
+                    buffer.Dispose();
+                }, "upload buffer");
+            }
         }
+        _retiredResources.Dispose();
     }
 
     /// <summary>

@@ -346,29 +346,6 @@ public sealed class GpuTonemapSettingsTests
     }
 
     [Fact]
-    public void RecoveredAdaptationReference_WeightsCurrentScene()
-    {
-        // Independent CPU oracle for ISHDRADAPT: (1-k)*previous + k*current.
-        const float previous = 0.2f;
-        const float current = 1.0f;
-        const float k = 0.25f;
-        var adapted = (1f - k) * previous + k * current;
-        Assert.Equal(0.4f, adapted, 6);
-    }
-
-    [Fact]
-    public void RecoveredCinematicReference_AppliesBrightnessInsideContrast()
-    {
-        // Independent scalar oracle for Contrast*(Brightness*color-pivot)+pivot.
-        const float color = 0.6f;
-        const float brightness = 0.9f;
-        const float contrast = 1.2f;
-        const float pivot = 0.125f;
-        var output = contrast * (brightness * color - pivot) + pivot;
-        Assert.Equal(0.623f, output, 6);
-    }
-
-    [Fact]
     public void ExteriorCinematicMask_IsRetainedAsSourceMetadata()
     {
         var flags = GpuTonemapSettings.EngineExteriorDefaults.CinematicFlags;

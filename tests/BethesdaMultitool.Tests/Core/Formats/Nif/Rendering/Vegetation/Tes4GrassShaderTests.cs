@@ -150,16 +150,14 @@ public sealed class Tes4GrassShaderTests
             "ReferencePipelineFactory12.cs");
         var compact = new string(factory.Where(c => !char.IsWhiteSpace(c)).ToArray());
 
-        // The blend keys are identical between routes — only the shaders differ — so every route must
-        // be a DISTINCT ShaderRoutePsos instance owning its own PSO caches: one shared cache would
-        // hand a grass PSO to non-grass geometry (and vice versa) after the first draw. THREE routes
-        // since 2026-08-13, because the instanced grass VS reads a different b1 layout than the
-        // per-draw one and so cannot share either of the others' pipelines.
-        Assert.Contains("privatesealedclassShaderRoutePsos", compact, StringComparison.Ordinal);
-        Assert.Contains("readonlyShaderRoutePsos_sharedRoute;", compact, StringComparison.Ordinal);
-        Assert.Contains("readonlyShaderRoutePsos_grassRoute=new();", compact, StringComparison.Ordinal);
-        Assert.Contains("readonlyShaderRoutePsos_instancedGrassBlendRoute=new();", compact,
-            StringComparison.Ordinal);
+        // Identical blend keys on the three shader ABIs must retain separate caches.
+        var route = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferenceShaderRoute12.cs");
+        Assert.Contains("readonlyReferenceShaderRoute12_sharedRoute;", compact, StringComparison.Ordinal);
+        Assert.Contains("readonlyReferenceShaderRoute12_grassRoute;", compact, StringComparison.Ordinal);
+        Assert.Contains("readonlyReferenceShaderRoute12_instancedGrassBlendRoute;", compact, StringComparison.Ordinal);
+        Assert.Contains("ShaderPipelineCache<ReferenceBlendPipelineKey>", route, StringComparison.Ordinal);
 
         // Both blend getters must pick the route the same way. This used to be checked by counting
         // two IDENTICAL inline ternaries; they are now one shared selector, which enforces the same
@@ -175,8 +173,8 @@ public sealed class Tes4GrassShaderTests
         // otherwise take down the whole reference pipeline (every placed object) over one game's
         // grass. TryCompile is the fail-soft seam (logs + returns null), and the route resets its
         // stored profile so a later Set of the same pair retries instead of no-oping.
-        Assert.Contains("profile.TryCompile(consumerName)", factory, StringComparison.Ordinal);
-        Assert.Contains("_profile = default;", factory, StringComparison.Ordinal);
+        Assert.Contains("profile.TryCompile(consumerName)", route, StringComparison.Ordinal);
+        Assert.Contains("_profile = default;", route, StringComparison.Ordinal);
         var pair = SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Abstractions",
             "GameShaderPair.cs");

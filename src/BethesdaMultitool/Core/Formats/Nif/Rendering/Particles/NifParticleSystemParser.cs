@@ -759,11 +759,15 @@ internal static class NifParticleSystemParser
                     time, value,
                     BinaryUtils.ReadFloat(data, pos + 8, be),
                     BinaryUtils.ReadFloat(data, pos + 12, be)),
+                // The three TBC floats are stored tension, continuity, bias. nif.xml's TBC struct labels
+                // them t, b, c, but the engine's NiTCBFloatKey::LoadBinary fills +8/+0xC/+0x10 in order and
+                // its getters name those slots GetTension/GetContinuity/GetBias (Fallout 4 PDB), and only
+                // that order reproduces the engines' Kochanek-Bartels tangents (FO4, Skyrim, FNV).
                 ParticleRateInterpolation.Tbc => new ParticleRateKey(
                     time, value,
                     Tension: BinaryUtils.ReadFloat(data, pos + 8, be),
-                    Bias: BinaryUtils.ReadFloat(data, pos + 12, be),
-                    Continuity: BinaryUtils.ReadFloat(data, pos + 16, be)),
+                    Continuity: BinaryUtils.ReadFloat(data, pos + 12, be),
+                    Bias: BinaryUtils.ReadFloat(data, pos + 16, be)),
                 _ => new ParticleRateKey(time, value)
             };
         }

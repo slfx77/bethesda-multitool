@@ -28,11 +28,11 @@ public sealed class TextureResolverSingleFlightTests
     [Fact]
     public async Task NifGpuTextureResolver_ConcurrentColdMisses_RunOneLoadForPath()
     {
+        const int callerCount = 32;
         var payload = CreateGpuPayload(0x42);
         var loadCalls = 0;
         using var loadStarted = new ManualResetEventSlim(false);
         using var releaseLoad = new ManualResetEventSlim(false);
-        using var start = new ManualResetEventSlim(false);
         using var resolver = new NifGpuTextureResolver(path =>
         {
             Assert.Equal(@"textures\foo.dds", path);
@@ -42,20 +42,33 @@ public sealed class TextureResolverSingleFlightTests
             return payload;
         });
 
-        var tasks = Enumerable.Range(0, 32)
-            .Select(_ => Task.Run(() =>
-            {
-                start.Wait();
-                return resolver.GetTexture(@"Textures/Foo.dds");
-            }))
+        var tasks = Enumerable.Range(0, callerCount)
+            .Select(_ => Task.Factory.StartNew(
+                () => resolver.GetTexture(@"Textures/Foo.dds"),
+                TestContext.Current.CancellationToken,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default))
             .ToArray();
+        var allLoads = Task.WhenAll(tasks);
 
-        start.Set();
-        Assert.True(loadStarted.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-        releaseLoad.Set();
+        try
+        {
+            Assert.True(loadStarted.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            // Hits are recorded before waiting on the in-flight value: every other caller
+            // has reached the cache while the first load is still held. Dedicated workers
+            // avoid thread-pool starvation. A duplicate load also releases this wait, then
+            // fails the load-count assertion below.
+            Assert.True(SpinWait.SpinUntil(
+                () => resolver.CacheHits == callerCount - 1 || Volatile.Read(ref loadCalls) > 1,
+                TimeSpan.FromSeconds(5)));
+        }
+        finally
+        {
+            releaseLoad.Set();
+            await allLoads;
+        }
 
-        var results = await Task.WhenAll(tasks);
+        var results = await allLoads;
 
         Assert.Equal(1, loadCalls);
         Assert.Equal(1, resolver.CacheMisses);
@@ -98,11 +111,11 @@ public sealed class TextureResolverSingleFlightTests
     [Fact]
     public async Task NifTextureResolver_ConcurrentColdMisses_RunOneLoadForPath()
     {
+        const int callerCount = 32;
         var texture = TestTextures.Single(1, 2, 3, 255);
         var loadCalls = 0;
         using var loadStarted = new ManualResetEventSlim(false);
         using var releaseLoad = new ManualResetEventSlim(false);
-        using var start = new ManualResetEventSlim(false);
         using var resolver = new NifTextureResolver(path =>
         {
             Assert.Equal(@"textures\bar.dds", path);
@@ -112,20 +125,30 @@ public sealed class TextureResolverSingleFlightTests
             return texture;
         });
 
-        var tasks = Enumerable.Range(0, 32)
-            .Select(_ => Task.Run(() =>
-            {
-                start.Wait();
-                return resolver.GetTexture(@"Textures/Bar.dds");
-            }))
+        var tasks = Enumerable.Range(0, callerCount)
+            .Select(_ => Task.Factory.StartNew(
+                () => resolver.GetTexture(@"Textures/Bar.dds"),
+                TestContext.Current.CancellationToken,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default))
             .ToArray();
+        var allLoads = Task.WhenAll(tasks);
 
-        start.Set();
-        Assert.True(loadStarted.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
-        await Task.Delay(100, TestContext.Current.CancellationToken);
-        releaseLoad.Set();
+        try
+        {
+            Assert.True(loadStarted.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            // Wait for all other dedicated callers to reach the held in-flight cache entry.
+            Assert.True(SpinWait.SpinUntil(
+                () => resolver.CacheHits == callerCount - 1 || Volatile.Read(ref loadCalls) > 1,
+                TimeSpan.FromSeconds(5)));
+        }
+        finally
+        {
+            releaseLoad.Set();
+            await allLoads;
+        }
 
-        var results = await Task.WhenAll(tasks);
+        var results = await allLoads;
 
         Assert.Equal(1, loadCalls);
         Assert.Equal(1, resolver.CacheMisses);

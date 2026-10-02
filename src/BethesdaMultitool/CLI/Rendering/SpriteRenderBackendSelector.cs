@@ -11,6 +11,14 @@ namespace BethesdaMultitool.CLI.Rendering;
 /// </summary>
 internal static class SpriteRenderBackendSelector
 {
+    /// <summary>Selects the existing CPU or GPU backend and retains construction failures through native retirement.</summary>
+    /// <param name="forceCpu">Selects CPU processing without creating a device.</param>
+    /// <param name="forceGpu">Reports an unavailable GPU as an abort selection.</param>
+    /// <param name="forcedCpuMessage">Optional workflow-specific reason to use the CPU.</param>
+    /// <param name="ignoredGpuMessage">Optional explanation for a workflow that cannot honor force-GPU.</param>
+    /// <param name="fallbackCpuMessage">Message when automatic selection finds no device.</param>
+    /// <param name="forceGpuUnavailableMessage">Message when an explicitly requested GPU is unavailable.</param>
+    /// <returns>The caller-owned backend selection with its existing abort semantics.</returns>
     internal static SpriteRenderBackendSelection Create(
         bool forceCpu,
         bool forceGpu,
@@ -54,11 +62,30 @@ internal static class SpriteRenderBackendSelector
             return new SpriteRenderBackendSelection(null, null, false);
         }
 
-        var renderer = new GpuSpriteRenderer12(device);
-        AnsiConsole.MarkupLine(
-            "GPU rendering: [green]{0}[/] ({1})",
-            GpuDevice12.Backend,
-            device.DeviceName);
-        return new SpriteRenderBackendSelection(device, renderer, false);
+        GpuSpriteRenderer12? renderer = null;
+        try
+        {
+            renderer = new GpuSpriteRenderer12(device);
+            AnsiConsole.MarkupLine(
+                "GPU rendering: [green]{0}[/] ({1})",
+                GpuDevice12.Backend,
+                device.DeviceName);
+            return new SpriteRenderBackendSelection(device, renderer, false);
+        }
+        catch
+        {
+            if (renderer is not null)
+            {
+                renderer.Dispose();
+            }
+            else if (!device.TryForceDeviceRemoval("sprite-backend-construction"))
+            {
+                // An unpublished constructor may have failed while retiring native work.
+                // Do not explicitly release a device whose terminal retirement is unproved.
+                throw;
+            }
+            device.Dispose();
+            throw;
+        }
     }
 }

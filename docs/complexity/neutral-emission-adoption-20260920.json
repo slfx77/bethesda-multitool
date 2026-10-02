@@ -1,0 +1,153 @@
+{
+  "schema": "bmt-neutral-emission-adoption-delta-review/v1",
+  "createdUtc": "2026-09-21T00:05:36.522302+00:00",
+  "baseCommit": "cb1432e7a5558c4c1ba4e0918004297ed805155b",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "scope": "Only the four changed NifNeutralSceneAdapter callables for reviewed Shared emission adoption. This supplements rather than replaces earlier material/scene receipts; no review or acceptance claim is made for unchanged callables, tests, GUI rendering, or production dispatch.",
+  "status": "source_review_only",
+  "hashConvention": {
+    "source": "SHA-256 of UTF-8 source after CRLF/CR to LF normalization; no trimming.",
+    "declaration": "Exact Tree-sitter method declaration byte span, including body and excluding preceding XML comments and trailing whitespace.",
+    "signature": "Declaration start through body start, with trailing whitespace removed.",
+    "body": "Exact block bytes, including braces."
+  },
+  "variables": {
+    "M": "Number of entries in the material cache/list at this call.",
+    "I": "Number of distinct prepared-image identities already in imageByIdentity.",
+    "S": "Number of scene sampler entries.",
+    "K": "Cost of hashing/comparing one existing NifMaterialCacheKey, including its retained string fields; not assumed constant in arbitrary path lengths.",
+    "P/P_e": "Encoded PNG bytes newly copied for all bindings / the added emissive binding, respectively.",
+    "J": "Prepared extras serialized JSON length. Current admitted call path rejects nonempty extras before Material; the general method bound includes this serialization.",
+    "collections": "Dictionary lookup uses ordinary .NET hashing; image keys use reference identity. List/dictionary growth is amortized and can copy existing entry arrays on an individual insertion."
+  },
+  "file": {
+    "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Export/NifNeutralSceneAdapter.cs",
+    "sourceSha256Lf": "af0d1062581e47e6f9c27292c4262ca0adb1f8278dcf77b9278679f2074b215d",
+    "callables": [
+      {
+        "name": "NifNeutralSceneAdapter.Material",
+        "kind": "method",
+        "line": 353,
+        "endLine": 396,
+        "declarationSha256Lf": "63301cb74566e8562b5ac886e2bfecf2005c6027da0c25d5c6a1c6d7d088c98d",
+        "signatureSha256Lf": "7e16e12164de5a375f5977530d41453a6e3bc36cb1cb560a0a62c77bd37e29f5",
+        "bodySha256Lf": "d5f0a0c36319277fde1a6ea55269589a5ecb3d6a045f6fc17afc2e13cccf6f77",
+        "timeExpectedAmortized": "O(K + P + J) per cache miss; O(K) per cache hit. Six fixed binding slots; P counts only images absent from imageByIdentity.",
+        "timeWorstCase": "O(M*K + I + P + J + M + I + S) for adversarial dictionary collisions plus an individual list/dictionary resize; ordinary hash tables and growable lists provide expected/amortized bounds, not guaranteed constant-time insertion.",
+        "spaceBound": "O(P + J + 1) newly owned content per material miss, excluding collection capacity; amortized O(1) entry capacity per new material/sampler/image. One growth can transiently allocate O(M + I + S) capacity.",
+        "incrementalBound": "Adds one constant emission binding slot and exact factor/strength assignment; additional O(P_e) time and owned image bytes when the prepared emissive image has not already been bound, plus amortized O(1) binding/entry overhead.",
+        "review": "Preserves prepared policy, alpha, sampler addressing, lighting-model default and cache key. Includes emission-only textures in sampler admission; Binding copies encoded PNG bytes through SceneImage and deduplicates by prepared-image reference identity. Factors/strength are transported unchanged, without clamping or HDR folding. Cancellation is checked at entry, not within the PNG copy or JSON serialization."
+      },
+      {
+        "name": "NifNeutralSceneAdapter.PreparedMaterialReason",
+        "kind": "method",
+        "line": 413,
+        "endLine": 426,
+        "declarationSha256Lf": "5618966ca2e0b417dd969a062f4aa606197a83026629e6096518aa2bcb5b2ae0",
+        "signatureSha256Lf": "43278f05edcd433fa8321e46582ddf2a7cae1e212190635ccba45720e4f6a778",
+        "bodySha256Lf": "5ed465af43f13eb3f43651762561a3663db8990ff2aa8e4ddb01dba66cabf006",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "incrementalBound": "O(1) added/changed checks; no allocation on success.",
+        "review": "The previous blanket HasEmission decline is narrowed only when the prepared material is lit. Prepared.Unlit && HasEmission retains the native path, including authored-sky preparation whose unlit state does not originate from submesh.IsEmissive. Water optical channels, specialized extras and unsupported glass composition still decline before document construction. Count inspection does not enumerate metadata."
+      },
+      {
+        "name": "NifNeutralSceneAdapter.MaterialReason",
+        "kind": "method",
+        "line": 522,
+        "endLine": 543,
+        "declarationSha256Lf": "a8c13fbfa73565f0ac9e753715302ec5f812fe6962096c01ee1e2943042e723b",
+        "signatureSha256Lf": "ecb2da49f46e7ab3a2c35f72b0e11a341956fe2bd2020b1d428aff48a3aafdc3",
+        "bodySha256Lf": "3c8670d78b75da3c77b6f8d2b3478783bfb70e32b85ad64158d0896d53908b15",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "incrementalBound": "O(1); removes the blanket BGSM glow-map rejection and delegates emission source-state admission.",
+        "review": "All other unsupported-map, decal, falloff, tint, authored Oblivion and Starfield render-state guards remain. Paths are tested for null only in this method; it performs no path scans, texture decoding or policy reconstruction."
+      },
+      {
+        "name": "NifNeutralSceneAdapter.EmissionReason",
+        "kind": "method",
+        "line": 548,
+        "endLine": 559,
+        "declarationSha256Lf": "7f00a0cac562b2900e6365cd307d97ce8b142d62c34c6fc9f0cda8a32964101b",
+        "signatureSha256Lf": "609b030da95c56dd48927a72d08d4d79d54c4a608d5536bc6b1bfd463bb32bb7",
+        "bodySha256Lf": "a46e2149b9e5886482221e6e98152c0abf971a6f77af53a2e658788de88004c1",
+        "timeBound": "O(1)",
+        "spaceBound": "O(1)",
+        "incrementalBound": "New fixed-size source-state predicate; no success-path allocation or I/O.",
+        "review": "External emittance always declines. Source IsEmissive plus BGSM glow/color state remains declined. Nonzero BGSM color must pass the existing finite/nonnegative active-emission encoder; NaN/infinite/negative inputs decline. Zero inactive color remains admitted for preparation to apply its existing external-BGSM suppression policy. The encoder performs fixed three-component arithmetic; this helper does not resolve or overwrite emission."
+      }
+    ]
+  },
+  "verification": {
+    "method": "Tree-sitter declaration/body extraction and manual code-path review, followed by JSON/hash/coverage and whitespace checks. No build, test, GUI, render or benchmark executed for this receipt.",
+    "selectedCallableCount": 4,
+    "selectedCallableParseErrors": [],
+    "wholeFileGrammarNotes": []
+  },
+  "behaviorReview": [
+    "BGSM inactive/malformed external material suppression remains in NifMaterialPreparation; no duplicate policy is introduced in Shared or in image transport.",
+    "Admission widens only to represented lit prepared emission. Authored-sky unlit emission, external emittance, unsupported water optics and other specialized states retain native dispatch.",
+    "Adding emission transport does not select the newer explicit metallic-roughness lighting profile. Existing Lambert default and all existing factors/maps are preserved.",
+    "No source model, pixel buffer or prepared material is mutated by these four methods. SceneImage retains its own PNG-byte copy."
+  ],
+  "limits": [
+    "No measured performance, memory ceiling, platform acceptance, rendered parity or release acceptance is established.",
+    "Legacy production export dispatch remains separate; successful adapter admission alone does not authorize its replacement.",
+    "Source validation and native/Shared render comparisons are recorded in separate evidence."
+  ],
+  "followUps": [
+    {
+      "topic": "Case-sensitive loose-file lookup and fixture portability",
+      "scope": "Existing filesystem behavior, outside the four-method emission increment; no test/production workaround or source hash change in this receipt.",
+      "productionCallChain": [
+        {
+          "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/NifTextureResolver.cs",
+          "line": 140,
+          "behavior": "GetTexture normalizes before entering the cache/load path."
+        },
+        {
+          "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Textures/NifTexturePathUtility.cs",
+          "line": 49,
+          "behavior": "Normalize folds to lowercase and backslash syntax, then applies existing Bethesda Data/root policy. Thus authored mixed-case requests work with this all-lowercase texture corpus."
+        },
+        {
+          "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Textures/NifTextureDirectorySource.cs",
+          "line": 124,
+          "behavior": "ResolveLocalPath only combines root and OS separators; TryLoad line31, Exists line56, TryLoadRaw line82 and metadata FileInfo line102 use the actual filesystem spelling. Physical mixed-case files/directories on a case-sensitive filesystem are not found by lowercased requests."
+        }
+      ],
+      "existingReuseCandidates": [
+        {
+          "path": "src/BethesdaMultitool/Core/Formats/Esm/Plugin/AssetPacking/DataFolderIndex.cs",
+          "apis": "Build, TryResolveExact, LooseFileAssetSource.AbsolutePath/Read",
+          "assessment": "The existing index maps case-insensitive virtual keys to preserved physical paths. Reusable resolution pattern, not a direct drop-in: Build recursively indexes the data tree and archives, has asset-extension policy that omits BGSM/BGEM materials, and duplicate-identity policy needs deliberate treatment."
+        },
+        {
+          "path": "src/BethesdaMultitool/Core/Vfs/LooseFileSystem.cs",
+          "apis": "Resolve, Exists, TryReadAllBytes, TryReadAllBytesBounded",
+          "assessment": "Preserves case and uses direct physical lookup; it does not fix case-insensitive Bethesda resolution on Linux. VfsPath.Normalize changes separators only."
+        },
+        {
+          "path": "shared/Multitool.Shared/src/Slfx77.Multitool.Core/Assets/FolderAssetSource.cs",
+          "apis": "PathComparer, EnumerateAsync, OpenReadAsync",
+          "assessment": "Intentionally OS-native path identity: OrdinalIgnoreCase on Windows, Ordinal elsewhere. Enumeration retains physical provenance; no existing cross-platform case-insensitive folder resolver or normalizer is supplied."
+        },
+        {
+          "path": "shared/Multitool.Shared/src/Slfx77.Multitool.Core/Assets/AssetPath.cs",
+          "apis": "Normalize, IsWithin",
+          "assessment": "Reusable host-independent relative-path validation and separator normalization; preserves case and does not resolve physical aliases. Bethesda root/material semantics remain app policy."
+        },
+        {
+          "path": "src/BethesdaMultitool/Core/Formats/Redguard/RedguardLevelLoader.cs",
+          "apis": "private ResolveRelative, FindDirectory, FindFile",
+          "assessment": "Existing game-specific directory-enumeration fallback compares names OrdinalIgnoreCase; private and limited to its simple directory structure, not a reusable general nested resolver."
+        }
+      ],
+      "recommendedBoundary": "A deliberate Bethesda virtual-key-to-physical-path resolution layer can retain actual casing and provenance while preserving the game path normalizer. It needs explicit collision behavior, root/link containment, extension fallback, cache invalidation and bounded lookup; do not globally change Shared FolderAssetSource native path identity or hide missing production resolution by preloading test textures.",
+      "acceptanceGap": "No case-sensitive filesystem texture-corpus acceptance or production loose-path repair is claimed here.",
+      "fixtureReviewAndCorrection": "Initial review found the neon InlineData NIF name and five of seven raw DDS hash paths used authored mixed case while the actual loose corpus filenames are lowercase. The test author corrected only the direct physical NIF lookup to lowercase and direct texture hash reads to NifTexturePathUtility.Normalize plus OS separators. Authored path-set assertions, expected hashes and the real production NifTextureResolver remain unchanged; no test preloading or production workaround was introduced.",
+      "platformEvidenceBoundary": "This batch records textured NIF corpus evidence on Windows. Linux synthetic/other corpus runs and NTFS backing are separate evidence; fixing direct fixture spelling does not itself establish case-sensitive filesystem corpus acceptance."
+    }
+  ]
+}

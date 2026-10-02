@@ -135,6 +135,6 @@ public sealed class NifMaterialDiffusePolicyTests
             "GetOrCreateSynthetic",
             // No underscore: UploadDecodedMesh is static now and takes the cache as a parameter.
             "diffuse = textureCache.WhitePixel;",
-            "GetOrUpload(diffusePath)");
+            "ResolveTexture(diffusePath)");
     }
 }

@@ -674,7 +674,8 @@ internal static class WorldMapLayerRenderer
             WorldMapCellBlitter.BlitCellRgbaBlock(
                 rgba, width, cellShade, HmGridSize, imgCellX * HmGridSize, imgCellY * HmGridSize);
 
-            var waterH = WorldMapWaterRenderer.ResolveWaterHeight(cell, defaultWaterHeight);
+            var waterH = cache is not null ? cache.GetWaterHeight(cell, defaultWaterHeight)
+                : WorldMapWaterRenderer.ResolveWaterHeight(cell, defaultWaterHeight);
             if (!waterH.HasValue || waterH.Value is <= -1e6f or >= 1e6f) continue;
             for (var py = 0; py < HmGridSize; py++)
             {
@@ -968,6 +969,7 @@ internal static class WorldMapLayerRenderer
 
         var pixelCount = pixelsPerCell * pixelsPerCell;
         var tile = new byte[pixelCount * 4];
+        if (cache is not null) waterPalette = cache.GetWaterPalette(cell, waterPalette);
         return WorldMapWaterRenderer.WriteWaterTilePixels(tile, mask, pixelCount, waterPalette) ? tile : null;
     }
 
@@ -989,6 +991,28 @@ internal static class WorldMapLayerRenderer
         var (_, waterMask, width, height, minX, maxY) = hm.Value;
 
         var rgba = new byte[width * height * 4];
+        if (cache?.WaterCatalog is not null && cache.WaterRecords is not null)
+        {
+            var mask = new byte[HmGridSize * HmGridSize];
+            var tile = new byte[mask.Length * 4];
+            // Preserve the aggregate's blurred edge pixels even in gaps without a CELL.
+            var anyWater = WorldMapWaterRenderer.WriteWaterTilePixels(rgba, waterMask, width * height, waterPalette);
+            foreach (var (cell, _) in HeightmapRenderer.GetTerrainCells(cellSource, cache))
+            {
+                var x = (cell.GridX!.Value - minX) * HmGridSize;
+                var y = (maxY - cell.GridY!.Value) * HmGridSize;
+                if (x < 0 || y < 0 || x + HmGridSize > width || y + HmGridSize > height) continue;
+                for (var row = 0; row < HmGridSize; row++)
+                    Array.Copy(waterMask, (y + row) * width + x, mask, row * HmGridSize, HmGridSize);
+                Array.Clear(tile);
+                if (!WorldMapWaterRenderer.WriteWaterTilePixels(tile, mask, mask.Length,
+                        cache.GetWaterPalette(cell, waterPalette))) continue;
+                anyWater = true;
+                for (var row = 0; row < HmGridSize; row++)
+                    Array.Copy(tile, row * HmGridSize * 4, rgba, ((y + row) * width + x) * 4, HmGridSize * 4);
+            }
+            return anyWater ? new LayerBitmap(rgba, width, height, minX, maxY) : null;
+        }
         return WorldMapWaterRenderer.WriteWaterTilePixels(rgba, waterMask, width * height, waterPalette)
             ? new LayerBitmap(rgba, width, height, minX, maxY)
             : null;

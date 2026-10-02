@@ -87,13 +87,20 @@ internal static class ShadowComparisonPcf12
     ///     Emits proof of the bytecode actually returned to a production shadow-receiver caller.
     ///     This is deliberately invoked only after compilation or cache retrieval succeeds.
     /// </summary>
+    /// <param name="fileName">Embedded shader name.</param>
+    /// <param name="entryPoint">Compiled HLSL entry point.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <param name="effectiveMacros">Definitions actually used by the selected permutation.</param>
+    /// <param name="cacheKey">Exact runtime permutation identity.</param>
+    /// <param name="bytecode">Borrowed read-only DXBC hashed without copying or retaining the span.</param>
+    /// <param name="cacheHit">Whether the returned bytecode was already cached.</param>
     internal static void TraceSuccessfulShader(
         string fileName,
         string entryPoint,
         string profile,
         ShaderMacro[] effectiveMacros,
         string cacheKey,
-        byte[] bytecode,
+        ReadOnlySpan<byte> bytecode,
         bool cacheHit)
     {
         if (!RendererProfilerTrace.IsEnabled ||
@@ -119,6 +126,16 @@ internal static class ShadowComparisonPcf12
     ///     policy, schema, and de-duplication can be tested without compiling a shader or creating a
     ///     D3D device.
     /// </summary>
+    /// <param name="sessionId">Trace session identity used to deduplicate shader proofs.</param>
+    /// <param name="fileName">Embedded shader name.</param>
+    /// <param name="entryPoint">Compiled HLSL entry point.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <param name="effectiveMacros">Definitions actually used by the selected permutation.</param>
+    /// <param name="cacheKey">Exact runtime permutation identity.</param>
+    /// <param name="bytecode">Borrowed read-only DXBC hashed without copying or retaining the span.</param>
+    /// <param name="cacheHit">Whether the returned bytecode was already cached.</param>
+    /// <param name="fields">New trace fields, or null for an inapplicable or previously traced permutation.</param>
+    /// <returns>True when a new shadow-receiver proof was constructed.</returns>
     internal static bool TryBuildTraceProof(
         string sessionId,
         string fileName,
@@ -126,7 +143,7 @@ internal static class ShadowComparisonPcf12
         string profile,
         ShaderMacro[] effectiveMacros,
         string cacheKey,
-        byte[] bytecode,
+        ReadOnlySpan<byte> bytecode,
         bool cacheHit,
         out IReadOnlyDictionary<string, object?>? fields)
     {

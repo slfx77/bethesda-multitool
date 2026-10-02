@@ -30,6 +30,7 @@ internal static class WorldMapWaterRenderer
 
         var hiResMask = ComputeCellWaterMask(cell, defaultWaterHeight, pixelsPerCell, cache, cellByGrid);
         if (hiResMask is null) return;
+        if (cache is not null) waterPalette = cache.GetWaterPalette(cell, waterPalette);
 
         // DNAM color path: when the WATR record exposed Shallow/Deep colors, lerp Shallow→Deep
         // by mask intensity so different worldspaces' waters (Potomac muddy brown vs Lake Mead
@@ -66,7 +67,8 @@ internal static class WorldMapWaterRenderer
         IReadOnlyDictionary<(int gx, int gy), CellRecord>? cellByGrid)
     {
         var terrain = cache?.GetTerrain(cell) ?? DecodedTerrainCell.Decode(cell);
-        var waterH = ResolveWaterHeight(cell, defaultWaterHeight);
+        var waterH = cache is not null ? cache.GetWaterHeight(cell, defaultWaterHeight)
+            : ResolveWaterHeight(cell, defaultWaterHeight);
 
         if (pixelsPerCell == HmGridSize)
         {

@@ -147,14 +147,28 @@ public sealed class StaticOpaquePacketIntegrationContractTests
     {
         var draw = DrawSource();
         var packetSource = PacketSource();
-        var copySkip = SourceContract.Extract(
+        var copyLoop = SourceContract.Extract(
             draw,
             "var packetCopyDrawCursor = 0;",
             "var worlds = batchState.Instances;");
-        var packetSubmission = SourceContract.Extract(
+        var submissionLoop = SourceContract.Extract(
             draw,
             "var packetSubmissionDrawCursor = 0;",
             "var batch = batchState.Instances;");
+        // Disposed meshes are rejected before packet lookup and may clear their legacy counters.
+        // A successful packet hit must still bypass those writes and all legacy matrix copying.
+        const string packetHit = "if (packet is not null && packet.TryTakeDraw(";
+        foreach (var loop in new[] { copyLoop, submissionLoop })
+        {
+            SourceContract.AssertOrderIgnoringWhitespace(loop,
+                "if (batchState.Submesh.OwnerMesh is { IsDisposed: true })",
+                "batchState.FrameDrawCount = 0;",
+                "batchState.FrameShadowOnlyCount = 0;",
+                "continue;",
+                packetHit);
+        }
+        var copySkip = copyLoop[copyLoop.IndexOf(packetHit, StringComparison.Ordinal)..];
+        var packetSubmission = submissionLoop[submissionLoop.IndexOf(packetHit, StringComparison.Ordinal)..];
 
         Assert.Equal(3, SourceContract.CountOccurrences(draw, "packet.TryTakeDraw("));
         Assert.DoesNotContain("TryGetDraw", draw, StringComparison.Ordinal);
@@ -203,7 +217,7 @@ public sealed class StaticOpaquePacketIntegrationContractTests
             source,
             "private void RetireOpaqueSubmissionPacket()",
             "private void DrawOpaqueBatches(");
-        var dispose = SourceContract.Extract(source, "public void Dispose()", "private static bool ForwardWithin(");
+        var dispose = SourceContract.Extract(source, "public void Dispose()", "private void DiscardBatchBuild()");
 
         SourceContract.AssertOrder(
             publish,
@@ -216,7 +230,14 @@ public sealed class StaticOpaquePacketIntegrationContractTests
         Assert.Contains("_publishedBatchIdentity++;", clear, StringComparison.Ordinal);
         Assert.Contains("_publishedBatchGeneration++;", clear, StringComparison.Ordinal);
         Assert.Contains("_deletionQueue.EnqueueDispose(packet);", retire, StringComparison.Ordinal);
-        Assert.Contains("RetireOpaqueSubmissionPacket();", dispose, StringComparison.Ordinal);
+        // Shutdown retains the retirement callback for retry and then drains its owner.
+        Assert.Matches(
+            @"retired\.Add\(\s*RetireOpaqueSubmissionPacket\s*,\s*""[^""]*""(?:\s*,\s*stage:\s*0)?\s*\);",
+            dispose);
+        SourceContract.AssertOrderIgnoringWhitespace(dispose,
+            "retired.Add(RetireOpaqueSubmissionPacket,",
+            "_retiredResources = retired;",
+            "_retiredResources!.Dispose();");
         Assert.DoesNotContain("packet.Dispose();", retire, StringComparison.Ordinal);
     }
 

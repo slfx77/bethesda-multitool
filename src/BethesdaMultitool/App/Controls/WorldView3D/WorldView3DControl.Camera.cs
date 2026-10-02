@@ -2,25 +2,15 @@ using System.Numerics;
 using BethesdaMultitool.Core;
 using BethesdaMultitool.Core.Formats.Esm.Models;
 using BethesdaMultitool.Core.Formats.Esm.Models.Records.World;
+using BethesdaMultitool.Core.Formats.Esm.Models.World;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Camera;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 using BethesdaMultitool.Core.WorldData;
 
 namespace BethesdaMultitool;
 
 public sealed partial class WorldView3DControl
 {
-    /// <summary>
-    ///     How far south of the framing target the camera sits, in cells. Was the literal 8192 (= 2 cells
-    ///     at Fallout's 4096-unit grid) until Starfield arrived with a 100-unit cell, where the fixed
-    ///     value put the camera 82 cells away and frustum-culled the entire worldspace.
-    /// </summary>
-    private const float FramingSouthOffsetCells = 2f;
-
-    /// <summary>
-    ///     Camera height above the ground plane when framing a worldspace, in cells (was the literal
-    ///     32768 = 8 cells at 4096). See <see cref="FramingSouthOffsetCells" />.
-    /// </summary>
-    private const float FramingHeightCells = 8f;
-
     /// <summary>
     ///     Captures the current location + selection as a <see cref="WorldViewFocus" /> so the 2D map can
     ///     resume in the same area when the user switches views. Exterior: the camera's ground XY (the
@@ -75,6 +65,105 @@ public sealed partial class WorldView3DControl
     // The CellListControl owns the sort state + combo; its setter syncs both and re-sorts in place.
     private void ApplyInteriorSortMode(CellSortMode mode) => CellList.SortMode = mode;
 
+    private PendingReferenceFrame? _pendingReferenceFrame;
+
+    private sealed record PendingReferenceFrame(
+        PlacedReference Reference, uint MeshId, int SceneGeneration,
+        Vector3 Position, float Yaw, float Pitch, float Fov, CameraMode CameraMode,
+        ProjectionMode ProjectionMode, Vector3 ProjectionFocus, float Azimuth, float OrthoHalfHeight);
+
+    // A cold actor initially has only the placement fallback. Once its assembled mesh is resident,
+    // finish this navigation once, provided the user has not moved or selected another scene/object.
+    private void CompletePendingReferenceFrame()
+    {
+        if (_pendingReferenceFrame is not { } pending) return;
+        if (pending.SceneGeneration != _sceneSelectionGeneration ||
+            !ReferenceEquals(pending.Reference, _selectedReference) ||
+            pending.Position != _camera.Position || pending.Yaw != _camera.Yaw || pending.Pitch != _camera.Pitch ||
+            pending.Fov != _camera.FovYRadians || pending.CameraMode != _controller.Mode ||
+            pending.ProjectionMode != _projectionMode || pending.ProjectionFocus != _projectionFocus ||
+            pending.Azimuth != _azimuthDeg || pending.OrthoHalfHeight != _orthoHalfHeight)
+        {
+            _pendingReferenceFrame = null;
+            return;
+        }
+
+        if (_references is null || !_references.TryGetMeshLocalBounds(pending.MeshId, out var min, out var max) || min == max)
+            return;
+        _pendingReferenceFrame = null;
+        NavigateToObject(pending.Reference);
+    }
+
+    /// <summary>
+    ///     Frames a reference in its owning scene without changing authored visibility or renderer
+    ///     eligibility. The caller owns the inspector event; unavailable meshes retain fallback
+    ///     framing. Framing does not promise an unobstructed view through a room.
+    /// </summary>
+    internal void NavigateToObject(PlacedReference obj)
+    {
+        _pendingReferenceFrame = null;
+        if (_data is null || !_data.PlacedRefs.TryGetCell(obj.FormId, out var cell)) return;
+        if (!float.IsFinite(obj.X) || !float.IsFinite(obj.Y) || !float.IsFinite(obj.Z) ||
+            !float.IsFinite(obj.RotX) || !float.IsFinite(obj.RotY) || !float.IsFinite(obj.RotZ) ||
+            !float.IsFinite(obj.Scale)) return;
+
+        var center = new Vector3(obj.X, obj.Y, obj.Z);
+        var scale = obj.Scale > 0f ? obj.Scale : 1f;
+        var radius = RenderableReference.SelectionFallbackRadiusFor(_cellSize) * scale;
+        Vector3? localMin = null;
+        Vector3? localMax = null;
+        var renderable = RenderableReference.TryBuild(obj, game: _data.Game, actorCatalog: _data.ActorCatalog);
+        if (obj.Bounds is { IsDegenerate: false } bounds)
+        {
+            localMin = new Vector3(bounds.X1, bounds.Y1, bounds.Z1);
+            localMax = new Vector3(bounds.X2, bounds.Y2, bounds.Z2);
+        }
+        else if (_references is not null && renderable is { } framed &&
+                 _references.TryGetMeshLocalBounds(framed.MeshId, out var meshMin, out var meshMax) &&
+                 meshMin != meshMax)
+        {
+            localMin = meshMin;
+            localMax = meshMax;
+        }
+
+        if (localMin is { } min && localMax is { } max)
+        {
+            var world = PlacedReferenceTransform.ComposeWorldMatrix(
+                obj.X, obj.Y, obj.Z, obj.RotX, obj.RotY, obj.RotZ, obj.Scale);
+            center = Vector3.Transform((min + max) * 0.5f, world);
+            radius = (max - min).Length() * 0.5f * scale;
+        }
+
+        if (!float.IsFinite(center.X) || !float.IsFinite(center.Y) || !float.IsFinite(center.Z) ||
+            !float.IsFinite(radius) || radius <= 0f) return;
+        var interior = cell.GridX is not int || cell.GridY is not int;
+        if (!(interior ? EnsureActiveInteriorCell(cell.FormId) : EnsureActiveExteriorWorldspace(cell.WorldspaceFormId)))
+            return;
+        HideInteriorBrowser();
+
+        // Use the tighter viewport angle so a narrow inspection pane cannot crop the framed bounds.
+        var aspect = (float)(Math.Max(1d, RenderPanel.ActualWidth) / Math.Max(1d, RenderPanel.ActualHeight));
+        var halfFov = Math.Clamp(_camera.FovYRadians * 0.5f, 0.05f, 1.5f);
+        var limitingAngle = MathF.Min(halfFov, MathF.Atan(MathF.Tan(halfFov) * aspect));
+        var distance = MathF.Max(radius * 1.15f / MathF.Sin(limitingAngle), radius + _camera.NearPlane * 2f);
+        if (!float.IsFinite(distance)) return;
+        SetCameraMode(CameraMode.Fly);
+        _camera.Yaw = 0f;
+        _camera.Pitch = -MathF.PI / 12f;
+        _camera.Position = center - _camera.Forward * distance;
+        if (ProjectionActive)
+        {
+            _projectionFocus = center;
+            _orthoHalfHeight = Math.Clamp(radius * 1.15f / MathF.Min(1f, aspect), MinOrthoHalfHeight, MaxOrthoHalfHeight);
+        }
+
+        SelectObject(obj);
+        if (localMin is null && renderable is { } pending)
+            _pendingReferenceFrame = new PendingReferenceFrame(obj, pending.MeshId, _sceneSelectionGeneration,
+                _camera.Position, _camera.Yaw, _camera.Pitch, _camera.FovYRadians, _controller.Mode,
+                _projectionMode, _projectionFocus, _azimuthDeg, _orthoHalfHeight);
+    }
+
     /// <summary>
     ///     Navigates the 3D scene to a specific cell — the 3D counterpart of
     ///     <see cref="WorldMapControl.NavigateToCell" />, used when a door-destination / linked-cell
@@ -84,6 +173,7 @@ public sealed partial class WorldView3DControl
     /// </summary>
     internal void NavigateToCell(CellRecord cell, (Vector3 pos, float yaw)? warpPose = null)
     {
+        _pendingReferenceFrame = null;
         if (_data is null) return;
 
         // Interiors have no grid coords — same single-cell load path as a cell-browser pick.
@@ -177,12 +267,7 @@ public sealed partial class WorldView3DControl
         if (cell.GridX is not int gx || cell.GridY is not int gy) return;
         var worldX = (gx + 0.5f) * _cellSize;
         var worldY = (gy + 0.5f) * _cellSize;
-        _camera.Position = new Vector3(
-            worldX,
-            worldY - (FramingSouthOffsetCells * _cellSize),
-            FramingHeightCells * _cellSize);
-        _camera.Yaw = 0f;
-        _camera.Pitch = -MathF.PI / 6f;
+        _camera.FrameExterior(new Vector2(worldX, worldY), _cellSize);
     }
 
     private void ResetCameraToDataCentroid()
@@ -217,13 +302,7 @@ public sealed partial class WorldView3DControl
         var worldX = (float)(avgGridX * _cellSize);
         var worldY = (float)(avgGridY * _cellSize);
 
-        // Position 2 cells south and well above the ground, pitched down ~30° looking north.
-        _camera.Position = new Vector3(
-            worldX,
-            worldY - (FramingSouthOffsetCells * _cellSize),
-            FramingHeightCells * _cellSize);
-        _camera.Yaw = 0f;
-        _camera.Pitch = -MathF.PI / 6f;
+        _camera.FrameExterior(new Vector2(worldX, worldY), _cellSize);
     }
 
     /// <summary>
@@ -402,12 +481,7 @@ public sealed partial class WorldView3DControl
 
         SetRenderDistance(DefaultRenderDistanceCells * _cellSize);
         var gameY = -heavy.CanvasCenter.Y;
-        _camera.Position = new Vector3(
-            heavy.CanvasCenter.X,
-            gameY - (FramingSouthOffsetCells * _cellSize),
-            FramingHeightCells * _cellSize);
-        _camera.Yaw = 0f;
-        _camera.Pitch = -MathF.PI / 6f;
+        _camera.FrameExterior(new Vector2(heavy.CanvasCenter.X, gameY), _cellSize);
 
         Log.Info(
             "WorldView3DControl: applied WastelandNV Heavy stress bookmark at ({0:0}, {1:0}); nearby renderable refs={2}.",

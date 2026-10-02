@@ -1,32 +1,17 @@
+using Slfx77.Multitool.Core.Lifetime;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using BethesdaMultitool.Core.Diagnostics;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
-///     v3 Pass 4 — shader-visible descriptor heap. Layout:
-///     <code>
-///         [ persistent region 0..PersistentCapacity-1 ] [ per-frame ring partitions ]
-///     </code>
-///     <para>
-///         The persistent region is bump-allocated at LoadData time for resources that
-///         live for the worldspace's lifetime (Step 4a: bindless texture SRVs from
-///         <see cref="GpuTextureCache12" />, and the water instance SRV). Persistent slots
-///         never get reused mid-session, so the slot index is a stable bindless lookup
-///         key for the shader.
-///     </para>
-///     <para>
-///         The per-frame ring sits above the persistent region. Each frame slot bumps
-///         independently from its starting offset and resets on frame begin — used for
-///         per-frame SRV writes (the reference renderer's per-frame instance buffer SRV;
-///         legacy per-batch material SRVs pre-4a).
-///     </para>
-///     <para>
-///         D3D12 requires <c>SetDescriptorHeaps</c> to be called at most ONCE per command
-///         list per heap type. One big heap + bump allocator avoids the constraint — every
-///         renderer's CBVs / SRVs land here and the bound table covers both regions.
-///     </para>
+///     Adapts Shared ownership of one shader-visible heap and fixed partitions to Bethesda's
+///     persistent-slot recycling and per-frame bump-allocation policies.
 /// </summary>
+/// <remarks>The persistent range begins at zero; each frame partition follows contiguously.
+/// Frame reset requires the recorder's slot-fence wait, and persistent reuse requires every prior
+/// GPU reader to retire. Shared owns ranges for the heap lifetime, not individual BMT slot claims.</remarks>
 internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDisposable
 {
     private readonly uint _descriptorSize;
@@ -34,22 +19,32 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
     private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
     private readonly uint _perFrameRegionStart;
 
-    // Reclaimed persistent slots, available for reuse before the bump pointer advances. This is
-    // what bounds the bindless texture heap: without it, every streamed texture consumed a slot
-    // forever and the heap exhausted after sustained streaming (the ~5-minute walk-mode crash).
+    // Reclaimed persistent slots are reused in LIFO order before the stable prefix grows.
     private readonly Stack<uint> _persistentFreeList = new();
 
-    // Diagnostic mirror of the free-list (same membership) so double-frees — which would put the
-    // same slot into two owners' hands and let one owner's descriptor write clobber the other's —
-    // are caught at the Free call instead of surfacing as timing-dependent wrong-texture sampling.
+    // Membership mirrors the LIFO stack to reject duplicate returns before aliasing a live slot.
     private readonly HashSet<uint> _persistentFreeSet = new();
     private uint _bumpOffset;
     private int _currentFrame;
     private uint _currentFrameStart;
+    private readonly ShaderDescriptorHeap _heapOwner;
+    private readonly ShaderDescriptorRange?[] _frameRegions;
+    private ShaderDescriptorRange? _persistentRegion;
+    private readonly RetiredResourceDisposal _retiredResources = new();
     private bool _disposed;
     private uint _persistentBump;
     private ResourceRegistration? _registration;
 
+    /// <summary>Owns one Shared native heap and retains the exact Bethesda persistent/frame layout.</summary>
+    /// <param name="gpu">Borrowed device retained through this heap's GPU retirement.</param>
+    /// <param name="type">Shader-visible resource or sampler descriptor domain.</param>
+    /// <param name="capacity">Total positive descriptor budget admitted by Shared.</param>
+    /// <param name="framesInFlight">Positive number of equally sized frame regions.</param>
+    /// <param name="persistentCapacity">Stable prefix reserved for individually recycled persistent slots.</param>
+    /// <exception cref="ArgumentException">The descriptor domain or partition layout is invalid.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">A descriptor budget is outside its supported domain.</exception>
+    /// <exception cref="ArgumentNullException">The borrowed device owner is absent.</exception>
+    /// <exception cref="AggregateException">Initialization and cleanup both fail.</exception>
     public GpuDescriptorHeapAllocator12(
         GpuDevice12 gpu,
         DescriptorHeapType type,
@@ -77,12 +72,7 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
             throw new ArgumentException(
                 "(capacity - persistentCapacity) must be divisible by framesInFlight for clean per-frame partitioning.");
 
-        Heap = gpu.Device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
-        {
-            Type = type,
-            DescriptorCount = capacity,
-            Flags = DescriptorHeapFlags.ShaderVisible
-        });
+        ArgumentNullException.ThrowIfNull(gpu);
         _descriptorSize = gpu.Device.GetDescriptorHandleIncrementSize(type);
         PersistentCapacity = persistentCapacity;
         _perFrameRegionStart = persistentCapacity;
@@ -94,10 +84,60 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
         _currentFrameStart = _perFrameRegionStart;
         CurrentFramePeak = 0;
         _currentFrame = 0;
+
+        // Shared owns the one native heap and each declared partition. The existing BMT slot
+        // policies remain offsets within these retained ranges; no frame resets a Shared lease.
+        _heapOwner = new ShaderDescriptorHeap(gpu.Device, type, checked((int)capacity));
+        _frameRegions = new ShaderDescriptorRange?[framesInFlight];
+        _retiredResources.Add(() =>
+        {
+            _registration?.Dispose();
+            _registration = null;
+        }, "descriptor resource registration");
+        _retiredResources.Add(() =>
+        {
+            _persistentRegion?.Dispose();
+            _persistentRegion = null;
+        }, "persistent descriptor partition");
+        for (var frame = 0; frame < framesInFlight; frame++)
+        {
+            var capturedFrame = frame;
+            _retiredResources.Add(() =>
+            {
+                _frameRegions[capturedFrame]?.Dispose();
+                _frameRegions[capturedFrame] = null;
+            }, "frame descriptor partition");
+        }
+        _retiredResources.Add(_heapOwner, "Shared descriptor heap", 1);
+        try
+        {
+            _heapOwner.Initialize();
+            if (persistentCapacity != 0)
+            {
+                _persistentRegion = _heapOwner.Allocate(checked((int)persistentCapacity));
+                VerifyPartitionStart(_persistentRegion, 0);
+            }
+            for (var frame = 0; frame < framesInFlight; frame++)
+            {
+                var region = _heapOwner.Allocate(checked((int)PerFrameCapacity));
+                _frameRegions[frame] = region;
+                VerifyPartitionStart(region, persistentCapacity + (uint)frame * PerFrameCapacity);
+            }
+        }
+        catch (Exception initializationError)
+        {
+            try { _retiredResources.Dispose(); }
+            catch (Exception cleanupError)
+            {
+                throw new AggregateException(
+                    "Descriptor heap initialization and unpublished cleanup failed.", initializationError, cleanupError);
+            }
+            throw;
+        }
     }
 
     /// <summary>The raw heap — pass to <c>ID3D12GraphicsCommandList.SetDescriptorHeaps</c>.</summary>
-    public ID3D12DescriptorHeap Heap { get; }
+    public ID3D12DescriptorHeap Heap { get { VerifyReady(); return _heapOwner.Heap; } }
 
     public uint PerFrameCapacity { get; }
 
@@ -120,16 +160,21 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
     ///     access individual textures via index, treating the unbounded SRV array as a
     ///     direct view of the heap.
     /// </summary>
-    public GpuDescriptorHandle BindlessHeapStartGpu =>
-        new(Heap.GetGPUDescriptorHandleForHeapStart(), 0, _descriptorSize);
+    public GpuDescriptorHandle BindlessHeapStartGpu
+    {
+        get
+        {
+            VerifyReady();
+            return _persistentRegion is { } persistent ? persistent.Gpu() : _frameRegions[0]!.Gpu();
+        }
+    }
 
+    /// <summary>Retires owned children after caller-proven GPU completion and retains partial releases for retry.</summary>
     public void Dispose()
     {
-        if (_disposed) return;
+        VerifyAccess();
         _disposed = true;
-        _registration?.Dispose();
-        _registration = null;
-        Heap.Dispose();
+        _retiredResources.Dispose();
     }
 
     public string ResourceName => nameof(GpuDescriptorHeapAllocator12);
@@ -157,6 +202,7 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
     public GpuDescriptorHeapAllocator12 RegisterWith(
         ResourceRegistry registry, string? instanceTag = null)
     {
+        VerifyReady();
         _registration?.Dispose();
         _registration = registry.Register(this, instanceTag);
         return this;
@@ -166,17 +212,12 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
     ///     Allocates a single persistent slot at LoadData / texture-upload time. Returns
     ///     the CPU handle (caller writes the descriptor via
     ///     <c>Device.CreateShaderResourceView</c>) and the slot index (shader-side bindless
-    ///     index). The slot lives for the heap's lifetime — not reset by
+    ///     index). The slot remains allocated until an explicit retired return and is not reset by
     ///     <see cref="BeginFrame" />.
     /// </summary>
     public PersistentAllocation AllocatePersistent()
     {
-        if (Environment.CurrentManagedThreadId != _ownerThreadId)
-        {
-            Logger.Instance.Warn(
-                "GpuDescriptorHeapAllocator12.AllocatePersistent from thread {0} (owner {1}):\n{2}",
-                Environment.CurrentManagedThreadId, _ownerThreadId, Environment.StackTrace);
-        }
+        VerifyReady();
 
         uint index;
         if (_persistentFreeList.Count > 0)
@@ -199,7 +240,7 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
             PersistentPeak = Math.Max(PersistentPeak, _persistentBump);
         }
 
-        var cpu = new CpuDescriptorHandle(Heap.GetCPUDescriptorHandleForHeapStart(), (int)index, _descriptorSize);
+        var cpu = _persistentRegion!.Cpu(checked((int)index));
         return new PersistentAllocation(cpu, index);
     }
 
@@ -209,18 +250,19 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
     ///     reading the slot's descriptor (defer by frames-in-flight via the deletion queue) —
     ///     reusing a slot the GPU still samples would alias a live texture.
     /// </summary>
+    /// <param name="index">A currently allocated index from this allocator's persistent prefix.</param>
+    /// <exception cref="ArgumentOutOfRangeException">The index is outside the prefix or was never allocated.</exception>
+    /// <exception cref="InvalidOperationException">The index was already returned or access is on another thread.</exception>
+    /// <exception cref="ObjectDisposedException">Heap retirement has begun.</exception>
     public void FreePersistent(uint index)
     {
-        if (Environment.CurrentManagedThreadId != _ownerThreadId)
-        {
-            Logger.Instance.Warn(
-                "GpuDescriptorHeapAllocator12.FreePersistent({0}) from thread {1} (owner {2}):\n{3}",
-                index, Environment.CurrentManagedThreadId, _ownerThreadId, Environment.StackTrace);
-        }
+        VerifyReady();
 
         if (index >= PersistentCapacity)
             throw new ArgumentOutOfRangeException(nameof(index), index, "Slot index is outside the persistent region.");
-        if (!_persistentFreeSet.Add(index))
+        if (index >= _persistentBump)
+            throw new ArgumentOutOfRangeException(nameof(index), index, "The persistent slot was never allocated.");
+        if (_persistentFreeSet.Contains(index))
         {
             throw new InvalidOperationException(
                 $"GpuDescriptorHeapAllocator12: persistent slot {index} freed twice. A double-free hands the " +
@@ -228,6 +270,11 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
                 "first's and the shader samples the wrong resource (timing-dependent).");
         }
 
+        // Admit fallible collection growth before changing ownership or either collection's membership.
+        var returnedCount = checked(_persistentFreeList.Count + 1);
+        _persistentFreeSet.EnsureCapacity(returnedCount);
+        _persistentFreeList.EnsureCapacity(returnedCount);
+        _persistentFreeSet.Add(index);
         _persistentFreeList.Push(index);
     }
 
@@ -237,16 +284,26 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
     /// </summary>
     public DescriptorAllocation Allocate(uint count)
     {
+        VerifyReady();
         var frameEnd = _perFrameRegionStart + (uint)(_currentFrame + 1) * PerFrameCapacity;
-        if (_bumpOffset + count > frameEnd)
+        if (count > frameEnd - _bumpOffset)
         {
             throw new InvalidOperationException(
                 $"GpuDescriptorHeapAllocator12: frame slot exhausted (requested {count} at +{_bumpOffset}, " +
                 $"slot ends at +{frameEnd}). Increase capacity at construction.");
         }
 
-        var cpu = new CpuDescriptorHandle(Heap.GetCPUDescriptorHandleForHeapStart(), (int)_bumpOffset, _descriptorSize);
-        var gpu = new GpuDescriptorHandle(Heap.GetGPUDescriptorHandleForHeapStart(), (int)_bumpOffset, _descriptorSize);
+        var region = _frameRegions[_currentFrame]!;
+        var relativeOffset = checked((int)(_bumpOffset - _currentFrameStart));
+        // Preserve zero-length reservations, including the end marker of a full frame partition.
+        // Positive requests have already been bounded by this exact partition's remaining size.
+        var isEndMarker = count == 0 && relativeOffset == region.Count;
+        var cpu = isEndMarker
+            ? new CpuDescriptorHandle(region.Cpu(), relativeOffset, _descriptorSize)
+            : region.Cpu(relativeOffset);
+        var gpu = isEndMarker
+            ? new GpuDescriptorHandle(region.Gpu(), relativeOffset, _descriptorSize)
+            : region.Gpu(relativeOffset);
         _bumpOffset += count;
         CurrentFramePeak = Math.Max(CurrentFramePeak, CurrentFrameUsed);
         return new DescriptorAllocation(cpu, gpu, _descriptorSize);
@@ -260,12 +317,40 @@ internal sealed class GpuDescriptorHeapAllocator12 : ITrackableResource, IDispos
     /// </summary>
     public void BeginFrame(int frameIndex)
     {
+        VerifyReady();
         if ((uint)frameIndex >= (uint)_framesInFlight)
             throw new ArgumentOutOfRangeException(nameof(frameIndex));
         _currentFrame = frameIndex;
         _currentFrameStart = _perFrameRegionStart + (uint)frameIndex * PerFrameCapacity;
         _bumpOffset = _currentFrameStart;
         CurrentFramePeak = 0;
+    }
+
+    /// <summary>Verifies the exact native-index ABI before publishing a declared Shared partition.</summary>
+    /// <param name="region">Newly retained range in the single heap.</param>
+    /// <param name="expectedStart">Persistent or frame-partition base used by the existing shaders.</param>
+    private static void VerifyPartitionStart(ShaderDescriptorRange region, uint expectedStart)
+    {
+        if ((uint)region.Index != expectedStart)
+        {
+            throw new InvalidOperationException("Shared descriptor partition changed the declared shader-visible layout.");
+        }
+    }
+
+    /// <summary>Rejects mutation after retirement starts or outside the native owner's thread.</summary>
+    private void VerifyReady()
+    {
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
+    /// <summary>Enforces the creating-thread lifetime required by the Shared heap and range owners.</summary>
+    private void VerifyAccess()
+    {
+        if (Environment.CurrentManagedThreadId != _ownerThreadId)
+        {
+            throw new InvalidOperationException("Descriptor allocation belongs to its creating thread.");
+        }
     }
 
     /// <summary>

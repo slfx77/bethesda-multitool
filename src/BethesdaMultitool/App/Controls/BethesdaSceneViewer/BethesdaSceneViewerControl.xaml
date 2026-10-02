@@ -3,12 +3,12 @@
 <UserControl
   x:Class="BethesdaMultitool.BethesdaSceneViewerControl"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
+  xmlns:sharedRendering="using:Slfx77.Multitool.WinUI.Rendering">
 
   <Grid>
-    <SwapChainPanel x:Name="RenderPanel"
-                    IsTabStop="True"
-                    AutomationProperties.Name="Native Bethesda scene viewer" />
+    <sharedRendering:NativeViewport x:Name="Viewport" />
 
     <!-- This is a renderer-state surface, not a success placeholder. The panel is not created or
          presented until the mandatory render session reports Ready; tab hosts observe the same
@@ -36,18 +36,10 @@
             CornerRadius="4"
             Background="#D8202024"
             Visibility="Collapsed">
-      <Grid ColumnSpacing="8">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="160" />
-          <ColumnDefinition Width="Auto" />
-          <ColumnDefinition Width="Auto" />
-        </Grid.ColumnDefinitions>
+      <toolkit:WrapPanel Orientation="Horizontal"
+                         HorizontalSpacing="8" VerticalSpacing="8">
 
         <Button x:Name="AnimationLoadKfButton"
-                Grid.Column="0"
                 Padding="8,4"
                 Content="Load KF…"
                 Click="AnimationLoadKfButton_Click"
@@ -55,7 +47,6 @@
                 ToolTipService.ToolTip="Load standalone classic Bethesda animation sequences from a KF file" />
 
         <Button x:Name="AnimationPlayPauseButton"
-                Grid.Column="1"
                 MinWidth="36"
                 Padding="8,4"
                 Click="AnimationPlayPauseButton_Click"
@@ -67,14 +58,13 @@
         </Button>
 
         <ComboBox x:Name="AnimationClipComboBox"
-                  Grid.Column="2"
-                  MinWidth="140"
+                  MinWidth="0" MaxWidth="240"
                   SelectionChanged="AnimationClipComboBox_SelectionChanged"
                   AutomationProperties.Name="Animation clip"
                   ToolTipService.ToolTip="Select an animation clip" />
 
         <Slider x:Name="AnimationTimeline"
-                Grid.Column="3"
+                MinWidth="80" MaxWidth="160"
                 Minimum="0"
                 Maximum="1"
                 StepFrequency="0.01"
@@ -83,15 +73,13 @@
                 AutomationProperties.Name="Animation timeline" />
 
         <TextBlock x:Name="AnimationTimeText"
-                   Grid.Column="4"
-                   MinWidth="84"
+                   TextWrapping="Wrap"
                    VerticalAlignment="Center"
                    Text="0.00 / 0.00 s"
                    Foreground="#FFF0F0F0"
                    AutomationProperties.Name="Animation time" />
 
         <TextBlock x:Name="AnimationLoadStatusText"
-                   Grid.Column="5"
                    MaxWidth="260"
                    VerticalAlignment="Center"
                    Text="No animation clip loaded"
@@ -99,7 +87,7 @@
                    Foreground="#FFCCCCCC"
                    AutomationProperties.Name="Animation load status"
                    AutomationProperties.LiveSetting="Polite" />
-      </Grid>
+      </toolkit:WrapPanel>
     </Border>
   </Grid>
 </UserControl>

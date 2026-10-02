@@ -25,7 +25,7 @@ internal static class GpuResourceFootprint
 
     /// <summary>
     ///     Sub-region alignment inside a geometry/terrain arena block
-    ///     (<c>GeometryArenaAllocator</c>'s default).
+    ///     (<c>ByteArenaAllocator</c>'s default).
     /// </summary>
     public const int ArenaRegionAlignment = 16;
 

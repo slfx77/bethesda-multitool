@@ -4,6 +4,7 @@
   x:Class="BethesdaMultitool.WorldView3DControl"
   xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
   xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:toolkit="using:CommunityToolkit.WinUI.Controls"
   xmlns:local="using:BethesdaMultitool">
 
   <Grid>
@@ -13,49 +14,44 @@
     </Grid.RowDefinitions>
 
     <!-- Toolbar — mirrors WorldMapControl's worldspace picker. -->
-    <Grid Grid.Row="0" Padding="0,0,0,8" ColumnSpacing="8">
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto" />
-        <ColumnDefinition Width="*" />
-      </Grid.ColumnDefinitions>
-      <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-        <ComboBox x:Name="WorldspaceComboBox" MinWidth="220"
-                  SelectionChanged="WorldspaceComboBox_SelectionChanged"
-                  AutomationProperties.Name="Worldspace"
-                  PlaceholderText="Select Worldspace" />
-        <Button x:Name="WorldspacesButton" Content="Worldspaces" IsEnabled="False"
-                Click="WorldspacesButton_Click"
-                ToolTipService.ToolTip="Search every worldspace by editor ID or name" />
-        <Button x:Name="InteriorsButton" Content="Interiors" IsEnabled="False"
-                Click="InteriorsButton_Click"
-                ToolTipService.ToolTip="Browse interior cells" />
-        <Button x:Name="AllCellsButton" Content="All Cells" IsEnabled="False"
-                Click="AllCellsButton_Click"
-                ToolTipService.ToolTip="Browse every cell; picking an exterior switches worldspace and centres the camera on it" />
-        <!-- Memory dumps only. Runs the DMP→ESM conversion's donor fuzzy pass over every mesh path,
-             persists the map next to the dump, and reopens the mesh pipeline with it — so the
-             preview shows the same renamed-asset resolutions the converter would apply. -->
-        <Button x:Name="ResolveRenamesButton" Content="Resolve Renames" Visibility="Collapsed"
-                Click="ResolveRenamesButton_Click"
-                ToolTipService.ToolTip="Resolve renamed prototype mesh paths against the donor builds (the DMP-to-ESM conversion's fuzzy pass) and save the map next to the dump" />
-      </StackPanel>
+    <toolkit:WrapPanel Grid.Row="0" Margin="0,0,0,8" Orientation="Horizontal"
+                       HorizontalSpacing="8" VerticalSpacing="8">
+      <ComboBox x:Name="WorldspaceComboBox" MinWidth="220" MaxWidth="240"
+                VerticalAlignment="Center"
+                SelectionChanged="WorldspaceComboBox_SelectionChanged"
+                AutomationProperties.Name="Worldspace"
+                PlaceholderText="Select Worldspace" />
+      <Button x:Name="WorldspacesButton" Content="Worldspaces" IsEnabled="False"
+              Click="WorldspacesButton_Click"
+              ToolTipService.ToolTip="Search every worldspace by editor ID or name" />
+      <Button x:Name="InteriorsButton" Content="Interiors" IsEnabled="False"
+              Click="InteriorsButton_Click"
+              ToolTipService.ToolTip="Browse interior cells" />
+      <Button x:Name="AllCellsButton" Content="All Cells" IsEnabled="False"
+              Click="AllCellsButton_Click"
+              ToolTipService.ToolTip="Browse every cell; picking an exterior switches worldspace and centres the camera on it" />
+      <!-- Memory dumps only. Runs the DMP→ESM conversion's donor fuzzy pass over every mesh path,
+           persists the map next to the dump, and reopens the mesh pipeline with it — so the
+           preview shows the same renamed-asset resolutions the converter would apply. -->
+      <Button x:Name="ResolveRenamesButton" Content="Resolve Renames" Visibility="Collapsed"
+              Click="ResolveRenamesButton_Click"
+              ToolTipService.ToolTip="Resolve renamed prototype mesh paths against the donor builds (the DMP-to-ESM conversion's fuzzy pass) and save the map next to the dump" />
       <!-- Diagnostics-overlay toggle. Lives in the TOOLBAR rather than over the viewport so that
            switching the overlay off leaves the 3D view completely unobstructed — the button itself
            used to remain floating in the top-right corner, which is exactly what "off" should not
            look like. -->
-      <ToggleButton x:Name="HudToggleButton" Grid.Column="1"
-                    HorizontalAlignment="Right" VerticalAlignment="Center"
-                    Padding="6" MinWidth="0"
-                    IsChecked="True"
-                    ToolTipService.ToolTip="Show/hide the diagnostics overlay"
-                    AutomationProperties.Name="Show/hide diagnostics overlay"
-                    Checked="HudToggleButton_Changed" Unchecked="HudToggleButton_Changed">
+      <ToggleButton x:Name="HudToggleButton" VerticalAlignment="Center"
+                  Padding="6" MinWidth="0"
+                  IsChecked="True"
+                  ToolTipService.ToolTip="Show/hide the diagnostics overlay"
+                  AutomationProperties.Name="Show/hide diagnostics overlay"
+                  Checked="HudToggleButton_Changed" Unchecked="HudToggleButton_Changed">
         <FontIcon Glyph="&#xE946;" FontSize="14" />
       </ToggleButton>
       <!-- The former toolbar controls (Lighting / Overlays / Visibility / Camera dropdowns and the
            Export button) all live in the host's right-panel tabs now: Settings = WorldView3DSettingsPanel
            and Export = WorldView3DExportPanel, both constructed + wired by this control. -->
-    </Grid>
+    </toolkit:WrapPanel>
 
     <!-- 3D viewport — SwapChainPanel + status overlay + HUD. -->
     <Grid Grid.Row="1">

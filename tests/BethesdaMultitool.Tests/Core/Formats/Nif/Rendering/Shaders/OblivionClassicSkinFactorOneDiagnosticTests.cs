@@ -120,6 +120,7 @@ public sealed class OblivionClassicSkinFactorOneDiagnosticTests
         Assert.Contains("bool classicSkinFactorOneRequested = false", renderer, StringComparison.Ordinal);
     }
 
+    /// <summary>Preserves diagnostic admission, atomic pair creation and one retained release per culling variant.</summary>
     [Fact]
     public void SeparateDiagnosticPairReusesTheOrdinaryVertexAndFailsClosed()
     {
@@ -131,7 +132,7 @@ public sealed class OblivionClassicSkinFactorOneDiagnosticTests
             "ObjectDisposedException.ThrowIf(_disposed, this);",
             "!DirectClassicSkinRequested || !DirectClassicSkinAvailable",
             "throw new InvalidOperationException(",
-            "CreateDirectClassicSkinFactorOnePipelines(_directClassicSkinVertexShader);");
+            "CreateDirectClassicSkinFactorOnePipelines(_directClassicSkinVertexShader.Value);");
         var creation = SourceContract.Extract(factory,
             "private void CreateDirectClassicSkinFactorOnePipelines(",
             "private void TryCreateModernStandardOpaquePipelines()");
@@ -141,20 +142,24 @@ public sealed class OblivionClassicSkinFactorOneDiagnosticTests
         SourceContract.AssertOrder(creation,
             "\"reference_classic_skin_factor_one.frag.hlsl\", \"mainFactorOne\", \"ps_5_1\"",
             "back = CreatePipelineState(",
-            "vertexShader, pixelShader, doubleSided: false, blendAttachment: null,",
-            "depthWriteEnabled: true);",
+            "vertexShader, pixelShader, new ReferencePipelineRenderState12(",
+            "DoubleSided: false, BlendAttachment: null, DepthWriteEnabled: true));",
             "doubleSided = CreatePipelineState(",
-            "vertexShader, pixelShader, doubleSided: true, blendAttachment: null,",
-            "depthWriteEnabled: true);",
+            "vertexShader, pixelShader, new ReferencePipelineRenderState12(",
+            "DoubleSided: true, BlendAttachment: null, DepthWriteEnabled: true));",
             "_directClassicSkinFactorOneBackPso = back;",
             "_directClassicSkinFactorOneDoublePso = doubleSided;",
-            "back = null;",
-            "doubleSided = null;",
+            "published = true;",
             "finally",
-            "DisposeAbandonedConstructionPipeline(ref doubleSided);",
-            "DisposeAbandonedConstructionPipeline(ref back);");
-        Assert.Equal(1, SourceContract.CountOccurrences(factory, "_directClassicSkinFactorOneDoublePso?.Dispose();"));
-        Assert.Equal(1, SourceContract.CountOccurrences(factory, "_directClassicSkinFactorOneBackPso?.Dispose();"));
+            "if (!published && pipelineResources is not null)",
+            "ReleaseUnpublishedPipelineFamily(pipelineResources);");
+        var retirement = SourceContract.Extract(factory,
+            "private RetiredResourceDisposal PrepareRetiredResources()", "private void VerifyAccess()");
+        SourceContract.AssertOrder(creation,
+            "pipelineResources = RetainPipelineFamily(2);", "CompileEmbeddedShader(");
+        Assert.Contains("retired.Add(_pipelineFamilies[index],", retirement, StringComparison.Ordinal);
+        Assert.DoesNotContain("_directClassicSkinFactorOneDoublePso?.Dispose();", factory, StringComparison.Ordinal);
+        Assert.DoesNotContain("_directClassicSkinFactorOneBackPso?.Dispose();", factory, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -176,9 +181,9 @@ public sealed class OblivionClassicSkinFactorOneDiagnosticTests
     {
         ShaderCompileTestGuard.SkipUnlessEnabled();
         using var vertex = Compiler.Reflect<ID3D12ShaderReflection>(GpuShaderCompiler12.Compile(
-            "reference.vert.hlsl", "main", "vs_5_1", new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1")));
+            "reference.vert.hlsl", "main", "vs_5_1", new ShaderMacro("REFERENCE_OBLIVION_CLASSIC_SKIN", "1")).Span);
         using var pixel = Compiler.Reflect<ID3D12ShaderReflection>(GpuShaderCompiler12.Compile(
-            DiagnosticFile, DiagnosticEntry, "ps_5_1"));
+            DiagnosticFile, DiagnosticEntry, "ps_5_1").Span);
         var outputs = new List<ShaderParameterDescription>();
         for (var index = 0u; index < vertex.Description.OutputParameters; index++)
         {

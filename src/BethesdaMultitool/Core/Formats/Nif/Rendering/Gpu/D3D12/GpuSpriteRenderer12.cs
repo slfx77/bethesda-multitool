@@ -6,6 +6,8 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Rasterization;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
+using Slfx77.Multitool.Core.Lifetime;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
@@ -15,7 +17,7 @@ using ShaderResourceViewDimension = Vortice.Direct3D12.ShaderResourceViewDimensi
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
-///     v3 Pass 4 Step 3 — D3D12 port of the old <c>GpuSpriteRenderer</c>. Headless renderer
+///     Native headless renderer with shared pipeline and submission ownership,
 ///     producing the same <see cref="SpriteResult" /> contract as the CPU path. Used by the
 ///     CLI <c>render npc</c> / <c>export npc</c> commands and the GPU smoke tests.
 ///     <para>
@@ -33,19 +35,24 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     private const uint SamplerTableSize = 3; // skin.frag.hlsl binds one sampler per texture
     private const uint SamplerModeCount = 4; // wrap/wrap, clampU, clampV, clampUV
     private const uint SamplerHeapSize = SamplerTableSize * SamplerModeCount;
-    private readonly byte[] _classicSkinPsBytecode;
-    private readonly AutoResetEvent _fenceEvent = new(false);
+    private readonly ReadOnlyMemory<byte> _classicSkinPsBytecode;
+    private readonly AutoResetEvent _fenceEvent;
     private readonly ShaderResourceViewDescription _flatNormalSrvDesc;
     private readonly ID3D12Resource _flatNormalTexture;
 
     private readonly GpuDevice12 _gpu;
     private readonly InputElementDescription[] _inputElements;
-    private readonly byte[] _psBytecode;
-    private readonly Dictionary<PsoKey, ID3D12PipelineState> _psoCache = new();
+    private readonly ReadOnlyMemory<byte> _psBytecode;
+    private readonly bool[] _pipelineReady = new bool[GpuSpritePipelineKey.Capacity];
+    private readonly ShaderPipelineResources _pipelineResources;
+    private readonly RetiredResourceDisposal _ownedResources = new();
+    private readonly List<SubmissionResourceRetirement> _submissions = [];
+    private readonly int _threadId = Environment.CurrentManagedThreadId;
+    private bool _retirementProven;
     private readonly ID3D12Fence _renderFence;
     private readonly ID3D12RootSignature _rootSignature;
     private readonly ID3D12DescriptorHeap _samplerHeap;
-    private readonly byte[] _vsBytecode;
+    private readonly ReadOnlyMemory<byte> _vsBytecode;
     private readonly ShaderResourceViewDescription _whitePixelSrvDesc;
 
     // Built-in fallback textures (1×1 RGBA), uploaded once at construction. White is the
@@ -57,48 +64,139 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     private bool _disposed;
     private ulong _nextFenceValue = 1;
 
+    /// <summary>Creates the sprite pipeline owner and fallback textures on the rendering thread.</summary>
+    /// <param name="gpu">Borrowed device retained until renderer disposal completes.</param>
+    /// <remarks>Creation, submission, completion and disposal must use this same managed thread.</remarks>
     public GpuSpriteRenderer12(GpuDevice12 gpu)
     {
         _gpu = gpu;
-        _vsBytecode = CompileEmbeddedShader("skin.vert.hlsl", "main", "vs_5_1");
-        _psBytecode = CompileEmbeddedShader("skin.frag.hlsl", "main", "ps_5_1");
-        _classicSkinPsBytecode = CompileEmbeddedShader(
-            "skin.frag.hlsl",
-            "main",
-            "ps_5_1",
-            new ShaderMacro("CLASSIC_SKIN2000", "1"));
-        _inputElements = GpuMeshBufferFactory12.InputElements;
-
-        _rootSignature = CreateRootSignature(gpu.Device);
-        _samplerHeap = CreateSamplerHeap(gpu.Device);
-        _renderFence = gpu.Device.CreateFence<ID3D12Fence>();
-
-        // Upload white + flat pixels on a one-shot init command list, fence-waited so the
-        // textures are guaranteed in PIXEL_SHADER_RESOURCE state before any SubmitRender.
-        _whitePixelTexture = CreateSolidPixelOneShot(255, 255, 255, 255);
-        _whitePixelSrvDesc = MakeSrv(Format.R8G8B8A8_UNorm, 1);
-        _flatNormalTexture = CreateSolidPixelOneShot(128, 128, 255, 255);
-        _flatNormalSrvDesc = MakeSrv(Format.R8G8B8A8_UNorm, 1);
+        try
+        {
+            _ownedResources.Add(ReleaseSubmissionsAfterRetirement, "sprite submissions");
+            _ownedResources.Add(() => _pipelineResources?.Dispose(), "sprite pipeline family", 2);
+            _ownedResources.Add(() => _fenceEvent?.Dispose(), "sprite completion event", 3);
+            _pipelineResources = new ShaderPipelineResources(gpu.Device, GpuSpritePipelineKey.Capacity);
+            _fenceEvent = new AutoResetEvent(false);
+            _vsBytecode = CompileEmbeddedShader("skin.vert.hlsl", "main", "vs_5_1");
+            _psBytecode = CompileEmbeddedShader("skin.frag.hlsl", "main", "ps_5_1");
+            _classicSkinPsBytecode = CompileEmbeddedShader(
+                "skin.frag.hlsl", "main", "ps_5_1", new ShaderMacro("CLASSIC_SKIN2000", "1"));
+            _inputElements = GpuMeshBufferFactory12.InputElements;
+            _pipelineResources.Initialize(CreateRootSignatureDescription());
+            _rootSignature = _pipelineResources.RootSignature;
+            _samplerHeap = CreateSamplerHeap(gpu.Device);
+            _renderFence = TrackResource(gpu.Device.CreateFence<ID3D12Fence>(), _ownedResources, 3);
+            _whitePixelTexture = CreateSolidPixelOneShot(255, 255, 255, 255);
+            _whitePixelSrvDesc = MakeSrv(Format.R8G8B8A8_UNorm, 1);
+            _flatNormalTexture = CreateSolidPixelOneShot(128, 128, 255, 255);
+            _flatNormalSrvDesc = MakeSrv(Format.R8G8B8A8_UNorm, 1);
+        }
+        catch
+        {
+            Dispose();
+            throw;
+        }
     }
 
+    /// <summary>Drains submitted work and releases dependencies in stages, retaining failures for retry.</summary>
+    /// <exception cref="InvalidOperationException">Called outside the creating thread.</exception>
+    /// <exception cref="AggregateException">Cleanup failed; retain this owner and retry disposal.</exception>
     public void Dispose()
     {
-        if (_disposed) return;
+        VerifyAccess();
         _disposed = true;
+        if (!_retirementProven)
+        {
+            try
+            {
+                if (_renderFence is not null)
+                {
+                    var drain = _nextFenceValue++;
+                    _gpu.DirectQueue.Signal(_renderFence, drain).CheckError();
+                    D3D12FenceWaiter.WaitForFence(_renderFence, drain, _fenceEvent);
+                    if (_renderFence.CompletedValue == ulong.MaxValue &&
+                        !_gpu.TryForceDeviceRemoval("sprite-renderer-teardown"))
+#pragma warning disable S3877 // Dispose must retain resources when neither completion nor terminal device retirement is proven.
+                        throw new InvalidOperationException("Sprite completion requires a fence or terminal device proof.");
+#pragma warning restore S3877
+                }
+            }
+            catch
+            {
+                if (!_gpu.TryForceDeviceRemoval("sprite-renderer-teardown")) throw;
+            }
+            _retirementProven = true;
+        }
+        _ownedResources.Dispose();
+        Array.Clear(_pipelineReady);
+    }
 
-        // Drain any in-flight GPU work referencing our resources before tear-down.
-        var drain = _nextFenceValue++;
-        _gpu.DirectQueue.Signal(_renderFence, drain).CheckError();
-        D3D12FenceWaiter.WaitForFence(_renderFence, drain, _fenceEvent);
+    /// <summary>Rejects access outside the renderer's creating thread before any native state changes.</summary>
+    private void VerifyAccess()
+    {
+        if (Environment.CurrentManagedThreadId != _threadId)
+            throw new InvalidOperationException("Sprite rendering belongs to its creating thread.");
+    }
 
-        _renderFence.Dispose();
-        _fenceEvent.Dispose();
-        foreach (var pso in _psoCache.Values) pso.Dispose();
-        _psoCache.Clear();
-        _samplerHeap.Dispose();
-        _rootSignature.Dispose();
-        _whitePixelTexture.Dispose();
-        _flatNormalTexture.Dispose();
+    /// <summary>Retains newly allocated native resources before subsequent preparation can fail.</summary>
+    /// <typeparam name="T">Owned native or managed disposable type.</typeparam>
+    /// <param name="resource">New resource to transfer.</param>
+    /// <param name="owner">Existing retryable owner retained by the renderer.</param>
+    /// <param name="stage">Dependency stage within that owner.</param>
+    /// <returns>The borrowed handle used for preparation and recording.</returns>
+    private static T TrackResource<T>(T resource, RetiredResourceDisposal owner, int stage = 1)
+        where T : IDisposable
+    {
+        owner.Add(resource, "sprite resource", stage);
+        return resource;
+    }
+
+    /// <summary>Releases every retained submission only after the renderer has proven queue or device retirement.</summary>
+    private void ReleaseSubmissionsAfterRetirement()
+    {
+        List<Exception>? failures = null;
+        for (var index = _submissions.Count - 1; index >= 0; index--)
+        {
+            try
+            {
+                _submissions[index].ReleaseAllAfterRetirement();
+                _submissions.RemoveAt(index);
+            }
+            catch (Exception failure) { (failures ??= []).Add(failure); }
+        }
+        if (failures is not null) throw new AggregateException("Sprite submission cleanup failed.", failures);
+    }
+
+    /// <summary>Retains an empty release bundle before recording allocates resources or can reach the native queue.</summary>
+    /// <param name="resources">Owner populated by subsequent preparation.</param>
+    /// <returns>The shared submission classifier retained until successful cleanup.</returns>
+    private SubmissionResourceRetirement BeginSubmission(RetiredResourceDisposal resources)
+    {
+        var submission = new SubmissionResourceRetirement(1);
+        _submissions.Add(submission);
+        submission.BeginRecording();
+        submission.Retain(resources, "sprite recording");
+        return submission;
+    }
+
+    /// <summary>Classifies the native execute result before associating its successful fence signal.</summary>
+    /// <param name="commandList">Closed command list with resources already retained.</param>
+    /// <param name="submission">Current recording ownership.</param>
+    /// <returns>The actual signaled fence value.</returns>
+    private ulong Submit(ID3D12GraphicsCommandList commandList, SubmissionResourceRetirement submission)
+    {
+        submission.MarkSubmissionPossible();
+        try { _gpu.DirectQueue.ExecuteCommandList(commandList); }
+        catch
+        {
+            submission.ReportSubmission(SubmissionOutcome.SubmissionUncertain);
+            throw;
+        }
+        submission.ReportSubmission(SubmissionOutcome.Submitted);
+        var fence = _nextFenceValue++;
+        _gpu.DirectQueue.Signal(_renderFence, fence).CheckError();
+        submission.AssociateUnfenced(fence);
+        return fence;
     }
 
     public SpriteResult? Render(NifRenderableModel model,
@@ -121,32 +219,69 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         return Render(model, textureResolver, pixelsPerUnit, minSize, maxSize, 0f, 90f, fixedSize);
     }
 
+    /// <summary>Records a sprite while retaining every allocation through actual queue completion or abandonment.</summary>
+    /// <param name="model">Normalized geometry and material inputs.</param>
+    /// <param name="textureResolver">Optional source texture resolver.</param>
+    /// <param name="pixelsPerUnit">Orthographic sizing scale when fixed size is absent.</param>
+    /// <param name="minSize">Minimum automatically sized extent.</param>
+    /// <param name="maxSize">Maximum automatically sized extent.</param>
+    /// <param name="azimuthDeg">Horizontal camera angle.</param>
+    /// <param name="elevationDeg">Vertical camera angle.</param>
+    /// <param name="fixedSize">Optional fixed maximum image extent.</param>
+    /// <returns>A retained submitted sprite, or null when geometry cannot produce a view.</returns>
     public PendingRender? SubmitRender(NifRenderableModel model,
         NifTextureResolver? textureResolver,
         float pixelsPerUnit, int minSize, int maxSize,
         float azimuthDeg, float elevationDeg,
         int? fixedSize = null)
     {
-        // Drain any pending validation messages from the previous frame so they're attributed
-        // to the correct render. No-op if the debug layer wasn't enabled.
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         _gpu.PumpDebugMessages();
+        var resources = new RetiredResourceDisposal();
+        var submission = BeginSubmission(resources);
         try
         {
-            return SubmitRenderCore(model, textureResolver, pixelsPerUnit, minSize, maxSize,
-                azimuthDeg, elevationDeg, fixedSize);
+            var pending = SubmitRenderCore(model, textureResolver, pixelsPerUnit, minSize, maxSize,
+                azimuthDeg, elevationDeg, fixedSize, resources, submission);
+            if (pending is null)
+            {
+                submission.AbandonRecording();
+                submission.ReleaseCompleted(0);
+                _submissions.Remove(submission);
+            }
+            return pending;
         }
         catch
         {
+            if (submission.HasRecording)
+            {
+                submission.AbandonRecording();
+                submission.ReleaseCompleted(0);
+                _submissions.Remove(submission);
+            }
             _gpu.PumpDebugMessages();
             throw;
         }
     }
 
+    /// <summary>Builds the unchanged sprite draw sequence under an already retained submission owner.</summary>
+    /// <param name="model">Geometry and per-draw material state.</param>
+    /// <param name="textureResolver">Optional resolver for source images.</param>
+    /// <param name="pixelsPerUnit">Automatic image scale.</param>
+    /// <param name="minSize">Minimum automatic extent.</param>
+    /// <param name="maxSize">Maximum automatic extent.</param>
+    /// <param name="azimuthDeg">Horizontal camera angle.</param>
+    /// <param name="elevationDeg">Vertical camera angle.</param>
+    /// <param name="fixedSize">Optional fixed extent.</param>
+    /// <param name="pendingResources">Retryable allocation owner retained before this method is called.</param>
+    /// <param name="submission">Shared classifier for recording, queue acceptance and successful signal.</param>
+    /// <returns>Readback metadata owned by this renderer, or null for absent geometry.</returns>
     private PendingRender? SubmitRenderCore(NifRenderableModel model,
         NifTextureResolver? textureResolver,
         float pixelsPerUnit, int minSize, int maxSize,
         float azimuthDeg, float elevationDeg,
-        int? fixedSize)
+        int? fixedSize, RetiredResourceDisposal pendingResources, SubmissionResourceRetirement submission)
     {
         if (!model.HasGeometry) return null;
 
@@ -197,13 +332,13 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
         // ---- Allocate per-render GPU resources --------------------------------------------
         var device = _gpu.Device;
-        var pendingResources = new List<IDisposable>();
 
         // Per-render command allocator + command list (one-shot).
         var allocator = device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Direct);
-        pendingResources.Add(allocator);
+        pendingResources.Add(allocator, "sprite command allocator", 2);
         var cmd = device.CreateCommandList<ID3D12GraphicsCommandList>(
             0, CommandListType.Direct, allocator);
+        pendingResources.Add(cmd, "sprite command list");
 
         // MSAA color RT.
         var colorTex = device.CreateCommittedResource<ID3D12Resource>(
@@ -213,7 +348,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 ResourceFlags.AllowRenderTarget),
             ResourceStates.RenderTarget,
             new ClearValue(Format.R8G8B8A8_UNorm, new Color4(0f, 0f, 0f, 0f)));
-        pendingResources.Add(colorTex);
+        pendingResources.Add(colorTex, "sprite render resource", 1);
 
         // Non-MSAA resolve target.
         var resolveTex = device.CreateCommittedResource<ID3D12Resource>(
@@ -221,7 +356,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             ResourceDescription.Texture2D(Format.R8G8B8A8_UNorm, ssWidth, ssHeight,
                 1, 1),
             ResourceStates.ResolveDest);
-        pendingResources.Add(resolveTex);
+        pendingResources.Add(resolveTex, "sprite render resource", 1);
 
         // MSAA depth.
         var depthTex = device.CreateCommittedResource<ID3D12Resource>(
@@ -231,7 +366,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 ResourceFlags.AllowDepthStencil),
             ResourceStates.DepthWrite,
             new ClearValue(Format.D32_Float_S8X24_UInt, new DepthStencilValue(1.0f)));
-        pendingResources.Add(depthTex);
+        pendingResources.Add(depthTex, "sprite render resource", 1);
 
         // Small per-render RTV + DSV heaps (CPU-only).
         var rtvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
@@ -240,14 +375,14 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             DescriptorCount = 1,
             Flags = DescriptorHeapFlags.None
         });
-        pendingResources.Add(rtvHeap);
+        pendingResources.Add(rtvHeap, "sprite render resource", 1);
         var dsvHeap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
             Type = DescriptorHeapType.DepthStencilView,
             DescriptorCount = 1,
             Flags = DescriptorHeapFlags.None
         });
-        pendingResources.Add(dsvHeap);
+        pendingResources.Add(dsvHeap, "sprite render resource", 1);
         var rtvHandle = rtvHeap.GetCPUDescriptorHandleForHeapStart();
         var dsvHandle = dsvHeap.GetCPUDescriptorHandleForHeapStart();
         device.CreateRenderTargetView(colorTex, null, rtvHandle);
@@ -318,7 +453,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             DescriptorCount = srvHeapCapacity,
             Flags = DescriptorHeapFlags.ShaderVisible
         });
-        pendingResources.Add(srvHeap);
+        pendingResources.Add(srvHeap, "sprite render resource", 1);
         var srvIncrement = device.GetDescriptorHandleIncrementSize(
             DescriptorHeapType.ConstantBufferViewShaderResourceViewUnorderedAccessView);
         var samplerIncrement = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.Sampler);
@@ -380,7 +515,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
                 HeapProperties.UploadHeapProperties, HeapFlags.None,
                 ResourceDescription.Buffer(ConstantBufferSize),
                 ResourceStates.GenericRead);
-            pendingResources.Add(cb);
+            pendingResources.Add(cb, "sprite render resource", 1);
             void* cbCpu = null;
             cb.Map(0, &cbCpu).CheckError();
             *(GpuUniforms*)cbCpu = uniforms;
@@ -389,9 +524,9 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             // Mesh upload.
             var vertices = GpuMeshUploader.BuildVertices(sub);
             var vb = GpuMeshBufferFactory12.CreateUploadBuffer(_gpu, vertices);
-            pendingResources.Add(vb);
+            pendingResources.Add(vb, "sprite render resource", 1);
             var ib = GpuMeshBufferFactory12.CreateUploadBuffer(_gpu, sub.Triangles);
-            pendingResources.Add(ib);
+            pendingResources.Add(ib, "sprite render resource", 1);
 
             // Texture binds — default to the white-pixel + flat-normal builtins; if the
             // submesh references a NIF path, upload the decoded mip chain on this command
@@ -405,37 +540,31 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             var opacitySrv = _whitePixelSrvDesc;
             if (hasDiffuse && textureResolver != null && sub.DiffuseTexturePath != null)
             {
-                var upload = UploadTextureOn(cmd, textureResolver, sub.DiffuseTexturePath);
+                var upload = UploadTextureOn(cmd, textureResolver, sub.DiffuseTexturePath, pendingResources);
                 if (upload is { } u)
                 {
                     diffuseTex = u.Texture;
                     diffuseSrv = u.SrvDesc;
-                    pendingResources.Add(u.Texture);
-                    pendingResources.Add(u.Staging);
                 }
             }
 
             if (textureResolver != null && item.HasNormalTexture && sub.NormalMapTexturePath != null)
             {
-                var upload = UploadTextureOn(cmd, textureResolver, sub.NormalMapTexturePath);
+                var upload = UploadTextureOn(cmd, textureResolver, sub.NormalMapTexturePath, pendingResources);
                 if (upload is { } u)
                 {
                     normalTex = u.Texture;
                     normalSrv = u.SrvDesc;
-                    pendingResources.Add(u.Texture);
-                    pendingResources.Add(u.Staging);
                 }
             }
 
             if (textureResolver != null && item.StarfieldOpacityPath is { } opacityPath)
             {
-                var upload = UploadTextureOn(cmd, textureResolver, opacityPath);
+                var upload = UploadTextureOn(cmd, textureResolver, opacityPath, pendingResources);
                 if (upload is { } u)
                 {
                     opacityTex = u.Texture;
                     opacitySrv = u.SrvDesc;
-                    pendingResources.Add(u.Texture);
-                    pendingResources.Add(u.Staging);
                 }
             }
 
@@ -452,7 +581,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             srvBumpOffset += SrvTableSize;
 
             // PSO selection by alpha mode + double-sided + blend mode.
-            var psoKey = new PsoKey(
+            var psoKey = GpuSpritePipelineKey.Create(
                 alphaState.RenderMode,
                 alphaState.SrcBlendMode,
                 alphaState.DstBlendMode,
@@ -501,17 +630,14 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             HeapProperties.ReadbackHeapProperties, HeapFlags.None,
             ResourceDescription.Buffer(readbackBytes),
             ResourceStates.CopyDest);
-        pendingResources.Add(readback);
+        pendingResources.Add(readback, "sprite render resource", 1);
 
         cmd.CopyTextureRegion(
             new TextureCopyLocation(readback, footprints[0]), 0, 0, 0,
             new TextureCopyLocation(resolveTex));
 
         cmd.Close();
-        _gpu.DirectQueue.ExecuteCommandList(cmd);
-        var fenceValue = _nextFenceValue++;
-        _gpu.DirectQueue.Signal(_renderFence, fenceValue).CheckError();
-        pendingResources.Add(cmd);
+        var fenceValue = Submit(cmd, submission);
 
         return new PendingRender
         {
@@ -526,31 +652,43 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             FenceValue = fenceValue,
             ReadbackBuffer = readback,
             ReadbackRowPitch = footprints[0].Footprint.RowPitch,
-            Disposables = pendingResources
+            Resources = submission
         };
     }
 
+    /// <summary>Waits for one owned submission, reads its sprite, and releases its completed resources even if readback fails.</summary>
+    /// <param name="pending">Exact pending result from this renderer, completed at most once.</param>
+    /// <returns>The rendered and downsampled sprite.</returns>
     public SpriteResult CompleteRender(PendingRender pending)
     {
-        // Wait for GPU completion of this render's submission.
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_submissions.Contains(pending.Resources))
+            throw new InvalidOperationException("The sprite submission is foreign or already completed.");
         D3D12FenceWaiter.WaitForFence(_renderFence, pending.FenceValue, _fenceEvent);
-
-        var ssPixels = ReadBackPixels(pending.ReadbackBuffer,
-            (uint)pending.SsWidth, (uint)pending.SsHeight, pending.ReadbackRowPitch);
-        var pixels = NifSpriteRenderer.Downsample(ssPixels, pending.SsWidth, pending.SsHeight,
-            RenderLightingConstants.SsaaFactor);
-
-        foreach (var d in pending.Disposables) d.Dispose();
-
-        return new SpriteResult
+        if (_renderFence.CompletedValue == ulong.MaxValue)
+            throw new InvalidOperationException("The sprite device was removed before readback.");
+        try
         {
-            Pixels = pixels,
-            Width = pending.Width,
-            Height = pending.Height,
-            BoundsWidth = pending.BoundsWidth,
-            BoundsHeight = pending.BoundsHeight,
-            HasTexture = pending.HasTexture
-        };
+            var ssPixels = ReadBackPixels(pending.ReadbackBuffer,
+                (uint)pending.SsWidth, (uint)pending.SsHeight, pending.ReadbackRowPitch);
+            var pixels = NifSpriteRenderer.Downsample(ssPixels, pending.SsWidth, pending.SsHeight,
+                RenderLightingConstants.SsaaFactor);
+            return new SpriteResult
+            {
+                Pixels = pixels,
+                Width = pending.Width,
+                Height = pending.Height,
+                BoundsWidth = pending.BoundsWidth,
+                BoundsHeight = pending.BoundsHeight,
+                HasTexture = pending.HasTexture
+            };
+        }
+        finally
+        {
+            pending.Resources.ReleaseCompleted(pending.FenceValue);
+            _submissions.Remove(pending.Resources);
+        }
     }
 
     /// <summary>
@@ -575,11 +713,16 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     ///     the same command list reaches the draw call. Returns null on resolver miss so the
     ///     caller can fall back to <see cref="_whitePixelTexture" /> / <see cref="_flatNormalTexture" />.
     /// </summary>
+    /// <param name="cmd">Open caller-owned command list.</param>
+    /// <param name="resolver">Source image decoder and cache.</param>
+    /// <param name="path">Stable texture identity understood by the resolver.</param>
+    /// <param name="resources">Already retained submission bundle that owns allocations before mapping or recording.</param>
+    /// <returns>Borrowed native texture, its view and staging handle, or null when no pixels are available.</returns>
     private (ID3D12Resource Texture, ShaderResourceViewDescription SrvDesc, ID3D12Resource Staging)?
         UploadTextureOn(
             ID3D12GraphicsCommandList cmd,
             NifTextureResolver resolver,
-            string path)
+            string path, RetiredResourceDisposal resources)
     {
         var decoded = resolver.GetTexture(path);
         if (decoded is null) return null;
@@ -594,6 +737,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         var texture = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None, desc,
             ResourceStates.CopyDest);
+        resources.Add(texture, "sprite texture", 1);
 
         var footprints = new PlacedSubresourceFootPrint[mipCount];
         var numRows = new uint[mipCount];
@@ -604,6 +748,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             HeapProperties.UploadHeapProperties, HeapFlags.None,
             ResourceDescription.Buffer(totalBytes),
             ResourceStates.GenericRead);
+        resources.Add(staging, "sprite texture staging", 1);
 
         void* cpuPtr = null;
         staging.Map(0, &cpuPtr).CheckError();
@@ -649,14 +794,22 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
     ///     <paramref name="b" />, <paramref name="a" /> on a one-shot init command list. Used
     ///     by the ctor for the white-pixel + flat-normal builtins.
     /// </summary>
+    /// <param name="r">Red byte.</param>
+    /// <param name="g">Green byte.</param>
+    /// <param name="b">Blue byte.</param>
+    /// <param name="a">Alpha byte.</param>
+    /// <returns>The persistent texture, retained before staging work can fail.</returns>
     private ID3D12Resource CreateSolidPixelOneShot(byte r, byte g, byte b, byte a)
     {
+        var resources = new RetiredResourceDisposal();
+        var submission = BeginSubmission(resources);
         var device = _gpu.Device;
         var desc = ResourceDescription.Texture2D(Format.R8G8B8A8_UNorm, 1, 1,
             1, 1);
         var texture = device.CreateCommittedResource<ID3D12Resource>(
             HeapProperties.DefaultHeapProperties, HeapFlags.None, desc,
             ResourceStates.CopyDest);
+        _ownedResources.Add(texture, "sprite fallback texture", 1);
 
         var footprints = new PlacedSubresourceFootPrint[1];
         var numRows = new uint[1];
@@ -666,6 +819,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             HeapProperties.UploadHeapProperties, HeapFlags.None,
             ResourceDescription.Buffer(totalBytes),
             ResourceStates.GenericRead);
+        resources.Add(staging, "sprite fallback staging", 1);
 
         void* cpuPtr = null;
         staging.Map(0, &cpuPtr).CheckError();
@@ -683,20 +837,21 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         }
 
         var allocator = device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Direct);
+        resources.Add(allocator, "sprite fallback allocator", 2);
         var cmd = device.CreateCommandList<ID3D12GraphicsCommandList>(
             0, CommandListType.Direct, allocator);
+        resources.Add(cmd, "sprite fallback command list");
         cmd.CopyTextureRegion(
             new TextureCopyLocation(texture), 0, 0, 0,
             new TextureCopyLocation(staging, footprints[0]));
         cmd.ResourceBarrierTransition(texture, ResourceStates.CopyDest, ResourceStates.PixelShaderResource);
         cmd.Close();
-        _gpu.DirectQueue.ExecuteCommandList(cmd);
-        var fenceValue = _nextFenceValue++;
-        _gpu.DirectQueue.Signal(_renderFence, fenceValue).CheckError();
+        var fenceValue = Submit(cmd, submission);
         D3D12FenceWaiter.WaitForFence(_renderFence, fenceValue, _fenceEvent);
-        cmd.Dispose();
-        allocator.Dispose();
-        staging.Dispose();
+        if (_renderFence.CompletedValue == ulong.MaxValue)
+            throw new InvalidOperationException("The sprite device was removed during fallback upload.");
+        submission.ReleaseCompleted(fenceValue);
+        _submissions.Remove(submission);
         return texture;
     }
 
@@ -736,15 +891,21 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
 
     // ---- PSO + RootSig + sampler setup --------------------------------------------------
 
-    private ID3D12PipelineState GetOrCreatePso(PsoKey key)
+    /// <summary>Reuses a borrowed shared pipeline by native state without allocating a duplicate handle cache.</summary>
+    /// <param name="key">Canonical native blend, cull and shader state.</param>
+    /// <returns>The borrowed native pipeline for this exact state.</returns>
+    private ID3D12PipelineState GetOrCreatePso(GpuSpritePipelineKey key)
     {
-        if (_psoCache.TryGetValue(key, out var existing)) return existing;
+        if (_pipelineReady[key.Slot]) return _pipelineResources.GetPipeline(key.Slot);
         var pso = CreatePso(key);
-        _psoCache[key] = pso;
+        _pipelineReady[key.Slot] = true;
         return pso;
     }
 
-    private ID3D12PipelineState CreatePso(PsoKey key)
+    /// <summary>Passes the sprite shader and fixed-function declarations unchanged to Shared's owner.</summary>
+    /// <param name="key">Native state and its unoccupied bounded slot.</param>
+    /// <returns>A borrowed pipeline retained by the shared family.</returns>
+    private ID3D12PipelineState CreatePso(GpuSpritePipelineKey key)
     {
         var rasterizer = new RasterizerDescription
         {
@@ -756,7 +917,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             AntialiasedLineEnable = false
         };
 
-        var depthWriteEnabled = key.Mode != NifAlphaRenderMode.Blend;
+        var depthWriteEnabled = !key.Blended;
         var depth = new DepthStencilDescription
         {
             DepthEnable = true,
@@ -774,13 +935,13 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             AlphaToCoverageEnable = false,
             IndependentBlendEnable = false
         };
-        if (key.Mode == NifAlphaRenderMode.Blend)
+        if (key.Blended)
         {
             blend.RenderTarget[0] = new RenderTargetBlendDescription
             {
                 BlendEnable = true,
-                SourceBlend = MapBlend(key.SrcBlend),
-                DestinationBlend = MapBlend(key.DstBlend),
+                SourceBlend = MapBlend(key.SourceBlend),
+                DestinationBlend = MapBlend(key.DestinationBlend),
                 BlendOperation = BlendOperation.Add,
                 SourceBlendAlpha = Blend.One,
                 DestinationBlendAlpha = Blend.One,
@@ -812,7 +973,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             SampleDescription = new SampleDescription(MsaaSampleCount, 0),
             SampleMask = uint.MaxValue
         };
-        return _gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        return _pipelineResources.CreateGraphics(key.Slot, psoDesc);
     }
 
     private static Blend MapBlend(byte nifBlendMode)
@@ -826,7 +987,9 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             .ResolveBlendFactor(nifBlendMode);
     }
 
-    private static ID3D12RootSignature CreateRootSignature(ID3D12Device device)
+    /// <summary>Describes the existing per-draw CBV, texture table and sampler table without creating native ownership.</summary>
+    /// <returns>The sprite root layout and its input-assembler declaration.</returns>
+    private static VersionedRootSignatureDescription CreateRootSignatureDescription()
     {
         // Slot 0: root CBV b0 (per-submesh uniforms). VS + PS.
         var cbv = new RootParameter1(
@@ -851,10 +1014,13 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         var desc = new RootSignatureDescription1(
             RootSignatureFlags.AllowInputAssemblerInputLayout,
             new[] { cbv, srvTable, samplerTable });
-        return device.CreateRootSignature(desc);
+        return new VersionedRootSignatureDescription(desc);
     }
 
-    private static ID3D12DescriptorHeap CreateSamplerHeap(ID3D12Device device)
+    /// <summary>Retains the heap before filling its twelve authored-address-mode sampler descriptors.</summary>
+    /// <param name="device">Borrowed native device.</param>
+    /// <returns>The heap retained until all sprite work retires.</returns>
+    private ID3D12DescriptorHeap CreateSamplerHeap(ID3D12Device device)
     {
         var heap = device.CreateDescriptorHeap<ID3D12DescriptorHeap>(new DescriptorHeapDescription
         {
@@ -862,6 +1028,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
             DescriptorCount = SamplerHeapSize,
             Flags = DescriptorHeapFlags.ShaderVisible
         });
+        _ownedResources.Add(heap, "sprite sampler heap", 1);
         var samplerSize = device.GetDescriptorHandleIncrementSize(DescriptorHeapType.Sampler);
         var heapStart = heap.GetCPUDescriptorHandleForHeapStart();
         for (var mode = 0; mode < (int)SamplerModeCount; mode++)
@@ -944,12 +1111,13 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         return sum / count;
     }
 
-    /// <summary>
-    ///     Forwards to the one shared compiler — see <see cref="GpuShaderCompiler12" />.
-    ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
-    ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
-    /// </summary>
-    private static byte[] CompileEmbeddedShader(
+    /// <summary>Gets an embedded shader permutation through the application cache and Shared compiler.</summary>
+    /// <param name="name">Embedded shader file name.</param>
+    /// <param name="entryPoint">HLSL entry point.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <param name="macros">Definitions selecting the shader permutation.</param>
+    /// <returns>Read-only cached DXBC passed directly to native pipeline creation without a payload copy.</returns>
+    private static ReadOnlyMemory<byte> CompileEmbeddedShader(
         string name,
         string entryPoint,
         string profile,
@@ -976,7 +1144,7 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         public required ulong FenceValue { get; init; }
         public required ID3D12Resource ReadbackBuffer { get; init; }
         public required uint ReadbackRowPitch { get; init; }
-        public required List<IDisposable> Disposables { get; init; }
+        public required SubmissionResourceRetirement Resources { get; init; }
     }
 
     private sealed record RenderItem(
@@ -986,13 +1154,6 @@ internal sealed unsafe class GpuSpriteRenderer12 : IDisposable
         bool HasDiffuseTexture,
         bool HasNormalTexture,
         string? StarfieldOpacityPath);
-
-    private readonly record struct PsoKey(
-        NifAlphaRenderMode Mode,
-        byte SrcBlend,
-        byte DstBlend,
-        bool DoubleSided,
-        bool ClassicSkin);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct GpuUniforms

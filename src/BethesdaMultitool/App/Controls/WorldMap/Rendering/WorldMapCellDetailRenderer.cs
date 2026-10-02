@@ -189,9 +189,9 @@ internal static class WorldMapCellDetailRenderer
             range = 1f;
         }
 
-        // Determine effective water height. Explicit "no water" sentinel on the cell
-        // suppresses water entirely; null (no XCLW) falls back to worldspace DNAM.
-        var waterH = WorldRenderCache.ResolveEffectiveWaterHeight(cell, currentDefaultWaterHeight);
+        // Finite XCLW wins; sentinel/unset values use the selected world component.
+        var waterH = cache is not null ? cache.GetWaterHeight(cell, currentDefaultWaterHeight)
+            : WorldRenderCache.ResolveEffectiveWaterHeight(cell, currentDefaultWaterHeight);
 
         var grayscale = new byte[HmGridSize * HmGridSize];
         var waterMask = new byte[HmGridSize * HmGridSize];

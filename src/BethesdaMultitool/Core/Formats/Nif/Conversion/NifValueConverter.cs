@@ -41,6 +41,10 @@ internal sealed class NifValueConverter
 
         foreach (var field in fields)
         {
+            // Remaining fields may all be version-excluded (a legacy file legitimately ends exactly where its last
+            // present field does, e.g. NiControllerSequence's since-20.1.0.1 tail at 20.0.0.4), so running out of
+            // data here is not by itself corruption; the oversized-array skip below is what marks a measure
+            // incomplete (NifConversionContext.Incomplete).
             if (ctx.Position >= ctx.End)
             {
                 break;
@@ -308,6 +312,7 @@ internal sealed class NifValueConverter
         {
             Log.Trace(
                 $"    [Schema] WARNING: Array length {count} exceeds {maxElements} remaining bytes, skipping field {field.Name}");
+            ctx.Incomplete = true;
             return;
         }
 

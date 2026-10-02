@@ -3,6 +3,7 @@
 // Uses recursive descent parsing for clean, maintainable code
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using BethesdaMultitool.Core.Formats.Nif.Conversion;
 
@@ -147,6 +148,124 @@ public sealed class NifVersionExpr
                 return _ => true;
             }
         });
+    }
+
+    /// <summary>
+    ///     The <c>#TOKEN#</c>s a version expression may use besides the macros in <see cref="KnownMacros" />: the three
+    ///     version variables (with the long spellings <see cref="ParseVariable" /> accepts) and the logical and
+    ///     comparison operators.
+    /// </summary>
+    private static readonly HashSet<string> StrictStructuralTokens = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "#VER#", "#VERSION#", "#BSVER#", "#BS_VERSION#", "#USER#", "#USER_VERSION#",
+        "#AND#", "#OR#", "#NOT#", "#GT#", "#GTE#", "#LT#", "#LTE#", "#EQ#", "#NEQ#"
+    };
+
+    /// <summary>
+    ///     The nif.xml <c>verexpr</c> macro tokens this evaluator expands (for example <c>#BS202#</c>). A macro that is
+    ///     not listed here is not expanded: the fail-open <see cref="Compile" /> then reads the whole expression as
+    ///     true, and <see cref="TryCompileStrict" /> rejects it.
+    /// </summary>
+    internal static IReadOnlyCollection<string> KnownMacros => TokenExpansions.Keys;
+
+    /// <summary>True when <paramref name="token" /> (with its <c>#</c> delimiters) is a macro this evaluator expands.</summary>
+    internal static bool IsKnownMacro(string token)
+    {
+        return TokenExpansions.ContainsKey(token);
+    }
+
+    /// <summary>
+    ///     Lists every <c>#TOKEN#</c> (letters, digits and underscores between two <c>#</c>) in an expression, in order
+    ///     of appearance, before macro expansion.
+    /// </summary>
+    internal static IReadOnlyList<string> GatherTokens(string expression)
+    {
+        var tokens = new List<string>();
+        var pos = 0;
+        while (pos < expression.Length)
+        {
+            var open = expression.IndexOf('#', pos);
+            if (open < 0)
+            {
+                break;
+            }
+
+            var close = open + 1;
+            while (close < expression.Length &&
+                   (char.IsAsciiLetterOrDigit(expression[close]) || expression[close] == '_'))
+            {
+                close++;
+            }
+
+            if (close < expression.Length && expression[close] == '#' && close > open + 1)
+            {
+                tokens.Add(expression[open..(close + 1)]);
+                pos = close + 1;
+            }
+            else
+            {
+                pos = open + 1;
+            }
+        }
+
+        return tokens;
+    }
+
+    /// <summary>
+    ///     Strict compile for the non-mutating NIF block decoder (<c>Nif/Decoding</c>). Additive: <see cref="Evaluate" />
+    ///     and <see cref="Compile" /> keep failing open (a parse error reads as true) for the converter. This method
+    ///     returns false with a reason when the expression uses a <c>#TOKEN#</c> that is neither a known macro nor a
+    ///     variable or operator, when it does not parse, or when the parser stops before the end of the text.
+    /// </summary>
+    /// <param name="expression">The nif.xml <c>vercond</c> text.</param>
+    /// <param name="evaluator">The compiled predicate, on success.</param>
+    /// <param name="error">Why the expression was rejected, on failure.</param>
+    internal static bool TryCompileStrict(
+        string? expression,
+        [NotNullWhen(true)] out Func<NifVersionContext, bool>? evaluator,
+        [NotNullWhen(false)] out string? error)
+    {
+        evaluator = null;
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            error = "The version expression is empty.";
+            return false;
+        }
+
+        foreach (var token in GatherTokens(expression))
+        {
+            if (!IsKnownMacro(token) && !StrictStructuralTokens.Contains(token))
+            {
+                error = $"'{expression}' uses {token}, which is neither a known verexpr macro nor a version variable " +
+                        "or operator.";
+                return false;
+            }
+        }
+
+        NifVersionExpr parser;
+        IExprNode ast;
+        try
+        {
+            parser = new NifVersionExpr(expression);
+            ast = parser.ParseExpr();
+            parser.SkipWhitespace();
+        }
+        catch (Exception ex) when (ex is FormatException or OverflowException or ArgumentException
+                                       or IndexOutOfRangeException)
+        {
+            error = $"'{expression}' does not parse: {ex.Message}";
+            return false;
+        }
+
+        if (parser._pos != parser._expression.Length)
+        {
+            error = $"'{expression}' stops parsing at '{parser._expression[parser._pos..]}'.";
+            return false;
+        }
+
+        evaluator = ast.Eval;
+        error = null;
+        return true;
     }
 
     #region Lexer

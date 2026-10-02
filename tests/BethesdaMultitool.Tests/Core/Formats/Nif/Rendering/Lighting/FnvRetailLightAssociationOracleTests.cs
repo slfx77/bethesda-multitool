@@ -112,12 +112,11 @@ public sealed class FnvRetailLightAssociationOracleTests
             sourceRoot,
             "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Lighting",
             "FnvRetailLightAssociationOracle.cs"));
-        var consumers = Directory
-            .EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
+        var consumers = SourceContract.ProductionSourcePaths
             .Where(path => Path.GetExtension(path) is ".cs" or ".hlsl")
             .Where(path => !Path.GetFullPath(path).Equals(
                 oraclePath, StringComparison.OrdinalIgnoreCase))
-            .Where(path => File.ReadAllText(path).Contains(
+            .Where(path => SourceContract.ReadSourceFile(path).Contains(
                 nameof(FnvRetailLightAssociationOracle),
                 StringComparison.Ordinal))
             .Select(path => Path.GetRelativePath(root, path))

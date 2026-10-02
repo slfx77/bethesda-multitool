@@ -16,9 +16,34 @@ namespace BethesdaMultitool.Core.WorldData;
 /// <summary>
 ///     Pre-computed data for the World tab, built once from RecordCollection.
 /// </summary>
-internal sealed class WorldViewData
+internal sealed partial class WorldViewData
 {
-    public WorldRenderCache RenderCache { get; } = new();
+    /// <summary>Stored actor appearances from the same physical load-order winners as this world.</summary>
+    internal WorldActorCatalog? ActorCatalog
+    {
+        get => _renderCache.ActorCatalog;
+        set => _renderCache.ActorCatalog = value;
+    }
+
+    private readonly WorldRenderCache _renderCache = new();
+    private WorldWaterCatalog? _waterCatalog;
+
+    internal WorldWaterCatalog WaterCatalog
+    {
+        get => LazyInitializer.EnsureInitialized(ref _waterCatalog, () => WorldWaterCatalog.Create(Worldspaces, Game));
+        init => _waterCatalog = value;
+    }
+
+    public WorldRenderCache RenderCache
+    {
+        get
+        {
+            _renderCache.WaterCatalog ??= WaterCatalog;
+            _renderCache.WaterRecords ??= WatersByFormId;
+            _renderCache.WaterGame ??= Game;
+            return _renderCache;
+        }
+    }
 
     public required List<WorldspaceRecord> Worldspaces { get; init; }
     public required List<CellRecord> InteriorCells { get; init; }
@@ -390,7 +415,18 @@ internal sealed class WorldViewData
     ///     in their parent Data folders. Settable post-construction so
     ///     <c>WorldMapOverlayBuilder</c> can stay agnostic of session/load-order state.
     /// </summary>
-    public IReadOnlyList<string> AdditionalDataPaths { get; set; } = [];
+    private IReadOnlyList<string> _additionalDataPaths = [];
+    public IReadOnlyList<string> AdditionalDataPaths
+    {
+        get => _additionalDataPaths;
+        set
+        {
+            var snapshot = Array.AsReadOnly(value.ToArray());
+            if (_additionalDataPaths.SequenceEqual(snapshot, StringComparer.OrdinalIgnoreCase)) return;
+            _additionalDataPaths = snapshot;
+            AssetInputsChanged();
+        }
+    }
 
     /// <summary>
     ///     Data folders consulted for ASSETS ONLY, in priority order — their records are never
@@ -405,14 +441,22 @@ internal sealed class WorldViewData
     ///         builds in a declared order resolves each path from the earliest donor that has it.
     ///     </para>
     ///     <para>
-    ///         Order IS priority and it is first-hit-wins, matching the engine's SArchiveList
-    ///         convention: mesh lookups layer through <c>DataFolderIndex.FromArchivePaths</c> (first
-    ///         write wins) and texture lookups walk <c>NifTextureResolver</c>'s source list in
-    ///         order. Probed AFTER <see cref="AdditionalDataPaths" />, so an explicit load order
-    ///         still outranks a donor build.
+    ///         Order is the declared BMT priority. Donors follow the primary and selected sources;
+    ///         engine archive activation and priority are separate evidence.
     ///     </para>
     /// </summary>
-    public IReadOnlyList<string> AssetDataDirectories { get; set; } = [];
+    private IReadOnlyList<string> _assetDataDirectories = [];
+    public IReadOnlyList<string> AssetDataDirectories
+    {
+        get => _assetDataDirectories;
+        set
+        {
+            var snapshot = Array.AsReadOnly(value.ToArray());
+            if (_assetDataDirectories.SequenceEqual(snapshot, StringComparer.OrdinalIgnoreCase)) return;
+            _assetDataDirectories = snapshot;
+            AssetInputsChanged();
+        }
+    }
 
     /// <summary>
     ///     True when this view was built from a memory dump (DMP). The 3D viewer enables the
@@ -420,7 +464,17 @@ internal sealed class WorldViewData
     ///     prototype mesh paths were renamed before the shipped archives; ESM/ESP/save views keep
     ///     exact-only resolution. Settable post-construction (like <see cref="AdditionalDataPaths" />).
     /// </summary>
-    public bool IsMemoryDump { get; set; }
+    private bool _isMemoryDump;
+    public bool IsMemoryDump
+    {
+        get => _isMemoryDump;
+        set
+        {
+            if (_isMemoryDump == value) return;
+            _isMemoryDump = value;
+            AssetInputsChanged();
+        }
+    }
 
     /// <summary>
     ///     Persisted mesh-path rename map for this dump (normalized request → resolved donor path),
@@ -429,5 +483,17 @@ internal sealed class WorldViewData
     ///     been run. <c>MeshArchiveSet</c> consults it ahead of its live fuzzy fallback, so the
     ///     renderer previews the dump with the conversion's resolutions.
     /// </summary>
-    public IReadOnlyDictionary<string, string>? MeshPathRenames { get; set; }
+    private IReadOnlyDictionary<string, string>? _meshPathRenames;
+    public IReadOnlyDictionary<string, string>? MeshPathRenames
+    {
+        get => _meshPathRenames;
+        set
+        {
+            if (ReferenceEquals(_meshPathRenames, value)) return;
+            _meshPathRenames = value is null ? null :
+                new System.Collections.ObjectModel.ReadOnlyDictionary<string, string>(
+                    new Dictionary<string, string>(value, StringComparer.OrdinalIgnoreCase));
+            AssetInputsChanged();
+        }
+    }
 }

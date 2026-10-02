@@ -221,7 +221,7 @@ internal static class NpcMeshHelpers
         }
 
         var morphedKey = NpcTextureHelpers.BuildNpcBodyEgtTextureKey(npcFormId, partLabel, renderVariantLabel);
-        textureResolver.InjectTexture(morphedKey, morphed);
+        textureResolver.InjectTexture(morphedKey, morphed, new("FaceGen EGT", [baseTexturePath, egtPath], true, [new(baseTexturePath, [.. baseTexture.AssetReadReceipts])]));
         Log.Debug("Body EGT morph applied: NPC 0x{0:X8} {1} -> {2}", npcFormId, partLabel, egtPath);
         return morphedKey;
     }

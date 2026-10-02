@@ -1,5 +1,6 @@
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Materials;
@@ -19,8 +20,10 @@ internal static class NifExportExtractor
         NifInfo nif,
         Dictionary<string, NifAnimationParser.AnimPoseOverride>? animOverrides = null,
         string? filterShapeName = null,
-        float[]? preSkinMorphDeltas = null)
+        float[]? preSkinMorphDeltas = null,
+        NifPreSkinMorphTarget? preSkinMorphTarget = null)
     {
+        preSkinMorphTarget?.ValidateSource(data, preSkinMorphDeltas);
         var nodeChildren = new Dictionary<int, List<int>>();
         var shapeDataMap = new Dictionary<int, int>();
         var shapePropertyMap = new Dictionary<int, List<int>>();
@@ -50,7 +53,8 @@ internal static class NifExportExtractor
             shapeSkinInstanceMap,
             treeAnimationShapes,
             worldTransforms,
-            preSkinMorphDeltas);
+            preSkinMorphDeltas,
+            preSkinMorphTarget);
 
         return new ExtractedScene
         {
@@ -191,7 +195,8 @@ internal static class NifExportExtractor
         Dictionary<int, int> shapeSkinInstanceMap,
         HashSet<int> treeAnimationShapes,
         Dictionary<int, Matrix4x4> worldTransforms,
-        float[]? preSkinMorphDeltas)
+        float[]? preSkinMorphDeltas,
+        NifPreSkinMorphTarget? preSkinMorphTarget)
     {
         var meshParts = new List<ExtractedMeshPart>();
         var parentByChild = new Dictionary<int, int>();
@@ -238,8 +243,13 @@ internal static class NifExportExtractor
                 }
                 : TryExtractSkinBinding(data, nif, shapeSkinInstanceMap, shapeIndex, dataIndex);
 
-            var shapeMorphDeltas = skin != null ? preSkinMorphDeltas : null;
-            preSkinMorphDeltas = skin != null ? null : preSkinMorphDeltas;
+            float[]? shapeMorphDeltas = null;
+            if (preSkinMorphDeltas is not null && skin is not null &&
+                (preSkinMorphTarget is null || preSkinMorphTarget.Matches(shapeIndex, dataIndex)))
+            {
+                shapeMorphDeltas = preSkinMorphDeltas;
+                preSkinMorphDeltas = null;
+            }
             var submesh = ExtractRawSubmesh(
                 data,
                 nif,

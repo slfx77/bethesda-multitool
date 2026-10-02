@@ -9,7 +9,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Scene;
 ///     Decides whether a selected placement owns output the 3D viewer can actually preview, and
 ///     what its authored enabled-state is.
 ///     <para>
-///         The point is to avoid offering a success-looking no-op: actor refs, ordinary refs with no
+    ///         The point is to avoid offering a success-looking no-op: unresolved actor refs, ordinary refs with no
 ///         model, and malformed placements have nothing for a visibility toggle to act on, so the
 ///         UI must not present one.
 ///     </para>
@@ -37,7 +37,8 @@ internal static class ReferencePreviewEligibility
             reference.BaseFormId, PlacedObjectCategory.Unknown);
 
         if (RenderableReference.TryBuild(
-                reference, category, xespDisabled: xespDisabled, game: data.Game) is not null)
+                reference, category, xespDisabled: xespDisabled, game: data.Game,
+                actorCatalog: data.ActorCatalog) is not null)
         {
             return true;
         }

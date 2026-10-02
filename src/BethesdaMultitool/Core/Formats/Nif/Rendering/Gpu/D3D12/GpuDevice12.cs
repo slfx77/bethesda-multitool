@@ -1,3 +1,5 @@
+using Slfx77.Multitool.Core.Lifetime;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using System.Globalization;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Resources;
@@ -11,13 +13,11 @@ using Vortice.DXGI;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
-///     v3 Pass 4 — D3D12 device + direct (graphics) command queue. The D3D12 analog of
-///     the old <c>GpuDevice</c>, but with no immediate context (D3D12 records into command
-///     lists that are submitted to a queue).
+///     Owns the D3D12 device, direct queue, shared frame fence, and device diagnostics.
 ///     <para>
-///         Per-frame state (command allocator, fence values, ring buffer offsets) lives in
-///         <c>GpuCommandRecorder12</c> — created elsewhere and bound to this device. This
-///         class owns only the long-lived objects: device, queue, fence, adapter description.
+///         Initialized native frame recorders transfer to <see cref="GpuCommandRecorder12" />.
+///         An incomplete recorder remains retained here until device teardown releases it;
+///         successful recorders are owned by their caller and must retire before this device.
 ///     </para>
 /// </summary>
 internal sealed class GpuDevice12 : IDisposable
@@ -32,7 +32,11 @@ internal sealed class GpuDevice12 : IDisposable
     private static readonly Logger Log = Logger.Instance;
 
     private readonly ID3D12InfoQueue? _infoQueue;
+    private readonly object _recorderInitializationGate = new();
+    private NativeFrameRecorder? _initializingRecorder;
     private bool _disposed;
+    private bool _removalProven;
+    private RetiredResourceDisposal? _retiredResources;
     private GpuVideoMemoryMonitor12? _videoMemory;
     private IDXGIAdapter3? _videoMemoryAdapter;
     private bool _videoMemoryAdapterResolved;
@@ -122,23 +126,59 @@ internal sealed class GpuDevice12 : IDisposable
     /// </summary>
     public GpuVideoMemoryMonitor12 VideoMemory => _videoMemory ??= new GpuVideoMemoryMonitor12(this);
 
+    /// <summary>Creates a Shared recorder while retaining any incomplete initialization for device teardown.</summary>
+    /// <returns>The initialized owner, transferred exclusively to its enclosing recorder adapter.</returns>
+    /// <exception cref="InvalidOperationException">An earlier failed initialization remains owned by this device.</exception>
+    /// <exception cref="ObjectDisposedException">Device teardown has begun.</exception>
+    internal NativeFrameRecorder CreateFrameRecorder()
+    {
+        lock (_recorderInitializationGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_initializingRecorder is not null)
+                throw new InvalidOperationException("An incomplete frame recorder must be released during device teardown.");
+
+            // Preserve Bethesda's existing unlimited, non-pumping native fence wait policy.
+            _initializingRecorder = new NativeFrameRecorder(Device, DirectQueue, FrameFence,
+                waitTimeoutMilliseconds: uint.MaxValue);
+            _initializingRecorder.Initialize();
+            var initialized = _initializingRecorder;
+            _initializingRecorder = null;
+            return initialized;
+        }
+    }
+
+    /// <summary>Retries failed recorder initialization cleanup before borrowed native dependencies are released.</summary>
+    private void ReleaseIncompleteFrameRecorder()
+    {
+        // This owner has never been returned to a caller and cannot have submitted GPU work.
+        _initializingRecorder?.DisposeAfterRetirement();
+        _initializingRecorder = null;
+    }
+
+    /// <summary>Releases device wrappers only after caller-proven retirement, retaining failed child releases.</summary>
     public void Dispose()
     {
-        if (_disposed)
+        lock (_recorderInitializationGate)
         {
-            return;
+            if (_retiredResources is null)
+            {
+                _disposed = true;
+                _retiredResources = new RetiredResourceDisposal(
+                    (name, exception) => Log.Warn("GpuDevice12: {0} teardown failed: {1}", name, exception.Message));
+                _retiredResources.Add(ReleaseIncompleteFrameRecorder, "incomplete frame recorder");
+                // The monitor unregisters through its adapter, which must remain alive on retry.
+                _retiredResources.Add(_videoMemory, "video-memory monitor");
+                _videoMemory = null;
+                _retiredResources.Add(_videoMemoryAdapter, "video-memory adapter", 1);
+                _videoMemoryAdapter = null;
+                _retiredResources.Add(_infoQueue, "D3D12 info queue", 1);
+                _retiredResources.Add(FrameFence, "frame fence", 1);
+                _retiredResources.Add(DirectQueue, "direct queue", 1);
+                _retiredResources.Add(Device, "D3D12 device", 2);
+            }
+            _retiredResources.Dispose();
         }
-
-        _disposed = true;
-        // Before the adapter: the monitor's watcher unregisters its notification through it.
-        DisposeNoThrow(_videoMemory, "video-memory monitor");
-        _videoMemory = null;
-        DisposeNoThrow(_videoMemoryAdapter, "video-memory adapter");
-        _videoMemoryAdapter = null;
-        DisposeNoThrow(_infoQueue, "D3D12 info queue");
-        DisposeNoThrow(FrameFence, "frame fence");
-        DisposeNoThrow(DirectQueue, "direct queue");
-        DisposeNoThrow(Device, "D3D12 device");
     }
 
     /// <summary>
@@ -148,15 +188,14 @@ internal sealed class GpuDevice12 : IDisposable
     /// </summary>
     internal bool TryForceDeviceRemoval(string context)
     {
-        if (_disposed)
-        {
-            return true;
-        }
+        if (_removalProven) { return true; }
+        if (_disposed) { return false; }
 
         try
         {
             if (Device.DeviceRemovedReason.Failure)
             {
+                _removalProven = true;
                 return true;
             }
         }
@@ -176,29 +215,13 @@ internal sealed class GpuDevice12 : IDisposable
             }
 
             device5.RemoveDevice();
+            _removalProven = true;
             return true;
         }
         catch (Exception ex)
         {
             Log.Warn("GpuDevice12: forced device removal failed ({0}): {1}", context, ex.Message);
             return false;
-        }
-    }
-
-    private static void DisposeNoThrow(IDisposable? resource, string resourceName)
-    {
-        if (resource is null)
-        {
-            return;
-        }
-
-        try
-        {
-            resource.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Log.Warn("GpuDevice12: {0} teardown failed: {1}", resourceName, ex.Message);
         }
     }
 
@@ -563,11 +586,19 @@ internal sealed class GpuDevice12 : IDisposable
     ///         <see cref="GpuAdapterPolicy.PreferHardwareThenWarp" /> the WARP software
     ///         rasterizer is the last resort so those machines still render.
     ///     </para>
+    ///     An explicit requested scene sample count (1 or 4) overrides the process setting for
+    ///     this device. A request for 4 still probes support and falls back to 1 when necessary.
     /// </summary>
     public static GpuDevice12? Create(
         bool enableDebugLayer = false,
-        GpuAdapterPolicy adapterPolicy = GpuAdapterPolicy.HardwareOnly)
+        GpuAdapterPolicy adapterPolicy = GpuAdapterPolicy.HardwareOnly,
+        int? requestedSceneSampleCount = null)
     {
+        if (requestedSceneSampleCount is not (null or 1 or 4))
+        {
+            throw new ArgumentOutOfRangeException(nameof(requestedSceneSampleCount));
+        }
+
         if (!OperatingSystem.IsWindows())
         {
             Log.Warn("D3D12 is Windows-only — no GPU backend available");
@@ -691,7 +722,7 @@ internal sealed class GpuDevice12 : IDisposable
                 {
                     var created = TryCreateOnAdapter(
                         null, null, featureLevels, enableDebugLayer, enableDred,
-                        false, probed);
+                        false, probed, requestedSceneSampleCount);
                     if (created is not null) return created;
                 }
             }
@@ -709,7 +740,7 @@ internal sealed class GpuDevice12 : IDisposable
                         {
                             var created = TryCreateOnAdapter(
                                 adapter, adapter.Description1.Description, featureLevels, enableDebugLayer,
-                                enableDred, false, probed);
+                                enableDred, false, probed, requestedSceneSampleCount);
                             if (created is not null) return created;
                         }
                     }
@@ -730,7 +761,7 @@ internal sealed class GpuDevice12 : IDisposable
                         using var warpAdapter = dxgiFactory.EnumWarpAdapter<IDXGIAdapter1>();
                         var created = TryCreateOnAdapter(
                             warpAdapter, warpAdapter.Description1.Description, featureLevels, enableDebugLayer,
-                            enableDred, true, probed);
+                            enableDred, true, probed, requestedSceneSampleCount);
                         if (created is not null) return created;
                     }
                     catch (SharpGenException ex)
@@ -817,7 +848,8 @@ internal sealed class GpuDevice12 : IDisposable
         bool enableDebugLayer,
         bool enableDred,
         bool isSoftwareAdapter,
-        List<string> probed)
+        List<string> probed,
+        int? requestedSceneSampleCount)
     {
         foreach (var minLevel in featureLevels)
         {
@@ -866,7 +898,7 @@ internal sealed class GpuDevice12 : IDisposable
                     }
 
                     var deviceName = adapterName ?? QueryAdapterDescription(device);
-                    var sceneSampleCount = ProbeSceneSampleCount(device);
+                    var sceneSampleCount = ProbeSceneSampleCount(device, requestedSceneSampleCount);
                     Log.Info("GpuDevice12: created Direct3D 12 device at {0} ({1}{2}); scene MSAA = {3}x",
                         minLevel, deviceName, isSoftwareAdapter ? ", WARP software rasterizer" : "",
                         sceneSampleCount);
@@ -895,19 +927,18 @@ internal sealed class GpuDevice12 : IDisposable
     /// <summary>
     ///     Probes 4x MSAA support for the scene's color + depth formats by attempting to create
     ///     tiny multisampled committed resources (the only API-certain check across Vortice
-    ///     versions). Returns 4 on success, 1 on failure or when the process-scoped verification
-    ///     override requests 1x. 4x MSAA on standard RT/depth formats is mandatory at D3D feature
-    ///     level 11_0+ (this device requires 12_0), so 4 is the norm; the fallback covers exotic
-    ///     adapters. One-time at device creation.
+    ///     versions). Returns 4 on success, 1 on failure or when the explicit request or
+    ///     process-scoped verification override requests 1x. 4x MSAA on standard RT/depth formats
+    ///     is mandatory at D3D feature level 11_0+ (this device requires 12_0), so 4 is the norm;
+    ///     the fallback covers exotic adapters. One-time at device creation.
     /// </summary>
-    private static int ProbeSceneSampleCount(ID3D12Device device)
+    private static int ProbeSceneSampleCount(ID3D12Device device, int? requestedSceneSampleCount)
     {
-        var requested = ResolveRequestedSceneSampleCount(
+        var requested = requestedSceneSampleCount ?? ResolveRequestedSceneSampleCount(
             Environment.GetEnvironmentVariable(SceneSampleCountEnvironmentVariable));
         if (requested == 1)
         {
-            Log.Info("GpuDevice12: scene MSAA disabled by {0}=1 for this process.",
-                SceneSampleCountEnvironmentVariable);
+            Log.Info("GpuDevice12: scene MSAA disabled by the requested single-sample configuration.");
             return 1;
         }
 

@@ -137,6 +137,7 @@ internal static class NpcExportSceneBuilder
         string label)
     {
         var rigidSubmesh = CloneSubmesh(part.Submesh);
+        rigidSubmesh.SourceNifPath = label;
         NpcRenderHelpers.TransformSubmesh(rigidSubmesh, worldTransform);
         AddRigidSubmesh(scene, label, rigidSubmesh);
     }
@@ -145,12 +146,15 @@ internal static class NpcExportSceneBuilder
     {
         foreach (var submesh in model.Submeshes)
         {
-            AddRigidSubmesh(scene, label, CloneSubmesh(submesh));
+            var copy = CloneSubmesh(submesh);
+            copy.SourceNifPath = label;
+            AddRigidSubmesh(scene, label, copy);
         }
     }
 
     internal static void AddRigidSubmesh(GlbScene scene, string label, RenderableSubmesh submesh)
     {
+        submesh.SourceNifPath ??= label;
         var nodeIndex = scene.AddNode(
             $"{Path.GetFileNameWithoutExtension(label)}_{scene.MeshParts.Count}",
             GlbScene.RootNodeIndex,
@@ -169,13 +173,15 @@ internal static class NpcExportSceneBuilder
         string nifPath,
         MeshArchiveSet meshArchives,
         string? filterShapeName = null,
-        float[]? preSkinMorphDeltas = null)
+        float[]? preSkinMorphDeltas = null,
+        NifPreSkinMorphTarget? preSkinMorphTarget = null)
     {
         var raw = NpcMeshHelpers.LoadNifRawFromBsa(nifPath, meshArchives);
         return raw == null
             ? null
             : NifExportExtractor.Extract(raw.Value.Data, raw.Value.Info, filterShapeName: filterShapeName,
-                preSkinMorphDeltas: preSkinMorphDeltas);
+                preSkinMorphDeltas: preSkinMorphDeltas,
+                preSkinMorphTarget: preSkinMorphTarget);
     }
 
     internal static RenderableSubmesh CloneSubmesh(RenderableSubmesh submesh)

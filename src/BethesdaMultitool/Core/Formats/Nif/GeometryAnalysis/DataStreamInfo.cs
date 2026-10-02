@@ -62,8 +62,10 @@ internal sealed class DataStreamInfo
     ///     - Offset 16: Bone indices (ubyte4) for skinned meshes, or vertex colors
     ///     - Offset 20: Normal (half4, unit-length ~1.0) - VERIFIED against PC reference
     ///     - Offset 28: UV (half2)
-    ///     - Offset 32: Tangent (half4, unit-length ~1.0)
-    ///     - Offset 40: Bitangent (half4, unit-length ~1.0)
+    ///     - Offset 32: Bitangent (half4, unit-length ~1.0): the PC "Bitangents" array, along +dP/du
+    ///     - Offset 40: Tangent (half4, unit-length ~1.0): the PC "Tangents" array, along +dP/dv
+    ///     The lower-offset frame stream is the PC second array ("Bitangents"), as in NifPackedGeometryLayout
+    ///     (measured 2026-09-28 against the PC files of the same paths, TestOutput/nif-tangent-frame-20260928/converter).
     ///     NOTE: Stream headers may label offset 8 as "Normal" but analysis shows
     ///     actual unit-length normals are at offset 20. The data at offset 8 has
     ///     avg length ~0.82-0.90 and its purpose is not yet fully understood.
@@ -77,8 +79,8 @@ internal sealed class DataStreamInfo
             (28, 4) => StreamSemantic.VertexColor,
             (16, 8) when BlockOffset == 0 => StreamSemantic.Position,
             (16, 8) when BlockOffset == 20 => StreamSemantic.Normal,
-            (16, 8) when BlockOffset == 32 => StreamSemantic.Tangent,
-            (16, 8) when BlockOffset == 40 => StreamSemantic.Bitangent,
+            (16, 8) when BlockOffset == 32 => StreamSemantic.Bitangent,
+            (16, 8) when BlockOffset == 40 => StreamSemantic.Tangent,
             (16, 8) when BlockOffset == 8 => StreamSemantic.Unknown,
             (16, 8) => StreamSemantic.Unknown,
             _ => StreamSemantic.Unknown

@@ -1,6 +1,7 @@
 using System.CommandLine;
 using BethesdaMultitool.CLI.Rendering.Nif;
 using BethesdaMultitool.CLI.Rendering.Npc;
+using BethesdaMultitool.CLI.Shared;
 using BethesdaMultitool.Core.Diagnostics;
 using Spectre.Console;
 
@@ -35,6 +36,8 @@ public static class RenderNpcCommand
             Description = "Path to ESM file",
             Required = true
         };
+        var loadOrderOption = LoadOrderOptions.CreateOption();
+        var allowMissingOption = LoadOrderOptions.CreateAllowMissingMastersOption();
         var texturesBsaOption = new Option<string[]?>("--textures-archive", "--textures-bsa")
         {
             Description =
@@ -177,6 +180,8 @@ public static class RenderNpcCommand
         command.Arguments.Add(inputArg);
         command.Options.Add(extraMeshesBsaOption);
         command.Options.Add(esmOption);
+        command.Options.Add(loadOrderOption);
+        command.Options.Add(allowMissingOption);
         command.Options.Add(texturesBsaOption);
         command.Options.Add(outputOption);
         command.Options.Add(npcOption);
@@ -228,6 +233,10 @@ public static class RenderNpcCommand
             var compareRaceTextureFgts = parseResult.GetValue(compareRaceTextureFgtsOption);
             if (parseResult.GetValue(glbOption))
             {
+                if (parseResult.GetValue(loadOrderOption) is { Length: > 0 })
+                {
+                    throw new ArgumentException("Explicit load-order appearance currently supports sprite rendering.");
+                }
                 if (compareRaceTextureFgts)
                 {
                     AnsiConsole.MarkupLine(
@@ -320,6 +329,8 @@ public static class RenderNpcCommand
                 MeshesBsaPath = parseResult.GetValue(inputArg)!,
                 ExtraMeshesBsaPaths = parseResult.GetValue(extraMeshesBsaOption),
                 EsmPath = parseResult.GetValue(esmOption)!,
+                LoadOrder = parseResult.GetValue(loadOrderOption),
+                AllowMissingMasters = parseResult.GetValue(allowMissingOption),
                 ExplicitTexturesBsaPaths = parseResult.GetValue(texturesBsaOption),
                 OutputDir = parseResult.GetValue(outputOption)!,
                 NpcFilters = npcFilters,

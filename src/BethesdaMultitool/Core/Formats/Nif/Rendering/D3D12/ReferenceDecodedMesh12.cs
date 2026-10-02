@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Collision;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
@@ -23,7 +24,10 @@ internal sealed record DecodedNifMesh12(
     NifMeshAnimation? Animation = null,
     // Persistent source provenance, deliberately distinct from IsParticleCloud: a controller-delayed
     // system can produce no baked cloud while its containing NIF still needs a source decode in live mode.
-    bool ContainsParticleSource = false);
+    bool ContainsParticleSource = false,
+    // Actor-generated pixels share this payload's byte-bounded lifetime; never persisted as an archive NIF.
+    IReadOnlyDictionary<string, DecodedTexture>? GeneratedTextures = null,
+    WorldActorMeshProvenance? ActorProvenance = null);
 
 internal sealed record DecodedSubmesh12(
     GpuMeshUploader.GpuVertex[] Vertices,

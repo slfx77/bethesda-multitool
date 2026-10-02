@@ -2,6 +2,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.FaceGen;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Geometry;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Inspection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Lighting;
@@ -171,8 +172,10 @@ internal static class NifGeometryExtractor
         Vector3? externalEmittanceColor = null,
         bool preserveEmptyModel = false,
         Func<string, byte[]?>? externalMeshLoader = null,
-        Action<string>? onExternalMeshDecodeFailure = null)
+        Action<string>? onExternalMeshDecodeFailure = null,
+        NifPreSkinMorphTarget? preSkinMorphTarget = null)
     {
+        preSkinMorphTarget?.ValidateSource(data, preSkinMorphDeltas);
         if (nif.Blocks.Count == 0)
         {
             return null;
@@ -962,10 +965,10 @@ internal static class NifGeometryExtractor
             ((int BoneIdx, float Weight)[][] PerVertexInfluences, Matrix4x4[] BoneSkinMatrices)? skinning =
                 shapeSkinning.TryGetValue(shapeIndex, out var sd) ? sd : null;
 
-            // Apply pre-skinning morph deltas only to the first skinned shape (head mesh).
-            // Once applied, clear the reference so subsequent shapes don't get them.
+            // A verified target owns these deltas; callers without proof retain the legacy first-skinned route.
             float[]? shapeMorphDeltas = null;
-            if (preSkinMorphDeltas != null && skinning != null)
+            if (preSkinMorphDeltas != null && skinning != null &&
+                (preSkinMorphTarget is null || preSkinMorphTarget.Matches(shapeIndex, dataIndex)))
             {
                 shapeMorphDeltas = preSkinMorphDeltas;
                 preSkinMorphDeltas = null;

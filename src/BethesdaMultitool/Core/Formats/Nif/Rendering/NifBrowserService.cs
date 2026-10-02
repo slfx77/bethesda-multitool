@@ -17,6 +17,7 @@ using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using BethesdaMultitool.Core.Games;
 using BethesdaMultitool.Core.Vfs;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering;
 
@@ -1620,8 +1621,9 @@ internal sealed class NifBrowserService : IDisposable
             if (fullPath.EndsWith(".nif", StringComparison.OrdinalIgnoreCase))
             {
                 nifFilesFound++;
-                var dirPart = Path.GetDirectoryName(fullPath) ?? "";
-                var name = Path.GetFileName(fullPath);
+                // Archive entry paths use the engine separator whatever the host uses.
+                var dirPart = EnginePath.DirectoryName(fullPath);
+                var name = EnginePath.FileName(fullPath);
 
                 if (string.IsNullOrEmpty(dirPart))
                 {

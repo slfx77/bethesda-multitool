@@ -14,6 +14,7 @@ internal sealed class NpcAppearance
     public string? FullName { get; init; }
     public bool IsFemale { get; init; }
     public string? RenderVariantLabel { get; init; }
+    internal BethesdaMultitool.Core.Assets.AssetUseGraph AssetUses { get; set; } = BethesdaMultitool.Core.Assets.AssetUseGraph.Empty;
 
     // Head mesh
     public string? BaseHeadNifPath { get; init; }
@@ -95,6 +96,7 @@ internal sealed class NpcAppearance
         return new NpcAppearance
         {
             Game = Game,
+            AssetUses = AssetUses,
             NpcFormId = NpcFormId,
             EditorId = EditorId,
             FullName = FullName,

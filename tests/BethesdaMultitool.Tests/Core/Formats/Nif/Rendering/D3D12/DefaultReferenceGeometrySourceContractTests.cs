@@ -59,9 +59,9 @@ public sealed class DefaultReferenceGeometrySourceContractTests
             StringComparison.Ordinal);
         Assert.Contains("public CachedNifMesh12? GetOrUpload(\n        ID3D12GraphicsCommandList commandList,",
             cache, StringComparison.Ordinal);
-        Assert.Contains(
-            "geometryArena.Upload(\n                    commandList ?? throw new InvalidOperationException(",
-            cache, StringComparison.Ordinal);
+        Assert.Matches(
+            @"geometryArena\.Upload\(\s+commandList \?\? throw new InvalidOperationException\(",
+            cache);
     }
 
     [Fact]
@@ -87,10 +87,11 @@ public sealed class DefaultReferenceGeometrySourceContractTests
 
         SourceContract.AssertOrder(
             source,
-            "if (materialization.Status == MeshMaterializationStatus.RetryableFailure)",
-            "MarkMaterializationRetry(node);",
+            "if (materialization.Status != MeshMaterializationStatus.Success)",
+            "RetireNode(node, queueRetirement: false);",
             "if (materialization.Status == MeshMaterializationStatus.RenderEmpty)",
-            "node.ResolvedNull = true;");
+            "node.ResolvedNull = true;",
+            "else MarkMaterializationRetry(node);");
         Assert.Contains("return MeshMaterializationResult.RetryableFailure;", source,
             StringComparison.Ordinal);
         Assert.Contains("return MeshMaterializationResult.RenderEmpty;", source,
@@ -145,30 +146,49 @@ public sealed class DefaultReferenceGeometrySourceContractTests
     }
 
     [Fact]
-    public void Default_publication_commits_on_submit_and_rolls_back_on_abort()
+    public void Default_publication_uses_exact_shared_outcomes_and_retained_initialization()
     {
         var cache = CacheSource();
         var recorder = RecorderSource();
 
-        Assert.Contains("IGpuCommandSubmissionParticipant12", cache, StringComparison.Ordinal);
+        Assert.Contains("IDisposable, ISubmissionParticipant", cache, StringComparison.Ordinal);
+        Assert.DoesNotContain("IGpuCommandSubmissionParticipant12", cache, StringComparison.Ordinal);
         Assert.Contains("_recorder.EnlistCurrentFrame(this);", cache, StringComparison.Ordinal);
-        Assert.Contains("CommitPendingPublicationsNoThrow", cache, StringComparison.Ordinal);
-        Assert.Contains("RollbackPendingPublicationsNoThrow(invalidateBatches: true", cache,
-            StringComparison.Ordinal);
+        Assert.Contains("entry.OnSubmissionOutcome(outcome);", cache, StringComparison.Ordinal);
+        Assert.Contains("entry.PublishPrepared();", cache, StringComparison.Ordinal);
+        Assert.DoesNotContain("PendingMeshPublication", cache, StringComparison.Ordinal);
         SourceContract.AssertOrder(
             cache,
-            "if (node.Mesh is not null)",
-            "if (node.PendingPublication is { } pending)",
-            "return pending.Mesh;");
+            "_recorder.EnqueueDisposeAfterCurrentFrame(new GpuMeshCandidateRetirement12(entry, _retiredMeshResources));",
+            "entry.Attach(resources);",
+            "var materialization = UploadDecodedMesh(",
+            "entry.MarkPrepared();",
+            "var pin = entry.AcquirePreparedPin();",
+            "mesh.AdoptResidencyPin(pin);");
 
-        Assert.Contains("NotifyCurrentFrameParticipants(false);", recorder,
+        Assert.Contains("_native.EnlistCurrentFrame(participant);", recorder, StringComparison.Ordinal);
+        Assert.Contains("_native.AbortFrame();", recorder, StringComparison.Ordinal);
+        Assert.Contains("_native.EndFrame(retainIfUnfenced);", recorder, StringComparison.Ordinal);
+        var nativeRecorder = SourceContract.ReadSource(
+            "shared", "Multitool.Shared", "src", "Slfx77.Multitool.WinUI.Direct3D12.Shaders",
+            "NativeFrameRecorder.cs");
+        SourceContract.AssertOrder(
+            nativeRecorder,
+            "_queue.Signal(_fence, signal).CheckError();",
+            "LastSubmittedFenceValue = signal;",
+            "NotifyOutcome(SubmissionOutcome.Submitted);",
+            "_submissions.AssociateUnfenced(signal);");
+        var participant = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
+            "IGpuCommandSubmissionParticipant12.cs");
+        Assert.Contains("IGpuCommandSubmissionParticipant12 : ISubmissionParticipant", participant,
             StringComparison.Ordinal);
-        Assert.Contains("NotifyCurrentFrameParticipants(true);", recorder,
-            StringComparison.Ordinal);
-        Assert.Contains("participant.OnCommandListSubmitted();", recorder,
-            StringComparison.Ordinal);
-        Assert.Contains("participant.OnCommandListAborted();", recorder,
-            StringComparison.Ordinal);
+        SourceContract.AssertOrder(
+            participant,
+            "outcome == SubmissionOutcome.DefinitelyAbandoned",
+            "OnCommandListAborted();",
+            "else",
+            "OnCommandListSubmitted();");
     }
 
     [Fact]

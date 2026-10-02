@@ -39,7 +39,8 @@ public sealed class ProfileEndCaptureArtifactWriterTests
                 0x30, 0x20, 0x10, 0xFF,
                 0x60, 0x50, 0x40, 0x80
             ];
-            Assert.Equal(expectedRgba, decoded.GetPixels().ToByteArray(PixelMapping.RGBA));
+            using var pixelView = decoded.GetPixels();
+            Assert.Equal(expectedRgba, pixelView.ToByteArray(PixelMapping.RGBA));
 
             var repeated = ProfileEndCaptureArtifactWriter.Save(repeatedPath, bgra, 2, 1);
             Assert.Equal(result.PixelSha256, repeated.PixelSha256);

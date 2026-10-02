@@ -54,8 +54,9 @@ public sealed partial class WorldMapControl
     {
         if (_state.Mode == ViewMode.CellDetail && _state.SelectedCell != null)
         {
+            var canvasSize = GetNavigationCanvasSize();
             WorldMapViewportHelper.ZoomToFitCell(_state.SelectedCell,
-                (float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight,
+                canvasSize.X, canvasSize.Y,
                 out _zoom, out _panOffset);
         }
         else if (GetActiveCells().Count > 0)

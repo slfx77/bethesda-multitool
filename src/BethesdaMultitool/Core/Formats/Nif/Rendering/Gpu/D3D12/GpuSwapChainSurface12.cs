@@ -1,4 +1,5 @@
 #if WINDOWS_GUI
+using Slfx77.Multitool.Core.Lifetime;
 using Microsoft.UI.Xaml.Controls;
 using SharpGen.Runtime;
 using Vortice.Direct3D12;
@@ -82,6 +83,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     private uint _width;
     private uint _height;
     private bool _disposed;
+    private RetiredResourceDisposal? _retiredResources;
+    private bool _requiresRetirementOwner;
 
     /// <summary>
     ///     Tonemap operator + parameters for the live viewer. Defaults to gamma-corrected ACES; the
@@ -396,7 +399,19 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         return (_backBuffers[index], handle);
     }
 
+    /// <summary>Uses staged retry only for the explicitly registered asset owner; world cleanup keeps its existing contract.</summary>
     public void Dispose()
+    {
+        if (!_requiresRetirementOwner)
+        {
+            DisposeLegacy();
+            return;
+        }
+        DisposeOwned();
+    }
+
+    /// <summary>Preserves the unmigrated world owner's original single-attempt cleanup and native exception contract.</summary>
+    private void DisposeLegacy()
     {
         if (_disposed) return;
         _disposed = true;
@@ -443,12 +458,75 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         _swapChain.Dispose();
     }
 
+    /// <summary>Retains failed native children and their prerequisites until a later successful disposal pass.</summary>
+    private void DisposeOwned()
+    {
+        if (_retiredResources is null)
+        {
+            _disposed = true;
+            // GPU completion/device termination is established by the owner before this method.
+            // Publish the retry owner before native releases and retain every failed child action.
+            _retiredResources = new RetiredResourceDisposal(
+                (name, exception) => Log.Warn("GpuSwapChainSurface12: {0} release failed: {1}", name, exception.Message));
+            var panel = _panel;
+            _panel = null;
+            if (panel is not null)
+            {
+                _retiredResources.Add(() => DetachPanel(panel), "panel binding");
+            }
+            foreach (var buffer in _backBuffers) { _retiredResources.Add(buffer, "back buffer", 1); }
+            _retiredResources.Add(_depthTexture, "depth texture", 1);
+            _retiredResources.Add(_msaaColor, "MSAA color", 1);
+            _retiredResources.Add(_hdrResolve, "HDR resolve", 1);
+            _retiredResources.Add(_waterOpaqueCopy, "water opaque copy", 1);
+            _retiredResources.Add(_opaqueDepthCopy, "opaque depth copy", 1);
+            _retiredResources.Add(_footprint, "surface accounting", 1);
+            _retiredResources.Add(_tonemap, "tonemap", 1);
+            _retiredResources.Add(_dsvHeap, "DSV heap", 1);
+            _retiredResources.Add(_rtvHeap, "RTV heap", 1);
+            _retiredResources.Add(_swapChain, "swap chain", 1);
+            _waterOpaqueSnapshotPrepared = false;
+            _opaqueDepthSnapshotPrepared = false;
+        }
+        _retiredResources.Dispose();
+    }
+
     /// <summary>
     ///     Creates a composition swap chain on <paramref name="gpu" />'s direct queue and
     ///     binds it to <paramref name="panel" />. Must be called on the UI thread (the
     ///     <c>ISwapChainPanelNative.SetSwapChain</c> call requires it).
     /// </summary>
-    public static GpuSwapChainSurface12? Create(GpuDevice12 gpu, SwapChainPanel panel, uint width, uint height)
+    /// <param name="gpu">Borrowed device and direct queue.</param>
+    /// <param name="panel">Exact native presentation panel.</param>
+    /// <param name="width">Physical buffer width.</param>
+    /// <param name="height">Physical buffer height.</param>
+    /// <returns>The bound surface, or null after the legacy creation cleanup.</returns>
+    public static GpuSwapChainSurface12? Create(GpuDevice12 gpu, SwapChainPanel panel, uint width, uint height) =>
+        CreateCore(gpu, panel, width, height, null);
+
+    /// <summary>Creates a surface whose registered owner retains and retries incomplete native cleanup.</summary>
+    /// <param name="gpu">Borrowed device and direct queue, retained until the surface is fully disposed.</param>
+    /// <param name="panel">Exact native presentation panel.</param>
+    /// <param name="width">Physical buffer width.</param>
+    /// <param name="height">Physical buffer height.</param>
+    /// <param name="ownConstruction">Nonthrowing ownership transfer invoked before any panel-binding attempt.</param>
+    /// <returns>The bound surface; the registered owner also retains any constructed surface when this method fails.</returns>
+    public static GpuSwapChainSurface12? CreateOwned(GpuDevice12 gpu, SwapChainPanel panel, uint width, uint height,
+        Action<GpuSwapChainSurface12> ownConstruction)
+    {
+        ArgumentNullException.ThrowIfNull(ownConstruction);
+        return CreateCore(gpu, panel, width, height, ownConstruction);
+    }
+
+    /// <summary>Constructs the unchanged scene surface, selecting cleanup policy before ownership transfer and panel binding.</summary>
+    /// <param name="gpu">Borrowed graphics owner.</param>
+    /// <param name="panel">Panel to bind last.</param>
+    /// <param name="width">Physical buffer width.</param>
+    /// <param name="height">Physical buffer height.</param>
+    /// <param name="ownConstruction">Explicit retry owner, or null for the existing world lifecycle contract.</param>
+    /// <returns>The completed surface, or null after cleaned-up failure.</returns>
+    private static GpuSwapChainSurface12? CreateCore(GpuDevice12 gpu, SwapChainPanel panel, uint width, uint height,
+        Action<GpuSwapChainSurface12>? ownConstruction)
     {
         if (width == 0 || height == 0)
         {
@@ -536,6 +614,8 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
             surface = new GpuSwapChainSurface12(
                 gpu, swapChain3, rtvHeap, dsvHeap, backBuffers, depthTexture, msaaColor, hdrResolve,
                 panel, sampleCount, width, height);
+            surface._requiresRetirementOwner = ownConstruction is not null;
+            ownConstruction?.Invoke(surface);
 
             // Bind LAST. A panel must never observe the swap chain until every back buffer, view,
             // scene target, tonemap resource and accounting registration has constructed. No
@@ -600,6 +680,7 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
     /// </summary>
     public void Resize(uint width, uint height)
     {
+        ObjectDisposedException.ThrowIf(_requiresRetirementOwner && _disposed, this);
         if (width == 0 || height == 0 || (_width == width && _height == height))
             return;
 
@@ -826,6 +907,19 @@ internal sealed class GpuSwapChainSurface12 : IDisposable
         using var panelComObject = new ComObject(panel);
         using var native = panelComObject.QueryInterface<Vortice.WinUI.ISwapChainPanelNative>();
         native.SetSwapChain(swapChain).CheckError();
+    }
+
+    /// <summary>Detaches an owned panel binding, retaining retry ownership when native detachment fails.</summary>
+    /// <param name="panel">Exact panel whose UI thread owns the swap-chain binding.</param>
+    private static void DetachPanel(SwapChainPanel panel)
+    {
+        if (!panel.DispatcherQueue.HasThreadAccess)
+        {
+            throw new InvalidOperationException("A native swap chain must detach on its panel UI thread.");
+        }
+        using var panelComObject = new ComObject(panel);
+        using var native = panelComObject.QueryInterface<Vortice.WinUI.ISwapChainPanelNative>();
+        native.SetSwapChain(null).CheckError();
     }
 
     private static void TryDetachPanel(SwapChainPanel panel)

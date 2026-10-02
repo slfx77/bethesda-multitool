@@ -39,15 +39,16 @@ public sealed partial class WorldMapControl
             _state.FilteredMarkers,
             _state.SelectedWorldspace?.FormId,
             _currentDefaultWaterHeight,
-            _state.SelectedWorldspace?.WaterFromParentWorldspace ?? false);
+            _data.WaterCatalog.Get(_state.SelectedWorldspace?.FormId).RequiresCellHasWater);
         _cellGridLookup = _spatialIndex.CellsByGrid.ToDictionary(kv => kv.Key, kv => kv.Value);
     }
 
     private void ApplyZoomToFitWorldspace()
     {
+        var canvasSize = GetNavigationCanvasSize();
         WorldMapViewportHelper.ZoomToFitWorldspace(
             GetActiveCells(),
-            (float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight,
+            canvasSize.X, canvasSize.Y,
             out _zoom, out _panOffset);
     }
 
@@ -305,6 +306,11 @@ public sealed partial class WorldMapControl
     private void HideLayerBuildStatus()
     {
         if (LayerBuildOverlay is null) return;
+        if (_data?.UnwatchedAssetRoots.Count > 0)
+        {
+            ShowLayerBuildStatus("Asset watching unavailable; reload to refresh.", busy: false);
+            return;
+        }
         LayerBuildProgress.IsActive = false;
         LayerBuildOverlay.Visibility = Visibility.Collapsed;
     }

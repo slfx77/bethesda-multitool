@@ -163,7 +163,7 @@ public sealed class TerrainVertexLayoutTests
         var bytecode = GpuShaderCompiler12.Compile(
             "terrain_textured.vert.hlsl", "main", "vs_5_1",
             new ShaderMacro("TERRAIN_BLEND_QUADS", blendQuadCount.ToString(CultureInfo.InvariantCulture)));
-        using var reflection = Compiler.Reflect<ID3D12ShaderReflection>(bytecode);
+        using var reflection = Compiler.Reflect<ID3D12ShaderReflection>(bytecode.Span);
 
         var supplied = TerrainVertexLayout.ElementsFor(blendQuadCount)
             .Select(e => $"{e.SemanticName}{e.SemanticIndex}")
@@ -204,9 +204,9 @@ public sealed class TerrainVertexLayoutTests
 
         ShaderMacro[] macros = [new("TERRAIN_BLEND_QUADS", blendQuadCount.ToString(CultureInfo.InvariantCulture))];
         using var vertex = Compiler.Reflect<ID3D12ShaderReflection>(
-            GpuShaderCompiler12.Compile("terrain_textured.vert.hlsl", "main", "vs_5_1", macros));
+            GpuShaderCompiler12.Compile("terrain_textured.vert.hlsl", "main", "vs_5_1", macros).Span);
         using var pixel = Compiler.Reflect<ID3D12ShaderReflection>(
-            GpuShaderCompiler12.Compile("terrain_textured.frag.hlsl", "main", "ps_5_1", macros));
+            GpuShaderCompiler12.Compile("terrain_textured.frag.hlsl", "main", "ps_5_1", macros).Span);
 
         var written = Signature(vertex, true);
         var read = Signature(pixel, false);

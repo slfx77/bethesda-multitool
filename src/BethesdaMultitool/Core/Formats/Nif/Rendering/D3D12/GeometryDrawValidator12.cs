@@ -1,4 +1,5 @@
 #if WINDOWS_GUI
+using Slfx77.Multitool.Core.Lifetime;
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -66,9 +67,9 @@ internal static unsafe class GeometryDrawValidator12
 
         var arena = meshCache.GeometryArenaForDiagnostics;
         var liveness = arena.QueryLiveness(owner.Geometry);
-        if (liveness is ArenaLiveness.NotLive or ArenaLiveness.Recycled)
+        if (liveness is ByteArenaLiveness.NotLive or ByteArenaLiveness.Recycled)
         {
-            return (liveness == ArenaLiveness.Recycled ? "recycled-range" : "freed-range",
+            return (liveness == ByteArenaLiveness.Recycled ? "recycled-range" : "freed-range",
                 $"arena reports the mesh's allocation is {liveness} while its owner is not disposed");
         }
 

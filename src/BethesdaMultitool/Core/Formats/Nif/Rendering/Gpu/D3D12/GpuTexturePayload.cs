@@ -49,6 +49,8 @@ internal sealed record GpuTexturePayload(
     IReadOnlyList<GpuTextureMipPayload> MipLevels,
     int ArraySize = 1)
 {
+    internal IReadOnlyList<BethesdaMultitool.Core.Assets.AssetSelectionReceipt> AssetReadReceipts { get; init; } = [];
+    internal string? Derivation { get; init; }
     public int MipCount => MipLevels.Count / Math.Max(ArraySize, 1);
 
     public bool IsCubemap => ArraySize == 6;

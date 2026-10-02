@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc.Appearance;
 
@@ -63,11 +64,12 @@ internal static class NpcAppearancePathDeriver
             return null;
         }
 
-        var directory = Path.GetDirectoryName(bodyTexturePath);
+        // The body texture path is an engine path (backslash separated on every host).
+        var directory = EnginePath.DirectoryName(bodyTexturePath);
         var handFileName = isFemale ? "HandFemale.dds" : "HandMale.dds";
-        var handPath = directory != null
-            ? Path.Combine(directory, handFileName)
-            : handFileName;
+        var handPath = directory.Length == 0
+            ? handFileName
+            : directory + "\\" + handFileName;
         return AsTexturePath(handPath);
     }
 

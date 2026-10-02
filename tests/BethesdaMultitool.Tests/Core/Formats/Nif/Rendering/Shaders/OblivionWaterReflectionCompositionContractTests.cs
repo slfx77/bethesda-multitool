@@ -172,11 +172,11 @@ public sealed class OblivionWaterReflectionCompositionContractTests
             "float sunGate = lit ? max(uSunDirIntensity.w, 0.0) : 1.0;",
             shader, StringComparison.Ordinal);
 
-        var writer = SourceContract.ReadSource("tools", "GhidraProject", "tes4_sun_position_decompiled.txt");
+        var writer = SourceContract.ReadLocalReference("tools", "GhidraProject", "tes4_sun_position_decompiled.txt");
         Assert.Contains(
             "_DAT_00b45e00 = (float)(fVar11 * (float10)100.0);",
             writer, StringComparison.Ordinal);
-        var water007 = SourceContract.ReadSource(
+        var water007 = SourceContract.ReadLocalReference(
             "tools", "GhidraProject", "oblivion_water_shaders", "oblivion_water_pkg013.asm");
         Assert.Contains("mov_sat r0.w, c2/*SunDir*/.wwww", water007, StringComparison.Ordinal);
     }

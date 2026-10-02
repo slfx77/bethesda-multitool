@@ -53,7 +53,7 @@ internal static class NifPackedDataExtractor
             var isSkinnedLayout = ExtractSkinnedOrVertexColorData(ctx, categorizedStreams, result);
             ExtractPositions(ctx, categorizedStreams.Half4Streams, result);
             ExtractNormalsTangentsBitangents(ctx, categorizedStreams.Half4Streams, result, isSkinnedLayout);
-            ComputeMissingBitangents(numVertices, result);
+            ComputeMissingFrameArray(numVertices, result);
             CalculateBsDataFlags(result);
 
             LogExtractionResult(result);
@@ -313,8 +313,33 @@ internal static class NifPackedDataExtractor
         // Find ALL unit-length streams (including offset 8 for non-skinned meshes)
         var unitStreams = FindUnitLengthStreams(ctx, half4Streams);
 
-        // Assign unit-length streams based on layout type
-        AssignUnitLengthStreams(unitStreams, isSkinnedLayout, result);
+        // For skinned meshes, skip offset 8 (it contains bone weights, extracted earlier)
+        if (isSkinnedLayout)
+        {
+            unitStreams = unitStreams.Where(s => s.offset >= 20).ToList();
+        }
+
+        if (unitStreams.Count == 0)
+        {
+            return;
+        }
+
+        // Assign unit-length streams by the layout's frame channels, then read a frame channel the sample rejected
+        var frameChannels = FindFrameChannels(half4Streams, unitStreams[0].offset);
+        AssignUnitLengthStreams(unitStreams, frameChannels, result);
+        ReadPartnerFrameStream(ctx, half4Streams, frameChannels, result);
+    }
+
+    /// <summary>
+    ///     The layout's two tangent-frame channels: the two highest-offset half4 streams above the normal, the lower one
+    ///     the Bitangent channel and the higher one the Tangent channel. Every half-precision retail layout ends with
+    ///     them (<c>NifPackedGeometryLayout</c>: L1 +24/+32, L2 +20/+28, L3 +32/+40, L4 +36/+44). Null when fewer than
+    ///     two half4 streams sit above the normal.
+    /// </summary>
+    private static (int Bitangent, int Tangent)? FindFrameChannels(List<DataStreamInfo> half4Streams, int normalOffset)
+    {
+        var above = half4Streams.Select(s => (int)s.BlockOffset).Where(o => o > normalOffset).Order().ToList();
+        return above.Count >= 2 ? (above[^2], above[^1]) : null;
     }
 
     private static List<(DataStreamInfo stream, float[] data, int offset)> FindUnitLengthStreams(
@@ -362,58 +387,102 @@ internal static class NifPackedDataExtractor
         return avgLen / sampleCount;
     }
 
+    /// <summary>
+    ///     Names the unit-length streams (sorted by offset; a skinned layout's bone weights already dropped): the first is
+    ///     the normal and the next two are the tangent frame, non-skinned L1 (40-byte) normal +8 and frame +24/+32, L2
+    ///     (36-byte) normal +8 and frame +20/+28, skinned L3 (48-byte) normal +20 and frame +32/+40, L4 (52-byte) normal
+    ///     +20 and frame +36/+44.
+    /// </summary>
+    /// <remarks>
+    ///     Retail PC NiGeometryData stores the LOWER-offset frame stream as its SECOND array, nif.xml's "Bitangents" (the
+    ///     one that runs along +dP/du), and the higher-offset stream as its FIRST array, "Tangents" (along +dP/dv): the
+    ///     Bitangent and Tangent channels of <c>NifPackedGeometryLayout</c>. <see cref="PackedGeometryData.Tangents" /> and
+    ///     <see cref="PackedGeometryData.Bitangents" /> carry those nif.xml names and NifGeometryWriter writes Tangents
+    ///     first, so this naming is what puts a converted file's arrays in retail order. Measured 2026-09-28 over every
+    ///     X360 packed shape with a PC file of the same path (45,629 shapes, 23,410,745 vertices; the PS3 archive agrees):
+    ///     the lower-offset stream equals PC "Bitangents" and the higher-offset one PC "Tangents" on every vertex within
+    ///     binary16 rounding, while the naming used before (lower = Tangents) matched on none of the 23,350,177 vertices
+    ///     whose two PC arrays differ (TestOutput/nif-tangent-frame-20260928/converter).
+    /// </remarks>
     private static void AssignUnitLengthStreams(
-        List<(DataStreamInfo stream, float[] data, int offset)> unitStreams, bool isSkinned, PackedGeometryData result)
+        List<(DataStreamInfo stream, float[] data, int offset)> unitStreams, (int Bitangent, int Tangent)? frameChannels,
+        PackedGeometryData result)
     {
-        // Non-skinned (36-byte): offsets 8, 20, 28 -> Normals, Tangents, Bitangents
-        // Skinned (48-byte): offsets 20, 32, 40 -> Normals, Tangents, Bitangents (offset 8 = bone weights)
-        if (isSkinned)
+        result.Normals = unitStreams[0].data;
+        if (unitStreams.Count >= 3)
         {
-            // For skinned meshes, skip offset 8 (it contains bone weights, extracted earlier)
-            var skinnedUnitStreams = unitStreams.Where(s => s.offset >= 20).ToList();
-            if (skinnedUnitStreams.Count >= 1)
-            {
-                result.Normals = skinnedUnitStreams[0].data;
-            }
-
-            if (skinnedUnitStreams.Count >= 2)
-            {
-                result.Tangents = skinnedUnitStreams[1].data;
-            }
-
-            if (skinnedUnitStreams.Count >= 3)
-            {
-                result.Bitangents = skinnedUnitStreams[2].data;
-            }
+            result.Bitangents = unitStreams[1].data;
+            result.Tangents = unitStreams[2].data;
+            return;
         }
-        else
-        {
-            // For non-skinned meshes, offset 8 is normals!
-            if (unitStreams.Count >= 1)
-            {
-                result.Normals = unitStreams[0].data;
-            }
 
-            if (unitStreams.Count >= 2)
+        if (unitStreams.Count == 2)
+        {
+            // Only one frame stream passed the unit-length sample: name it by the channel it sits in (the lower channel,
+            // or the only stream of a table without two frame channels, is the Bitangent one).
+            if (frameChannels is { } channels && unitStreams[1].offset == channels.Tangent)
             {
                 result.Tangents = unitStreams[1].data;
             }
-
-            if (unitStreams.Count >= 3)
+            else
             {
-                result.Bitangents = unitStreams[2].data;
+                result.Bitangents = unitStreams[1].data;
             }
         }
     }
 
-    private static void ComputeMissingBitangents(int numVertices, PackedGeometryData result)
+    /// <summary>
+    ///     When only one frame stream passed the unit-length sample, reads its partner from the other frame channel. The
+    ///     sample averages only the first ten vertices, so a few short vectors there reject a stream whose data is present:
+    ///     one retail X360 shape (meshes/dungeons/vaultruined/hallsmall/vhallsm1waywinr01.nif, shape 10, whose frame
+    ///     channels sample 0.9000099 and 0.8999938), where the two stored channels equal the PC arrays on 48 of 48
+    ///     vertices and a partner computed from the normal on 2. A table without that channel leaves the partner to
+    ///     <see cref="ComputeMissingFrameArray" />.
+    /// </summary>
+    private static void ReadPartnerFrameStream(ExtractionContext ctx, List<DataStreamInfo> half4Streams,
+        (int Bitangent, int Tangent)? frameChannels, PackedGeometryData result)
     {
-        // If we have normals and tangents but no bitangents, compute them
-        // Bitangent = cross(Normal, Tangent) - common for meshes with only 2 unit-length streams
+        if ((result.Tangents == null) == (result.Bitangents == null) || frameChannels is not { } channels)
+        {
+            return;
+        }
+
+        var missingOffset = result.Tangents == null ? channels.Tangent : channels.Bitangent;
+        var partner = half4Streams.FirstOrDefault(s => s.BlockOffset == missingOffset);
+        if (partner == null)
+        {
+            return;
+        }
+
+        var data = ExtractHalf4Stream(ctx.Data, ctx.RawDataOffset, ctx.NumVertices, ctx.Stride, partner,
+            ctx.IsBigEndian);
+        if (result.Tangents == null)
+        {
+            result.Tangents = data;
+        }
+        else
+        {
+            result.Bitangents = data;
+        }
+
+        Log.Debug($"      Read the frame channel at offset {missingOffset}, which the unit-length sample rejected");
+    }
+
+    private static void ComputeMissingFrameArray(int numVertices, PackedGeometryData result)
+    {
+        // Only one frame array and no stored partner (a table without two frame channels): complete the pair with the
+        // retail relation of the majority handedness: where the stored frame's own w, sign(dot(cross(N, B), -T)), is +1
+        // (about 63% of retail vertices), T = cross(B, N) and B = cross(N, T) for a unit, orthogonal frame; where it is
+        // -1 the computed partner points the opposite way. NifGeometryWriter writes the frame only when Tangents is set.
         if (result is { Normals: not null, Tangents: not null, Bitangents: null })
         {
-            result.Bitangents = ComputeBitangents(result.Normals, result.Tangents, numVertices);
-            Log.Debug("      Computed bitangents from normals and tangents");
+            result.Bitangents = Cross(result.Normals, result.Tangents, numVertices);
+            Log.Debug("      Computed bitangents as cross(normal, tangent)");
+        }
+        else if (result is { Normals: not null, Tangents: null, Bitangents: not null })
+        {
+            result.Tangents = Cross(result.Bitangents, result.Normals, numVertices);
+            Log.Debug("      Computed tangents as cross(bitangent, normal)");
         }
     }
 
@@ -469,38 +538,29 @@ internal static class NifPackedDataExtractor
     }
 
     /// <summary>
-    ///     Compute bitangents from normals and tangents using cross product.
-    ///     Bitangent = cross(Normal, Tangent)
-    ///     This is needed when the packed geometry only has 2 unit-length streams.
+    ///     The per-vertex cross product a × b of two three-component arrays (unit length when a and b are unit length and
+    ///     perpendicular). Used only when a frame array has no stored partner.
     /// </summary>
-    private static float[] ComputeBitangents(float[] normals, float[] tangents, int numVertices)
+    private static float[] Cross(float[] a, float[] b, int numVertices)
     {
-        var bitangents = new float[numVertices * 3];
+        var result = new float[numVertices * 3];
 
         for (var v = 0; v < numVertices; v++)
         {
-            // Normal vector
-            var nx = normals[v * 3 + 0];
-            var ny = normals[v * 3 + 1];
-            var nz = normals[v * 3 + 2];
+            var ax = a[v * 3 + 0];
+            var ay = a[v * 3 + 1];
+            var az = a[v * 3 + 2];
 
-            // Tangent vector
-            var tx = tangents[v * 3 + 0];
-            var ty = tangents[v * 3 + 1];
-            var tz = tangents[v * 3 + 2];
+            var bx = b[v * 3 + 0];
+            var by = b[v * 3 + 1];
+            var bz = b[v * 3 + 2];
 
-            // Cross product: N × T
-            var bx = ny * tz - nz * ty;
-            var by = nz * tx - nx * tz;
-            var bz = nx * ty - ny * tx;
-
-            // Store bitangent (already unit-length if N and T are unit-length and perpendicular)
-            bitangents[v * 3 + 0] = bx;
-            bitangents[v * 3 + 1] = by;
-            bitangents[v * 3 + 2] = bz;
+            result[v * 3 + 0] = ay * bz - az * by;
+            result[v * 3 + 1] = az * bx - ax * bz;
+            result[v * 3 + 2] = ax * by - ay * bx;
         }
 
-        return bitangents;
+        return result;
     }
 
     /// <summary>

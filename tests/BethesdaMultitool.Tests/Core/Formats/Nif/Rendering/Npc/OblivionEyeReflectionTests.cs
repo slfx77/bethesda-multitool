@@ -139,9 +139,9 @@ public sealed class OblivionEyeReflectionTests
     {
         ShaderCompileTestGuard.SkipUnlessEnabled();
         using var vertex = Compiler.Reflect<ID3D12ShaderReflection>(GpuShaderCompiler12.Compile(
-            "reference_oblivion_eye.vert.hlsl", "main", "vs_5_1"));
+            "reference_oblivion_eye.vert.hlsl", "main", "vs_5_1").Span);
         using var pixel = Compiler.Reflect<ID3D12ShaderReflection>(GpuShaderCompiler12.Compile(
-            "reference_oblivion_eye.frag.hlsl", "main", "ps_5_1"));
+            "reference_oblivion_eye.frag.hlsl", "main", "ps_5_1").Span);
         var outputs = new List<ShaderParameterDescription>();
         for (var index = 0u; index < vertex.Description.OutputParameters; index++)
             outputs.Add(vertex.GetOutputParameterDescription(index));

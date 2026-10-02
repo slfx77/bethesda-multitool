@@ -18,7 +18,7 @@ internal static class NpcHeadTextureComposer
         NifTextureResolver textureResolver,
         string? baseTexturePath,
         bool applyEgt,
-        Func<EgtParser?> loadGeneratedEgt)
+        Func<EgtParser?> loadGeneratedEgt, string? egtPath = null)
     {
         ArgumentNullException.ThrowIfNull(npc);
         ArgumentNullException.ThrowIfNull(textureResolver);
@@ -56,7 +56,8 @@ internal static class NpcHeadTextureComposer
                         textureResolver,
                         authoredComposite,
                         NpcHeadTextureSource.AuthoredMap0,
-                        ClassicSkinAuthoredAlbedo.Create(npc.Game, baseTexturePath, npc.AuthoredFaceGenMap0Path));
+                        ClassicSkinAuthoredAlbedo.Create(npc.Game, baseTexturePath, npc.AuthoredFaceGenMap0Path),
+                        new("Authored FaceGen Map0", [baseTexturePath, npc.AuthoredFaceGenMap0Path], ObservedInputs: [new(baseTexturePath, [.. baseTexture.AssetReadReceipts]), new(npc.AuthoredFaceGenMap0Path, [.. authoredDelta.AssetReadReceipts])]));
                 }
             }
         }
@@ -75,7 +76,8 @@ internal static class NpcHeadTextureComposer
         var generatedComposite = FaceGenTextureMorpher.Apply(baseTexture, egt, npc.FaceGenTextureCoeffs);
         return generatedComposite == null
             ? ResolveBaseDiffuse(npc, textureResolver, baseTexturePath, baseTexture)
-            : Inject(npc, textureResolver, generatedComposite, NpcHeadTextureSource.GeneratedEgt);
+            : Inject(npc, textureResolver, generatedComposite, NpcHeadTextureSource.GeneratedEgt, dependency:
+                new("FaceGen EGT", egtPath is null ? [baseTexturePath] : [baseTexturePath, egtPath], true, [new(baseTexturePath, [.. baseTexture.AssetReadReceipts])]));
     }
 
     private static NpcHeadTextureResolution ResolveBaseDiffuse(
@@ -87,7 +89,8 @@ internal static class NpcHeadTextureComposer
         // --no-egt removes Map0/EGT only. Oblivion still binds the source-proven Map1 fallback,
         // so the control retains the same SKIN2000 texture family and lighting permutation.
         return npc.Game == BethesdaGame.Oblivion
-            ? Inject(npc, textureResolver, baseTexture, NpcHeadTextureSource.BaseDiffuse)
+            ? Inject(npc, textureResolver, baseTexture, NpcHeadTextureSource.BaseDiffuse, dependency:
+                new("Base diffuse", [baseTexturePath], ObservedInputs: [new(baseTexturePath, [.. baseTexture.AssetReadReceipts])]))
             : new NpcHeadTextureResolution(baseTexturePath, NpcHeadTextureSource.BaseDiffuse);
     }
 
@@ -96,7 +99,8 @@ internal static class NpcHeadTextureComposer
         NifTextureResolver textureResolver,
         DecodedTexture texture,
         NpcHeadTextureSource source,
-        ClassicSkinAuthoredAlbedo? authoredAlbedo = null)
+        ClassicSkinAuthoredAlbedo? authoredAlbedo = null,
+        BethesdaMultitool.Core.Assets.GeneratedAssetDependency? dependency = null)
     {
         // SKIN2000 samples BaseMap, FaceGenMap0, and FaceGenMap1 separately. The current scene
         // contract carries one diffuse texture, so preserve the exact texel-center algebra in the
@@ -107,10 +111,12 @@ internal static class NpcHeadTextureComposer
         {
             texture = FaceGenHeadShaderFamilyResolver.ApplyDefaultDetailModulation(texture);
             map1Source = NpcFaceGenMap1Source.DefaultDetailModFaceGenTexture;
+            if (dependency is not null)
+                dependency = dependency with { Recipe = dependency.Recipe + " + Oblivion default FaceGenMap1 modulation" };
         }
 
         var generatedTextureKey = NpcTextureHelpers.BuildNpcFaceEgtTextureKey(npc);
-        textureResolver.InjectTexture(generatedTextureKey, texture);
+        textureResolver.InjectTexture(generatedTextureKey, texture, dependency);
         return new NpcHeadTextureResolution(
             generatedTextureKey,
             source,

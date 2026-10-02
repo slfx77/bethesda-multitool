@@ -249,6 +249,14 @@ internal sealed class ShadowMapRenderer12 : IDisposable
     public bool IsCascadePublished(int index) =>
         (uint)index < CascadeCount && _cascadePublished[index];
 
+    /// <summary>Retires published depths when their scene or asset inputs are replaced.</summary>
+    internal void InvalidateContent()
+    {
+        HasContent = false;
+        Array.Clear(_cascadePublished);
+        Array.Clear(_renderedParams);
+    }
+
     /// <summary>
     ///     Updates the availability bit after an in-place animated refresh of one published
     ///     cascade. Its matrix and descriptor remain unchanged; an empty refresh disables only

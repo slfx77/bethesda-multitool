@@ -1,3 +1,5 @@
+using Slfx77.Multitool.Core.Lifetime;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using Vortice.Direct3D12;
@@ -5,551 +7,216 @@ using Vortice.Direct3D12;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
-///     v3 Pass 4 — D3D12 per-frame command list + allocator pool + fence-based CPU↔GPU sync.
-///     The D3D12 analog of D3D11's immediate context — but the command-list reset cadence is
-///     CPU-controlled, so we maintain N <see cref="ID3D12CommandAllocator" />s (one per
-///     frame-in-flight slot) plus a single reusable command list.
-///     <para>
-///         Frame loop:
-///     </para>
-///     <code>
-///         recorder.BeginFrame();         // WaitForFence + Reset(allocator) + Reset(commandList)
-///         // ... record draw calls via recorder.CommandList ...
-///         recorder.EndFrame();           // Close + ExecuteCommandList + Signal(fence) + advance frame
-///     </code>
-///     <para>
-///         <see cref="FrameIndex" /> rotates 0..<see cref="FramesInFlight" />-1 each frame.
-///         Resources keyed on frame index (ring buffer, descriptor heap allocator) MUST use
-///         that index so the GPU isn't reading slot N's data while the CPU writes slot N+1.
-///     </para>
+///     Adapts Shared's native frame recorder to Bethesda's frame loop, callback diagnostics,
+///     capture ownership, and device-removal policy. Native allocation, submission, fence values,
+///     and retained resource ownership belong to <see cref="NativeFrameRecorder" />.
 /// </summary>
 internal sealed class GpuCommandRecorder12 : IDisposable
 {
-    /// <summary>
-    ///     Two frames in flight matches the swap-chain back-buffer count. Three would allow
-    ///     more CPU/GPU overlap but doubles upload-heap memory; revisit if Step 1c shows the
-    ///     CPU regularly waiting on fences.
-    /// </summary>
-    public const int FramesInFlight = 2;
+    /// <summary>Two frame slots match the swap chain and its frame-keyed upload and descriptor storage.</summary>
+    public const int FramesInFlight = NativeFrameRecorder.FramesInFlight;
 
-    private readonly ID3D12CommandAllocator[] _allocators = new ID3D12CommandAllocator[FramesInFlight];
-    private readonly List<IGpuCommandSubmissionParticipant12> _currentFrameParticipants = new();
-    private readonly List<IDisposable> _currentFrameRetirements = new();
-    private readonly AutoResetEvent _fenceEvent = new(false);
-    private readonly Queue<FenceRetirement> _fenceRetirements = new();
-    private readonly ulong[] _frameFenceValues = new ulong[FramesInFlight];
-
+    private readonly NativeFrameRecorder _native;
+    private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
     private readonly GpuDevice12 _gpu;
-    private readonly List<IDisposable> _unfencedSubmissionRetirements = new();
     private bool _disposed;
+    private bool _lifetimeCallbackActive;
 
-    // True once this frame slot's wait counters have been reset, so a wait split across
-    // WaitForFrameSlot + BeginFrame reports one total rather than only the second half.
-    private bool _fenceWaitAccumulating;
-    private bool _frameOpen;
-    private ulong _nextFenceValue = 1;
-    private bool _submissionPoisoned;
-
+    /// <summary>Acquires an initialized Shared recorder whose failed initialization remains device-owned.</summary>
+    /// <param name="gpu">Borrowed device, queue, and fence retained by the enclosing graphics context.</param>
     public GpuCommandRecorder12(GpuDevice12 gpu)
     {
+        ArgumentNullException.ThrowIfNull(gpu);
         _gpu = gpu;
-        for (var i = 0; i < FramesInFlight; i++)
-        {
-            _allocators[i] = gpu.Device.CreateCommandAllocator<ID3D12CommandAllocator>(CommandListType.Direct);
-        }
-
-        // Command lists are born in the Open state; Close immediately so BeginFrame can Reset.
-        CommandList = gpu.Device.CreateCommandList<ID3D12GraphicsCommandList>(
-            0,
-            CommandListType.Direct,
-            _allocators[0]);
-        CommandList.Close();
+        _native = gpu.CreateFrameRecorder();
     }
 
-    /// <summary>
-    ///     The current frame's command list. Begin/end the frame via the recorder; the
-    ///     list itself is exposed for renderers to record commands into.
-    /// </summary>
-    public ID3D12GraphicsCommandList CommandList { get; }
+    /// <summary>Gets the borrowed command list used by renderers between frame begin and submission.</summary>
+    public ID3D12GraphicsCommandList CommandList { get { VerifyAccess(); return _native.CommandList; } }
 
-    /// <summary>
-    ///     0..<see cref="FramesInFlight" />-1 — frame-keyed accumulators (ring buffer
-    ///     offset, descriptor heap slot, etc.) index off this.
-    /// </summary>
-    public int FrameIndex { get; private set; }
+    /// <summary>Gets the current fence-protected slot for frame-keyed upload and descriptor allocations.</summary>
+    public int FrameIndex => _native.FrameIndex;
 
-    /// <summary>
-    ///     True when the most recent <see cref="BeginFrame" /> blocked on the GPU fence
-    ///     (CPU was ahead of the GPU). A4 — gate for raising <see cref="FramesInFlight" /> 2→3: if
-    ///     this is regularly true, the CPU is fence-bound and a deeper pipeline would help.
-    /// </summary>
-    public bool LastFrameWaitedOnFence { get; private set; }
+    /// <summary>Gets whether the current list can accept commands and retirement ownership.</summary>
+    internal bool IsRecording { get { VerifyAccess(); return _native.IsFrameOpen && !_disposed; } }
 
-    /// <summary>
-    ///     Milliseconds the most recent <see cref="BeginFrame" /> spent blocked on the fence
-    ///     (0 when it did not wait). Surfaced so the bump decision is measured, not guessed.
-    /// </summary>
-    public double LastFrameFenceWaitMilliseconds { get; private set; }
+    /// <summary>Gets the non-repeating identity of the most recently opened recording.</summary>
+    internal ulong RecordingGeneration => _native.RecordingGeneration;
 
-    /// <summary>Fence value signaled by the most recent <see cref="EndFrame" /> submission.</summary>
-    public ulong LastSubmittedFenceValue { get; private set; }
+    /// <summary>Gets whether the current frame-slot wait blocked on GPU completion.</summary>
+    public bool LastFrameWaitedOnFence => _native.LastFrameWaitedOnFence;
 
-    public void Dispose()
-    {
-        DisposeCore(true);
-    }
+    /// <summary>Gets total fence-wait milliseconds across the separate wait and frame-begin calls.</summary>
+    public double LastFrameFenceWaitMilliseconds => _native.LastFrameFenceWaitMilliseconds;
 
-    /// <summary>
-    ///     Releases recorder-owned objects after the owner has already made its one best-effort idle
-    ///     wait. This keeps shared-context teardown from issuing a second queue signal after device
-    ///     removal while preserving <see cref="Dispose()" /> as the safe standalone API.
-    /// </summary>
-    internal void DisposeAfterGpuIdleAttempt()
-    {
-        DisposeCore(false);
-    }
+    /// <summary>Gets the most recent submitted frame's signal, published before participant notification.</summary>
+    public ulong LastSubmittedFenceValue => _native.LastSubmittedFenceValue;
 
+    /// <summary>Proves GPU retirement, then releases retained children before native recording resources.</summary>
+    /// <exception cref="AggregateException">One or more releases remain owned for an explicit retry.</exception>
+    public void Dispose() => DisposeCore(true);
+
+    /// <summary>Releases owned resources after the enclosing owner proved queue retirement or device removal.</summary>
+    internal void DisposeAfterGpuIdleAttempt() => DisposeCore(false);
+
+    /// <summary>Preserves Bethesda's terminal-device recovery while Shared retains failed child releases.</summary>
+    /// <param name="waitForGpuIdle">False only when the enclosing graphics owner already proved retirement.</param>
     private void DisposeCore(bool waitForGpuIdle)
     {
-        if (_disposed) return;
+        VerifyAccess();
+        if (!_disposed && waitForGpuIdle)
+        {
+            try { WaitForGpuIdle(); }
+            catch
+            {
+                if (!_gpu.TryForceDeviceRemoval("command-recorder-teardown")) { throw; }
+            }
+        }
         _disposed = true;
-
-        if (waitForGpuIdle)
-        {
-            try
-            {
-                WaitForGpuIdle();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"GpuCommandRecorder12: GPU idle wait during teardown failed: {ex}");
-                if (!_gpu.TryForceDeviceRemoval("command-recorder-teardown"))
-                {
-                    // An owner cannot safely release allocator/retirement state after an unfenced
-                    // wait failure. The supported Windows runtime exposes RemoveDevice; keep the
-                    // same terminal queue/device-release fallback as the shared viewer context.
-                    _gpu.Dispose();
-                }
-            }
-        }
-
-        if (_frameOpen)
-        {
-            try
-            {
-                AbortFrame();
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"GpuCommandRecorder12: abandoning the final open frame failed: {ex}");
-            }
-        }
-
-        RetireAllFenceResources();
-        DisposeNoThrow(CommandList, "command list");
-        foreach (var allocator in _allocators)
-        {
-            DisposeNoThrow(allocator, "command allocator");
-        }
-
-        DisposeNoThrow(_fenceEvent, "fence event");
+        // Preserve Bethesda's diagnostic-only participant policy before terminal Shared cleanup.
+        // A native Close failure leaves the stopped owner retained for the next disposal attempt.
+        if (_native.IsFrameOpen) { AbortFrame(); }
+        _lifetimeCallbackActive = true;
+        try { _native.DisposeAfterRetirement(); }
+        finally { _lifetimeCallbackActive = false; }
     }
 
     /// <summary>
-    ///     Defers disposal of a short-lived resource used by the currently open command list
-    ///     until the fence value signaled for that submission has completed. Upload staging
-    ///     resources should use this instead of a frame-count hold so they are released as
-    ///     soon as the GPU is actually done with the copy.
+    ///     Transfers a resource to the open frame's exact submission lifetime. Without an open
+    ///     recording, releases it synchronously as required by existing Bethesda callers.
     /// </summary>
+    /// <param name="resource">Owned input whose transfer occurs only after registration succeeds.</param>
+    /// <exception cref="InvalidOperationException">The caller thread, callback phase, or capacity rejects registration.</exception>
     public void EnqueueDisposeAfterCurrentFrame(IDisposable resource)
     {
-        if (_disposed)
+        VerifyAccess();
+        ArgumentNullException.ThrowIfNull(resource);
+        if (_disposed || !_native.IsFrameOpen)
         {
-            resource.Dispose();
+            _lifetimeCallbackActive = true;
+            try { resource.Dispose(); }
+            finally { _lifetimeCallbackActive = false; }
             return;
         }
-
-        if (!_frameOpen)
-        {
-            resource.Dispose();
-            return;
-        }
-
-        _currentFrameRetirements.Add(resource);
+        _native.RetireAfterCurrentFrame(resource, "current-frame GPU resource");
     }
 
-    /// <summary>
-    ///     Enlists a transaction participant in the currently open command list. A participant is
-    ///     notified exactly once when that list is either successfully submitted or abandoned, and
-    ///     duplicate enlistment of the same instance in one frame is ignored. This is the commit
-    ///     boundary for CPU cache state whose backing data exists only as commands in the open list.
-    /// </summary>
-    public void EnlistCurrentFrame(IGpuCommandSubmissionParticipant12 participant)
+    /// <summary>Enlists one participant identity in the active frame's submitted, uncertain, or abandoned outcome.</summary>
+    /// <param name="participant">Borrowed identity notified once per recording; no resource ownership transfers.</param>
+    /// <exception cref="InvalidOperationException">No frame is active, access is invalid, or participant capacity is exhausted.</exception>
+    public void EnlistCurrentFrame(ISubmissionParticipant participant)
     {
-        ArgumentNullException.ThrowIfNull(participant);
-        if (!_frameOpen)
-        {
-            throw new InvalidOperationException(
-                "A command-submission participant can only enlist while a frame is open.");
-        }
-
-        foreach (var enlisted in _currentFrameParticipants)
-        {
-            if (ReferenceEquals(enlisted, participant))
-            {
-                return;
-            }
-        }
-
-        _currentFrameParticipants.Add(participant);
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _native.EnlistCurrentFrame(participant);
     }
 
-    /// <summary>
-    ///     Blocks until the GPU has finished with this frame slot, WITHOUT touching any D3D12 state.
-    ///     <para>
-    ///         Exists so the host can pay the wait BEFORE it samples input and integrates the camera.
-    ///         The wait is the dominant term in a GPU-bound frame (measured at 46 ms of a 70 ms frame),
-    ///         and anything sampled ahead of it is already that stale by the time recording starts —
-    ///         which reads as the camera lagging the mouse. Waiting first makes the pose as fresh as
-    ///         the frame can possibly deliver. Idempotent: <see cref="BeginFrame" /> re-checks the
-    ///         fence and finds it already satisfied.
-    ///     </para>
-    /// </summary>
+    /// <summary>Waits for this frame slot before camera sampling without resetting native recording state.</summary>
     public void WaitForFrameSlot()
     {
-        ThrowIfSubmissionPoisoned();
-        if (_frameOpen)
-        {
-            return;
-        }
-
-        WaitForFrameSlotFence();
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _native.WaitForFrameSlot();
     }
 
-    /// <summary>
-    ///     Blocks until the GPU is done with this frame slot's resources, then resets the
-    ///     allocator and command list ready for fresh recording. Call once at the top of
-    ///     every frame before any other D3D12 work.
-    /// </summary>
+    /// <summary>Waits, retires completed ownership, and resets the current allocator and command list.</summary>
     public void BeginFrame()
     {
-        ThrowIfSubmissionPoisoned();
-        if (_frameOpen) throw new InvalidOperationException("BeginFrame called twice without EndFrame.");
-
-        WaitForFrameSlotFence();
-        RetireCompletedFenceResources();
-        _allocators[FrameIndex].Reset();
-        CommandList.Reset(_allocators[FrameIndex], null);
-        _frameOpen = true;
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_native.IsFrameOpen) { throw new InvalidOperationException("BeginFrame called twice without EndFrame."); }
+        if (RecordingGeneration == ulong.MaxValue)
+            throw new InvalidOperationException("Command recording identities are exhausted.");
+        _native.WaitForFrameSlot();
+        _lifetimeCallbackActive = true;
+        try
+        {
+            _native.ReleaseCompletedResources();
+            _native.BeginFrame();
+        }
+        finally { _lifetimeCallbackActive = false; }
     }
 
     /// <summary>
-    ///     The fence wait itself. Accumulates into <see cref="LastFrameFenceWaitMilliseconds" /> so the
-    ///     reported figure stays whole no matter how the wait is split between
-    ///     <see cref="WaitForFrameSlot" /> and <see cref="BeginFrame" />; the pair is reset by whichever
-    ///     runs first for this frame slot.
+    ///     Abandons unsubmitted commands and rotates the frame slot. Notification and resource-release
+    ///     failures remain diagnostic and retryable; a native close failure is returned to the caller.
     /// </summary>
-    private void WaitForFrameSlotFence()
-    {
-        if (!_fenceWaitAccumulating)
-        {
-            LastFrameWaitedOnFence = false;
-            LastFrameFenceWaitMilliseconds = 0;
-            _fenceWaitAccumulating = true;
-        }
-
-        var waitFor = _frameFenceValues[FrameIndex];
-        if (waitFor > 0 && _gpu.FrameFence.CompletedValue < waitFor)
-        {
-            var waitStarted = Stopwatch.GetTimestamp();
-            D3D12FenceWaiter.WaitForFence(_gpu.FrameFence, waitFor, _fenceEvent);
-            LastFrameWaitedOnFence = true;
-            LastFrameFenceWaitMilliseconds += Stopwatch.GetElapsedTime(waitStarted).TotalMilliseconds;
-        }
-    }
-
-    /// <summary>
-    ///     Closes and discards the currently recorded command list without submitting it. This is the
-    ///     recovery path for a CPU-side recording failure: because none of the recorded barriers or
-    ///     draws reach the queue, GPU resources retain the states established by the preceding
-    ///     successfully submitted frame. The frame slot still advances so the next BeginFrame waits
-    ///     the other slot's prior fence; this preserves the frame-count deletion queue's safety proof.
-    /// </summary>
-    /// <remarks>
-    ///     Call only before <see cref="EndFrame" /> starts submission. Resources whose disposal was
-    ///     tied to the abandoned list are released immediately because the GPU can never reference
-    ///     them.
-    /// </remarks>
     /// <returns>True when an open frame was abandoned; false when no frame was open.</returns>
     public bool AbortFrame()
     {
-        if (!_frameOpen) return false;
-
+        VerifyAccess();
+        _lifetimeCallbackActive = true;
         try
         {
-            CommandList.Close();
+            var result = _native.AbortFrame();
+            WriteLifetimeDiagnostic("submission participant notification", result.NotificationFailure);
+            WriteLifetimeDiagnostic("abandoned recording retirement", result.CleanupFailure);
+            if (result.RecordingFailure is not null)
+                ExceptionDispatchInfo.Capture(result.RecordingFailure).Throw();
+            return result.Aborted;
         }
-        finally
-        {
-            try
-            {
-                foreach (var resource in _currentFrameRetirements)
-                {
-                    DisposeNoThrow(resource, "aborted-frame retirement");
-                }
-            }
-            finally
-            {
-                _currentFrameRetirements.Clear();
-                NotifyCurrentFrameParticipants(false);
-                FrameIndex = (FrameIndex + 1) % FramesInFlight;
-                _frameOpen = false;
-                _fenceWaitAccumulating = false;
-            }
-        }
-
-        return true;
+        finally { _lifetimeCallbackActive = false; }
     }
 
-    /// <summary>
-    ///     Closes the command list, submits it to the device's direct queue, signals the
-    ///     frame fence so <see cref="BeginFrame" /> on this slot N frames hence can detect
-    ///     completion, then rotates <see cref="FrameIndex" /> to the next slot.
-    /// </summary>
-    public void EndFrame()
-    {
-        EndFrameWithOutcome().ThrowIfFailed();
-    }
+    /// <summary>Submits the frame and reports the original native submission error, if any.</summary>
+    public void EndFrame() => EndFrameWithOutcome().ThrowIfFailed();
 
-    /// <summary>
-    ///     Ends a frame while preserving whether the command list may already be executing when a
-    ///     queue signal fails. The optional lifetime is transferred to the recorder only in that
-    ///     unfenced case; on success or a pre-execute failure it remains caller-owned.
-    /// </summary>
+    /// <summary>Preserves exact native submission facts while containing independent callback failures.</summary>
+    /// <param name="retainIfUnfenced">Borrowed capture or staging owner transferred only when execution becomes uncertain.</param>
+    /// <returns>The existing Bethesda outcome, including the unchanged native failure and queue-execution classification.</returns>
     internal GpuCommandSubmissionOutcome12 EndFrameWithOutcome(IDisposable? retainIfUnfenced = null)
     {
-        if (!_frameOpen) throw new InvalidOperationException("EndFrame called without BeginFrame.");
-
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _lifetimeCallbackActive = true;
         try
         {
-            CommandList.Close();
+            var result = _native.EndFrame(retainIfUnfenced);
+            WriteLifetimeDiagnostic("submission participant notification", result.NotificationFailure);
+            WriteLifetimeDiagnostic("abandoned recording retirement", result.CleanupFailure);
+            return new GpuCommandSubmissionOutcome12(
+                result.Succeeded, result.CommandListMayHaveReachedQueue, result.FenceValue, result.SubmissionFailure);
         }
-        catch (Exception ex)
-        {
-            return FinalizeFailedSubmission(ex, false, retainIfUnfenced);
-        }
-
-        try
-        {
-            _gpu.DirectQueue.ExecuteCommandList(CommandList);
-        }
-        catch (Exception ex)
-        {
-            // ExecuteCommandLists has no HRESULT return. If its managed projection throws while
-            // crossing the native boundary, conservatively retain every referenced lifetime.
-            return FinalizeFailedSubmission(ex, true, retainIfUnfenced);
-        }
-
-        var signalValue = _nextFenceValue++;
-        try
-        {
-            _gpu.DirectQueue.Signal(_gpu.FrameFence, signalValue).CheckError();
-        }
-        catch (Exception ex)
-        {
-            // Execute succeeded, so releasing staging/readback resources here can race the GPU even
-            // though no usable completion fence was published. Poison future recording and retain
-            // those objects until the owner performs its final idle/device teardown.
-            return FinalizeFailedSubmission(ex, true, retainIfUnfenced);
-        }
-
-        _frameFenceValues[FrameIndex] = signalValue;
-        LastSubmittedFenceValue = signalValue;
-        for (var i = 0; i < _currentFrameRetirements.Count; i++)
-        {
-            _fenceRetirements.Enqueue(new FenceRetirement(_currentFrameRetirements[i], signalValue));
-        }
-
-        _currentFrameRetirements.Clear();
-        NotifyCurrentFrameParticipants(true);
-
-        FrameIndex = (FrameIndex + 1) % FramesInFlight;
-        _frameOpen = false;
-        _fenceWaitAccumulating = false;
-        return GpuCommandSubmissionOutcome12.Success(signalValue);
+        finally { _lifetimeCallbackActive = false; }
     }
 
-    /// <summary>
-    ///     Blocks until all queued GPU work completes. Required before destroying resources
-    ///     the GPU may still reference (swap-chain resize, app shutdown, backend switch).
-    /// </summary>
+    /// <summary>Proves queued GPU work complete without resolving an active, unsubmitted recording.</summary>
     public void WaitForGpuIdle()
     {
-        var signalValue = _nextFenceValue++;
-        _gpu.DirectQueue.Signal(_gpu.FrameFence, signalValue).CheckError();
-        D3D12FenceWaiter.WaitForFence(_gpu.FrameFence, signalValue, _fenceEvent);
-        Array.Clear(_frameFenceValues);
-        RetireAllFenceResources();
-    }
-
-    private void RetireCompletedFenceResources()
-    {
-        var completed = _gpu.FrameFence.CompletedValue;
-        while (_fenceRetirements.TryPeek(out var head) && head.FenceValue <= completed)
-        {
-            _fenceRetirements.Dequeue();
-            head.Resource.Dispose();
-        }
-    }
-
-    private void RetireAllFenceResources()
-    {
-        while (_fenceRetirements.TryDequeue(out var pending))
-        {
-            DisposeNoThrow(pending.Resource, "fence retirement");
-        }
-
-        foreach (var resource in _currentFrameRetirements)
-        {
-            DisposeNoThrow(resource, "current-frame retirement");
-        }
-
-        _currentFrameRetirements.Clear();
-        foreach (var resource in _unfencedSubmissionRetirements)
-        {
-            DisposeNoThrow(resource, "unfenced-submission retirement");
-        }
-
-        _unfencedSubmissionRetirements.Clear();
-    }
-
-    private GpuCommandSubmissionOutcome12 FinalizeFailedSubmission(
-        Exception error,
-        bool commandListMayHaveReachedQueue,
-        IDisposable? retainIfUnfenced)
-    {
-        if (commandListMayHaveReachedQueue)
-        {
-            _unfencedSubmissionRetirements.AddRange(_currentFrameRetirements);
-            if (retainIfUnfenced is not null)
-            {
-                _unfencedSubmissionRetirements.Add(retainIfUnfenced);
-            }
-
-            NotifyCurrentFrameParticipants(true);
-        }
-        else
-        {
-            foreach (var resource in _currentFrameRetirements)
-            {
-                DisposeNoThrow(resource, "abandoned submission retirement");
-            }
-
-            NotifyCurrentFrameParticipants(false);
-        }
-
-        _currentFrameRetirements.Clear();
-        _submissionPoisoned = true;
-        FrameIndex = (FrameIndex + 1) % FramesInFlight;
-        _frameOpen = false;
-        _fenceWaitAccumulating = false;
-        return GpuCommandSubmissionOutcome12.Failure(commandListMayHaveReachedQueue, error);
-    }
-
-    private void ThrowIfSubmissionPoisoned()
-    {
-        if (_submissionPoisoned)
-        {
-            throw new InvalidOperationException(
-                "The D3D12 command recorder cannot begin another frame after an unfenced or failed submission.");
-        }
-    }
-
-    private static void DisposeNoThrow(IDisposable resource, string resourceKind)
-    {
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _native.WaitForGpuIdle();
+        _lifetimeCallbackActive = true;
         try
         {
-            resource.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"GpuCommandRecorder12: disposing {resourceKind} failed: {ex}");
-        }
-    }
-
-    /// <summary>
-    ///     Submission notification is deliberately exception-isolated. Recorder state must always
-    ///     advance after Execute/Signal (or after Abort closes the list), even if a cache participant
-    ///     has a bookkeeping bug. Participants are expected to be no-throw; the catch is the final
-    ///     containment boundary that keeps one cache from wedging every future BeginFrame.
-    /// </summary>
-    private void NotifyCurrentFrameParticipants(bool submitted)
-    {
-        foreach (var participant in _currentFrameParticipants)
-        {
-            try
+            try { _native.ReleaseCompletedResources(); }
+            catch (Exception error)
             {
-                if (submitted)
-                {
-                    participant.OnCommandListSubmitted();
-                }
-                else
-                {
-                    participant.OnCommandListAborted();
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine(
-                    $"GpuCommandRecorder12: submission participant {participant.GetType().Name} " +
-                    $"threw during {(submitted ? "commit" : "rollback")}: {ex}");
+                // A child release cannot invalidate the completion proof established above.
+                WriteLifetimeDiagnostic("proven-idle retirement remains pending", error);
             }
         }
-
-        _currentFrameParticipants.Clear();
+        finally { _lifetimeCallbackActive = false; }
     }
 
-    private readonly record struct FenceRetirement(IDisposable Resource, ulong FenceValue);
-}
-
-/// <summary>
-///     Exact CPU-side outcome of ending one command list. A failed outcome can still require GPU
-///     lifetime retention when ExecuteCommandLists was reached before the failure.
-/// </summary>
-internal readonly record struct GpuCommandSubmissionOutcome12(
-    bool Succeeded,
-    bool CommandListMayHaveReachedQueue,
-    ulong FenceValue,
-    Exception? Error)
-{
-    internal static GpuCommandSubmissionOutcome12 Success(ulong fenceValue)
+    /// <summary>Contains diagnostic sink failures so they cannot reverse native submission or retirement facts.</summary>
+    /// <param name="operation">Ownership operation whose remaining error is diagnostic.</param>
+    /// <param name="error">Optional failure retained or independently reported by Shared.</param>
+    private static void WriteLifetimeDiagnostic(string operation, Exception? error)
     {
-        return new GpuCommandSubmissionOutcome12(true, true, fenceValue, null);
+        if (error is null) { return; }
+        try { Debug.WriteLine($"GpuCommandRecorder12: {operation}: {error}"); }
+#pragma warning disable RCS1075 // Diagnostic sinks cannot change established submission or retirement state.
+        catch (Exception) { /* Preserve the already-established native outcome. */ }
+#pragma warning restore RCS1075
     }
 
-    internal static GpuCommandSubmissionOutcome12 Failure(
-        bool commandListMayHaveReachedQueue,
-        Exception error)
+    /// <summary>Rejects foreign-thread mutation and recorder reentry from application lifetime callbacks.</summary>
+    private void VerifyAccess()
     {
-        return new GpuCommandSubmissionOutcome12(false, commandListMayHaveReachedQueue, 0, error);
+        if (Environment.CurrentManagedThreadId != _ownerThreadId)
+            throw new InvalidOperationException("D3D12 command recording belongs to its creating thread.");
+        if (_lifetimeCallbackActive)
+            throw new InvalidOperationException("D3D12 lifetime callbacks cannot reenter the native recorder.");
     }
-
-    internal void ThrowIfFailed()
-    {
-        if (Error is not null)
-        {
-            ExceptionDispatchInfo.Capture(Error).Throw();
-        }
-    }
-}
-
-/// <summary>
-///     A no-throw participant in one open command list's CPU-side transaction. Use this when cache
-///     publication is valid only if the commands that initialize its GPU backing are submitted.
-/// </summary>
-internal interface IGpuCommandSubmissionParticipant12
-{
-    void OnCommandListSubmitted();
-
-    void OnCommandListAborted();
 }

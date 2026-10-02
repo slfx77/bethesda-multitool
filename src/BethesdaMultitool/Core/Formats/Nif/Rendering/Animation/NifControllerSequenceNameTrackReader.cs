@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using System.Text;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
@@ -10,7 +11,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 ///     targets in 20.2.0.7 and the bundled-schema-defined palette-offset targets in little-endian
 ///     Oblivion 20.0.0.4/.5 BS11. Unlike the embedded-NIF collector, this reader does not choose an
 ///     idle clip, consult BSX flags, or invent destination object refs: a KF controlled block
-///     identifies its future rig target by name.
+///     identifies its future rig target by name. The lossless per-version sequence views are
+///     <see cref="TryReadSequenceView" /> (20.2.0.7) and <see cref="TryReadOblivionSequenceView" />
+///     (little-endian 20.0.0.4/.5 BS 11, cut 2).
 /// </summary>
 internal static class NifControllerSequenceNameTrackReader
 {
@@ -22,6 +25,9 @@ internal static class NifControllerSequenceNameTrackReader
     private const int TransformInterpolatorSize = 36;
     private const int MaxControlledBlocks = 4096;
     private const int MaxInlineStringBytes = 512;
+
+    // NiQuatTransform carries TRS Valid flags until 10.1.0.109; the interpolator view reads the later layout only.
+    private const uint LastVersionWithTrsValidFlags = 0x0A01006D;
 
     // Oblivion 20.0.0.4/.5, BS11. The priority byte deliberately leaves every following
     // uint unaligned: Interpolator @0, Controller @4, Priority @8, Palette ref @9, then five
@@ -72,6 +78,355 @@ internal static class NifControllerSequenceNameTrackReader
         }
 
         return clips.ToArray();
+    }
+
+    /// <summary>
+    ///     Reads a 20.2.0.7 NiControllerSequence losslessly (<see cref="NifControllerSequenceView" />): name and every
+    ///     controlled block with its refs, Priority byte and five string indices, then Weight, Text Keys, the raw Cycle Type,
+    ///     the clock as raw bits, Manager, Accum Root Name and the BS-dependent anim-note refs. Controlled blocks are 29 bytes
+    ///     on a Bethesda stream (Priority present, BS &gt; 0) and 28 otherwise. Only what bounds the read is checked; exact
+    ///     consumption is reported (<see cref="NifControllerSequenceView.TailExact" />). <see cref="ReadAll" />, the
+    ///     renderer's clip reader, is unchanged.
+    /// </summary>
+    internal static bool TryReadSequenceView(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo sequence,
+        [NotNullWhen(true)] out NifControllerSequenceView? view)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(nif);
+        ArgumentNullException.ThrowIfNull(sequence);
+        view = null;
+        if (sequence.TypeName != "NiControllerSequence" ||
+            nif.BinaryVersion != NifVersions.Gamebryo202007 ||
+            nif.HasInlineStrings ||
+            !HasReadableSpan(data, sequence, ModernControlledBlockTableOffset + SequenceTailSize))
+        {
+            return false;
+        }
+
+        var be = nif.IsBigEndian;
+        var start = sequence.DataOffset;
+        var end = (long)sequence.DataOffset + sequence.Size;
+        var nameIndex = BinaryUtils.ReadInt32(data, start, be);
+        var controlledBlockCount = BinaryUtils.ReadUInt32(data, start + 4, be);
+        var arrayGrowBy = BinaryUtils.ReadUInt32(data, start + 8, be);
+        var hasPriority = nif.BsVersion > 0;
+        var stride = hasPriority ? ModernControlledBlockStride : ModernControlledBlockStride - 1;
+        var tailLong = start + (long)ModernControlledBlockTableOffset + controlledBlockCount * (long)stride;
+        if (tailLong + SequenceTailSize > end)
+        {
+            return false;
+        }
+
+        var controlledBlocks = new NifControlledBlockView[controlledBlockCount];
+        for (var index = 0; index < controlledBlocks.Length; index++)
+        {
+            var blockStart = start + ModernControlledBlockTableOffset + index * stride;
+            var names = blockStart + (hasPriority ? ModernNodeNameFieldOffset : ModernNodeNameFieldOffset - 1);
+            controlledBlocks[index] = new NifControlledBlockView(
+                blockStart,
+                BinaryUtils.ReadInt32(data, blockStart, be),
+                BinaryUtils.ReadInt32(data, blockStart + 4, be),
+                hasPriority ? data[blockStart + 8] : null,
+                BinaryUtils.ReadInt32(data, names, be),
+                BinaryUtils.ReadInt32(data, names + 4, be),
+                BinaryUtils.ReadInt32(data, names + 8, be),
+                BinaryUtils.ReadInt32(data, names + 12, be),
+                BinaryUtils.ReadInt32(data, names + 16, be));
+        }
+
+        var tail = (int)tailLong;
+        var coreEnd = tailLong + SequenceTailSize;
+        int? animNotesRef = null;
+        int[]? animNoteArrayRefs = null;
+        var tailEnd = coreEnd;
+        if (nif.BsVersion is >= 24 and <= 28)
+        {
+            if (coreEnd + 4 > end)
+            {
+                return false;
+            }
+
+            animNotesRef = BinaryUtils.ReadInt32(data, (int)coreEnd, be);
+            tailEnd = coreEnd + 4;
+        }
+        else if (nif.BsVersion > 28)
+        {
+            if (coreEnd + 2 > end)
+            {
+                return false;
+            }
+
+            var noteArrayCount = BinaryUtils.ReadUInt16(data, (int)coreEnd, be);
+            if (coreEnd + 2 + noteArrayCount * 4L > end)
+            {
+                return false;
+            }
+
+            animNoteArrayRefs = new int[noteArrayCount];
+            for (var index = 0; index < animNoteArrayRefs.Length; index++)
+            {
+                animNoteArrayRefs[index] = BinaryUtils.ReadInt32(data, (int)coreEnd + 2 + index * 4, be);
+            }
+
+            tailEnd = coreEnd + 2 + noteArrayCount * 4L;
+        }
+
+        view = new NifControllerSequenceView(
+            nameIndex,
+            arrayGrowBy,
+            controlledBlocks,
+            BinaryUtils.ReadUInt32(data, tail, be),
+            BinaryUtils.ReadInt32(data, tail + 4, be),
+            BinaryUtils.ReadUInt32(data, tail + 8, be),
+            BinaryUtils.ReadUInt32(data, tail + 12, be),
+            BinaryUtils.ReadUInt32(data, tail + 16, be),
+            BinaryUtils.ReadUInt32(data, tail + 20, be),
+            BinaryUtils.ReadInt32(data, tail + 24, be),
+            BinaryUtils.ReadInt32(data, tail + 28, be),
+            animNotesRef,
+            animNoteArrayRefs,
+            tailEnd == end);
+        return true;
+    }
+
+    /// <summary>
+    ///     Reads an NiTransformInterpolator or BSRotAccumTransfInterpolator losslessly
+    ///     (<see cref="NifTransformInterpolatorView" />): the static transform as raw bits in file order (translation,
+    ///     rotation w, x, y, z, scale) and the Data ref. Versions up to 10.1.0.109 store TRS Valid flags and are refused.
+    /// </summary>
+    internal static bool TryReadTransformInterpolatorView(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo interpolator,
+        out NifTransformInterpolatorView view)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(nif);
+        ArgumentNullException.ThrowIfNull(interpolator);
+        view = default;
+        if (interpolator.TypeName is not ("NiTransformInterpolator" or "BSRotAccumTransfInterpolator") ||
+            nif.BinaryVersion <= LastVersionWithTrsValidFlags ||
+            !HasReadableSpan(data, interpolator, TransformInterpolatorSize))
+        {
+            return false;
+        }
+
+        var be = nif.IsBigEndian;
+        var pos = interpolator.DataOffset;
+        view = new NifTransformInterpolatorView(
+            BinaryUtils.ReadUInt32(data, pos, be),
+            BinaryUtils.ReadUInt32(data, pos + 4, be),
+            BinaryUtils.ReadUInt32(data, pos + 8, be),
+            BinaryUtils.ReadUInt32(data, pos + 12, be),
+            BinaryUtils.ReadUInt32(data, pos + 16, be),
+            BinaryUtils.ReadUInt32(data, pos + 20, be),
+            BinaryUtils.ReadUInt32(data, pos + 24, be),
+            BinaryUtils.ReadUInt32(data, pos + 28, be),
+            BinaryUtils.ReadInt32(data, pos + InterpolatorDataRefOffset, be));
+        return true;
+    }
+
+    /// <summary>
+    ///     Reads a little-endian 20.0.0.4/20.0.0.5 BS 11 NiControllerSequence losslessly
+    ///     (<see cref="NifOblivionControllerSequenceView" />): the inline Name, every 33-byte controlled block with its
+    ///     refs, Priority byte, String Palette ref and five StringOffsets (each also resolved through the palette),
+    ///     then Weight, Text Keys, the raw Cycle Type, the clock as raw bits, Manager, the inline Accum Root Name and
+    ///     the sequence's own String Palette ref, which ends the version's layout. Only what bounds the read is
+    ///     checked; exact consumption is reported (<see cref="NifOblivionControllerSequenceView.TailExact" />).
+    ///     <see cref="TryReadSequenceView" /> (20.2.0.7) and <see cref="ReadAll" /> are unchanged; cut 2's model-reader
+    ///     integration consumes this view (TestOutput/cut2-prep-20260928/kf2004/IMPLEMENTATION.md).
+    /// </summary>
+    internal static bool TryReadOblivionSequenceView(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo sequence,
+        [NotNullWhen(true)] out NifOblivionControllerSequenceView? view)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(nif);
+        ArgumentNullException.ThrowIfNull(sequence);
+        view = null;
+        var oblivion = nif.BinaryVersion is NifVersions.Gamebryo20004 or NifVersions.Gamebryo20005 &&
+                       nif.BsVersion == OblivionBsVersion &&
+                       nif.UserVersion is 10 or 11 &&
+                       nif.HasInlineStrings &&
+                       !nif.IsBigEndian;
+        if (sequence.TypeName != "NiControllerSequence" || !oblivion || !HasReadableSpan(data, sequence, 48))
+        {
+            return false;
+        }
+
+        var sequenceStart = sequence.DataOffset;
+        var sequenceEnd = sequenceStart + sequence.Size;
+        var pos = sequenceStart;
+        if (!TryReadSizedStringRaw(data, ref pos, sequenceEnd, false, out var nameBytes, out var name) ||
+            pos + 8L > sequenceEnd)
+        {
+            return false;
+        }
+
+        var controlledBlockCount = BinaryUtils.ReadInt32(data, pos, false);
+        var arrayGrowBy = BinaryUtils.ReadUInt32(data, pos + 4, false);
+        pos += 8;
+        if (controlledBlockCount is < 0 or > MaxControlledBlocks)
+        {
+            return false;
+        }
+
+        var controlledStart = pos;
+        var tailLong = controlledStart + (long)controlledBlockCount * OblivionControlledBlockStride;
+        // Weight through Manager (28), the AccumRoot SizedString length (4), and palette ref (4).
+        if (tailLong < controlledStart || tailLong + 36L > sequenceEnd)
+        {
+            return false;
+        }
+
+        var controlledBlocks = new NifOblivionControlledBlockView[controlledBlockCount];
+        for (var index = 0; index < controlledBlocks.Length; index++)
+        {
+            var blockStart = controlledStart + index * OblivionControlledBlockStride;
+            var paletteRef = BinaryUtils.ReadInt32(data, blockStart + OblivionPaletteRefOffset, false);
+            var nodeNameOffset = BinaryUtils.ReadUInt32(data, blockStart + OblivionNodeNameOffset, false);
+            var propertyTypeOffset = BinaryUtils.ReadUInt32(data, blockStart + OblivionNodeNameOffset + 4, false);
+            var controllerTypeOffset = BinaryUtils.ReadUInt32(data, blockStart + OblivionNodeNameOffset + 8, false);
+            var controllerIdOffset = BinaryUtils.ReadUInt32(data, blockStart + OblivionNodeNameOffset + 12, false);
+            var interpolatorIdOffset = BinaryUtils.ReadUInt32(data, blockStart + OblivionNodeNameOffset + 16, false);
+            controlledBlocks[index] = new NifOblivionControlledBlockView(
+                blockStart,
+                BinaryUtils.ReadInt32(data, blockStart, false),
+                BinaryUtils.ReadInt32(data, blockStart + 4, false),
+                data[blockStart + 8],
+                paletteRef,
+                nodeNameOffset,
+                propertyTypeOffset,
+                controllerTypeOffset,
+                controllerIdOffset,
+                interpolatorIdOffset,
+                ResolveOptionalPaletteString(data, nif, paletteRef, nodeNameOffset),
+                ResolveOptionalPaletteString(data, nif, paletteRef, propertyTypeOffset),
+                ResolveOptionalPaletteString(data, nif, paletteRef, controllerTypeOffset),
+                ResolveOptionalPaletteString(data, nif, paletteRef, controllerIdOffset),
+                ResolveOptionalPaletteString(data, nif, paletteRef, interpolatorIdOffset));
+        }
+
+        var tail = (int)tailLong;
+        var weightBits = BinaryUtils.ReadUInt32(data, tail, false);
+        var textKeysRef = BinaryUtils.ReadInt32(data, tail + 4, false);
+        var rawCycle = BinaryUtils.ReadUInt32(data, tail + 8, false);
+        var frequencyBits = BinaryUtils.ReadUInt32(data, tail + 12, false);
+        var startTimeBits = BinaryUtils.ReadUInt32(data, tail + 16, false);
+        var stopTimeBits = BinaryUtils.ReadUInt32(data, tail + 20, false);
+        var managerRef = BinaryUtils.ReadInt32(data, tail + 24, false);
+        pos = tail + 28;
+        if (!TryReadSizedStringRaw(data, ref pos, sequenceEnd, false, out var accumRootBytes, out var accumRootName) ||
+            pos + 4L > sequenceEnd)
+        {
+            return false;
+        }
+
+        var sequencePaletteRef = BinaryUtils.ReadInt32(data, pos, false);
+        pos += 4;
+        if (!IsOptionalStringPaletteRef(nif, sequencePaletteRef))
+        {
+            return false;
+        }
+
+        view = new NifOblivionControllerSequenceView(
+            name,
+            nameBytes,
+            arrayGrowBy,
+            controlledBlocks,
+            weightBits,
+            textKeysRef,
+            rawCycle,
+            frequencyBits,
+            startTimeBits,
+            stopTimeBits,
+            managerRef,
+            accumRootName,
+            accumRootBytes,
+            sequencePaletteRef,
+            pos == sequenceEnd);
+        return true;
+    }
+
+    /// <summary>
+    ///     Reads an NiStringPalette block losslessly (<see cref="NifStringPaletteView" />; cut 2): the Palette SizedString's
+    ///     bytes as stored and the repeated Length word as stored. Only what bounds the read is checked; exact consumption
+    ///     is reported. Whether the Length equals the byte count is the caller's check, exactly as in the palette resolver.
+    /// </summary>
+    internal static bool TryReadStringPaletteView(byte[] data, NifInfo nif, BlockInfo block, out NifStringPaletteView view)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(nif);
+        ArgumentNullException.ThrowIfNull(block);
+        view = default;
+        if (block.TypeName != "NiStringPalette" || !HasReadableSpan(data, block, 8))
+        {
+            return false;
+        }
+
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+        var paletteLength = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
+        pos += 4;
+        if (paletteLength > (uint)(end - pos - 4))
+        {
+            return false;
+        }
+
+        var palette = data.AsMemory(pos, (int)paletteLength);
+        pos += (int)paletteLength;
+        var length = BinaryUtils.ReadUInt32(data, pos, nif.IsBigEndian);
+        pos += 4;
+        view = new NifStringPaletteView(palette, length, pos == end);
+        return true;
+    }
+
+    /// <summary>True for the two empty StringOffset sentinels the palette resolver honors (0xFFFFFFFF and 0x0000FFFF).</summary>
+    internal static bool IsEmptyPaletteOffset(uint stringOffset)
+    {
+        return stringOffset is uint.MaxValue or 0x0000FFFF;
+    }
+
+    /// <summary>
+    ///     One StringOffset resolved through its palette to the stored bytes of the NUL-delimited entry it starts (cut 2:
+    ///     the model reader's string table for a 20.0.0.4 <c>.kf</c>), under exactly the rule
+    ///     <see cref="TryResolvePaletteString" /> applies: false for an empty sentinel, a ref that is not an
+    ///     NiStringPalette consuming its block exactly with a matching repeated Length, an offset outside the palette or
+    ///     not at an entry start, an entry longer than 512 bytes or without a terminator within them, and an entry that is
+    ///     empty or ASCII whitespace.
+    /// </summary>
+    internal static bool TryResolvePaletteStringBytes(
+        byte[] data,
+        NifInfo nif,
+        int paletteRef,
+        uint stringOffset,
+        out ReadOnlyMemory<byte> bytes)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(nif);
+        bytes = ReadOnlyMemory<byte>.Empty;
+        if (!TryResolvePaletteStringCore(data, nif, paletteRef, stringOffset, out var value, out var start))
+        {
+            return false;
+        }
+
+        bytes = data.AsMemory(start, value.Length);
+        return true;
+    }
+
+    /// <summary>
+    ///     One StringOffset resolved through its controlled block's palette, or null: the empty sentinels (0xFFFFFFFF
+    ///     and 0x0000FFFF), a ref that is not an NiStringPalette, and an offset that does not start a NUL-delimited
+    ///     palette entry all resolve to nothing, exactly as <see cref="TryResolvePaletteString" /> judges them.
+    /// </summary>
+    private static string? ResolveOptionalPaletteString(byte[] data, NifInfo nif, int paletteRef, uint stringOffset)
+    {
+        return TryResolvePaletteString(data, nif, paletteRef, stringOffset, out var value) ? value : null;
     }
 
     private static bool TryReadModernSequence(
@@ -227,7 +582,11 @@ internal static class NifControllerSequenceNameTrackReader
     ///     Reads the palette-backed standalone-KF layout used by Oblivion. The legacy NIF parser
     ///     recovers these block ranges by schema-walking native PC little-endian bytes; until that
     ///     measurement path becomes source-endian-aware, big-endian TES4 KFs are rejected at the
-    ///     public gate rather than interpreted using untrustworthy block boundaries.
+    ///     public gate rather than interpreted using untrustworthy block boundaries. Since cut 2 the
+    ///     B-spline transform interpolators are read as on the 20.2.0.7 path (their layout is
+    ///     identical at 20.0.0.4, measured over the five FNV-shipped files: 57, 59, 59 and 16 of the
+    ///     73 controlled blocks of four of them), so the clip carries them instead of counting them
+    ///     as unsupported transform tracks.
     /// </summary>
     private static bool TryReadOblivionSequence(
         byte[] data,
@@ -304,6 +663,8 @@ internal static class NifControllerSequenceNameTrackReader
         }
 
         var tracks = new List<NifNodeTrack>(controlledBlockCount);
+        var bsplineTracks = new List<NifNameTargetedBsplineTransformTrack>(controlledBlockCount);
+        long decodedBsplineScalarCount = 0;
         var unsupportedTransformTrackCount = 0;
         for (var index = 0; index < controlledBlockCount; index++)
         {
@@ -330,6 +691,25 @@ internal static class NifControllerSequenceNameTrackReader
             }
 
             var interpolator = nif.Blocks[interpolatorRef];
+            if (interpolator.TypeName is
+                "NiBSplineTransformInterpolator" or
+                "NiBSplineCompTransformInterpolator")
+            {
+                if (!NifBsplineTransformReader.TryRead(
+                        data,
+                        nif,
+                        interpolator,
+                        nodeName,
+                        ref decodedBsplineScalarCount,
+                        out var bsplineTrack))
+                {
+                    return false;
+                }
+
+                bsplineTracks.Add(bsplineTrack);
+                continue;
+            }
+
             if (interpolator.TypeName != "NiTransformInterpolator")
             {
                 if (IsUnsupportedTransformInterpolator(interpolator.TypeName))
@@ -361,7 +741,8 @@ internal static class NifControllerSequenceNameTrackReader
             string.IsNullOrWhiteSpace(accumRootValue) ? null : accumRootValue,
             tracks.ToArray(),
             textKeys,
-            unsupportedTransformTrackCount);
+            unsupportedTransformTrackCount,
+            bsplineTracks.ToArray());
         return true;
     }
 
@@ -545,6 +926,22 @@ internal static class NifControllerSequenceNameTrackReader
         bool be,
         out string value)
     {
+        return TryReadSizedStringRaw(data, ref pos, end, be, out _, out value);
+    }
+
+    /// <summary>
+    ///     A SizedString as its stored bytes and its ASCII decoding (one character per byte, so the two have one length);
+    ///     the same bounds as <see cref="TryReadSizedString" />, which is this reader without the bytes.
+    /// </summary>
+    private static bool TryReadSizedStringRaw(
+        byte[] data,
+        ref int pos,
+        int end,
+        bool be,
+        out ReadOnlyMemory<byte> raw,
+        out string value)
+    {
+        raw = ReadOnlyMemory<byte>.Empty;
         value = string.Empty;
         if (pos < 0 || pos + 4L > end || end > data.Length)
         {
@@ -558,6 +955,7 @@ internal static class NifControllerSequenceNameTrackReader
             return false;
         }
 
+        raw = data.AsMemory(pos, (int)length);
         value = Encoding.ASCII.GetString(data, pos, (int)length);
         pos += (int)length;
         return true;
@@ -577,10 +975,27 @@ internal static class NifControllerSequenceNameTrackReader
         uint stringOffset,
         out string value)
     {
+        return TryResolvePaletteStringCore(data, nif, paletteRef, stringOffset, out value, out _);
+    }
+
+    /// <summary>
+    ///     The one palette rule: the resolved entry as ASCII text and the absolute offset of its first byte (its byte
+    ///     count is the text's length). <see cref="TryResolvePaletteString" /> and
+    ///     <see cref="TryResolvePaletteStringBytes" /> are this core without one of the two outputs.
+    /// </summary>
+    private static bool TryResolvePaletteStringCore(
+        byte[] data,
+        NifInfo nif,
+        int paletteRef,
+        uint stringOffset,
+        out string value,
+        out int stringStart)
+    {
         value = string.Empty;
+        stringStart = 0;
         // Both encodings are used as the empty StringOffset sentinel by NIF tooling. A node target
         // is required, so neither is a resolvable value here.
-        if (stringOffset is uint.MaxValue or 0x0000FFFF ||
+        if (IsEmptyPaletteOffset(stringOffset) ||
             paletteRef < 0 || paletteRef >= nif.Blocks.Count)
         {
             return false;
@@ -619,7 +1034,7 @@ internal static class NifControllerSequenceNameTrackReader
             return false;
         }
 
-        var stringStart = payloadStart + (int)stringOffset;
+        stringStart = payloadStart + (int)stringOffset;
         // Offsets point to the beginning of a NUL-delimited entry, never into the middle of one.
         if (stringOffset > 0 && data[stringStart - 1] != 0)
         {

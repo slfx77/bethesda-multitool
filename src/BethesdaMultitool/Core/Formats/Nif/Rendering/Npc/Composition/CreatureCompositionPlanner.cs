@@ -73,7 +73,7 @@ internal static class CreatureCompositionPlanner
             weaponMeshPath = weaponEntry?.ModelPath;
         }
 
-        return CreatePlan(
+        var plan = CreatePlan(
             creature.SkeletonPath,
             creature.BodyModelPaths,
             meshArchives,
@@ -83,6 +83,9 @@ internal static class CreatureCompositionPlanner
             creature,
             weaponEntry,
             resolver.Game);
+        if (plan is not null) plan.AssetUses = BuildAssetUses(plan,
+            weaponEntry is null ? null : resolver.WeaponAssetOwner(weaponEntry));
+        return plan;
     }
 
     internal static CreatureCompositionPlan? CreatePlan(
@@ -188,7 +191,7 @@ internal static class CreatureCompositionPlanner
             }
         }
 
-        return new CreatureCompositionPlan
+        var result = new CreatureCompositionPlan
         {
             Creature = creature ?? new CreatureScanEntry(
                 null,
@@ -208,6 +211,25 @@ internal static class CreatureCompositionPlanner
             WeaponAttachmentTransform = weaponAttachmentTransform,
             WeaponMeshPath = weaponMeshPath != null ? NormalizeMeshPath(weaponMeshPath) : null
         };
+        result.AssetUses = BuildAssetUses(result, null);
+        return result;
+    }
+
+    private static BethesdaMultitool.Core.Assets.AssetUseGraph BuildAssetUses(CreatureCompositionPlan plan,
+        BethesdaMultitool.Core.Assets.AssetRecordOwner? weaponOwner)
+    {
+        var graph = new BethesdaMultitool.Core.Assets.AssetUseGraphBuilder();
+        var owner = plan.Creature.AssetOwner ?? BethesdaMultitool.Core.Assets.AssetRecordOwner.Unavailable("CREA", null);
+        var actor = graph.Add(owner, "creature", "CREA", null, "selected-record");
+        graph.Add(owner, "skeleton", "MODL", plan.SkeletonNifPath, "record-field", [actor]);
+        foreach (var body in plan.BodyModelPaths)
+            graph.Add(owner, "body", "NIFZ", body, "record-path-resolution", [actor]);
+        if (plan.AnimationSourcePath is not null)
+            graph.Add(null, "animation", "AnimationSourcePath", plan.AnimationSourcePath, "authored-or-preview-animation-selection", [actor]);
+        if (plan.WeaponMeshPath is not null)
+            graph.Add(weaponOwner ?? BethesdaMultitool.Core.Assets.AssetRecordOwner.Unavailable("WEAP", null),
+                "weapon", "ModelPath", plan.WeaponMeshPath, "appearance-selection", [actor]);
+        return graph.Build();
     }
 
     private static CreatureAnimationResolution? ResolveCreatureAnimationOverrides(
@@ -425,9 +447,9 @@ internal static class CreatureCompositionPlanner
             return NormalizeMeshPath(bodyPath);
         }
 
-        var skeletonDirectory = Path.GetDirectoryName(skeletonNifPath);
+        var skeletonDirectory = CreatureAssetPath.GetDirectoryName(skeletonNifPath);
         return !string.IsNullOrEmpty(skeletonDirectory)
-            ? Path.Combine(skeletonDirectory, bodyPath)
+            ? CreatureAssetPath.Combine(skeletonDirectory, bodyPath)
             : NormalizeMeshPath(bodyPath);
     }
 
@@ -444,9 +466,7 @@ internal static class CreatureCompositionPlanner
 
     private static string NormalizeMeshPath(string path)
     {
-        return path.StartsWith("meshes\\", StringComparison.OrdinalIgnoreCase)
-            ? path
-            : "meshes\\" + path.TrimStart('\\');
+        return CreatureAssetPath.NormalizeMeshPath(path);
     }
 
     private sealed record CreatureAnimationResolution(

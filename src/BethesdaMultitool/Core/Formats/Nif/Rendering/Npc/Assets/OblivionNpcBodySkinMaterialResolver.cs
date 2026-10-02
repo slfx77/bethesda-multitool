@@ -67,7 +67,8 @@ internal static class OblivionNpcBodySkinMaterialResolver
         // Shared shapes and repeated compositions therefore cannot compound the 256/255 gain.
         // A distinct actor/part/variant key leaves generic consumers of body_egt untouched and is
         // included in the common generated-texture capture/eviction list.
-        textureResolver.InjectTexture(key, FaceGenHeadShaderFamilyResolver.ApplyDefaultDetailModulation(diffuse!));
+        textureResolver.InjectTexture(key, FaceGenHeadShaderFamilyResolver.ApplyDefaultDetailModulation(diffuse!),
+            new("Oblivion default FaceGenMap1 modulation", [textureOverride], ObservedInputs: [new(textureOverride, [.. diffuse!.AssetReadReceipts])]));
         submesh.DiffuseTexturePath = key;
         submesh.NormalMapTexturePath = finalNormal;
         submesh.IsFaceGen = true;

@@ -67,10 +67,11 @@ public sealed class WaterHardwareOcclusionSourceContractTests
             "#endif");
     }
 
+    /// <summary>Preserves reversed-Z hardware occlusion and each depth-sample shader permutation.</summary>
     [Fact]
     public void DepthSamplePsosKeepTheHardwareDepthStateAndUseHardwareOcclusionShaders()
     {
-        var renderer = ReadRenderer();
+        var renderer = ReadFactory();
 
         // The old depth-disabled template must not come back: every water PSO shares the
         // reversed-Z GreaterEqual / write-mask-zero state and the D32 DSV format.
@@ -87,10 +88,10 @@ public sealed class WaterHardwareOcclusionSourceContractTests
             renderer,
             "var psDepthSampleBytecode = CompileEmbeddedShader(",
             "psoDesc.PixelShader = psDepthSampleBytecode;",
-            "_depthSamplePsoTemplate = psoDesc;",
-            "_psoDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState(psoDesc));",
+            "var depthSampleTemplate = CopyDescription(psoDesc);",
+            "var depthSample = pipelineResources.CreateGraphics(10, psoDesc);",
             "psoDesc.PixelShader = psFnvWater001Bytecode;",
-            "_psoFnvWater001DepthSample = TrackConstructionResource(");
+            "var fnvWater001DepthSample = pipelineResources.CreateGraphics(11, psoDesc);");
         Assert.Contains("pixelDepthDescription.PixelShader = modernPixelDepthSampleBytecode;",
             renderer, StringComparison.Ordinal);
     }
@@ -110,11 +111,12 @@ public sealed class WaterHardwareOcclusionSourceContractTests
             StringComparison.Ordinal);
     }
 
-    private static string ReadRenderer()
+    /// <summary>Reads the portable production factory that constructs every water pipeline variant.</summary>
+    private static string ReadFactory()
     {
         return SourceContract.ReadSource(
             "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
-            "WaterRenderer12.cs");
+            "WaterPipelineFactory12.cs");
     }
 
     private static int CountOccurrences(string source, string needle)

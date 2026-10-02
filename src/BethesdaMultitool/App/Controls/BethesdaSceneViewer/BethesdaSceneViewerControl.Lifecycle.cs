@@ -2,11 +2,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Atmosphere;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
-using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Viewer;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Media;
 using Vortice.Direct3D12;
 using Vortice.Mathematics;
 
@@ -25,78 +22,52 @@ public sealed partial class BethesdaSceneViewerControl
     private static readonly byte[] NeutralAtmosphereConstants = CreateNeutralAtmosphereConstants();
     private static readonly byte[] EmptyPointLightConstants = CreateEmptyPointLightConstants();
 
+    /// <summary>Reattaches existing input handlers while the shared host mounts its surface.</summary>
+    /// <param name="sender">Current control or exact subscribed backend.</param>
+    /// <param name="e">Native event notification.</param>
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (_disposed || _isLoaded) return;
-        _isLoaded = true;
+        if (_disposed || _inputEventsAttached) { return; }
+        _inputEventsAttached = true;
         SubscribePanelEvents();
-
-        // A direct-render session is mandatory. Do not allocate a device/ring or present a blank
-        // native surface before a real Bethesda renderer has been attached.
-        if (_renderSession is null)
-        {
-            SynchronizeRenderState();
-            return;
-        }
-
-        EnsureGraphicsAndInitializeSession();
-    }
-
-    private void EnsureGraphicsAndInitializeSession()
-    {
-        if (_graphicsLease is null)
-        {
-            _graphicsLease = BethesdaSceneViewerGraphicsContext12.TryAcquire(out var error);
-            if (_graphicsLease is null)
-            {
-                SetFaulted(
-                    "The native Bethesda renderer could not initialize Direct3D 12" +
-                    (string.IsNullOrWhiteSpace(error) ? "." : $": {error}"));
-                return;
-            }
-        }
-
-        InitializeRenderSession();
+        Viewport.Refresh();
+        // Remount must reread current backend readiness after any old surface-generation callback
+        // was retired during unload. This preserves the donor's existing remount synchronization.
         SynchronizeRenderState();
-        if (_renderState == BethesdaSceneViewerRenderState.Ready && _scene is not null)
-        {
-            InvalidateViewport();
-        }
     }
 
+    /// <summary>Detaches input handlers while the shared host releases only the surface.</summary>
+    /// <param name="sender">Current control or exact subscribed backend.</param>
+    /// <param name="e">Native event notification.</param>
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        if (!_isLoaded) return;
-        _isLoaded = false;
+        if (!_inputEventsAttached) { return; }
+        _inputEventsAttached = false;
         UnsubscribePanelEvents();
         ResetPointerGesture();
-        DetachRenderLoop();
-        ReleasePanelSurface();
     }
 
+    /// <summary>Attaches camera gestures to the shared panel and keyboard gestures to its focusable viewport.</summary>
     private void SubscribePanelEvents()
     {
-        RenderPanel.SizeChanged += OnRenderPanelSizeChanged;
-        RenderPanel.CompositionScaleChanged += OnRenderPanelCompositionScaleChanged;
         RenderPanel.PointerPressed += OnRenderPanelPointerPressed;
         RenderPanel.PointerMoved += OnRenderPanelPointerMoved;
         RenderPanel.PointerReleased += OnRenderPanelPointerReleased;
         RenderPanel.PointerCaptureLost += OnRenderPanelPointerCaptureLost;
         RenderPanel.PointerWheelChanged += OnRenderPanelPointerWheelChanged;
-        RenderPanel.KeyDown += OnRenderPanelKeyDown;
+        Viewport.KeyDown += OnRenderPanelKeyDown;
         RenderPanel.DoubleTapped += OnRenderPanelDoubleTapped;
     }
 
+    /// <summary>Detaches the same gesture handlers before unmount or final disposal.</summary>
     private void UnsubscribePanelEvents()
     {
-        RenderPanel.SizeChanged -= OnRenderPanelSizeChanged;
-        RenderPanel.CompositionScaleChanged -= OnRenderPanelCompositionScaleChanged;
         RenderPanel.PointerPressed -= OnRenderPanelPointerPressed;
         RenderPanel.PointerMoved -= OnRenderPanelPointerMoved;
         RenderPanel.PointerReleased -= OnRenderPanelPointerReleased;
         RenderPanel.PointerCaptureLost -= OnRenderPanelPointerCaptureLost;
         RenderPanel.PointerWheelChanged -= OnRenderPanelPointerWheelChanged;
-        RenderPanel.KeyDown -= OnRenderPanelKeyDown;
+        Viewport.KeyDown -= OnRenderPanelKeyDown;
         RenderPanel.DoubleTapped -= OnRenderPanelDoubleTapped;
     }
 
@@ -119,12 +90,22 @@ public sealed partial class BethesdaSceneViewerControl
         }
     }
 
+    /// <summary>Rejects stale backend notifications before dispatching current native readiness.</summary>
+    /// <param name="sender">Current control or exact subscribed backend.</param>
+    /// <param name="e">Native event notification.</param>
     private void OnRenderSessionStateChanged(object? sender, EventArgs e)
     {
-        if (_disposed) return;
+        if (_disposed || !ReferenceEquals(sender, _renderSession)) { return; }
         if (!DispatcherQueue.HasThreadAccess)
         {
-            _ = DispatcherQueue.TryEnqueue(() => OnRenderSessionStateChanged(sender, e));
+            var generation = Viewport.Session?.Generation;
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!_disposed && ReferenceEquals(sender, _renderSession) && generation == Viewport.Session?.Generation)
+                {
+                    OnRenderSessionStateChanged(sender, e);
+                }
+            });
             return;
         }
 
@@ -185,6 +166,7 @@ public sealed partial class BethesdaSceneViewerControl
 
     private void PublishRenderState(BethesdaSceneViewerRenderState state, string? message)
     {
+        var changed = _renderState != state || !string.Equals(_renderStatusMessage, message, StringComparison.Ordinal);
         _renderState = state;
         _renderStatusMessage = message;
         ApplyRenderStateVisuals();
@@ -192,7 +174,6 @@ public sealed partial class BethesdaSceneViewerControl
 
         if (state != BethesdaSceneViewerRenderState.Ready || _scene is null)
         {
-            DetachRenderLoop();
             CancelPendingCapture(
                 "The native Bethesda scene stopped being ready before capture could run.");
         }
@@ -209,6 +190,7 @@ public sealed partial class BethesdaSceneViewerControl
         }
 
         NotifyObservableRenderStateChanged();
+        if (changed) { _viewportAdapter?.NotifyStateChanged(); }
     }
 
     private void NotifyObservableRenderStateChanged()
@@ -250,8 +232,8 @@ public sealed partial class BethesdaSceneViewerControl
             return;
         }
 
-        StatusText.Text = _scene is null && _renderState == BethesdaSceneViewerRenderState.Ready
-            ? "No Bethesda scene selected."
+        StatusText.Text = _scene is null && _renderState != BethesdaSceneViewerRenderState.Faulted
+            ? _emptySceneMessage
             : _renderStatusMessage ?? "Preparing native Bethesda renderer…";
         StatusPanel.Visibility = Visibility.Visible;
     }
@@ -271,207 +253,13 @@ public sealed partial class BethesdaSceneViewerControl
         PublishRenderState(BethesdaSceneViewerRenderState.Faulted, _hostFaultMessage);
     }
 
-    private void OnRenderPanelSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        if (_renderState == BethesdaSceneViewerRenderState.Ready && _scene is not null)
-        {
-            TryEnsureSurface();
-            InvalidateViewport();
-        }
-    }
-
-    private void OnRenderPanelCompositionScaleChanged(SwapChainPanel sender, object args)
-    {
-        if (_renderState == BethesdaSceneViewerRenderState.Ready && _scene is not null)
-        {
-            TryEnsureSurface();
-            InvalidateViewport();
-        }
-    }
-
     private void TryEnsureSurface()
     {
-        if (!_isLoaded ||
-            _graphicsLease is null ||
-            _renderState != BethesdaSceneViewerRenderState.Ready ||
-            _scene is null)
-        {
-            return;
-        }
-
-        var layoutWidth = RenderPanel.ActualWidth;
-        var layoutHeight = RenderPanel.ActualHeight;
-        if (!(layoutWidth > 0d) || !(layoutHeight > 0d)) return;
-
-        var width = (uint)Math.Max(1d, Math.Round(layoutWidth * RenderPanel.CompositionScaleX));
-        var height = (uint)Math.Max(1d, Math.Round(layoutHeight * RenderPanel.CompositionScaleY));
-        try
-        {
-            if (_surface is null)
-            {
-                var surfaceStarted = Stopwatch.GetTimestamp();
-                Log.Debug(
-                    "BethesdaSceneViewer: surface/tonemap construction started size={0}x{1}.",
-                    width,
-                    height);
-                try
-                {
-                    _surface = GpuSwapChainSurface12.Create(
-                        _graphicsLease.Context.Gpu,
-                        RenderPanel,
-                        width,
-                        height);
-                }
-                finally
-                {
-                    var elapsedMilliseconds =
-                        Stopwatch.GetElapsedTime(surfaceStarted).TotalMilliseconds;
-                    Log.Info(
-                        "BethesdaSceneViewer: surface/tonemap construction timing outcome={0} " +
-                        "size={1}x{2} elapsed={3:F2} ms.",
-                        _surface is null ? "failed" : "ready",
-                        width,
-                        height,
-                        elapsedMilliseconds);
-                    RendererProfilerTrace.Event(
-                        "bethesda-viewer-surface-construction",
-                        new Dictionary<string, object?>
-                        {
-                            ["outcome"] = _surface is null ? "failed" : "ready",
-                            ["width"] = width,
-                            ["height"] = height,
-                            ["elapsedMilliseconds"] = elapsedMilliseconds
-                        });
-                }
-
-                if (_surface is null)
-                {
-                    SetFaulted("The native Bethesda renderer could not bind its WinUI swap chain.");
-                    return;
-                }
-            }
-            else if (_surface.Width != width || _surface.Height != height)
-            {
-                ResetPresentedFrameGate();
-                _graphicsLease.Context.WaitForGpuIdle();
-                _surface.Resize(width, height);
-            }
-
-            _frameInvalidated = true;
-            NotifyObservableRenderStateChanged();
-        }
-        catch (Exception ex)
-        {
-            try
-            {
-                _surface?.Dispose();
-            }
-            catch
-            {
-                // A removed device may reject cleanup calls; it still owns the dead resources.
-            }
-
-            _surface = null;
-            SetFaulted("The native Bethesda renderer could not create or resize its surface.", ex);
-        }
+        try { Viewport.EnsureSurface(); }
+        catch (Exception exception) { SetFaulted("The native Bethesda renderer could not create or resize its surface.", exception); }
     }
 
-    private void AttachRenderLoop()
-    {
-        if (_renderLoopAttached || _surface is null) return;
-        _lastFrameTimestamp = Stopwatch.GetTimestamp();
-        CompositionTarget.Rendering += OnRendering;
-        _renderLoopAttached = true;
-    }
-
-    private void DetachRenderLoop()
-    {
-        if (!_renderLoopAttached) return;
-        CompositionTarget.Rendering -= OnRendering;
-        _renderLoopAttached = false;
-    }
-
-    private void OnRendering(object? sender, object e)
-    {
-        if (!_isPresentationActive || !IsEffectivelyVisible())
-        {
-            _lastFrameTimestamp = Stopwatch.GetTimestamp();
-            DetachRenderLoop();
-            CancelPendingCapture(
-                "The native Bethesda viewer became hidden before capture could run.");
-            return;
-        }
-
-        var session = _renderSession;
-        var scene = _scene;
-        var surface = _surface;
-        var graphics = _graphicsLease?.Context;
-        if (_renderState != BethesdaSceneViewerRenderState.Ready ||
-            session is null ||
-            scene is null ||
-            surface is null ||
-            graphics is null)
-        {
-            DetachRenderLoop();
-            return;
-        }
-
-        try
-        {
-            var continuous = _isAnimationPlaying || session.RequiresContinuousFrames;
-            if (!_frameInvalidated && !continuous)
-            {
-                DetachRenderLoop();
-                return;
-            }
-
-            _frameInvalidated = false;
-            var now = Stopwatch.GetTimestamp();
-            var deltaSeconds = (float)Stopwatch.GetElapsedTime(_lastFrameTimestamp, now).TotalSeconds;
-            _lastFrameTimestamp = now;
-            deltaSeconds = Math.Clamp(deltaSeconds, 0f, 0.1f);
-
-            _renderingFrame = true;
-            try
-            {
-                RenderNativeFrame(graphics, surface, session, scene, deltaSeconds);
-            }
-            finally
-            {
-                _renderingFrame = false;
-            }
-
-            SynchronizeRenderState();
-            UpdateAnimationTimeUiThrottled(session, now);
-            if (_renderState == BethesdaSceneViewerRenderState.Ready &&
-                !_frameInvalidated &&
-                !_isAnimationPlaying &&
-                !session.RequiresContinuousFrames)
-            {
-                DetachRenderLoop();
-            }
-        }
-        catch (Exception ex)
-        {
-            SetFaulted("The native Bethesda renderer failed while recording or presenting a frame.", ex);
-        }
-    }
-
-    private bool IsEffectivelyVisible()
-    {
-        DependencyObject? current = this;
-        while (current is not null)
-        {
-            if (current is UIElement element && element.Visibility != Visibility.Visible)
-            {
-                return false;
-            }
-
-            current = VisualTreeHelper.GetParent(current);
-        }
-
-        return true;
-    }
+    private bool IsEffectivelyVisible() => Viewport.IsEffectivelyVisible();
 
     private void RenderNativeFrame(
         BethesdaSceneViewerGraphicsContext12 graphics,
@@ -573,7 +361,6 @@ public sealed partial class BethesdaSceneViewerControl
             if (capture is not null) TraceCapturePhase(capture, "capture-queue-submitted", submittedFenceValue);
             surface.Present();
             if (capture is not null) TraceCapturePhase(capture, "capture-present-return", submittedFenceValue);
-            _hasPresentedFrame = true;
             if (!_streamingGpuIdleDrainSummaryLogged &&
                 _streamingGpuIdleDrainCount > 0 &&
                 !session.RequiresGpuIdleBeforeFrame)
@@ -669,35 +456,16 @@ public sealed partial class BethesdaSceneViewerControl
 
     private void ReleasePanelSurface()
     {
-        ResetPresentedFrameGate();
-        CancelPendingCapture(
-            "The native Bethesda presentation surface was released before capture could run.");
-        if (_surface is null) return;
-
-        try
+        try { Viewport.ReleaseSurface(); }
+        catch (Exception exception)
         {
-            _graphicsLease?.Context.WaitForGpuIdle();
+            Log.Warn("BethesdaSceneViewer: presentation retirement is incomplete: {0}", exception.Message);
         }
-        catch (Exception ex)
-        {
-            Log.Warn("BethesdaSceneViewer: GPU idle wait before surface release failed: {0}", ex.Message);
-        }
-
-        try
-        {
-            _surface.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Log.Warn("BethesdaSceneViewer: surface release failed: {0}", ex.Message);
-        }
-
-        _surface = null;
     }
 
     private void ResetPresentedFrameGate()
     {
-        _hasPresentedFrame = false;
+        Viewport.ResetPresentation();
         // A later successful first Present must be observable even when the state/message tuple is
         // textually identical to the prior surface or prior scene.
         if (_lastNotifiedRenderState == BethesdaSceneViewerRenderState.Ready)
@@ -707,36 +475,25 @@ public sealed partial class BethesdaSceneViewerControl
         }
     }
 
+    /// <summary>Retires capture and input before retryable disposal of the shared native owner.</summary>
     private void DisposeControlResources()
     {
-        CancelCaptureForControlDisposal();
-        DetachRenderLoop();
-        if (_isLoaded)
+        try { CancelCaptureForControlDisposal(); }
+        finally
         {
-            _isLoaded = false;
-            UnsubscribePanelEvents();
-        }
-
-        ResetPointerGesture();
-        ReleasePanelSurface();
-        if (_renderSession is not null)
-        {
-            _renderSession.StateChanged -= OnRenderSessionStateChanged;
-            try
+            if (_inputEventsAttached)
             {
-                _graphicsLease?.Context.WaitForGpuIdle();
+                _inputEventsAttached = false;
+                UnsubscribePanelEvents();
             }
-            catch (Exception ex)
-            {
-                Log.Warn("BethesdaSceneViewer: GPU idle wait before session release failed: {0}", ex.Message);
-            }
-
-            _renderSession.Dispose();
-            _renderSession = null;
+            ResetPointerGesture();
+            Viewport.StateChanged -= OnViewportStateChanged;
+            Viewport.FrameCompleted -= OnViewportFrameCompleted;
+            Viewport.PresentationSuspended -= OnViewportPresentationSuspended;
+            Viewport.SurfaceRetiring -= OnViewportSurfaceRetiring;
+            Viewport.Failed -= OnViewportFailed;
+            try { Viewport.Dispose(); }
+            finally { _scene = null; }
         }
-
-        _graphicsLease?.Dispose();
-        _graphicsLease = null;
-        _scene = null;
     }
 }

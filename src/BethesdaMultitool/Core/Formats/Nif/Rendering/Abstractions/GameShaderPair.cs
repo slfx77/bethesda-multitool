@@ -35,7 +35,8 @@ internal readonly record struct GameShaderPair(
     ///     game's pair. Disabled pairs also return null.
     /// </summary>
     /// <param name="consumerName">Names the consumer in the fallback log line.</param>
-    internal (byte[] Vs, byte[] Ps)? TryCompile(string consumerName)
+    /// <returns>Read-only cached stage bytecode, or null when disabled or compilation fails.</returns>
+    internal (ReadOnlyMemory<byte> Vs, ReadOnlyMemory<byte> Ps)? TryCompile(string consumerName)
     {
         return TryCompile(consumerName, [], []);
     }
@@ -45,7 +46,11 @@ internal readonly record struct GameShaderPair(
     ///     (the instanced grass pair compiles a plain and an ALPHA_TO_COVERAGE variant of the same
     ///     source). Same fail-soft contract as <see cref="TryCompile(string)" />.
     /// </summary>
-    internal (byte[] Vs, byte[] Ps)? TryCompile(
+    /// <param name="consumerName">Names the consumer in the fallback log line.</param>
+    /// <param name="vertexMacros">Definitions selecting the vertex-stage permutation.</param>
+    /// <param name="pixelMacros">Definitions selecting the pixel-stage permutation.</param>
+    /// <returns>Read-only cached stage bytecode, or null when disabled or compilation fails.</returns>
+    internal (ReadOnlyMemory<byte> Vs, ReadOnlyMemory<byte> Ps)? TryCompile(
         string consumerName,
         ShaderMacro[] vertexMacros,
         ShaderMacro[] pixelMacros)

@@ -23,6 +23,7 @@ namespace BethesdaMultitool.Core.WorldData;
 /// </summary>
 internal sealed class WorldRenderCache : ITrackableResource
 {
+    internal WorldActorCatalog? ActorCatalog { get; set; }
     // Bake terrain neighbor lookups + per-quadrant CellLayerWeightTable
     // at LoadData (or lazily on first build). Inputs are worldspace-static (cell LAND +
     // cardinal neighbors' LAND); see TerrainRenderer12.BuildCellTextureSet. Moves
@@ -140,6 +141,22 @@ internal sealed class WorldRenderCache : ITrackableResource
 
     /// <summary>Game profile and worldspace water plane used by the engine-family grass rules.</summary>
     internal BethesdaGame Game { get; set; }
+
+    internal WorldWaterCatalog? WaterCatalog { get; set; }
+    internal IReadOnlyDictionary<uint, WaterRecord>? WaterRecords { get; set; }
+    internal BethesdaGame? WaterGame { get; set; }
+
+    internal WaterColorPalette? GetWaterPalette(CellRecord cell, WaterColorPalette? fallback)
+    {
+        if (WaterCatalog is null || WaterRecords is null) return fallback;
+        var selection = WaterAppearanceSelectionResolver.ResolveSelected(cell,
+            WaterCatalog.Get(cell.IsInterior ? null : cell.WorldspaceFormId), WaterRecords, WaterGame ?? Game, cell.IsInterior);
+        return WaterColorPalette.FromVisualProperties(selection.Water?.VisualProperties);
+    }
+
+    internal float? GetWaterHeight(CellRecord cell, float? fallback = null, bool fallbackRequiresWater = false) =>
+        WaterCatalog is { } catalog ? catalog.ResolveHeight(cell, fallback, fallbackRequiresWater)
+            : ResolveEffectiveWaterHeight(cell, fallback, fallbackRequiresWater);
 
     internal float? DefaultWaterHeight { get; set; }
 
@@ -294,8 +311,8 @@ internal sealed class WorldRenderCache : ITrackableResource
 
     /// <summary>
     ///     Returns this cell's static-mesh placements with world transforms and
-    ///     bounding spheres pre-computed. Filters out ACHR/ACRE (skinned actors, deferred to v4)
-    ///     and refs without a resolved ModelPath. Result is cached per cell across frames;
+    ///     bounding spheres pre-computed. Actors require a selected appearance catalog;
+    ///     ordinary refs require a resolved ModelPath. Result is cached per cell across frames;
     ///     <c>ReferenceRenderer12</c> iterates this directly in its per-frame loop.
     /// </summary>
     internal RenderableReference[] GetPlacementList(CellRecord cell)
@@ -409,6 +426,14 @@ internal sealed class WorldRenderCache : ITrackableResource
                 ? alt
                 : null;
 
+            if (p.RecordType is "ACHR" or "ACRE")
+            {
+                if (ActorCatalog?.Resolve(p) is { } actor &&
+                    RenderableReference.TryBuildActor(p, actor, category, xespDisabled, Game) is { } actorReference)
+                    built.Add(actorReference);
+                continue;
+            }
+
             // FO4-family BNDS records have no MODL. XBSD supplies the per-placement endpoints,
             // thickness, and slack; resolve the BNDS/TNAM records and emit the recovered retail
             // tube before the ordinary model-path factory gets its chance to reject the null path.
@@ -499,7 +524,7 @@ internal sealed class WorldRenderCache : ITrackableResource
                     landTextures,
                     grasses,
                     Game,
-                    ResolveEffectiveWaterHeight(cell, DefaultWaterHeight, DefaultWaterRequiresCellHasWater));
+                    GetWaterHeight(cell, DefaultWaterHeight, DefaultWaterRequiresCellHasWater));
                 if (grassPlacements.Count > 0) built.AddRange(grassPlacements);
             }
         }

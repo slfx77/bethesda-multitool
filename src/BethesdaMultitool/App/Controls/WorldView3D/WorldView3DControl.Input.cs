@@ -328,7 +328,7 @@ public sealed partial class WorldView3DControl
                         placement,
                         category,
                         xespDisabled: xespDisabled,
-                        game: _data.Game) is not { } r)
+                        game: _data.Game, actorCatalog: _data.ActorCatalog) is not { } r)
                     continue;
                 if (!_referenceEnabledOverrides.IsVisible(r.FormId, r.IsInitiallyDisabled, _showDisabled)) continue;
                 // Markers are pickable when VISIBLE (the pickable set mirrors the visible set);
@@ -509,7 +509,7 @@ public sealed partial class WorldView3DControl
         if (_selectedReference is not { } placement ||
             RenderableReference.TryBuild(
                 placement,
-                game: _data?.Game ?? BethesdaGame.Unknown) is not { } r)
+                game: _data?.Game ?? BethesdaGame.Unknown, actorCatalog: _data?.ActorCatalog) is not { } r)
         {
             _selectionHighlight.ClearSelection();
             return;
@@ -564,7 +564,7 @@ public sealed partial class WorldView3DControl
                 placement,
                 category,
                 xespDisabled: _data.XespDisabledRefs.Contains(placement.FormId),
-                game: _data.Game) is not { } reference)
+                game: _data.Game, actorCatalog: _data.ActorCatalog) is not { } reference)
         {
             return false;
         }

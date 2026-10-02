@@ -15,7 +15,7 @@ public sealed class StarfieldConstantLerpRenderPathSourceContractTests
     [Fact]
     public void VendoredReferencePinsVertexRgbAndAlphaAsTheLerpInputs()
     {
-        var reference = SourceContract.ReadSource(
+        var reference = SourceContract.ReadLocalReference(
             "Sample", "Reference_Code", "nifskope", "res", "shaders", "stf_default.frag");
 
         SourceContract.AssertOrder(

@@ -1,0 +1,325 @@
+{
+  "version": 1,
+  "strata": {
+    "S1": {
+      "parseErrors": [],
+      "noScene": [
+        "clutter/supermutantcamp/gorepile01.nif",
+        "creatures/nvsporecarrier/skeleton.nif",
+        "dlcanch/effects/dlcanchsnowdriftfx01.nif",
+        "dlcpitt/creatures/streettrog/skeleton.nif",
+        "effects/ambient/fxwaterspray01.nif",
+        "effects/nv/weaponeffects/impactripperorganic.nif",
+        "furniture/nv_crucifixfurniture.nif",
+        "furniture/useclosedwallterminalmarker.nif",
+        "landscape/lod/freesidefortworld/blocks/freesidefortworld.level4.x-1.y1.nif",
+        "landscape/lod/nvdlc01villa/blocks/nvdlc01villa.level4.x-8.y1.nif",
+        "landscape/lod/nvdlc01westtowns/blocks/nvdlc01westtowns.level4.x-4.y0.nif",
+        "landscape/lod/nvdlc02zioncanyon/blocks/nvdlc02zioncanyon.level4.x-4.y0.nif",
+        "landscape/lod/nvdlc03bigmt/blocks/nvdlc03bigmt.level4.x-4.y-8.nif",
+        "landscape/lod/nvdlc04divideworld/blocks/nvdlc04divideworld.level4.x-2.y-4.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x-12.y-28.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x-24.y-44.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x-24.y12.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x-4.y20.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x-4.y32.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x16.y12.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x4.y20.nif",
+        "landscape/lod/wastelandnvmini/blocks/wastelandnvmini.level4.x-4.y-12.nif",
+        "nvdlc01/effects/toxiccloud/nvdlc01toxicclouds256.nif",
+        "vatscameras/closetargetrearpullback.nif",
+        "vatscameras/default200200200.nif",
+        "vatscameras/defaultshootright01.nif",
+        "vatscameras/playerlpullinframe02.nif",
+        "vatscameras/stationarytargetweapon.nif"
+      ],
+      "comparedFloor": 539,
+      "declineCeilings": {
+        "Scope: A skinned mesh part is outside the normalized static export scope.": 33
+      },
+      "requiredFeatureClasses": [
+        "AlphaBlend",
+        "AlphaMask",
+        "DoubleSided",
+        "LitEmissive",
+        "MultiNodeHierarchy",
+        "NormalMapped",
+        "RepeatedPositionDrop",
+        "Textured",
+        "VertexColored"
+      ]
+    },
+    "S2": {
+      "parseErrors": [],
+      "noScene": [
+        "landscape/lod/nvdlc02zioncanyon/blocks/nvdlc02zioncanyon.level4.x-4.y0.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x-12.y-28.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x-24.y12.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x16.y12.nif",
+        "nvdlc01/effects/toxiccloud/nvdlc01toxicclouds256.nif"
+      ],
+      "comparedFloor": 135,
+      "declineCeilings": {
+        "Scope: A skinned mesh part is outside the normalized static export scope.": 10
+      },
+      "requiredFeatureClasses": [
+        "AlphaBlend",
+        "AlphaMask",
+        "DoubleSided",
+        "LitEmissive",
+        "MultiNodeHierarchy",
+        "NormalMapped",
+        "RepeatedPositionDrop",
+        "Textured",
+        "VertexColored"
+      ]
+    },
+    "S3": {
+      "parseErrors": [],
+      "noScene": [
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x-12.y-28.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x-24.y12.nif",
+        "landscape/lod/wastelandnv/blocks/wastelandnv.level4.x16.y12.nif"
+      ],
+      "comparedFloor": 92,
+      "declineCeilings": {
+        "Scope: A skinned mesh part is outside the normalized static export scope.": 5
+      },
+      "requiredFeatureClasses": [
+        "AlphaBlend",
+        "AlphaMask",
+        "DoubleSided",
+        "LitEmissive",
+        "MultiNodeHierarchy",
+        "NormalMapped",
+        "RepeatedPositionDrop",
+        "Textured",
+        "VertexColored"
+      ]
+    },
+    "S4": {
+      "parseErrors": [],
+      "noScene": [
+        "meshes/dungeons/misc/killbox01.nif"
+      ],
+      "comparedFloor": 133,
+      "declineCeilings": {
+        "Adapter: A non-finite texture coordinate retains the native writer.": 1,
+        "Scope: A skinned mesh part is outside the normalized static export scope.": 15
+      },
+      "requiredFeatureClasses": [
+        "AlphaBlend",
+        "MultiNodeHierarchy",
+        "RepeatedPositionDrop",
+        "Textured",
+        "VertexColored"
+      ]
+    },
+    "S5": {
+      "parseErrors": [],
+      "noScene": [
+        "meshes/effects/impactbbsmokepuff.nif",
+        "meshes/landscape/lod/dcworld18/blocks/dcworld18.level4.x3.y-19.nif",
+        "meshes/landscape/lod/washmontop/blocks/washmontop.level8.x12.y-12.nif",
+        "meshes/landscape/lod/washmontop/blocks/washmontop.level8.x20.y-14.nif",
+        "meshes/landscape/lod/washmontop/blocks/washmontop.level8.x28.y-12.nif",
+        "meshes/landscape/lod/wasteland/blocks/wasteland.level4.x12.y-24.nif",
+        "meshes/landscape/lod/wasteland/blocks/wasteland.level4.x16.y24.nif",
+        "meshes/vatscameras/docubackcamleft01.nif"
+      ],
+      "comparedFloor": 137,
+      "declineCeilings": {
+        "Scope: A skinned mesh part is outside the normalized static export scope.": 5
+      },
+      "requiredFeatureClasses": [
+        "AlphaBlend",
+        "AlphaMask",
+        "DoubleSided",
+        "LitEmissive",
+        "MultiNodeHierarchy",
+        "NormalMapped",
+        "RepeatedPositionDrop",
+        "Textured",
+        "VertexColored"
+      ]
+    },
+    "S6-Skyrim": {
+      "parseErrors": [],
+      "noScene": [
+        "meshes/actors/character/character assets/hair/femaledarkelfhair06.nif",
+        "meshes/armor/dbarmor/dbarmorhood_f_0.nif",
+        "meshes/armor/imperial/f/helmetmediumargonian.nif",
+        "meshes/clutter/dummyitems/dummygreatswordred01.nif",
+        "meshes/clutter/dummyitems/dummysoulgemblue01.nif",
+        "meshes/effects/trailerfx/tfxpinedroppings.nif",
+        "meshes/magic/elemetalfuryenchaddon01.nif",
+        "meshes/mps/mpsashpile01.nif"
+      ],
+      "comparedFloor": 62,
+      "declineCeilings": {
+        "Scope: A skinned mesh part is outside the normalized static export scope.": 30
+      },
+      "requiredFeatureClasses": [
+        "AlphaBlend",
+        "AlphaMask",
+        "DoubleSided",
+        "LitEmissive",
+        "MultiNodeHierarchy",
+        "NormalMapped",
+        "Textured",
+        "VertexColored"
+      ]
+    },
+    "S6-SkyrimSE": {
+      "parseErrors": [],
+      "noScene": [
+        "meshes/actors/atronachflame/character assets/atronachflamedead.nif",
+        "meshes/actors/character/character assets/1stpersonfemalehandsargonian_0.nif",
+        "meshes/actors/character/character assets/hair/femaledarkelfhair06.nif",
+        "meshes/actors/character/facegendata/facegeom/dawnguard.esm/00017f8e.nif",
+        "meshes/actors/character/facegendata/facegeom/dragonborn.esm/0003ca51.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/00013293.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/000136c0.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/00013b6d.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/000391c0.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/00039d0d.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/00039d21.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/00044277.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/00044279.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/00054882.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/0006218c.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/0006759a.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/0006c1b7.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/0007d968.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/0009a079.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/000b5d82.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/000f3e76.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/00103537.nif",
+        "meshes/actors/character/facegendata/facegeom/skyrim.esm/001091ae.nif",
+        "meshes/armor/dbarmor/dbarmorhood_f_0.nif",
+        "meshes/armor/dbarmor/dbarmorsleeveless_1.nif",
+        "meshes/armor/dragonpriesthelms/dragonhelm_1.nif",
+        "meshes/armor/dragonpriesthelms/dragonhelm_woodf_0.nif",
+        "meshes/armor/dragonscale/dragonscalearmorm_1.nif",
+        "meshes/armor/imperial/f/helmetmediumargonian.nif",
+        "meshes/armor/iron/demohelmetargonian.nif",
+        "meshes/clothes/executioner/body_1.nif",
+        "meshes/clothes/farmclothes02/f/hatargf_1.nif",
+        "meshes/clothes/jester/jesterglovesf_1.nif",
+        "meshes/clothes/mageapprentice/mageapprenticebootsf_0.nif",
+        "meshes/clothes/prisoner/prisonerclothes_0.nif",
+        "meshes/clutter/dummyitems/dummygreatswordred01.nif",
+        "meshes/clutter/dummyitems/dummysoulgemblue01.nif",
+        "meshes/dlc01/architecture/snowelfruins/dlc01sebf_columnaway.nif",
+        "meshes/dlc01/armor/dawnguard/dawnguardbody1m_0.nif",
+        "meshes/dlc01/armor/falmerheavy/falmerheavygauntletsf_1.nif",
+        "meshes/dlc02/armor/chitinlight/m/boots_0.nif",
+        "meshes/effects/trailerfx/tfxpinedroppings.nif"
+      ],
+      "comparedFloor": 40,
+      "declineCeilings": {
+        "Adapter: Decal behavior retains the native material writer.": 13,
+        "Adapter: Effect tint retains the native material writer.": 1,
+        "Adapter: Emissive and external-emittance state retains the native material writer.": 3,
+        "Adapter: Falloff material behavior retains the native material writer.": 1
+      },
+      "requiredFeatureClasses": [
+        "AlphaMask",
+        "DoubleSided",
+        "LitEmissive",
+        "NormalMapped",
+        "Textured",
+        "VertexColored"
+      ]
+    },
+    "S7-FO4": {
+      "parseErrors": [],
+      "noScene": [
+        "Meshes/Actors/CreateABot/CharacterAssets/AssaultronLeftLegDest.nif",
+        "Meshes/Actors/Synths/SynthLimbDestLleg.nif",
+        "Meshes/Cameras/RunInFromBackL.nif",
+        "Meshes/VATSCameras/DocuBackCamLeft01.nif"
+      ],
+      "comparedFloor": 10,
+      "declineCeilings": {
+        "Adapter: Decal behavior retains the native material writer.": 6,
+        "Adapter: Effect tint retains the native material writer.": 2,
+        "Adapter: Falloff material behavior retains the native material writer.": 1,
+        "Adapter: Maps beyond diffuse retain the native material writer.": 77
+      },
+      "requiredFeatureClasses": [
+        "AlphaBlend",
+        "AlphaMask",
+        "DoubleSided",
+        "LitEmissive",
+        "NormalMapped",
+        "Textured",
+        "VertexColored"
+      ]
+    },
+    "S7-FO76": {
+      "parseErrors": [],
+      "noScene": [
+        "meshes/vatscameras/docubackcamleft01.nif"
+      ],
+      "comparedFloor": 3,
+      "declineCeilings": {
+        "Adapter: Effect tint retains the native material writer.": 2,
+        "Adapter: Falloff material behavior retains the native material writer.": 1,
+        "Adapter: Maps beyond diffuse retain the native material writer.": 83,
+        "Scope: A skinned mesh part is outside the normalized static export scope.": 10
+      },
+      "requiredFeatureClasses": [
+        "AlphaBlend",
+        "VertexColored"
+      ]
+    },
+    "S7-Starfield": {
+      "parseErrors": [],
+      "noScene": [],
+      "comparedFloor": 61,
+      "declineCeilings": {
+        "Adapter: Starfield material render state retains the native material writer.": 37,
+        "Adapter: Unrepresented Starfield effect composition retains the native material writer.": 2
+      },
+      "requiredFeatureClasses": [
+        "AlphaBlend",
+        "DoubleSided",
+        "NormalMapped",
+        "RepeatedPositionDrop",
+        "Textured",
+        "VertexColored"
+      ]
+    },
+    "S8": {
+      "parseErrors": [],
+      "noScene": [],
+      "comparedFloor": 30,
+      "declineCeilings": {},
+      "requiredFeatureClasses": [
+        "AlphaMask",
+        "DoubleSided",
+        "MergedMaterialRow",
+        "NormalMapped",
+        "Textured",
+        "VertexColored"
+      ]
+    },
+    "S9": {
+      "parseErrors": [],
+      "noScene": [],
+      "comparedFloor": 2,
+      "declineCeilings": {},
+      "requiredFeatureClasses": [
+        "AlphaBlend",
+        "AlphaMask",
+        "DoubleSided",
+        "LitEmissive",
+        "MultiNodeHierarchy",
+        "NormalMapped",
+        "Textured",
+        "VertexColored"
+      ]
+    }
+  }
+}

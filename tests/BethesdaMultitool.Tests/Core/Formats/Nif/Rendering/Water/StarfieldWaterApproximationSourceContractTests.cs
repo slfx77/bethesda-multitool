@@ -11,26 +11,19 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Water;
 /// </summary>
 public sealed class StarfieldWaterApproximationSourceContractTests
 {
+    /// <summary>Retains the dedicated Starfield pair and its explicit approximation labels after ownership extraction.</summary>
     [Fact]
-    public void RendererOwnsDedicatedPsoPairAndExplicitApproximationTelemetry()
+    public void RendererUsesDedicatedPsoPairAndExplicitApproximationTelemetry()
     {
         var renderer = ReadRenderer();
-
-        // PSOs are registered with TrackConstructionResource so a failed constructor disposes
-        // everything it already created; the pin follows the creation through that wrapper.
-        Assert.Contains("_psoStarfield = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState", renderer,
-            StringComparison.Ordinal);
-        Assert.Contains("_psoStarfieldDepthSample = TrackConstructionResource(gpu.Device.CreateGraphicsPipelineState",
-            renderer,
-            StringComparison.Ordinal);
+        Assert.Matches(@"_psoStarfield\s*=\s*\w+\.Starfield;", renderer);
+        Assert.Matches(@"_psoStarfieldDepthSample\s*=\s*\w+\.StarfieldDepthSample;", renderer);
         Assert.Contains("depthSample ? _psoStarfieldDepthSample : _psoStarfield", renderer,
             StringComparison.Ordinal);
-        Assert.Contains("StarfieldWaterApproximation.TelemetryName", renderer,
-            StringComparison.Ordinal);
-        Assert.Contains("global texture-slot assignment inferred", renderer,
-            StringComparison.Ordinal);
-        Assert.Contains("_psoStarfield.Dispose();", renderer, StringComparison.Ordinal);
-        Assert.Contains("_psoStarfieldDepthSample.Dispose();", renderer, StringComparison.Ordinal);
+        Assert.Contains("StarfieldWaterApproximation.TelemetryName", renderer, StringComparison.Ordinal);
+        Assert.Contains("global texture-slot assignment inferred", renderer, StringComparison.Ordinal);
+        Assert.DoesNotContain("_psoStarfield.Dispose();", renderer, StringComparison.Ordinal);
+        Assert.DoesNotContain("_psoStarfieldDepthSample.Dispose();", renderer, StringComparison.Ordinal);
     }
 
     [Fact]

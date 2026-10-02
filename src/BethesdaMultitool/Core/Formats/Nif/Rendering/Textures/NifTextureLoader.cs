@@ -82,7 +82,7 @@ internal static class NifTextureLoader
     internal static byte[] ConvertDdxNormalPairIfNeeded(
         byte[] data,
         string path,
-        Func<string, byte[]?> loadCompanion)
+        Func<string, byte[]?> loadCompanion, Action<string>? observePair = null)
     {
         ArgumentNullException.ThrowIfNull(data);
         ArgumentNullException.ThrowIfNull(path);
@@ -98,6 +98,7 @@ internal static class NifTextureLoader
             !NormalMapMerge.IsNormalMapPath(path) ||
             !NormalMapMerge.IsAti2(normalDds))
         {
+            observePair?.Invoke("single-source");
             return normalDds;
         }
 
@@ -105,6 +106,7 @@ internal static class NifTextureLoader
         var specularRaw = specularPath is null ? null : loadCompanion(specularPath);
         if (specularRaw is null)
         {
+            observePair?.Invoke("companion-unavailable");
             return normalDds;
         }
 
@@ -116,10 +118,13 @@ internal static class NifTextureLoader
             // do not match. That spelling is correct for a repacked PC game, whose runtime knows an
             // alpha-less normal means "no specular", but this viewer samples BC1 alpha as one. Only
             // accept the paired result when it really produced the expected DXT5 alpha lane.
-            return HasDdsFourCc(merged, "DXT5") ? merged : normalDds;
+            var paired = HasDdsFourCc(merged, "DXT5");
+            observePair?.Invoke(paired ? "normal-specular-paired" : "companion-unusable");
+            return paired ? merged : normalDds;
         }
         catch
         {
+            observePair?.Invoke("companion-unusable");
             // A malformed/mismatched companion must not discard an otherwise usable BC5 normal.
             return normalDds;
         }

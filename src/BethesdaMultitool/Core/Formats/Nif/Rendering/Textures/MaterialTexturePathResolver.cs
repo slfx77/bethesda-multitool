@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
@@ -34,6 +35,40 @@ internal static class MaterialTexturePathResolver
     ///     file takes ~0.6 s and yields half a million objects, so it must happen once, not per shape.
     /// </summary>
     private static readonly ConditionalWeakTable<object, Lazy<StarfieldMaterialDatabase?>> MaterialDatabases = [];
+    private static readonly ConditionalWeakTable<object, SelectedDatabaseCache> SelectedMaterialDatabases = [];
+
+    private sealed class SelectedDatabaseCache
+    {
+        private readonly object _gate = new();
+        private string? _identity;
+        private StarfieldMaterialDatabase? _value;
+        private bool _initialized;
+        private List<(SelectedAssetTextureSource Source, AssetSelectionReceipt Receipt)> _reads = [];
+
+        internal StarfieldMaterialDatabase? Get(IReadOnlyList<INifTextureSource> sources)
+        {
+            lock (_gate)
+            {
+                var identity = ResolveStarfieldMaterialDatabaseCacheIdentity(sources);
+                if (_initialized && identity == _identity)
+                {
+                    foreach (var read in _reads) read.Source.Selection.ObserveCached([read.Receipt]);
+                    return _value;
+                }
+                var reads = new List<(SelectedAssetTextureSource Source, AssetSelectionReceipt Receipt)>();
+                var value = LoadMaterialDatabase(sources, reads);
+                // A concurrent file change must not bind old parsed bytes to the new stat key.
+                _initialized = identity == ResolveStarfieldMaterialDatabaseCacheIdentity(sources) &&
+                    !reads.Any(read => read.Receipt.Attempts.Any(attempt =>
+                            attempt.Status.StartsWith("read-failed:", StringComparison.Ordinal) ||
+                            attempt.Status.StartsWith("source-unavailable:", StringComparison.Ordinal)));
+                _identity = identity;
+                _value = value;
+                _reads = reads;
+                return value;
+            }
+        }
+    }
 
     /// <summary>
     ///     Resolves a Starfield <c>.mat</c> reference to a texture path through the compiled material
@@ -234,6 +269,18 @@ internal static class MaterialTexturePathResolver
         for (var sourceIndex = 0; sourceIndex < sources.Count; sourceIndex++)
         {
             var source = sources[sourceIndex];
+            if (source is SelectedAssetTextureSource selected)
+            {
+                // This source represents every declared mount, including shadowed, missing,
+                // ambiguous and unreadable candidates. Probe-only first-winner metadata loses
+                // the dependency that can become the next successfully parsed database.
+                builder ??= new StringBuilder(512);
+                Append("sourceIndex", sourceIndex);
+                Append("assetPath", StarfieldMaterialDatabasePath);
+                Append("sourcePlan", selected.Selection.Plan.Identity);
+                Append("candidateStats", selected.Selection.StatIdentity(StarfieldMaterialDatabasePath));
+                continue;
+            }
             if (!source.Exists(StarfieldMaterialDatabasePath))
             {
                 continue;
@@ -373,6 +420,8 @@ internal static class MaterialTexturePathResolver
 
     private static StarfieldMaterialDatabase? GetMaterialDatabase(IReadOnlyList<INifTextureSource> sources)
     {
+        if (sources.Any(source => source is SelectedAssetTextureSource))
+            return SelectedMaterialDatabases.GetValue(sources, static _ => new SelectedDatabaseCache()).Get(sources);
         var lazy = MaterialDatabases.GetValue(
             sources,
             _ => new Lazy<StarfieldMaterialDatabase?>(
@@ -380,10 +429,20 @@ internal static class MaterialTexturePathResolver
         return lazy.Value;
     }
 
-    private static StarfieldMaterialDatabase? LoadMaterialDatabase(IReadOnlyList<INifTextureSource> sources)
+    private static StarfieldMaterialDatabase? LoadMaterialDatabase(IReadOnlyList<INifTextureSource> sources,
+        List<(SelectedAssetTextureSource Source, AssetSelectionReceipt Receipt)>? reads = null)
     {
         foreach (var source in sources)
         {
+            if (source is SelectedAssetTextureSource selected)
+            {
+                var read = selected.ReadDecoded(StarfieldMaterialDatabasePath,
+                    static bytes => StarfieldMaterialDatabase.Parse(bytes));
+                reads?.Add((selected, read.Receipt));
+                if (read.Value is not null) return read.Value;
+                if (read.Receipt.Status == AssetSelectionStatus.Ambiguous) return null;
+                continue;
+            }
             if (source.TryLoadRaw(StarfieldMaterialDatabasePath) is { Length: > 0 } raw &&
                 StarfieldMaterialDatabase.Parse(raw) is { } database)
             {
@@ -427,6 +486,13 @@ internal static class MaterialTexturePathResolver
         var normalized = NifTexturePathUtility.Normalize(materialPath);
         foreach (var source in sources)
         {
+            if (source is SelectedAssetTextureSource selected)
+            {
+                var read = selected.ReadDecoded(normalized, BgsmMaterial.Parse);
+                if (read.Value is not null) return read.Value;
+                if (read.Receipt.Status == AssetSelectionStatus.Ambiguous) return null;
+                continue;
+            }
             var raw = source.TryLoadRaw(normalized);
             if (raw is not null)
             {

@@ -83,7 +83,8 @@ internal static class NpcHeadBuilder
                     meshArchives,
                     textureResolver,
                     headPlan.AttachmentBoneTransforms,
-                    headPlan.HeadPreSkinMorphDeltas);
+                    headPlan.HeadPreSkinMorphDeltas,
+                    headPlan.HeadPreSkinMorphTarget);
             }
             else if (headPlan.HeadPreSkinMorphDeltas != null)
             {
@@ -92,7 +93,8 @@ internal static class NpcHeadBuilder
                     meshArchives,
                     textureResolver,
                     headPlan.AttachmentBoneTransforms,
-                    headPlan.HeadPreSkinMorphDeltas);
+                    headPlan.HeadPreSkinMorphDeltas,
+                    headPlan.HeadPreSkinMorphTarget);
             }
             else
             {
@@ -252,6 +254,7 @@ internal static class NpcHeadBuilder
             BaseHeadNifPath = plan.Head.BaseHeadNifPath,
             FaceGenNifPath = plan.Head.FaceGenNifPath,
             HeadPreSkinMorphDeltas = plan.Head.HeadPreSkinMorphDeltas,
+            HeadPreSkinMorphTarget = plan.Head.HeadPreSkinMorphTarget,
             EffectiveHeadTexturePath = plan.Head.EffectiveHeadTexturePath,
             EffectiveHeadTextureSource = plan.Head.EffectiveHeadTextureSource,
             EffectiveEarTexturePath = plan.Head.EffectiveEarTexturePath,
@@ -288,7 +291,8 @@ internal static class NpcHeadBuilder
         MeshArchiveSet meshArchives,
         NifTextureResolver textureResolver,
         Dictionary<string, Matrix4x4>? boneTransforms,
-        float[]? preSkinMorphDeltas)
+        float[]? preSkinMorphDeltas,
+        NifPreSkinMorphTarget? preSkinMorphTarget)
     {
         var result = NpcMeshHelpers.LoadNifRawFromBsa(headNifPath, meshArchives);
         if (result == null)
@@ -297,7 +301,8 @@ internal static class NpcHeadBuilder
         var model = NifGeometryExtractor.Extract(result.Value.Data, result.Value.Info, textureResolver,
             externalBoneTransforms: boneTransforms,
             useDualQuaternionSkinning: true,
-            preSkinMorphDeltas: preSkinMorphDeltas);
+            preSkinMorphDeltas: preSkinMorphDeltas,
+            preSkinMorphTarget: preSkinMorphTarget);
 
         return model;
     }

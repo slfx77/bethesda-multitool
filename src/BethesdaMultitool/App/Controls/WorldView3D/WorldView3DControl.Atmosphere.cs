@@ -144,7 +144,16 @@ public sealed partial class WorldView3DControl
             return CurrentStarfieldEnvironmentRoute(skyContext)?.Climate;
         }
 
-        if (skyContext.PreferredClimateFormId is uint climateFormId &&
+        var preferredClimate = skyContext.PreferredClimateFormId;
+        if (_data.Game is BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas &&
+            skyContext.CellClimateFormId is not > 0)
+        {
+            var route = WorldspaceInheritanceResolver.Resolve(
+                skyContext.Worldspace, _data.Worldspaces, WorldspaceComponent.Climate);
+            if (route.Source is null) return null;
+            preferredClimate = route.Source.ClimateFormId;
+        }
+        if (preferredClimate is uint climateFormId &&
             _data.ClimatesByFormId.TryGetValue(climateFormId, out var climate))
         {
             return climate;

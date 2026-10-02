@@ -218,8 +218,8 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     private bool _isPanning;
 
     /// <summary>
-    ///     Last non-zero canvas size, the baseline <see cref="MapCanvas_SizeChanged" /> re-centres
-    ///     against. Zero until the first real layout.
+    ///     Last usable canvas size, the baseline <see cref="MapCanvas_SizeChanged" /> re-centres
+    ///     against. Navigation can seed it before the first real layout.
     /// </summary>
     private Vector2 _lastCanvasSize;
 
@@ -497,17 +497,17 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     ///     Re-derives the pan offset across a canvas resize so the centred world point stays centred.
     ///     Measured against the last NON-ZERO size rather than <c>e.PreviousSize</c>: cell-browser mode
     ///     collapses the canvas to 0×0, and resizing the window while collapsed would otherwise arrive
-    ///     as a 0 → new transition with no centre to carry over. The very first layout has no prior
-    ///     size and is framed by the load path instead.
+    ///     as a 0 → new transition with no centre to carry over. Navigation before first layout seeds
+    ///     its fallback size so the first measured layout preserves that requested centre too.
     /// </summary>
     private void MapCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         var newSize = new Vector2((float)e.NewSize.Width, (float)e.NewSize.Height);
-        if (newSize.X < 1f || newSize.Y < 1f) return;
+        if (!WorldMapViewportMath.IsUsableCanvasSize(newSize)) return;
 
         var previousSize = _lastCanvasSize;
         _lastCanvasSize = newSize;
-        if (previousSize.X < 1f || previousSize.Y < 1f) return;
+        if (!WorldMapViewportMath.IsUsableCanvasSize(previousSize)) return;
 
         _panOffset = WorldMapViewportMath.PreserveCenterOnResize(
             _panOffset, _zoom, previousSize.X, previousSize.Y, newSize.X, newSize.Y);
@@ -529,6 +529,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     internal void LoadData(WorldViewData data)
     {
+        UnbindAssetSources();
         // A second LoadData means a new scene. Drop streams, device bitmaps, and any top-down
         // provider from the previous scene before publishing the new data to draw handlers.
         TopDownProvider = null;
@@ -543,6 +544,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
         ExportPanel.FileNameTextBox.Text = "";
 
         _data = data;
+        BindAssetSources(data);
         _cellSize = data.CellWorldSize;
         // DMP-only data-source checkbox (mirrors the 3D panel's): swapping terrain sources only
         // makes sense when the scene came from a memory dump.
@@ -804,6 +806,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
     /// <summary>Clears the loaded world, all layer toggles, and cached bitmaps back to defaults.</summary>
     public void Reset()
     {
+        UnbindAssetSources();
         _data = null;
         _spatialIndex = null;
         _cellGridLookup = null;
@@ -841,6 +844,7 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
     public void Dispose()
     {
+        UnbindAssetSources();
         CancelTerrainStream();
         CancelTopDownOverlay();
         DisposeWorldBitmaps();
@@ -933,12 +937,13 @@ public sealed partial class WorldMapControl : UserControl, IDisposable
 
         _worldHeightmapBitmap?.Dispose();
         _worldHeightmapBitmap = null;
+        // Also retire pending workers when the prior generation had not published its first tile.
+        _layerCellBitmapsCacheGen++;
         if (_layerCellBitmaps is not null)
         {
             var disposed = _layerCellBitmaps.Count;
             foreach (var bmp in _layerCellBitmaps.Values) bmp.Dispose();
             _layerCellBitmaps = null;
-            _layerCellBitmapsCacheGen++;
             Map2DProfilerTrace.Event("cache-gen-bump",
                 $"to={_layerCellBitmapsCacheGen} reason=ClearWorldBitmaps disposed={disposed}");
         }

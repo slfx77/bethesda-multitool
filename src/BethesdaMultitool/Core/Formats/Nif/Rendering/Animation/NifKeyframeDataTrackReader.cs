@@ -75,6 +75,44 @@ internal static class NifKeyframeDataTrackReader
     }
 
     /// <summary>
+    ///     Reads an NiKeyframeData / NiTransformData block losslessly (<see cref="NifKeyframeDataView" />): the rotation
+    ///     part with each Euler axis's own key type, the translation group and the scale group, every field as raw bits.
+    ///     The structural walk is the one <see cref="TryReadTrack" /> projects (both go through
+    ///     <see cref="NifKeyGroupReader" />), but the two do not accept the same blocks. The view accepts more: it keeps a
+    ///     Quadratic translation key whose value or tangent is non-finite or at least 1e30 in magnitude, which makes the
+    ///     renderer's projection refuse the group and <see cref="TryReadTrack" /> return null. The view also refuses a block
+    ///     whose declared span runs past the end of <paramref name="data" />, which <see cref="TryReadTrack" /> does not
+    ///     check. Exact consumption is reported, not required.
+    /// </summary>
+    internal static bool TryReadView(byte[] data, NifInfo nif, BlockInfo block, out NifKeyframeDataView view)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(nif);
+        ArgumentNullException.ThrowIfNull(block);
+        view = default;
+        if (!IsTrackDataBlock(block.TypeName) ||
+            block.DataOffset < 0 || block.Size < 0 ||
+            (long)block.DataOffset + block.Size > data.LongLength)
+        {
+            return false;
+        }
+
+        var be = nif.IsBigEndian;
+        var pos = block.DataOffset;
+        var end = block.DataOffset + block.Size;
+        if (!NifKeyGroupReader.TryReadRotationView(data, ref pos, end, be, nif.BinaryVersion, out var rotation) ||
+            !NifKeyGroupReader.TryReadGroupView(
+                data, ref pos, end, be, NifKeyValueLayout.Vector3, out var translations) ||
+            !NifKeyGroupReader.TryReadGroupView(data, ref pos, end, be, NifKeyValueLayout.Float, out var scales))
+        {
+            return false;
+        }
+
+        view = new NifKeyframeDataView(rotation, translations, scales, end);
+        return true;
+    }
+
+    /// <summary>
     ///     The keyframe-data ref of a <c>NiKeyframeController</c> (nif.xml: Data, the first
     ///     type-specific field at +26). <c>BSKeyframeController</c> inherits it and appends a
     ///     Data&#160;2 ref after — same offset for the primary track.

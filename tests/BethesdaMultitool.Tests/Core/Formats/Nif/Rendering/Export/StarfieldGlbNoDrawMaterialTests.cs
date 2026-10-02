@@ -104,7 +104,7 @@ public sealed class StarfieldGlbNoDrawMaterialTests
         var loop = SourceContract.Extract(
             writer,
             "foreach (var meshPart in scene.MeshParts)",
-            "return sceneBuilder.ToGltf2();");
+            "sceneBuilder.ToGltf2();");
 
         SourceContract.AssertOrder(
             loop,

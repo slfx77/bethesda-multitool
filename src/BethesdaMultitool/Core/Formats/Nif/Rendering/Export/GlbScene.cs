@@ -26,6 +26,8 @@ internal sealed class GlbScene
     public List<GlbNode> Nodes { get; } = [];
 
     public List<GlbMeshPart> MeshParts { get; } = [];
+    internal IReadOnlyList<BethesdaMultitool.Core.Assets.AssetSelectionReceipt> AssetReadReceipts { get; set; } = [];
+    internal BethesdaMultitool.Core.Assets.AssetUseGraph AssetUses { get; set; } = BethesdaMultitool.Core.Assets.AssetUseGraph.Empty;
 
     public static int RootNodeIndex => 0;
 

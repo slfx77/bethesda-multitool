@@ -1,4 +1,6 @@
 using BethesdaMultitool.Core.Games;
+using Slfx77.Multitool.Core.Lifetime;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
 using Vortice.DXGI;
@@ -22,8 +24,9 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         axis; TES4 uses a separate bright pass plus cumulative two-axis blur pairs.
 ///     </para>
 ///     <para>
-///         Owns its own root signature (SRV table t0–t2 + 24 root constants b0 + a linear-clamp static
-///         sampler), PSOs, and a small shader-visible SRV ring heap for the per-call texture views.
+///         Retains its root signature (SRV table t0–t2 + 24 root constants b0 + linear/point-clamp static
+///         samplers) and ten PSOs through Shared's pipeline owner, and owns a small shader-visible
+///         SRV ring heap for the per-call texture views.
 ///         Both scene targets (<see cref="GpuOffscreenSceneTarget12" /> headless +
 ///         <c>GpuSwapChainSurface12</c> live) drive it once per frame; the ring survives the
 ///         in-flight frames. The caller owns the resource-state transitions (HDR source →
@@ -77,6 +80,8 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
 
     private readonly GpuDevice12 _gpu;
 
+    // Root and PSO fields borrow their handles from this owner; only it releases them.
+    private readonly ShaderPipelineResources _pipelineResources;
     private readonly ID3D12PipelineState _pso;
 
     private readonly ID3D12RootSignature _rootSignature;
@@ -110,6 +115,7 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
     private int _classicSourceHeight;
     private int _classicSourceWidth;
     private bool _disposed;
+    private RetiredResourceDisposal? _retiredResources;
     private TonemapLogicalHistoryState? _historyBeforeCurrentCommandList;
 
     private GpuCommandRecorder12? _historyTransactionRecorder;
@@ -133,12 +139,18 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
 
     private int _srvCursor;
 
+    /// <summary>Creates the complete display pipeline family and initial HDR history on the calling thread.</summary>
+    /// <param name="gpu">Borrowed device whose lifetime encloses this pass and all submitted uses.</param>
+    /// <remarks>The caller must retire GPU uses before disposal and dispose on this creating thread.</remarks>
     public GpuTonemapPass12(GpuDevice12 gpu)
     {
         _gpu = gpu;
         var device = gpu.Device;
         try
         {
+            // Retain the shared owner before native initialization so partial pipeline creation is
+            // included in constructor rollback. Its handles are borrowed below, never separately owned.
+            _pipelineResources = TrackConstructionResource(new ShaderPipelineResources(device, 10));
             // Root: [0] SRV table (t0 = HDR scene, t1 = 1×1 adapted average color, t2 = bloom); [1]
             // 24×32-bit root constants (b0, six float4s — tonemap/cinematic + modern semantic params
             // draws, repacked as bloom params for the bloom draws); linear-clamp s0 plus point-clamp s1
@@ -188,7 +200,8 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
                 RootSignatureFlags.None,
                 new[] { srvTable, rootConstants },
                 new[] { linearSampler, pointSampler });
-            _rootSignature = TrackConstructionResource(device.CreateRootSignature(desc));
+            _pipelineResources.Initialize(new VersionedRootSignatureDescription(desc));
+            _rootSignature = _pipelineResources.RootSignature;
 
             var vs = CompileEmbeddedShader("tonemap.vert.hlsl", "main", "vs_5_1");
             var ps = CompileEmbeddedShader("tonemap.frag.hlsl", "main", "ps_5_1");
@@ -226,7 +239,7 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
                 SampleDescription = new SampleDescription(1, 0), // the LDR output/backbuffer is single-sample
                 SampleMask = uint.MaxValue
             };
-            _pso = TrackConstructionResource(device.CreateGraphicsPipelineState(psoDesc));
+            _pso = _pipelineResources.CreateGraphics(0, psoDesc);
 
             // The modern stand-in still computes a sparse average in mainAvg. Engine modes instead run
             // their recursive reductions below; Skyrim's mainAdapt also fuses the final retail step.
@@ -234,13 +247,13 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
             var avgPsoDesc = psoDesc;
             avgPsoDesc.PixelShader = avgPs;
             avgPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-            _avgPso = TrackConstructionResource(device.CreateGraphicsPipelineState(avgPsoDesc));
+            _avgPso = _pipelineResources.CreateGraphics(1, avgPsoDesc);
 
             var adaptPs = CompileEmbeddedShader("tonemap.frag.hlsl", "mainAdapt", "ps_5_1");
             var adaptPsoDesc = psoDesc;
             adaptPsoDesc.PixelShader = adaptPs;
             adaptPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-            _adaptPso = TrackConstructionResource(device.CreateGraphicsPipelineState(adaptPsoDesc));
+            _adaptPso = _pipelineResources.CreateGraphics(2, adaptPsoDesc);
 
             // Recovered engine bloom: explicit DownSample16, then the two rows inside the selected
             // ImageSpaceEffectBlur effect: vertical BrightPassBlur followed by horizontal plain blur.
@@ -248,47 +261,44 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
             var downsamplePsoDesc = psoDesc;
             downsamplePsoDesc.PixelShader = downsamplePs;
             downsamplePsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-            _downsamplePso = TrackConstructionResource(device.CreateGraphicsPipelineState(downsamplePsoDesc));
+            _downsamplePso = _pipelineResources.CreateGraphics(3, downsamplePsoDesc);
 
             var skyrimLuminancePs = CompileEmbeddedShader(
                 "bloom.frag.hlsl", "mainSkyrimLuminance4", "ps_5_1");
             var skyrimLuminancePsoDesc = downsamplePsoDesc;
             skyrimLuminancePsoDesc.PixelShader = skyrimLuminancePs;
-            _skyrimLuminancePso = TrackConstructionResource(
-                device.CreateGraphicsPipelineState(skyrimLuminancePsoDesc));
+            _skyrimLuminancePso = _pipelineResources.CreateGraphics(4, skyrimLuminancePsoDesc);
 
             var skyrimDownsamplePs = CompileEmbeddedShader(
                 "bloom.frag.hlsl", "mainSkyrimDownsample16", "ps_5_1");
             var skyrimDownsamplePsoDesc = downsamplePsoDesc;
             skyrimDownsamplePsoDesc.PixelShader = skyrimDownsamplePs;
-            _skyrimDownsamplePso = TrackConstructionResource(
-                device.CreateGraphicsPipelineState(skyrimDownsamplePsoDesc));
+            _skyrimDownsamplePso = _pipelineResources.CreateGraphics(5, skyrimDownsamplePsoDesc);
 
             var bloomPs = CompileEmbeddedShader("bloom.frag.hlsl", "main", "ps_5_1");
             var bloomPsoDesc = psoDesc;
             bloomPsoDesc.PixelShader = bloomPs;
             bloomPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-            _bloomPso = TrackConstructionResource(device.CreateGraphicsPipelineState(bloomPsoDesc));
+            _bloomPso = _pipelineResources.CreateGraphics(6, bloomPsoDesc);
 
             var blurPs = CompileEmbeddedShader("bloom.frag.hlsl", "mainBlur", "ps_5_1");
             var blurPsoDesc = psoDesc;
             blurPsoDesc.PixelShader = blurPs;
             blurPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-            _blurPso = TrackConstructionResource(device.CreateGraphicsPipelineState(blurPsoDesc));
+            _blurPso = _pipelineResources.CreateGraphics(7, blurPsoDesc);
 
             var tes4BrightPassPs = CompileEmbeddedShader(
                 "bloom.frag.hlsl", "mainTes4BrightPass", "ps_5_1");
             var tes4BrightPassPsoDesc = psoDesc;
             tes4BrightPassPsoDesc.PixelShader = tes4BrightPassPs;
             tes4BrightPassPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-            _tes4BrightPassPso = TrackConstructionResource(
-                device.CreateGraphicsPipelineState(tes4BrightPassPsoDesc));
+            _tes4BrightPassPso = _pipelineResources.CreateGraphics(8, tes4BrightPassPsoDesc);
 
             var tes4BlurPs = CompileEmbeddedShader("bloom.frag.hlsl", "mainTes4Blur", "ps_5_1");
             var tes4BlurPsoDesc = psoDesc;
             tes4BlurPsoDesc.PixelShader = tes4BlurPs;
             tes4BlurPsoDesc.RenderTargetFormats = new[] { Format.R16G16B16A16_Float };
-            _tes4BlurPso = TrackConstructionResource(device.CreateGraphicsPipelineState(tes4BlurPsoDesc));
+            _tes4BlurPso = _pipelineResources.CreateGraphics(9, tes4BlurPsoDesc);
 
             // RTV heap: slots 0–1 = adapted-average ping-pong; then every possible reduction level;
             // final two slots = vertical BrightPassBlur intermediate + horizontal plain-blur output.
@@ -347,27 +357,37 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
     /// </summary>
     internal string? LastHistoryResetReason { get; private set; }
 
+    /// <summary>Releases caller-retired HDR resources before their shared pipeline family, retaining failures for retry.</summary>
+    /// <remarks>GPU completion or device removal must already be proven; this method does not wait on a fence.</remarks>
+    /// <exception cref="AggregateException">A release failed; retain this pass and call disposal again on its creating thread.</exception>
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _srvHeap.Dispose();
-        _avgRtvHeap.Dispose();
-        _avgTextures[0].Dispose();
-        _avgTextures[1].Dispose();
-        DisposeActiveClassicTargets();
-        DisposeAlternateClassicTargets();
-        _tes4BlurPso.Dispose();
-        _tes4BrightPassPso.Dispose();
-        _blurPso.Dispose();
-        _bloomPso.Dispose();
-        _skyrimDownsamplePso.Dispose();
-        _skyrimLuminancePso.Dispose();
-        _downsamplePso.Dispose();
-        _adaptPso.Dispose();
-        _avgPso.Dispose();
-        _pso.Dispose();
-        _rootSignature.Dispose();
+        if (_retiredResources is null)
+        {
+            // Stop recording immediately, but do not let this marker suppress failed-release retries.
+            // Register each lazy target separately so successful siblings are never disposed twice.
+            _disposed = true;
+            var retired = new RetiredResourceDisposal();
+            retired.Add(_srvHeap, "tonemap SRV heap");
+            retired.Add(_avgRtvHeap, "tonemap RTV heap");
+            retired.Add(_avgTextures[0], "tonemap first average history");
+            retired.Add(_avgTextures[1], "tonemap second average history");
+            foreach (var texture in _reductionTextures)
+            {
+                retired.Add(texture, "tonemap active reduction target");
+            }
+            retired.Add(_brightPassBlurTexture, "tonemap active bright-pass target");
+            retired.Add(_bloomTexture, "tonemap active bloom target");
+            foreach (var texture in _alternateReductionTextures)
+            {
+                retired.Add(texture, "tonemap alternate reduction target");
+            }
+            retired.Add(_alternateBrightPassBlurTexture, "tonemap alternate bright-pass target");
+            retired.Add(_alternateBloomTexture, "tonemap alternate bloom target");
+            retired.Add(_pipelineResources, "tonemap pipeline family", 1);
+            _retiredResources = retired;
+        }
+        _retiredResources.Dispose();
     }
 
     void IGpuCommandSubmissionParticipant12.OnCommandListSubmitted()
@@ -389,6 +409,10 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         ClearLogicalHistoryTransaction();
     }
 
+    /// <summary>Transfers a newly created resource to rollback until the whole pass is constructed.</summary>
+    /// <typeparam name="T">Owned disposable resource type.</typeparam>
+    /// <param name="resource">Resource retained before any later initialization can fail.</param>
+    /// <returns>The same resource, ready to store in its owning field.</returns>
     private T TrackConstructionResource<T>(T resource) where T : IDisposable
     {
         _constructionTransaction?.Track(resource);
@@ -1087,12 +1111,12 @@ internal sealed class GpuTonemapPass12 : IDisposable, IGpuCommandSubmissionParti
         bloomTexture?.Dispose();
     }
 
-    /// <summary>
-    ///     Forwards to the one shared compiler — see <see cref="GpuShaderCompiler12" />.
-    ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
-    ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
-    /// </summary>
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile)
+    /// <summary>Gets an embedded shader permutation through the application cache and Shared compiler.</summary>
+    /// <param name="name">Embedded shader file name.</param>
+    /// <param name="entryPoint">HLSL entry point.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <returns>Read-only cached DXBC passed directly to native pipeline creation without a payload copy.</returns>
+    private static ReadOnlyMemory<byte> CompileEmbeddedShader(string name, string entryPoint, string profile)
     {
         return GpuShaderCompiler12.Compile(name, entryPoint, profile);
     }

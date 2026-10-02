@@ -175,7 +175,8 @@ public sealed partial class WorldMapControl
             // different worldspaces' waters (Potomac muddy brown vs Lake Mead clean blue,
             // etc.) actually look different. Null when no WATR FormID, no DNAM, or DNAM has
             // no colors — downstream falls back to the legacy solid blue.
-            var waterFormId = _state.SelectedWorldspace?.WaterFormId;
+            var waterFormId = WaterAppearanceSelectionResolver.Resolve(null, _state.SelectedWorldspace,
+                _data.WatersByFormId, _data.Game, worldWaterCatalog: _data.WaterCatalog).WaterFormId;
             _currentWaterPalette = waterFormId is uint wid && _data is not null
                 ? WaterColorPalette.GetOrCreate(_data, wid)
                 : null;

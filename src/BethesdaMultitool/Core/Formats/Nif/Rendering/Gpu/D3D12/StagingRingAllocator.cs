@@ -1,3 +1,4 @@
+using Slfx77.Multitool.Core.Lifetime;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
 /// <summary>
@@ -9,7 +10,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///         copy that reads it, and those copies retire in submission order because
 ///         <see cref="GpuDeletionQueue12" /> is a frame-stamped <c>Queue</c>. Out-of-order release
 ///         would strand live bytes behind a freed hole, which is precisely what
-///         <see cref="GeometryArenaAllocator" />'s free-list exists to handle — at the cost of
+///         <see cref="ByteArenaAllocator" />'s free-list exists to handle — at the cost of
 ///         bookkeeping this path does not need.
 ///     </para>
 ///     <para>
@@ -35,7 +36,7 @@ internal sealed class StagingRingAllocator
     /// <param name="alignment">
     ///     Power-of-two alignment applied to every region start. 16 clears the 4-byte
     ///     <c>CopyBufferRegion</c> offset requirement with margin and keeps writes on a vector
-    ///     boundary, matching <see cref="GeometryArenaAllocator" />'s default.
+    ///     boundary, matching <see cref="ByteArenaAllocator" />'s default.
     /// </param>
     public StagingRingAllocator(long capacity, int alignment = 16)
     {
@@ -107,8 +108,10 @@ internal sealed class StagingRingAllocator
             return false;
         }
 
-        LiveBytes += required;
+        // Queue growth is the last fallible admission step. A failed allocation leaves counters
+        // and cursor unchanged, allowing the caller to retry without an unowned reservation.
         _outstanding.Enqueue(required);
+        LiveBytes += required;
         _head = start + bytes == Capacity ? 0 : start + bytes;
         offset = start;
         charge = required;

@@ -2,6 +2,7 @@ using System.Text;
 using BCnEncoder.Encoder;
 using BCnEncoder.ImageSharp;
 using BCnEncoder.Shared;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Ddx;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -142,56 +143,38 @@ public sealed class XboxNormalSpecularPairTests
         Assert.False(needsRevision);
     }
 
-    [Fact]
-    public void GpuResolver_UsesCompanionAwareDecodeAndScopesThePersistentCacheRevision()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GpuResolver_DdsFallbackUsesThePhysicalNormalAndCompanion(bool malformedExactDds)
     {
-        var source = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Gpu", "D3D12",
-            "NifGpuTextureResolver.cs");
+        using var directory = CliExeRunner.CreateTempDirectory();
+        const string requested = @"textures\fixture_n.dds";
+        const string normalPath = @"textures\fixture_n.ddx";
+        const string specularPath = @"textures\fixture_s.ddx";
+        Directory.CreateDirectory(Path.Combine(directory.Path, "textures"));
+        var normal = EncodeSolid(8, 8, CompressionFormat.Bc5, new Rgba32(128, 128, 255, 255));
+        var specular = EncodeSolid(8, 8, CompressionFormat.Bc4, new Rgba32(48, 0, 0, 255));
+        File.WriteAllBytes(Path.Combine(directory.Path, normalPath), normal);
+        File.WriteAllBytes(Path.Combine(directory.Path, specularPath), specular);
+        if (malformedExactDds)
+            File.WriteAllBytes(Path.Combine(directory.Path, requested), [1, 2, 3]);
 
-        Assert.Contains("BuildPersistentCacheKey(path, sourcePath)", source, StringComparison.Ordinal);
-        Assert.Contains("XboxNormalSpecularCacheRevision", source, StringComparison.Ordinal);
-        Assert.Contains("existsExactly(resolvedNormalPath)", source, StringComparison.Ordinal);
-        Assert.Contains("NifTextureLoader.ConvertDdxNormalPairIfNeeded(", source, StringComparison.Ordinal);
-        Assert.Contains("TryLoadRawFromSources);", source, StringComparison.Ordinal);
+        using var resolver = new NifGpuTextureResolver(AssetSourcePlan.FromPaths([directory.Path]));
+        var payload = Assert.IsType<GpuTexturePayload>(resolver.GetTexture(requested));
+        Assert.Equal(GpuTexturePayloadFormat.BC3, payload.Format);
+        Assert.Equal("normal-specular-paired", payload.Derivation);
+        var normalRead = Assert.Single(payload.AssetReadReceipts, read => read.RequestedPath == normalPath);
+        var specularRead = Assert.Single(payload.AssetReadReceipts, read => read.RequestedPath == specularPath);
+        Assert.Equal(AssetSelectionStatus.Selected, normalRead.Status);
+        Assert.Equal(AssetSelectionStatus.Selected, specularRead.Status);
+        Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(normal)), normalRead.PayloadSha256);
+        Assert.Equal(Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(specular)), specularRead.PayloadSha256);
 
-        // The cache probe and live decode must agree on every physical spelling the uncached route
-        // can select. A NIF/TXST normally requests `_n.dds`; the Xbox corpus contains `_n.ddx`, and
-        // the fallback remains reachable when an exact but undecodable `_n.dds` entry is also present.
-        // Passing the original `.dds` spelling to the pair-aware decoder deliberately suppresses the
-        // Xbox-only merge, so the actual fallback path must still reach DecodeRawTexture unchanged.
-        var cacheProbe = SourceContract.Extract(
-            source,
-            "internal static bool CanDecodePairedXboxNormal",
-            "/// <summary>\n    ///     Drops the cached decoded payload");
-        SourceContract.AssertOrder(
-            cacheProbe,
-            "if (sourcePath.EndsWith(\".ddx\"",
-            "else if (sourcePath.EndsWith(\".dds\"",
-            "resolvedNormalPath = string.Concat(sourcePath.AsSpan(0, sourcePath.Length - 4), \".ddx\");",
-            "if (!existsExactly(resolvedNormalPath))",
-            "NormalMapMerge.ComputeSpecularPath(resolvedNormalPath)",
-            "existsExactly(specularPath)");
-
-        var uncachedLoad = SourceContract.Extract(
-            source,
-            "private GpuTexturePayload? LoadTextureUncached",
-            "private GpuTexturePayload? TryLoadFromSources");
-        SourceContract.AssertOrder(
-            uncachedLoad,
-            "var texture = TryLoadFromSources(path, leafAtlasMips);",
-            "if (!path.EndsWith(\".dds\"",
-            "var ddxPath = string.Concat(path.AsSpan(0, path.Length - 4), \".ddx\");",
-            "return TryLoadFromSources(ddxPath, leafAtlasMips);");
-
-        var sourceLoad = SourceContract.Extract(
-            source,
-            "private GpuTexturePayload? TryLoadFromSources",
-            "private byte[]? TryLoadRawFromSources");
-        SourceContract.AssertOrder(
-            sourceLoad,
-            "var rawData = source.TryLoadRaw(path);",
-            "var texture = DecodeRawTexture(rawData, path, leafAtlasMips);");
+        // Compare actual compressed output against the independently exercised pair converter.
+        // This catches a fallback decoded under the original .dds spelling (which skips the mask).
+        var expectedDds = NifTextureLoader.ConvertDdxNormalPairIfNeeded(normal, normalPath, _ => specular);
+        Assert.Equal(expectedDds.AsSpan(128).ToArray(), payload.MipLevels.SelectMany(level => level.Bytes).ToArray());
     }
 
     private static byte[] EncodeSolid(int width, int height, CompressionFormat format, Rgba32 color)

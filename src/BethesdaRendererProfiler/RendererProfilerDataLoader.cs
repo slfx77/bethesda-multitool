@@ -5,6 +5,9 @@ using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Esm.Records;
 using BethesdaMultitool.Core.Semantic;
 using BethesdaMultitool.Core.WorldData;
+using BethesdaMultitool.Core.Games;
+using BethesdaMultitool.Core.Semantic.LoadOrder;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.NpcAssembly;
 
 namespace BethesdaRendererProfiler;
 
@@ -23,12 +26,14 @@ internal static class RendererProfilerDataLoader
         var loadOrderPaths = await CollectLoadOrderPathsAsync(options, progress, cancellationToken);
         progress?.Report($"Loading primary source {Path.GetFileName(options.InputPath)}...");
         var primary = await LoadSourceAsync(options.InputPath, progress, cancellationToken);
+        var actorSources = new List<SemanticSource> { primary };
 
         var semantic = primary.Records;
         if (loadOrderPaths.Count > 0)
         {
             progress?.Report($"Loading {loadOrderPaths.Count} load-order source(s)...");
             var loadOrder = await LoadSourceSetAsync(loadOrderPaths, progress, cancellationToken);
+            actorSources.AddRange(loadOrder.Sources);
             // Full path, not just the name: the mapper reads this file's MAST list to place its
             // masters on the slots its own raw FormIDs already name (Tes4LoadOrderFormIdMapper).
             // A DMP primary passes null instead and keeps raw runtime FormIDs.
@@ -66,7 +71,8 @@ internal static class RendererProfilerDataLoader
         }
 
         progress?.Report("Building world-view render data...");
-        var data = WorldMapOverlayBuilder.BuildFromRecords(semantic, primary.FilePath);
+        var data = TryBuildSelectedWorld(actorSources, primary.FilePath, cancellationToken)
+            ?? WorldMapOverlayBuilder.BuildFromRecords(semantic, primary.FilePath);
         data.AdditionalDataPaths = loadOrderPaths;
         data.AssetDataDirectories = options.AssetDataDirectories;
         // WorldMapOverlayBuilder does not set this — the GUI session does, and until now the
@@ -141,9 +147,33 @@ internal static class RendererProfilerDataLoader
 
         progress?.Report("Building world-view render data...");
         var sourcePath = sourceSet.GetTerrainFilePath() ?? sourcePaths[^1];
-        var data = WorldMapOverlayBuilder.BuildFromRecords(records, sourcePath);
+        var data = TryBuildSelectedWorld(sourceSet.Sources, sourcePath, cancellationToken)
+            ?? WorldMapOverlayBuilder.BuildFromRecords(records, sourcePath);
         data.AdditionalDataPaths = sourceSet.Sources.Select(source => source.FilePath).ToArray();
         data.AssetDataDirectories = options.AssetDataDirectories;
+        return data;
+    }
+
+    private static WorldViewData? TryBuildSelectedWorld(IEnumerable<SemanticSource> sources,
+        string primaryPath, CancellationToken cancellationToken)
+    {
+        var materialized = sources.ToArray();
+        if (materialized.Any(source => source.FileType != AnalysisFileType.EsmFile ||
+            source.RawResult?.EsmRecords?.Game is not (BethesdaGame.Fallout3 or BethesdaGame.FalloutNewVegas)))
+            return null;
+        if (materialized.Select(source => source.Records.Game).Distinct().Count() != 1)
+            throw new InvalidOperationException("A world actor preview requires plugins from the same game.");
+        var order = PrimaryPluginOrder.Create(primaryPath,
+            materialized.Where(source => source.FilePath != primaryPath).Select(source => source.FilePath).ToArray(),
+            PluginLoadOrder.ReadMasters);
+        var byPath = materialized.ToDictionary(source => Path.GetFullPath(source.FilePath), StringComparer.OrdinalIgnoreCase);
+        var selected = LoadOrderSelectionView.FromParsedSources(order, order.Entries.Select(entry =>
+        {
+            var source = byPath[entry.Path];
+            return (entry, source.Records, source.RawResult!.EsmRecords!);
+        }).ToArray());
+        var data = WorldMapOverlayBuilder.BuildFromRecords(selected.Records, primaryPath);
+        data.ActorCatalog = new WorldActorCatalog(NpcAppearanceResolver.Build(order, selected.Index, cancellationToken));
         return data;
     }
 

@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using BethesdaMultitool.Core.Diagnostics;
+using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Profiling;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Textures;
 using BethesdaMultitool.Core.Orchestration;
 using BethesdaMultitool.Core.Resources;
+using Slfx77.Multitool.Core.Lifetime;
 using Vortice.Direct3D12;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
@@ -74,6 +76,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private readonly Dictionary<string, TextureUploadNode> _cache = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly ConcurrentQueue<CompletedUpload> _completedUploads = new();
+    private readonly ConcurrentQueue<IDisposable> _failedUploadResources = new();
 
     // Async copy-queue upload machinery (owned per-cache, mirroring _resolveQueue ownership).
     private readonly GpuUploadQueue12 _copyUploadQueue;
@@ -85,6 +88,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     // Resolution runs on background threads, so both of these are touched off the render thread.
     private readonly List<string> _namedResolveFailures = new(MaxNamedResolveFailures);
     private readonly List<ID3D12Resource> _ownedTextures = new();
+    private readonly HashSet<GpuTextureRetirement12> _pendingEntryRetirements = new();
     private readonly Queue<TextureUploadNode> _pendingDispatch = new();
     private readonly List<CompletedUpload> _pendingPromote = new();
     private readonly GpuCommandRecorder12 _recorder;
@@ -99,6 +103,9 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private readonly Dictionary<string, Entry> _syntheticEntries = new(StringComparer.OrdinalIgnoreCase);
     private readonly DedicatedWorkerThread _uploadDispatcher;
     private bool _disposed;
+    private bool _disposing;
+    private RetiredResourceDisposal? _retirementPrerequisites;
+    private RetiredResourceDisposal? _retiredResources;
     private long _evictions;
 
     private Entry? _flatNormal;
@@ -215,83 +222,122 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     /// </summary>
     internal int ResolveFailureCount => Volatile.Read(ref _resolveFailures);
 
+    /// <summary>Drains texture users and proves copy retirement before releasing resource and descriptor ownership.</summary>
+    /// <remarks>Failed drains or releases remain owned for retry; callers must retain the resolver, device and heap until this succeeds.</remarks>
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        // Snapshot while every queue/stat source is still readable and before any cache entries are
-        // cleared. The trace writer outlives renderer disposal in the profiler host.
-        EmitTraceSummary();
-        // Unregister first so the retired-stats record captures the cache as it was at teardown.
-        _registration?.Dispose();
-        _registration = null;
-        // Stop the uploader thread first so no upload completion / copy submission races teardown.
-        _uploadDispatcher.Dispose();
-        // Let in-flight background resolutions finish before the host disposes the resolver they read
-        // from (BSA archives). Mirrors ReferenceMeshCache12's decode-task drain on dispose; the host
-        // disposes this cache before the resolver, so this keeps that ordering safe.
-        _resolveQueue.WaitForDrain();
-        // Flush + dispose the copy queue: drains outstanding copies and retires their staging. After
-        // this every uploaded DEFAULT texture is GPU-idle and safe to release.
-        _copyUploadQueue.Dispose();
-
-        // Release textures that finished uploading but were never promoted (cache torn down first).
-        while (_completedUploads.TryDequeue(out var leftover))
+        if (_disposed && _retiredResources is not null && !_retiredResources.HasPending) { return; }
+#pragma warning disable S3877 // A reentrant Dispose cannot report success while this dependent still owns live resources.
+        if (_disposing) { throw new InvalidOperationException("Texture-cache retirement is already in progress."); }
+#pragma warning restore S3877
+        _disposing = true;
+        try
         {
-            if (leftover.Texture is not null) DisposeResource(leftover.Texture);
-        }
+            if (_retirementPrerequisites is null)
+            {
+                var prerequisites = new RetiredResourceDisposal(ReportRetirementFailure);
+                prerequisites.Add(EmitTraceSummary, "texture trace summary", 0);
+                prerequisites.Add(_uploadDispatcher.Stop, "texture uploader drain", 0);
+                prerequisites.Add(_resolveQueue.WaitForDrain, "texture resolver drain", 0);
+                prerequisites.Add(_copyUploadQueue, "texture copy retirement", 1);
+                prerequisites.Add(() =>
+                {
+                    _registration?.Dispose();
+                    _registration = null;
+                }, "texture cache registration", 2);
+                prerequisites.Add(_uploadDispatcher, "texture uploader", 3);
+                prerequisites.Add(_resolveQueue, "texture resolver queue", 3);
+                _retirementPrerequisites = prerequisites;
+                _disposed = true;
+            }
 
+            // A stop request or failed copy wait is not completion. Keep every texture collection
+            // and borrowed resolver/device prerequisite intact until all of these stages succeed.
+            _retirementPrerequisites.Dispose();
+            if (_retiredResources is null) { CollectRetiredResources(); }
+            _retiredResources!.Dispose();
+        }
+        finally { _disposing = false; }
+    }
+
+    /// <summary>Transfers the frozen post-drain texture graph into retryable actions without losing partially collected ownership.</summary>
+    private void CollectRetiredResources()
+    {
+        var resources = new RetiredResourceDisposal(ReportRetirementFailure);
+        var textures = new HashSet<IDisposable>(ReferenceEqualityComparer.Instance);
+        foreach (var completed in _completedUploads)
+        {
+            if (completed.Texture is not null) { textures.Add(completed.Texture); }
+        }
         foreach (var pending in _pendingPromote)
         {
-            if (pending.Texture is not null) DisposeResource(pending.Texture);
+            if (pending.Texture is not null) { textures.Add(pending.Texture); }
         }
-
-        _pendingPromote.Clear();
-
-        foreach (var t in _ownedTextures) DisposeResource(t);
-        // Every cache entry owns a distinct persistent bindless slot even while its texture is only
-        // a shared fallback placeholder. Teardown used to release the textures but abandon all of
-        // those descriptor allocations (including the pinned/synthetic entries), so repeatedly
-        // opening standalone viewers steadily exhausted the host heap. Retire each still-owned slot
-        // through the same frame-safe path as Release(); a set makes the teardown defensive against
-        // future aliases without risking a double return to the allocator's free-list.
-        var retiredPersistentSlots = new HashSet<uint>();
+        foreach (var texture in _ownedTextures) { textures.Add(texture); }
+        foreach (var resource in _failedUploadResources) { textures.Add(resource); }
+        var slots = new HashSet<uint>();
         foreach (var node in _cache.Values)
         {
-            RetirePersistentSlot(node.Entry.BindlessIndex, retiredPersistentSlots);
+            slots.Add(node.Entry.BindlessIndex);
         }
-
         if (_whitePixel is Entry wp)
         {
-            DisposeResource(wp.Texture);
-            RetirePersistentSlot(wp.BindlessIndex, retiredPersistentSlots);
+            textures.Add(wp.Texture);
+            slots.Add(wp.BindlessIndex);
         }
-
         if (_flatNormal is Entry fn)
         {
-            DisposeResource(fn.Texture);
-            RetirePersistentSlot(fn.BindlessIndex, retiredPersistentSlots);
+            textures.Add(fn.Texture);
+            slots.Add(fn.BindlessIndex);
         }
-
         if (_waterSurface is Entry ws)
         {
-            DisposeResource(ws.Texture);
-            RetirePersistentSlot(ws.BindlessIndex, retiredPersistentSlots);
+            textures.Add(ws.Texture);
+            slots.Add(ws.BindlessIndex);
         }
-
         foreach (var synthetic in _syntheticEntries.Values)
         {
-            DisposeResource(synthetic.Texture);
-            RetirePersistentSlot(synthetic.BindlessIndex, retiredPersistentSlots);
+            textures.Add(synthetic.Texture);
+            slots.Add(synthetic.BindlessIndex);
+        }
+        foreach (var texture in textures)
+        {
+            resources.Add(() =>
+            {
+                if (texture is ID3D12Resource native) { DisposeResource(native); }
+                else { texture.Dispose(); }
+            }, "retired texture", 0);
+        }
+        foreach (var retirement in _pendingEntryRetirements)
+        {
+            resources.Add(() => TransferRetiredEntry(retirement), "evicted texture ownership transfer", 0);
+        }
+        foreach (var slot in slots)
+        {
+            resources.Add(() => RetirePersistentSlot(slot), "texture descriptor", 1);
         }
 
+        // All captured identities remain in the original collections if allocation above fails.
+        // Publishing the complete owner precedes clearing those aliases or invoking any release.
+        _retiredResources = resources;
+        _completedUploads.Clear();
+        _failedUploadResources.Clear();
+        _pendingPromote.Clear();
         _syntheticEntries.Clear();
         _ownedTextures.Clear();
         _pendingDispatch.Clear();
         _cache.Clear();
+        _whitePixel = null;
+        _flatNormal = null;
+        _waterSurface = null;
         PendingUploadCount = 0;
-        // _heap is owned by the host (WorldView3DControl); do not dispose here.
     }
+
+    /// <summary>Reports a retained cleanup failure without claiming the failed owner was released.</summary>
+    /// <param name="name">Failed ownership operation.</param>
+    /// <param name="exception">Observed release or drain failure.</param>
+    private static void ReportRetirementFailure(string name, Exception exception) =>
+        Log.Warn("GpuTextureCache12: {0} remains pending: {1}", name, exception.Message);
 
     public string ResourceName => nameof(GpuTextureCache12);
 
@@ -404,13 +450,15 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     ///     the same persistent descriptor slot so existing terrain/reference caches update
     ///     without rebuilding their draw records.
     /// </summary>
-    public Entry GetOrUpload(string path, bool isNormalMap = false)
+    public Entry GetOrUpload(string path, bool isNormalMap = false, DecodedTexture? generatedTexture = null)
     {
         var cacheKey = NormalizeCacheKey(path, isNormalMap);
         if (cacheKey.Length == 0)
         {
             return isNormalMap ? FlatNormal : WhitePixel;
         }
+
+        if (generatedTexture is null && _resolver is not null) cacheKey = _resolver.GetCacheKey(cacheKey);
 
         if (_cache.TryGetValue(cacheKey, out var node))
         {
@@ -430,7 +478,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
         _misses++;
         var fallback = isNormalMap ? FlatNormal : WhitePixel;
-        if (_resolver is null)
+        if (_resolver is null && generatedTexture is null)
         {
             return fallback; // pinned fallback — not reference-counted.
         }
@@ -439,6 +487,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         // on a background thread. The streamed GPU upload later overwrites this Entry's persistent
         // descriptor slot in place, so callers that cached the Entry upgrade from placeholder →
         // textured transparently (BindlessIndex is stable).
+        var generatedPayload = generatedTexture is null ? null : GpuTexturePayload.FromRgba(generatedTexture);
         var entry = _solidTextureFactory.CreatePlaceholder(fallback, cacheKey);
         entry.RefCount = 1; // acquire (first reference).
         node = new TextureUploadNode(
@@ -446,6 +495,14 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             entry,
             _aliasTraceEnabled ? new LegacyAliasTrace(path) : null);
         _cache[cacheKey] = node;
+        if (generatedPayload is not null)
+        {
+            // The normal refcounted upload/retirement path owns this immutable scene payload.
+            // It does not depend on the mesh LRU or a browser's temporary FaceGen cache surviving.
+            node.Payload = generatedPayload;
+            EnqueueForDispatch(node, true);
+            return entry;
+        }
         if (_resolveQueue.Enqueue(cacheKey))
         {
             FrameQueuedResolves++;
@@ -504,22 +561,43 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             return; // null entry or pinned fallback.
         }
 
+        if (entry.Retirement is { } pending)
+        {
+            TransferRetiredEntry(pending);
+            return; // This acquisition reached zero already; retry only its retained transfer.
+        }
+
         if (entry.RefCount <= 0)
         {
             return; // already released (defensive against double-release).
         }
 
-        if (--entry.RefCount > 0)
+        if (entry.RefCount > 1)
         {
+            entry.RefCount--;
             return; // still referenced by another resident mesh.
         }
 
         // Last reference dropped → evict.
         if (!_cache.TryGetValue(key, out var node) || !ReferenceEquals(node.Entry, entry))
         {
+            entry.RefCount = 0;
             return; // node already gone or replaced; nothing to reclaim.
         }
 
+        // Construct and retain the complete bundle before detaching the entry. A failed queue
+        // admission or synchronous release can then retry this exact entry even after a new entry
+        // with the same key is acquired. A placeholder borrows its pinned fallback's texture.
+        var ownsTexture = entry.IsResident && _ownedTextures.Contains(entry.Texture);
+        var slot = entry.BindlessIndex;
+        var retirement = new GpuTextureRetirement12(
+            ownsTexture ? entry.Texture : null,
+            () => _heap.FreePersistent(slot),
+            _deletionQueue,
+            ownsTexture ? entry.ByteSize : 0);
+        _pendingEntryRetirements.Add(retirement);
+        entry.Retirement = retirement;
+        entry.RefCount = 0;
         _cache.Remove(key);
 
         // If a resolve/upload is still in flight for this node, the downstream paths already cope with
@@ -533,17 +611,27 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
         // Dispose this entry's OWN uploaded texture. Non-resident placeholders (and failed nodes)
         // still point at the shared fallback singleton, which must never be freed.
-        if (entry.IsResident && _ownedTextures.Remove(entry.Texture))
+        if (ownsTexture)
         {
-            _residentBytes -= entry.ByteSize;
-            DisposeResource(entry.Texture);
+            _ownedTextures.Remove(entry.Texture);
         }
 
         _evictions++;
 
-        // Return the bindless slot — deferred by frames-in-flight so a reused slot can't alias a
-        // texture the GPU is still sampling via an in-flight frame's draw records.
-        RetirePersistentSlot(entry.BindlessIndex);
+        // One queue admission transfers both children. Shared retains independent release
+        // progress, and does not return the slot if releasing its texture fails.
+        TransferRetiredEntry(retirement);
+    }
+
+    /// <summary>Removes a cache charge only after the complete retired entry leaves cache ownership.</summary>
+    /// <param name="retirement">Exact evicted entry token; retries cannot affect a replacement entry.</param>
+    private void TransferRetiredEntry(GpuTextureRetirement12 retirement)
+    {
+        retirement.Transfer();
+        if (_pendingEntryRetirements.Remove(retirement))
+        {
+            _residentBytes -= retirement.ResidentBytes;
+        }
     }
 
     /// <summary>
@@ -683,7 +771,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     private void PromoteCompletedUploads()
     {
         // Move newly-finished uploads off the cross-thread queue; settle failures immediately.
-        while (_completedUploads.TryDequeue(out var completed))
+        while (_completedUploads.TryPeek(out var completed))
         {
             if (completed.Texture is null)
             {
@@ -697,10 +785,14 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                     PendingUploadCount--;
                 }
 
+                _completedUploads.TryDequeue(out _);
                 continue;
             }
 
+            // Growing the render-thread list can fail. Keep the cross-thread owner until the
+            // next owner has accepted the same resource; this is the queue's only consumer.
             _pendingPromote.Add(completed);
+            _completedUploads.TryDequeue(out _);
         }
 
         if (_pendingPromote.Count == 0)
@@ -711,60 +803,65 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         var completedFence = _copyUploadQueue.LastCompletedValue;
         var cmd = _recorder.CommandList;
         var keep = 0;
-        for (var i = 0; i < _pendingPromote.Count; i++)
+        var read = 0;
+        try
         {
-            var c = _pendingPromote[i];
-            if (c.CopyFenceValue > completedFence)
+            for (; read < _pendingPromote.Count; read++)
             {
-                _pendingPromote[keep++] = c; // copy not finished yet — re-check next frame.
-                continue;
-            }
+                var c = _pendingPromote[read];
+                if (c.CopyFenceValue > completedFence)
+                {
+                    _pendingPromote[keep++] = c; // copy not finished yet — re-check next frame.
+                    continue;
+                }
 
-            if (!_cache.TryGetValue(c.CacheKey, out var node) || node.Entry.IsResident || node.Failed)
-            {
-                // Node evicted/cleared or already satisfied → the uploaded texture is orphaned.
-                DisposeResource(c.Texture!);
-                continue;
-            }
+                if (!_cache.TryGetValue(c.CacheKey, out var node) || node.Entry.IsResident || node.Failed)
+                {
+                    // Node evicted/cleared or already satisfied → the uploaded texture is orphaned.
+                    DisposeResource(c.Texture!);
+                    continue;
+                }
 
-            // Bindless material textures are normally sampled by pixel shaders, but the recovered
-            // FO3/FNV water-noise construction also consumes its NNAM source in a compute shader.
-            // Keep resident texture resources legal for both shader classes; descriptors and all
-            // existing pixel-only consumers are unchanged.
-            cmd.ResourceBarrierTransition(
-                c.Texture!,
-                ResourceStates.Common,
-                ResourceStates.PixelShaderResource | ResourceStates.NonPixelShaderResource);
-            _gpu.Device.CreateShaderResourceView(c.Texture, c.SrvDesc, node.Entry.PersistentSrv);
-            // The entry carries the ALLOCATION footprint, so the symmetric release at Release()
-            // (_residentBytes -= entry.ByteSize) automatically balances what is added here.
-            // FrameUploadBytes below deliberately stays on the payload byte count — it feeds the
-            // per-frame streaming pacer, and inflating it by the footprint padding would silently
-            // throttle streaming in every game.
-            node.Entry.ReplaceTexture(c.Texture!, c.SrvDesc, c.Format, c.NormalDecodeMode, c.AllocationBytes);
-            _residentBytes += c.AllocationBytes;
-            node.Dispatched = false;
-            // Drop the decoded payload's mip bytes now that the texture is resident on the GPU.
-            // The node is the second strong ref (alongside the resolver cache, released on the
-            // uploader thread); clearing it here is what actually frees the bytes — otherwise every
-            // resident texture's CPU bytes are retained for the session (multi-GB heap / GC stalls).
-            node.Payload = null;
-            _ownedTextures.Add(c.Texture!);
-            PendingUploadCount--;
+                // Admission must precede publication: a growing ownership list cannot orphan a
+                // texture whose entry has already become resident.
+                _ownedTextures.EnsureCapacity(checked(_ownedTextures.Count + 1));
+                // Water-noise compute and ordinary pixel sampling share these resident resources.
+                cmd.ResourceBarrierTransition(
+                    c.Texture!,
+                    ResourceStates.Common,
+                    ResourceStates.PixelShaderResource | ResourceStates.NonPixelShaderResource);
+                _gpu.Device.CreateShaderResourceView(c.Texture, c.SrvDesc, node.Entry.PersistentSrv);
+                // Cache charges use allocation footprint; frame pacing uses compressed payload size.
+                node.Entry.ReplaceTexture(c.Texture!, c.SrvDesc, c.Format, c.NormalDecodeMode, c.AllocationBytes);
+                _residentBytes += c.AllocationBytes;
+                node.Dispatched = false;
+                // The resolver relinquished its payload after upload; remove the last node reference.
+                node.Payload = null;
+                _ownedTextures.Add(c.Texture!);
+                PendingUploadCount--;
 
-            if (c.IsCompressed)
-            {
-                FrameCompressedUploads++;
-            }
-            else
-            {
-                FrameRgbaFallbackUploads++;
-            }
+                if (c.IsCompressed)
+                {
+                    FrameCompressedUploads++;
+                }
+                else
+                {
+                    FrameRgbaFallbackUploads++;
+                }
 
-            FrameUploadBytes += c.ByteSize;
+                FrameUploadBytes += c.ByteSize;
+            }
         }
-
-        _pendingPromote.RemoveRange(keep, _pendingPromote.Count - keep);
+        finally
+        {
+            // Remove successful transfers even if a later item fails. Preserve that item and the
+            // unvisited tail; retry must never release an earlier orphan for a second time.
+            for (; read < _pendingPromote.Count; read++)
+            {
+                _pendingPromote[keep++] = _pendingPromote[read];
+            }
+            _pendingPromote.RemoveRange(keep, _pendingPromote.Count - keep);
+        }
     }
 
     /// <summary>
@@ -827,7 +924,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
 
         var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
         var payload = _resolver.GetTexture(cacheKey);
-        if (payload is null && !_resolver.IsUnauthoredStarfieldNormalMap(cacheKey))
+        if (payload is null && !_resolver.IsUnauthoredStarfieldNormalMap(BethesdaMultitool.Core.Assets.AssetCacheIdentity.PathOf(cacheKey)))
         {
             NoteResolveFailure(cacheKey);
         }
@@ -842,6 +939,8 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                 ["path"] = cacheKey,
                 ["found"] = payload is not null,
                 ["compressed"] = payload?.IsCompressed,
+                ["assetDerivation"] = payload?.Derivation,
+                ["assetReadReceipts"] = BethesdaMultitool.Core.Assets.AssetSelectionJson.Serialize(payload?.AssetReadReceipts ?? []),
                 ["bytes"] = payload?.ByteSize ?? 0,
                 ["elapsedMs"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
             });
@@ -854,13 +953,18 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
     ///     Uploader-thread step: create the DEFAULT texture (in COMMON), fill staging, and submit
     ///     the mip copies on the copy queue. Publishes a <see cref="CompletedUpload" /> (with the
     ///     copy fence value) for the render thread to promote; on failure publishes a null-texture
-    ///     completion so the node settles onto its fallback. Never touches render-thread state.
+    ///     completion so the node settles onto its fallback. Possibly submitted destinations remain
+    ///     owned until cache retirement proves the copy queue safe. Never touches render-thread state.
     /// </summary>
+    /// <param name="cacheKey">Exact cache identity whose upload completion is published.</param>
+    /// <param name="payload">Decoded mip payload borrowed for this synchronous upload operation.</param>
     private void RunUploadOnUploaderThread(string cacheKey, GpuTexturePayload payload)
     {
         var started = RendererProfilerTrace.IsEnabled ? Stopwatch.GetTimestamp() : 0;
         ID3D12Resource? texture = null;
         ID3D12Resource? staging = null;
+        var stagingOwnershipTransferred = false;
+        var completionPublished = false;
         try
         {
             var width = (uint)payload.Width;
@@ -957,7 +1061,8 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                         list.CopyTextureRegion(dstLoc, 0, 0, 0, srcLoc);
                     }
                 },
-                new IDisposable[] { stagingResource });
+                new IDisposable[] { stagingResource }, out stagingOwnershipTransferred);
+            staging = null; // The copy queue owns staging even if a later publication step fails.
 
             var srvDesc = payload.IsCubemap
                 ? GpuTextureFormatHelpers12.MakeCubeSrvDesc(mipCount, dxgiFormat)
@@ -965,6 +1070,8 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             _completedUploads.Enqueue(new CompletedUpload(
                 cacheKey, texture, srvDesc, payload.Format, payload.NormalDecodeMode,
                 payload.ByteSize, allocationBytes, payload.IsCompressed, copyFenceValue));
+            completionPublished = true;
+            texture = null; // The completion owns the destination before fallible resolver/trace calls.
             // The decoded CPU payload is now in the GPU staging buffer — release its mip bytes from
             // the resolver cache so they don't accumulate in managed memory (the dominant heap /
             // GC-stall source under heavy streaming). The path is never re-requested (the Entry is
@@ -973,11 +1080,6 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
             {
                 _resolver?.Release(cacheKey);
             }
-
-            // Ownership transferred: texture → render thread (via the completion); staging → copy
-            // queue retirement. Clear locals so the catch/finally don't double-free them.
-            texture = null;
-            staging = null;
 
             if (started != 0)
             {
@@ -999,6 +1101,11 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         }
         catch (Exception ex)
         {
+            // Execute/Signal can fail after the list reached the queue. The queue already owns its
+            // staging in that case; this cache retains the destination until copy retirement. Keep
+            // pre-submit failures here too so a failed child release cannot escape its owner.
+            if (!stagingOwnershipTransferred && staging is not null) { _failedUploadResources.Enqueue(staging); }
+            if (texture is not null) { _failedUploadResources.Enqueue(texture); }
             Logger.Instance.Warn(
                 "GpuTextureCache12: texture upload failed for '{0}': {1}",
                 cacheKey,
@@ -1014,9 +1121,7 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
                 Logger.Instance.Warn("GpuTextureCache12: DRED dump threw: {0}", dredEx.Message);
             }
 
-            staging?.Dispose();
-            texture?.Dispose();
-            _completedUploads.Enqueue(CompletedUpload.Failure(cacheKey));
+            if (!completionPublished) { _completedUploads.Enqueue(CompletedUpload.Failure(cacheKey)); }
         }
     }
 
@@ -1300,6 +1405,9 @@ internal sealed unsafe class GpuTextureCache12 : ITrackableResource, IDisposable
         ///     ignore this.
         /// </summary>
         internal int RefCount;
+
+        /// <summary>Retains the last-reference transfer so a failed release retries without consuming another acquisition.</summary>
+        internal GpuTextureRetirement12? Retirement { get; set; }
 
         internal Entry(
             ID3D12Resource texture,

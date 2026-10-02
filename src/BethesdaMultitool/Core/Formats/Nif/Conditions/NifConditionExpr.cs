@@ -3,6 +3,7 @@
 // These conditions depend on field values read at runtime, not just version info
 
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Conditions;
@@ -117,6 +118,86 @@ public sealed class NifConditionExpr
         {
             return _ => true;
         }
+    }
+
+    /// <summary>
+    ///     Strict compile for the non-mutating NIF block decoder (<c>Nif/Decoding</c>). Additive: <see cref="Evaluate" />,
+    ///     <see cref="EvaluateValue" /> and <see cref="Compile" /> keep failing open for the converter. This method instead
+    ///     returns false with a reason when the expression does not parse, when the parser stops before the end of the
+    ///     text (for example at an operator this grammar does not know, such as <c>#MUL#</c>, which the fail-open path
+    ///     silently drops together with everything after it), or when it uses a <c>#TOKEN#</c> other than <c>#ARG#</c>
+    ///     (the fail-open path reads any such token as a field worth 0).
+    /// </summary>
+    /// <param name="expression">The nif.xml attribute text.</param>
+    /// <param name="kind">Whether to parse a boolean condition or an integer value.</param>
+    /// <param name="compiled">The compiled expression and the names it references, on success.</param>
+    /// <param name="error">Why the expression was rejected, on failure.</param>
+    internal static bool TryCompileStrict(
+        string? expression,
+        NifStrictExpressionKind kind,
+        [NotNullWhen(true)] out NifStrictExpression? compiled,
+        [NotNullWhen(false)] out string? error)
+    {
+        compiled = null;
+        if (string.IsNullOrWhiteSpace(expression))
+        {
+            error = "The expression is empty.";
+            return false;
+        }
+
+        var parser = new NifConditionExpr(expression);
+        ICondNode? condition = null;
+        IValueNode? value = null;
+        try
+        {
+            if (kind == NifStrictExpressionKind.Condition)
+            {
+                condition = parser.ParseExpr();
+            }
+            else
+            {
+                value = parser.ParseValueExpr();
+            }
+
+            parser.SkipWhitespace();
+        }
+        catch (Exception ex) when (ex is FormatException or OverflowException or ArgumentException
+                                       or IndexOutOfRangeException)
+        {
+            error = $"'{expression}' does not parse: {ex.Message}";
+            return false;
+        }
+
+        if (parser._pos != parser._expression.Length)
+        {
+            error = $"'{expression}' stops parsing at '{parser._expression[parser._pos..]}' " +
+                    "(an operator or token this grammar does not support).";
+            return false;
+        }
+
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        condition?.GatherFields(names);
+        value?.GatherFields(names);
+        foreach (var name in names)
+        {
+            if (name.Length == 0)
+            {
+                error = $"'{expression}' contains an empty field name.";
+                return false;
+            }
+
+            if (name.StartsWith('#') &&
+                !string.Equals(name, NifStrictExpression.ArgumentToken, StringComparison.Ordinal))
+            {
+                error = $"'{expression}' uses the token {name}, which a field expression cannot evaluate.";
+                return false;
+            }
+        }
+
+        var ordered = names.Order(StringComparer.Ordinal).ToArray();
+        compiled = new NifStrictExpression(expression, kind, condition, value, ordered);
+        error = null;
+        return true;
     }
 
     #region Lexer

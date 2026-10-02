@@ -96,7 +96,9 @@ public sealed partial class WorldMapControl
             if (req.Layer == WorldMapLayer.TerrainTextures && _data is not null)
             {
                 palette = LandscapeTexturePalette.GetOrCreate(_data);
-                waterPalette = terrainShowWater && _state.SelectedWorldspace?.WaterFormId is uint wid
+                var selectedWater = WaterAppearanceSelectionResolver.Resolve(null, _state.SelectedWorldspace,
+                    _data.WatersByFormId, _data.Game, worldWaterCatalog: _data.WaterCatalog);
+                waterPalette = terrainShowWater && selectedWater.WaterFormId is uint wid
                     ? WaterColorPalette.GetOrCreate(_data, wid)
                     : null;
             }

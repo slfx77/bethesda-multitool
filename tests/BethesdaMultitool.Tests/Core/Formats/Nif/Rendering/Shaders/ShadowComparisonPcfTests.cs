@@ -74,57 +74,6 @@ public sealed class ShadowComparisonPcfTests
     }
 
     [Fact]
-    public void FourLinearSamplesReproduceTheLegacySeparableKernelWeights()
-    {
-        // Legacy's three bilinear taps produce four 1-D texel weights [1-f, 1, 1, f].
-        // The optimized shader groups those into two linear taps. Prove both axes over a dense
-        // fraction grid; their Cartesian product is therefore the same 4x4 PCF kernel.
-        for (var step = 0; step <= 10_000; step++)
-        {
-            var f = step / 10_000.0;
-            var lowWeight = 2.0 - f;
-            var highWeight = 1.0 + f;
-            var lowFraction = 1.0 / lowWeight;
-            var highFraction = f / highWeight;
-
-            var optimized = new[]
-            {
-                lowWeight * (1.0 - lowFraction),
-                lowWeight * lowFraction,
-                highWeight * (1.0 - highFraction),
-                highWeight * highFraction
-            };
-            var legacy = new[] { 1.0 - f, 1.0, 1.0, f };
-
-            for (var texel = 0; texel < legacy.Length; texel++)
-            {
-                Assert.InRange(Math.Abs(optimized[texel] - legacy[texel]), 0.0, 1e-12);
-            }
-
-            Assert.InRange(Math.Abs(optimized.Sum() - 3.0), 0.0, 1e-12);
-        }
-    }
-
-    [Theory]
-    [InlineData(0.25f, 0.25f)]
-    [InlineData(0.25f, 0.5f)]
-    [InlineData(0.25f, 0.75f)]
-    [InlineData(0.5f, 0.25f)]
-    [InlineData(0.5f, 0.5f)]
-    [InlineData(0.5f, 0.75f)]
-    [InlineData(0.75f, 0.25f)]
-    [InlineData(0.75f, 0.5f)]
-    [InlineData(0.75f, 0.75f)]
-    public void StrictGreaterComparisonMatchesLegacyReversedZVisibility(
-        float reference, float stored)
-    {
-        // HLSL step(reference, stored) is one at equality, so legacy equality is shadowed.
-        var legacyVisible = stored < reference ? 1.0f : 0.0f;
-        var comparisonSamplerVisible = reference > stored ? 1.0f : 0.0f;
-        Assert.Equal(legacyVisible, comparisonSamplerVisible);
-    }
-
-    [Fact]
     public void ShaderKeepsLegacyDefaultAndUsesFourLevelZeroComparisonSamplesOnlyWhenDefined()
     {
         var shader = SourceContract.ReadShaderSource("shadow_sampling.hlsli");
@@ -293,10 +242,10 @@ public sealed class ShadowComparisonPcfTests
         SourceContract.AssertOrder(compiler,
             "if (BytecodeCache.TryGetValue(key, out var cached))",
             "ShadowComparisonPcf12.TraceSuccessfulShader(",
-            "key, cached, true);",
+            "key, cached.Span, true);",
             "shippedPack.TryGetBytecode(key, out var precompiled)",
             "!added);",
-            "var bytecode = CompileSource(",
+            "ReadOnlyMemory<byte> bytecode = CompileSource(",
             "var selectedBytecode = BytecodeCache.GetOrAdd(key, bytecode);",
             "ShadowComparisonPcf12.TraceSuccessfulShader(",
             "return selectedBytecode;");

@@ -405,6 +405,7 @@ public sealed partial class WorldView3DControl
         try
         {
             RenderFrameD3D12(tonemap);
+            CompletePendingReferenceFrame();
             _consecutiveRenderFailures = 0;
             // After the frame: the reference renderer's heatmap scan is now current, so the
             // settings-panel key labels can mirror it (CompositionTarget.Rendering runs on the UI

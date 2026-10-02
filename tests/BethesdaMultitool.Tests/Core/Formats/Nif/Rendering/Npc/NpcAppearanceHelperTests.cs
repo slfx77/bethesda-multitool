@@ -1638,7 +1638,7 @@ public sealed class NpcAppearanceHelperTests
                 dir,
                 "Sample",
                 "Builds",
-                "Fallout - New Vegas (2010-10-19, X360 - Final)",
+                "Fallout - New Vegas (2010-8-22, X360 - Final)",
                 "Data",
                 "Fallout - Meshes.bsa");
             if (File.Exists(candidate))
@@ -1652,7 +1652,7 @@ public sealed class NpcAppearanceHelperTests
         var fallback = Path.Combine(
             "Sample",
             "Builds",
-            "Fallout - New Vegas (2010-10-19, X360 - Final)",
+            "Fallout - New Vegas (2010-8-22, X360 - Final)",
             "Data",
             "Fallout - Meshes.bsa");
         return File.Exists(fallback) ? Path.GetFullPath(fallback) : null;

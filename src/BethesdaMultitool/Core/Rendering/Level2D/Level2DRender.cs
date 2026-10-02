@@ -1,5 +1,5 @@
 // The 2D-level seam (Level2DLayer / Level2DRender / ILevel2DSource) is ported from
-//   NeversoftMultitool (https://github.com/slfx77/NeversoftMultitool, MIT License) —
+//   NeversoftMultitool —
 //   src/NeversoftMultitool/Core/Rendering/Level2d/Level2dRender.cs (upstream spells it "Level2d";
 //   the names carry a capital D here to satisfy this repo's S101 rule). Its layer set is retargeted
 //   from that project's collision-vs-art split to the classic voxel/heightmap layers this repo

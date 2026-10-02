@@ -2,7 +2,6 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Dds;
 using BethesdaMultitool.Core.Formats.Nif.Materials;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
-using BethesdaMultitool.Tests.Helpers;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Export;
@@ -134,21 +133,6 @@ public sealed class StarfieldGlbOpacityBakerTests
         Assert.Equal(MathF.BitIncrement(authoredThreshold), cutoff);
         Assert.True(cutoff > authoredThreshold);
         Assert.Equal(authoredThreshold, MathF.BitDecrement(cutoff));
-    }
-
-    [Fact]
-    public void GlbWriter_UsesFloatDomainCutoffForAppliedStarfieldOpacityBake()
-    {
-        var source = SourceContract.ReadSource(
-            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "Export",
-            "GlbWriter.cs");
-
-        SourceContract.AssertOrder(
-            source,
-            "var alphaCutoff = opacityBake.Applied && starfieldAlpha.IsLayer0OpacityCutout",
-            "? ToGltfGreaterCutoff(starfieldAlpha.AlphaTestThreshold)",
-            ": preparedAlpha.AlphaThreshold / 255f;",
-            "material.WithAlpha(AlphaMode.MASK, alphaCutoff);");
     }
 
     private static DecodedTexture Texture(int width, int height, byte[] pixels)

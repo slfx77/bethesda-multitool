@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Parser;
 using BethesdaMultitool.Core.Utils;
@@ -17,6 +18,12 @@ internal static class NifBsplineTransformReader
 
     private const int TransformInterpolatorSize = 60;
     private const int CompressedTransformInterpolatorSize = 84;
+
+    // NiBSplineInterpolator: Start Time, Stop Time, Spline Data ref, Basis Data ref.
+    private const int BsplineInterpolatorBaseSize = 16;
+
+    // NiQuatTransform carries TRS Valid flags until 10.1.0.109; the views read the later layout only.
+    private const uint LastVersionWithTrsValidFlags = 0x0A01006D;
 
     internal static bool TryRead(
         byte[] data,
@@ -159,6 +166,189 @@ internal static class NifBsplineTransformReader
 
         track = new NifNameTargetedBsplineTransformTrack(nodeName, transform);
         return true;
+    }
+
+    /// <summary>
+    ///     Reads any of the six 20.2.0.7 NiBSpline*Interpolator blocks losslessly (<see cref="NifBsplineInterpolatorView" />):
+    ///     Start and Stop Time, the Spline Data and Basis Data refs, the static value, each channel's Handle and, on the Comp
+    ///     forms, each channel's Offset and Half Range, all as raw bits in file order. The block must have its type's exact
+    ///     size (NiBSplineInterpolator's 16 bytes, the static value, 4 per handle, 8 per Comp channel). Nothing else is
+    ///     validated: sentinel statics, absent handles, a negative Half Range and unresolved refs are all kept as stored.
+    ///     <see cref="TryRead" />, the renderer's reader, is unchanged and still decodes the transform forms on its own.
+    /// </summary>
+    internal static bool TryReadInterpolatorView(
+        byte[] data,
+        NifInfo nif,
+        BlockInfo block,
+        [NotNullWhen(true)] out NifBsplineInterpolatorView? view)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(nif);
+        ArgumentNullException.ThrowIfNull(block);
+        view = null;
+        if (nif.BinaryVersion <= LastVersionWithTrsValidFlags ||
+            !TryGetInterpolatorShape(block.TypeName, out var kind, out var compact))
+        {
+            return false;
+        }
+
+        var staticWordCount = kind switch
+        {
+            NifBsplineInterpolatorKind.Float => 1,
+            NifBsplineInterpolatorKind.Point3 => 3,
+            _ => 8
+        };
+        var channelCount = kind == NifBsplineInterpolatorKind.Transform ? 3 : 1;
+        var size = BsplineInterpolatorBaseSize + 4 * staticWordCount + 4 * channelCount +
+                   (compact ? 8 * channelCount : 0);
+        if (!HasExactReadableSpan(data, block, size))
+        {
+            return false;
+        }
+
+        var be = nif.IsBigEndian;
+        var pos = block.DataOffset;
+        var startTimeBits = BinaryUtils.ReadUInt32(data, pos, be);
+        var stopTimeBits = BinaryUtils.ReadUInt32(data, pos + 4, be);
+        var splineDataRef = BinaryUtils.ReadInt32(data, pos + 8, be);
+        var basisDataRef = BinaryUtils.ReadInt32(data, pos + 12, be);
+        pos += BsplineInterpolatorBaseSize;
+
+        var staticValueBits = new uint[staticWordCount];
+        for (var index = 0; index < staticValueBits.Length; index++)
+        {
+            staticValueBits[index] = BinaryUtils.ReadUInt32(data, pos, be);
+            pos += 4;
+        }
+
+        var handles = new uint[channelCount];
+        for (var index = 0; index < handles.Length; index++)
+        {
+            handles[index] = BinaryUtils.ReadUInt32(data, pos, be);
+            pos += 4;
+        }
+
+        uint[] offsetBits = [];
+        uint[] halfRangeBits = [];
+        if (compact)
+        {
+            // Offset then Half Range, per channel in channel order (translation, rotation, scale).
+            offsetBits = new uint[channelCount];
+            halfRangeBits = new uint[channelCount];
+            for (var index = 0; index < channelCount; index++)
+            {
+                offsetBits[index] = BinaryUtils.ReadUInt32(data, pos, be);
+                halfRangeBits[index] = BinaryUtils.ReadUInt32(data, pos + 4, be);
+                pos += 8;
+            }
+        }
+
+        view = new NifBsplineInterpolatorView(
+            block.TypeName,
+            kind,
+            compact,
+            startTimeBits,
+            stopTimeBits,
+            splineDataRef,
+            basisDataRef,
+            staticValueBits,
+            handles,
+            offsetBits,
+            halfRangeBits);
+        return true;
+    }
+
+    /// <summary>
+    ///     Reads an NiBSplineData block losslessly (<see cref="NifBsplineDataView" />): both control-point arrays whole,
+    ///     floats as raw bits and compact points as raw Int16. Both arrays must fit inside the block; exact consumption is
+    ///     reported by the view, not required here.
+    /// </summary>
+    internal static bool TryReadDataView(byte[] data, NifInfo nif, BlockInfo block, out NifBsplineDataView view)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(nif);
+        ArgumentNullException.ThrowIfNull(block);
+        view = default;
+        if (block.TypeName != "NiBSplineData" || !HasReadableSpan(data, block, sizeof(uint) * 2))
+        {
+            return false;
+        }
+
+        var be = nif.IsBigEndian;
+        var blockEnd = (long)block.DataOffset + block.Size;
+        var floatCount = BinaryUtils.ReadUInt32(data, block.DataOffset, be);
+        var compactCountOffset = (long)block.DataOffset + sizeof(uint) + (long)floatCount * sizeof(float);
+        if (compactCountOffset + sizeof(uint) > blockEnd)
+        {
+            return false;
+        }
+
+        var compactCount = BinaryUtils.ReadUInt32(data, (int)compactCountOffset, be);
+        var compactStart = compactCountOffset + sizeof(uint);
+        if (compactStart + (long)compactCount * sizeof(short) > blockEnd)
+        {
+            return false;
+        }
+
+        view = new NifBsplineDataView(
+            data,
+            be,
+            block.DataOffset + sizeof(uint),
+            (int)floatCount,
+            (int)compactStart,
+            (int)compactCount,
+            (int)blockEnd);
+        return true;
+    }
+
+    /// <summary>
+    ///     Reads an NiBSplineBasisData block's Num Control Points as stored, without the renderer's range check
+    ///     (<see cref="NifOpenUniformCubicBspline.MinimumControlPointCount" /> to <see cref="MaximumControlPointCount" />).
+    /// </summary>
+    internal static bool TryReadBasisView(byte[] data, NifInfo nif, BlockInfo block, out uint numControlPoints)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        ArgumentNullException.ThrowIfNull(nif);
+        ArgumentNullException.ThrowIfNull(block);
+        numControlPoints = 0;
+        if (block.TypeName != "NiBSplineBasisData" || !HasReadableSpan(data, block, sizeof(uint)))
+        {
+            return false;
+        }
+
+        numControlPoints = BinaryUtils.ReadUInt32(data, block.DataOffset, nif.IsBigEndian);
+        return true;
+    }
+
+    private static bool TryGetInterpolatorShape(
+        string typeName,
+        out NifBsplineInterpolatorKind kind,
+        out bool compact)
+    {
+        switch (typeName)
+        {
+            case "NiBSplineFloatInterpolator":
+                (kind, compact) = (NifBsplineInterpolatorKind.Float, false);
+                return true;
+            case "NiBSplineCompFloatInterpolator":
+                (kind, compact) = (NifBsplineInterpolatorKind.Float, true);
+                return true;
+            case "NiBSplinePoint3Interpolator":
+                (kind, compact) = (NifBsplineInterpolatorKind.Point3, false);
+                return true;
+            case "NiBSplineCompPoint3Interpolator":
+                (kind, compact) = (NifBsplineInterpolatorKind.Point3, true);
+                return true;
+            case "NiBSplineTransformInterpolator":
+                (kind, compact) = (NifBsplineInterpolatorKind.Transform, false);
+                return true;
+            case "NiBSplineCompTransformInterpolator":
+                (kind, compact) = (NifBsplineInterpolatorKind.Transform, true);
+                return true;
+            default:
+                (kind, compact) = (default, false);
+                return false;
+        }
     }
 
     private static bool TryReadOptionalDefaults(

@@ -7,6 +7,23 @@ namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Npc;
 public sealed class NpcBrowserOperationGateTests
 {
     [Fact]
+    public void FailedDisposalRetainsRetryButNeverReopensAdmission()
+    {
+        var gate = new NpcBrowserOperationGate();
+        var attempts = 0;
+        void DisposeResources()
+        {
+            if (++attempts == 1) throw new IOException("retained release");
+        }
+        Assert.Throws<IOException>(() => gate.DisposeResources(DisposeResources));
+        Assert.Throws<ObjectDisposedException>(() => gate.Enter());
+        gate.DisposeResources(DisposeResources);
+        gate.DisposeResources(DisposeResources);
+        Assert.Equal(2, attempts);
+        Assert.Throws<ObjectDisposedException>(() => gate.Enter());
+    }
+
+    [Fact]
     public void Enter_IsReentrantForNestedServiceOperations()
     {
         var gate = new NpcBrowserOperationGate();

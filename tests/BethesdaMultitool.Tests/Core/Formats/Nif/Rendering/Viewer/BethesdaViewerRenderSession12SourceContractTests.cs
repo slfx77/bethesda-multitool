@@ -83,10 +83,11 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
             StringComparison.Ordinal);
         SourceContract.AssertOrder(
             context,
-            "DisposeOwnedNoThrow(pipelines, $\"{game} reference pipelines\")",
-            "DisposeOwnedNoThrow(RootSignature, \"root signature\")");
+            "_retiredResources.Add(pipelines, $\"{game} reference pipelines\", 1)",
+            "_retiredResources.Add(RootSignature, \"root signature\", 2)");
     }
 
+    /// <summary>Preserves dedicated raw-sky routing, texture readiness, retirement order and constructor-owned pipelines.</summary>
     [Fact]
     public void RawNifSkyUsesDedicatedRendererBeforeGeometryWithoutPlaceholderTextures()
     {
@@ -147,29 +148,26 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
         SourceContract.AssertOrder(
             release,
             "var skyGeometry = _skyGeometry;",
-            "DisposeSceneResourceNoThrow(skyGeometry, \"raw sky renderer\");",
+            "QueueRetiredSceneResource(skyGeometry, \"raw sky renderer\");",
             "_rawSkyCandidates.Clear();",
             "var mesh = _mesh;",
-            "DisposeSceneResourceNoThrow(mesh, \"mesh cache entry\");",
-            "DisposeSceneResourceNoThrow(textureCache, \"texture cache\");");
+            "QueueRetiredSceneResource(mesh, \"mesh cache entry\");",
+            "QueueRetiredSceneResource(textureCache, \"texture cache\", 1);");
         SourceContract.AssertOrder(
             release,
             "_graphics.WaitForGpuIdle();",
-            "catch (Exception ex)",
+            "catch (Exception exception)",
             "var skyGeometry = _skyGeometry;");
 
-        // Constructor-local ownership closes the first/second-PSO failure hole before a session can
-        // receive the renderer; BuildGpuScene can therefore publish Faulted without leaking it.
+        // The shared family is retained before any pipeline allocation. Ordinary constructor failure
+        // releases that family before BuildGpuScene can publish Faulted; borrowed handles are not released twice.
         SourceContract.AssertOrder(
             skyRenderer,
-            "gradient = CreatePso(",
-            "stars = CreatePso(",
-            "clouds = CreatePso(",
+            "_pipelineResources = rootSignature.CreatePipelineResources(3);",
+            "SkyPipelineFactory12.CreateGeometryPipelines(gpu, _pipelineResources)",
             "_psoGradient = gradient;",
             "catch",
-            "clouds?.Dispose();",
-            "stars?.Dispose();",
-            "gradient?.Dispose();");
+            "_pipelineResources.Dispose();");
     }
 
     [Fact]
@@ -342,7 +340,10 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
         Assert.Contains("alphaState.X = submesh.AlphaTestThreshold;", renderer,
             StringComparison.Ordinal);
         Assert.Contains("_alphaToCoverageFallbackCount", renderer, StringComparison.Ordinal);
-        Assert.Contains("AlphaToCoverageEnable = alphaToCoverage", pipelines, StringComparison.Ordinal);
+        var recipe = SourceContract.ReadSource(
+            "src", "BethesdaMultitool", "Core", "Formats", "Nif", "Rendering", "D3D12",
+            "ReferencePipelineRecipe12.cs");
+        Assert.Contains("AlphaToCoverageEnable = state.AlphaToCoverage", recipe, StringComparison.Ordinal);
         Assert.Contains("AlphaToCoverageAvailable = _gpu.SceneSampleCount > 1", pipelines,
             StringComparison.Ordinal);
         Assert.Contains("(true, true, true) => DirectOpaqueDoubleDecalNoDepthA2CPso", pipelines,
@@ -485,8 +486,10 @@ public sealed class BethesdaViewerRenderSession12SourceContractTests
         Assert.Contains("AutomationProperties.Name=\"Load KF animation\"", xaml, StringComparison.Ordinal);
         Assert.Contains("AutomationProperties.Name=\"Animation load status\"", xaml,
             StringComparison.Ordinal);
-        Assert.Contains("if (!_isPresentationActive || !IsEffectivelyVisible())", lifecycle,
-            StringComparison.Ordinal);
-        Assert.Contains("DetachRenderLoop();", lifecycle, StringComparison.Ordinal);
+        Assert.Contains("Viewport.IsEffectivelyVisible()", lifecycle, StringComparison.Ordinal);
+        Assert.DoesNotContain("CompositionTarget.Rendering", lifecycle, StringComparison.Ordinal);
+        var sharedViewport = SourceContract.ReadSource("shared", "Multitool.Shared", "src",
+            "Slfx77.Multitool.WinUI", "Rendering", "NativeViewport.cs");
+        Assert.Contains("CompositionTarget.Rendering -= OnRendering", sharedViewport, StringComparison.Ordinal);
     }
 }

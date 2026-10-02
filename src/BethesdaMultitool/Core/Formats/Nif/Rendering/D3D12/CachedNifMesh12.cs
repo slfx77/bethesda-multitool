@@ -3,6 +3,7 @@ using System.Numerics;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Water;
+using Slfx77.Multitool.Core.Lifetime;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
@@ -10,28 +11,28 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 internal sealed class CachedNifMesh12 : IDisposable
 {
     private readonly GeometryAllocation12 _geometry;
-    private readonly GpuGeometryArena12 _arena;
     private readonly GpuDeletionQueue12 _deletionQueue;
-    private readonly GpuTextureCache12 _textureCache;
+    private readonly GpuMeshResources12 _resources;
+    private ResourceResidencyPin<GpuMeshResources12>? _residencyPin;
+    private bool _residencyOwned;
+    private bool _retirementQueued;
     private bool _texturesReady;
     private bool _disposed;
 
+    /// <summary>Builds CPU presentation around an acquisition owner; the caller commits that owner after construction succeeds.</summary>
     public CachedNifMesh12(
         CachedSubmesh12[] submeshes,
-        GeometryAllocation12 geometry,
-        GpuGeometryArena12 arena,
+        GpuMeshResources12 resources,
         GpuDeletionQueue12 deletionQueue,
-        GpuTextureCache12 textureCache,
         float localBoundsRadius,
         Vector3 localBoundsMin,
         Vector3 localBoundsMax,
         IReadOnlyList<NifWaterGeometry> waterPlanesLocal)
     {
         Submeshes = submeshes;
-        _geometry = geometry;
-        _arena = arena;
+        _geometry = resources.Geometry;
+        _resources = resources;
         _deletionQueue = deletionQueue;
-        _textureCache = textureCache;
         LocalBoundsRadius = localBoundsRadius;
         LocalBoundsMin = localBoundsMin;
         LocalBoundsMax = localBoundsMax;
@@ -118,75 +119,55 @@ internal sealed class CachedNifMesh12 : IDisposable
         }
     }
 
+    /// <summary>Stops drawing and returns the cache pin, or queues standalone resources for retired release.</summary>
+    /// <remarks>Shared residency entries remain the sole native owner for world meshes. Standalone
+    /// transfer failures remain retryable. This method never establishes physical release.</remarks>
     public void Dispose()
     {
-        if (_disposed)
+        _disposed = true;
+        if (_residencyOwned)
         {
+            _residencyPin?.Dispose();
+            _residencyPin = null;
             return;
         }
+        if (_retirementQueued) return;
+        _deletionQueue.EnqueueDispose(_resources);
+        _retirementQueued = true;
+    }
+
+    /// <summary>Releases the actual range and texture references after the caller proves all GPU users retired.</summary>
+    /// <remarks>Failed releases remain owned for retry. Do not mix this path with queued disposal.</remarks>
+    internal void ReleaseAfterRetirement()
+    {
+        if (_residencyOwned)
+            throw new InvalidOperationException("The residency entry owns physical mesh release.");
+        if (_retirementQueued)
+            throw new InvalidOperationException("Queued mesh retirement already owns these resources.");
         _disposed = true;
+        _resources.Dispose();
+    }
 
-        // Defer the arena free by FramesInFlight frames so in-flight draws referencing this mesh's
-        // sub-range drain before the range is handed back out — the same GPU-safety guarantee the
-        // deletion queue gave the per-mesh committed buffers this replaced.
-        _deletionQueue.EnqueueDispose(_arena.DeferredFreeHandle(_geometry));
+    /// <summary>Gets whether the range was returned and every acquired texture reference was released.</summary>
+    internal bool ResourcesReleased => _resources.IsReleased;
 
-        // Release this mesh's references on its submesh textures so the texture cache can evict and
-        // reclaim their bindless slots once no resident mesh needs them. Without this the texture
-        // cache grows unbounded and the persistent descriptor heap exhausts during sustained
-        // streaming (the ~5-minute walk-mode crash). Each GetOrUpload at build time is balanced by
-        // one Release here; shared textures stay alive until their last owning mesh is evicted.
-        foreach (var submesh in Submeshes)
-        {
-            _textureCache.Release(submesh.Diffuse);
-            _textureCache.Release(submesh.Normal);
-            // The optional material maps hold GetOrUpload references too — skipping them leaked
-            // their entries (and bindless slots) on every mesh eviction since the v21/v22 fields.
-            if (submesh.SpecularMap is { } specularMap)
-            {
-                _textureCache.Release(specularMap);
-            }
+    /// <summary>Transfers the cache's initial prepared pin to this presentation without changing native ownership.</summary>
+    /// <param name="pin">Exact resource pin owned by the caller until this method succeeds.</param>
+    internal void AdoptResidencyPin(ResourceResidencyPin<GpuMeshResources12> pin)
+    {
+        ArgumentNullException.ThrowIfNull(pin);
+        if (_disposed || _residencyOwned || _retirementQueued || !ReferenceEquals(pin.Resource, _resources))
+            throw new InvalidOperationException("The mesh cannot adopt this residency pin.");
+        _residencyPin = pin;
+        _residencyOwned = true;
+    }
 
-            if (submesh.GradientMap is { } gradientMap)
-            {
-                _textureCache.Release(gradientMap);
-            }
-
-            if (submesh.Lighting30GlowMap is { } lighting30GlowMap)
-            {
-                _textureCache.Release(lighting30GlowMap);
-            }
-
-            if (submesh.BgsmGlowMap is { } bgsmGlowMap)
-            {
-                _textureCache.Release(bgsmGlowMap);
-            }
-
-            if (submesh.EnvMap is { } envMap)
-            {
-                _textureCache.Release(envMap);
-            }
-
-            if (submesh.ClassicEnvMap is { } classicEnvMap)
-            {
-                _textureCache.Release(classicEnvMap);
-            }
-
-            if (submesh.ClassicEnvMask is { } classicEnvMask)
-            {
-                _textureCache.Release(classicEnvMask);
-            }
-
-            if (submesh.ClassicParallaxHeightMap is { } classicParallaxHeightMap)
-            {
-                _textureCache.Release(classicParallaxHeightMap);
-            }
-
-            if (submesh.StarfieldOpacity is { } starfieldOpacity)
-            {
-                _textureCache.Release(starfieldOpacity);
-            }
-        }
+    /// <summary>Retains the exact mesh for a batch or skinner; standalone previews have no residency entry.</summary>
+    /// <returns>An independent pin, or null for a standalone materialization.</returns>
+    internal ResourceResidencyPin<GpuMeshResources12>? AcquireResidencyPin()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _residencyPin?.Retain();
     }
 }
 #endif

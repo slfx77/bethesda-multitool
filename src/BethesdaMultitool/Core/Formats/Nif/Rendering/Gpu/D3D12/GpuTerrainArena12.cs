@@ -1,5 +1,7 @@
 using BethesdaMultitool.Core.Diagnostics;
 using Vortice.Direct3D12;
+using Slfx77.Multitool.Core.Lifetime;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 
@@ -9,7 +11,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
 ///     vertex-buffer views on slots 0 and 1.
 /// </summary>
 internal readonly record struct TerrainAllocation12(
-    ArenaAllocation Allocation,
+    ByteArenaAllocation Allocation,
     ulong VertexGpuAddress,
     ulong BlendGpuAddress,
     uint VertexBytes,
@@ -70,25 +72,33 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
     /// </summary>
     private const int RegionAlignment = GpuResourceFootprint.ArenaRegionAlignment;
 
-    private readonly GeometryArenaAllocator _allocator;
-    private readonly List<ID3D12Resource> _blockResources = new();
+    private readonly ByteArenaAllocator _allocator;
+    private readonly NativeBufferBlocks _blocks;
     private readonly GpuDevice12 _gpu;
-    private long _committedBytes;
+    private readonly int _threadId = Environment.CurrentManagedThreadId;
     private bool _disposed;
     private ResourceRegistration? _registration;
+    private RetiredResourceDisposal? _retiredResources;
 
+    /// <summary>Creates the terrain range allocator and lazy native owners without committing buffers.</summary>
+    /// <param name="gpu">Borrowed device that outlives every terrain release.</param>
+    /// <param name="blockSize">Default block extent; larger individual ranges use oversized blocks.</param>
     public GpuTerrainArena12(GpuDevice12 gpu, long blockSize = DefaultBlockSize)
     {
+        ArgumentNullException.ThrowIfNull(gpu);
         _gpu = gpu;
-        _allocator = new GeometryArenaAllocator(blockSize)
+        _allocator = new ByteArenaAllocator(blockSize)
         {
             StrictValidation = GeometryArenaDiagnostics.Enabled
         };
+        // Preserve terrain's existing session-high-water policy. Application residency controls
+        // live cell ranges; this extraction introduces no additional physical eviction or cap.
+        _blocks = new NativeBufferBlocks(gpu.Device, HeapType.Default, long.MaxValue);
         StagingRing = new GpuTerrainStagingRing12(gpu);
     }
 
     /// <summary>Arena blocks currently committed.</summary>
-    public int BlockCount => _blockResources.Count;
+    public int BlockCount => _blocks.AllocatedBlockCount;
 
     /// <summary>Live sub-allocated bytes (excludes per-block rounding and free-list holes).</summary>
     public long AllocatedBytes => _allocator.AllocatedBytes;
@@ -96,23 +106,24 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
     /// <summary>The shared staging buffer cell uploads copy through. Exposed for diagnostics.</summary>
     public GpuTerrainStagingRing12 StagingRing { get; }
 
+    /// <summary>Releases GPU-retired native backing, retaining failed releases for later disposal attempts.</summary>
+    /// <remarks>The caller must first retire recorded copies and draws. This owner does not wait on the GPU.</remarks>
     public void Dispose()
     {
-        if (_disposed)
+        VerifyAccess();
+        if (_retiredResources is null)
         {
-            return;
+            var retired = new RetiredResourceDisposal();
+            retired.Add(StagingRing, "terrain staging ring");
+            retired.Add(_blocks, "terrain native backing");
+            retired.Add(_registration, "terrain resource registration", 1);
+            // Publish only after every child is retained. Failed admission leaves all original
+            // fields intact; failed release leaves this complete owner available to retry.
+            _retiredResources = retired;
+            _disposed = true;
+            _registration = null;
         }
-
-        _disposed = true;
-        _registration?.Dispose();
-        _registration = null;
-        StagingRing.Dispose();
-        foreach (var block in _blockResources)
-        {
-            block.Dispose();
-        }
-
-        _blockResources.Clear();
+        _retiredResources.Dispose();
     }
 
     public string ResourceName => nameof(GpuTerrainArena12);
@@ -129,14 +140,20 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
     {
         return new ResourceStats
         {
-            EstimatedBytes = _committedBytes,
-            EntryCount = _blockResources.Count,
+            EstimatedBytes = _blocks.AllocatedBytes,
+            EntryCount = _blocks.AllocatedBlockCount,
             Segment = GpuMemorySegment.Local
         };
     }
 
+    /// <summary>Registers separate terrain backing and staging diagnostics until cleanup succeeds.</summary>
+    /// <param name="registry">Registry that observes independently readable allocation statistics.</param>
+    /// <param name="instanceTag">Optional world or viewer identity.</param>
+    /// <returns>This arena for fluent initialization.</returns>
     public GpuTerrainArena12 RegisterWith(ResourceRegistry registry, string? instanceTag = null)
     {
+        VerifyAccess();
+        ObjectDisposedException.ThrowIf(_disposed, this);
         _registration?.Dispose();
         _registration = registry.Register(this, instanceTag);
         // The staging ring gets its own row rather than folding into this one: its useful signal is
@@ -146,58 +163,72 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
     }
 
     /// <summary>
-    ///     Packs both streams into one range and copies them in through a transient staging buffer
+    ///     Packs both streams into one range and copies them through ring or transient staging
     ///     retired on <paramref name="deletionQueue" />. Must be called during the frame's upload
     ///     phase, before any terrain draw on <paramref name="cmd" />.
+    ///     Retirement is queued before any allocation. The optional nonthrowing
+    ///     <paramref name="retainAllocation" /> captures a provisional range with zero GPU addresses
+    ///     before backing or recording; successful return transfers its cleanup to that caller,
+    ///     including when a later upload step fails. A thrown callback leaves cleanup with the queue.
     /// </summary>
     public TerrainAllocation12 Upload(
         ID3D12GraphicsCommandList cmd,
         GpuDeletionQueue12 deletionQueue,
         ReadOnlySpan<byte> vertexBytes,
         ReadOnlySpan<byte> blendBytes,
-        string? debugTag = null)
+        string? debugTag = null,
+        Action<TerrainAllocation12>? retainAllocation = null)
     {
+        VerifyAccess();
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(cmd);
+        ArgumentNullException.ThrowIfNull(deletionQueue);
         if (vertexBytes.Length == 0)
         {
             throw new ArgumentException("Refusing to upload a cell with no vertices.", nameof(vertexBytes));
         }
 
-        var alignedVertexBytes = (int)AlignUp(vertexBytes.Length, RegionAlignment);
+        var alignedVertexBytes = AlignUp(vertexBytes.Length, RegionAlignment);
         // Same function TerrainCellResidencyPolicy predicts with, so the planned byte budget and the
         // bytes actually charged cannot drift apart.
-        var totalBytes = (int)GpuResourceFootprint.ArenaSubAllocationBytes(
+        var totalBytes = GpuResourceFootprint.ArenaSubAllocationBytes(
             vertexBytes.Length, blendBytes.Length);
 
-        var allocation = _allocator.Allocate(totalBytes);
-        ID3D12Resource stagingResource;
-        ulong stagingOffset;
-        IDisposable stagingRelease;
-        ID3D12Resource? transientStaging = null;
+        // Terrain backing remains resident until arena shutdown, so it needs no separate copy
+        // counter. The queue still owns every staging reservation and unpublished failed range.
+        var rollback = new GpuGeometryUploadRetirement12(FreeAllocation,
+            static _ => { /* Terrain blocks retire only with the arena. */ });
+        deletionQueue.EnqueueDispose(rollback);
         try
         {
-            EnsureBlocksThrough(allocation.BlockIndex);
-
-            // Everything that can throw happens in this block, and the ring reservation is its last
-            // step. That ordering is deliberate: a region taken from the ring and then abandoned by
-            // an exception could only be handed back out of order, and FIFO release is the shared
-            // staging ring's load-bearing invariant.
+            var allocation = _allocator.Allocate(totalBytes);
+            rollback.OwnAllocation(allocation);
+            if (retainAllocation is not null)
+            {
+                retainAllocation(new TerrainAllocation12(allocation, 0, 0,
+                    (uint)vertexBytes.Length, (uint)blendBytes.Length, debugTag));
+                rollback.TransferAllocation();
+            }
+            var backing = EnsureBlocksThrough(allocation.BlockIndex);
+            ID3D12Resource stagingResource;
+            ulong stagingOffset = 0;
             if (StagingRing.TryReserve(totalBytes, out var region))
             {
                 stagingResource = region.Resource;
                 stagingOffset = region.Offset;
-                stagingRelease = region.Release;
+                rollback.OwnStaging(region.Release);
                 WriteStreams((byte*)region.CpuPtr, vertexBytes, alignedVertexBytes, blendBytes);
             }
             else
             {
                 // Ring full, or this grid's cells are larger than the ring will ever serve: stage
                 // through a one-shot committed buffer, exactly as every upload did before the ring.
-                transientStaging = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
+                var transientStaging = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
                     HeapProperties.UploadHeapProperties,
                     HeapFlags.None,
                     ResourceDescription.Buffer((ulong)totalBytes),
                     ResourceStates.GenericRead);
+                rollback.OwnStaging(transientStaging);
 
                 void* cpuPtr = null;
                 transientStaging.Map(0, &cpuPtr).CheckError();
@@ -211,50 +242,38 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
                 }
 
                 stagingResource = transientStaging;
-                stagingOffset = 0;
-                stagingRelease = transientStaging;
             }
+            var block = backing.Resource;
+            // COMMON promotion and the explicit return preserve the existing stateless ordering
+            // for multiple cell copies followed by draws within the same command list.
+            cmd.CopyBufferRegion(block, (ulong)allocation.Offset, stagingResource, stagingOffset, (ulong)totalBytes);
+            cmd.ResourceBarrierTransition(block, ResourceStates.CopyDest, ResourceStates.Common);
+            var gpuBase = block.GPUVirtualAddress + (ulong)allocation.Offset;
+            var result = new TerrainAllocation12(allocation, gpuBase, gpuBase + (ulong)alignedVertexBytes,
+                (uint)vertexBytes.Length, (uint)blendBytes.Length, debugTag);
+            rollback.TransferAllocation();
+            return result;
         }
-        catch
-        {
-            // The allocator already reserved the range; hand it back or AllocatedBytes drifts and
-            // the span leaks as permanently allocated. Commit failure under memory pressure is
-            // expected (E_OUTOFMEMORY was observed on the geometry arena 2026-08-12) and a later
-            // upload retries once pressure eases.
-            transientStaging?.Dispose();
-            _allocator.Free(allocation);
-            throw;
-        }
-
-        var block = _blockResources[allocation.BlockIndex];
-        // Block is in COMMON, so the copy implicitly promotes it to COPY_DEST; the barrier returns
-        // it to COMMON, which both restores the resting state for the next upload and makes this
-        // write visible to the draws that follow.
-        cmd.CopyBufferRegion(block, (ulong)allocation.Offset, stagingResource, stagingOffset, (ulong)totalBytes);
-        cmd.ResourceBarrierTransition(block, ResourceStates.CopyDest, ResourceStates.Common);
-        // Same queue for both staging kinds: a transient buffer is disposed, a ring region is handed
-        // back. Either way it happens only once the fence proves this copy has drained.
-        deletionQueue.EnqueueDispose(stagingRelease);
-
-        var gpuBase = block.GPUVirtualAddress + (ulong)allocation.Offset;
-        return new TerrainAllocation12(
-            allocation,
-            gpuBase,
-            gpuBase + (ulong)alignedVertexBytes,
-            (uint)vertexBytes.Length,
-            (uint)blendBytes.Length,
-            debugTag);
+        finally { rollback.EndUpload(); }
     }
 
     /// <summary>Returns a range to the free-list. No-op after <see cref="Dispose" />.</summary>
     public void Free(TerrainAllocation12 allocation)
     {
+        FreeAllocation(allocation.Allocation);
+    }
+
+    /// <summary>Returns an exact unpublished or retired range, with harmless late callbacks after GPU-idle shutdown.</summary>
+    /// <param name="allocation">Owned range whose copies and draws have retired.</param>
+    private void FreeAllocation(ByteArenaAllocation allocation)
+    {
+        VerifyAccess();
         if (_disposed)
         {
             return;
         }
 
-        _allocator.Free(allocation.Allocation);
+        _allocator.Free(allocation);
     }
 
     /// <summary>
@@ -269,25 +288,14 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
     }
 
     /// <summary>
-    ///     Commits blocks in order up to and including <paramref name="requiredBlockIndex" /> —
-    ///     never "through the allocator's full count", so a tail block whose commit failed under
-    ///     memory pressure cannot hold hostage an upload landing in an already-backed earlier block.
+    ///     Backs only the requested stable slot, retaining partial initialization for retry.
+    ///     Failure in a different block cannot prevent reuse of an already-backed block.
     /// </summary>
-    private void EnsureBlocksThrough(int requiredBlockIndex)
+    /// <param name="requiredBlockIndex">Allocator-selected block with its fixed usable extent.</param>
+    /// <returns>Borrowed DEFAULT-heap backing retained until GPU-idle arena shutdown.</returns>
+    private NativeBufferBlock EnsureBlocksThrough(int requiredBlockIndex)
     {
-        while (_blockResources.Count <= requiredBlockIndex)
-        {
-            var blockBytes = _allocator.BlockSizeOf(_blockResources.Count);
-            // Buffers are always created in COMMON — D3D12 ignores any other initial state and the
-            // debug layer warns if one is supplied.
-            var resource = _gpu.Device.CreateCommittedResource<ID3D12Resource>(
-                HeapProperties.DefaultHeapProperties,
-                HeapFlags.None,
-                ResourceDescription.Buffer((ulong)blockBytes),
-                ResourceStates.Common);
-            _blockResources.Add(resource);
-            _committedBytes += blockBytes;
-        }
+        return _blocks.EnsureBlock(requiredBlockIndex, _allocator.BlockSizeOf(requiredBlockIndex));
     }
 
     /// <summary>
@@ -297,7 +305,7 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
     ///     a second pass over every cell.
     /// </summary>
     private static void WriteStreams(
-        byte* destination, ReadOnlySpan<byte> vertexBytes, int alignedVertexBytes, ReadOnlySpan<byte> blendBytes)
+        byte* destination, ReadOnlySpan<byte> vertexBytes, long alignedVertexBytes, ReadOnlySpan<byte> blendBytes)
     {
         vertexBytes.CopyTo(new Span<byte>(destination, vertexBytes.Length));
         if (blendBytes.Length > 0)
@@ -306,15 +314,28 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
         }
     }
 
+    /// <summary>Rounds a nonnegative size to the power-of-two alignment, rejecting arithmetic overflow.</summary>
     private static long AlignUp(long value, int alignment)
     {
-        return (value + alignment - 1) & ~((long)alignment - 1);
+        return checked(value + (alignment - 1L)) & ~((long)alignment - 1);
     }
 
+    /// <summary>Rejects mutations outside the creating render thread before changing any ownership.</summary>
+    private void VerifyAccess()
+    {
+        if (Environment.CurrentManagedThreadId != _threadId)
+            throw new InvalidOperationException("Terrain arena lifetime belongs to its creating render thread.");
+    }
+
+    /// <summary>Returns one retired terrain range once, retaining failed release attempts for retry.</summary>
+    /// <param name="arena">The exact owner of the range.</param>
+    /// <param name="allocation">The range whose GPU users have retired before disposal.</param>
     private sealed class FreeHandle(GpuTerrainArena12 arena, TerrainAllocation12 allocation) : IDisposable
     {
+        /// <summary>Becomes true only after the arena accepts the range return.</summary>
         private bool _freed;
 
+        /// <summary>Returns the range or retries a prior failed return without losing its ownership.</summary>
         public void Dispose()
         {
             if (_freed)
@@ -322,8 +343,8 @@ internal sealed unsafe class GpuTerrainArena12 : ITrackableResource, IDisposable
                 return;
             }
 
-            _freed = true;
             arena.Free(allocation);
+            _freed = true;
         }
     }
 }

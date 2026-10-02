@@ -191,7 +191,8 @@ internal static class FaceGenHeadShaderFamilyResolver
         }
 
         var composed = ApplyDetailModulation(effectiveDiffuseTexture, DefaultFaceGenMap1Texture);
-        textureResolver.InjectTexture(generatedDiffuseTextureKey, composed);
+        textureResolver.InjectTexture(generatedDiffuseTextureKey, composed,
+            new("Default FaceGenMap1 modulation", [effectiveDiffusePath], ObservedInputs: [new(effectiveDiffusePath, [.. effectiveDiffuseTexture.AssetReadReceipts])]));
         return generatedDiffuseTextureKey;
     }
 

@@ -70,6 +70,7 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
         Assert.Equal(10, ShaderPermutations.All.Count(IsModernStandard));
     }
 
+    /// <summary>Pins atomic specialization publication, classifier routing and membership in retained fixed-pipeline retirement.</summary>
     [Fact]
     public void PipelineFactoryPublishesAllThreePsosAtomicallyAndRoutesEveryClassifierVariant()
     {
@@ -86,10 +87,10 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
             source,
             "public bool TryGetModernStandardOpaquePso(",
             "/// <summary>Depth-only shadow-pass PSO");
-        var dispose = SourceContract.Extract(
+        var retirement = SourceContract.Extract(
             source,
-            "public void Dispose()",
-            "private readonly record struct BlendPipelineKey(");
+            "private RetiredResourceDisposal PrepareRetiredResources()",
+            "private void VerifyAccess()");
 
         Assert.Contains(
             "EnvironmentVariables.Get(EnvironmentVariables.Viewer.ReferenceModernStandardShader)",
@@ -112,10 +113,10 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
             create, $"new ShaderMacro(\"{DoubleSidedMacro}\", \"1\")"));
         Assert.Equal(2, SourceContract.CountOccurrences(
             create, "\"reference_instanced.vert.hlsl\", \"main\", \"vs_5_1\""));
-        Assert.Contains("backVs, backPs, doubleSided: false", create, StringComparison.Ordinal);
-        Assert.Contains("cutoutVs, backCutoutPs, doubleSided: false", create,
+        Assert.Contains("backVs, backPs, new ReferencePipelineRenderState12(\n                    DoubleSided: false", create, StringComparison.Ordinal);
+        Assert.Contains("cutoutVs, backCutoutPs, new ReferencePipelineRenderState12(\n                    DoubleSided: false", create,
             StringComparison.Ordinal);
-        Assert.Contains("cutoutVs, doubleCutoutPs, doubleSided: true", create,
+        Assert.Contains("cutoutVs, doubleCutoutPs, new ReferencePipelineRenderState12(\n                    DoubleSided: true", create,
             StringComparison.Ordinal);
         SourceContract.AssertOrder(
             create,
@@ -125,10 +126,10 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
             "_modernStandardBackPso = back;",
             "_modernStandardBackCutoutPso = backCutout;",
             "_modernStandardDoubleCutoutPso = doubleCutout;",
+            "published = true;",
             "finally",
-            "DisposeAbandonedConstructionPipeline(ref doubleCutout);",
-            "DisposeAbandonedConstructionPipeline(ref backCutout);",
-            "DisposeAbandonedConstructionPipeline(ref back);");
+            "if (!published && pipelineResources is not null)",
+            "ReleaseUnpublishedPipelineFamily(pipelineResources);");
         Assert.Contains("catch (Exception ex) when (ex is not OutOfMemoryException)", create,
             StringComparison.Ordinal);
 
@@ -164,10 +165,10 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
         Assert.Equal(2, SourceContract.CountOccurrences(
             directCreate, "\"reference.vert.hlsl\", \"main\", \"vs_5_1\""));
         Assert.DoesNotContain("reference_instanced.vert.hlsl", directCreate, StringComparison.Ordinal);
-        Assert.Equal(3, SourceContract.CountOccurrences(directCreate, "blendAttachment: null"));
-        Assert.Equal(3, SourceContract.CountOccurrences(directCreate, "depthWriteEnabled: true"));
-        Assert.DoesNotContain("alphaToCoverage:", directCreate, StringComparison.Ordinal);
-        Assert.DoesNotContain("decal:", directCreate, StringComparison.Ordinal);
+        Assert.Equal(3, SourceContract.CountOccurrences(directCreate, "BlendAttachment: null"));
+        Assert.Equal(3, SourceContract.CountOccurrences(directCreate, "DepthWriteEnabled: true"));
+        Assert.DoesNotContain("AlphaToCoverage:", directCreate, StringComparison.Ordinal);
+        Assert.DoesNotContain("Decal:", directCreate, StringComparison.Ordinal);
         SourceContract.AssertOrder(
             directCreate,
             "back = CreatePipelineState(",
@@ -176,10 +177,10 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
             "_directModernStandardBackPso = back;",
             "_directModernStandardBackCutoutPso = backCutout;",
             "_directModernStandardDoubleCutoutPso = doubleCutout;",
+            "published = true;",
             "finally",
-            "DisposeAbandonedConstructionPipeline(ref doubleCutout);",
-            "DisposeAbandonedConstructionPipeline(ref backCutout);",
-            "DisposeAbandonedConstructionPipeline(ref back);");
+            "if (!published && pipelineResources is not null)",
+            "ReleaseUnpublishedPipelineFamily(pipelineResources);");
         Assert.Contains("public bool DirectModernStandardOpaqueAvailable =>", route,
             StringComparison.Ordinal);
         Assert.Contains("public bool TryGetDirectModernStandardOpaquePso(", route,
@@ -197,15 +198,10 @@ public sealed class ModernStandardOpaqueShaderIntegrationContractTests
             route,
             StringComparison.Ordinal);
 
-        Assert.Contains("_modernStandardDoubleCutoutPso?.Dispose();", dispose, StringComparison.Ordinal);
-        Assert.Contains("_modernStandardBackCutoutPso?.Dispose();", dispose, StringComparison.Ordinal);
-        Assert.Contains("_modernStandardBackPso?.Dispose();", dispose, StringComparison.Ordinal);
-        Assert.Contains("_directModernStandardDoubleCutoutPso?.Dispose();", dispose,
-            StringComparison.Ordinal);
-        Assert.Contains("_directModernStandardBackCutoutPso?.Dispose();", dispose,
-            StringComparison.Ordinal);
-        Assert.Contains("_directModernStandardBackPso?.Dispose();", dispose,
-            StringComparison.Ordinal);
+        SourceContract.AssertOrder(create, "pipelineResources = RetainPipelineFamily(3);", "CompileEmbeddedShader(");
+        SourceContract.AssertOrder(directCreate, "pipelineResources = RetainPipelineFamily(3);", "CompileEmbeddedShader(");
+        Assert.Contains("retired.Add(_pipelineFamilies[index],", retirement, StringComparison.Ordinal);
+        Assert.DoesNotContain(".Dispose();", retirement, StringComparison.Ordinal);
 
         // Specialized main-pass shaders intentionally omit the neutral clip instruction. Every
         // possible mirror replay route must therefore map back to an uber PSO that consumes b3.

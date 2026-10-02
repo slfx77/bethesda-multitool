@@ -75,6 +75,13 @@ internal sealed class NifSchemaConverter
 
         var context = new NifConversionContext(buf, startPos, dataSectionEnd, EmptyRemap, _fieldValues, blockType);
         _valueConverter.ConvertFields(context, objDef.AllFields);
+        if (context.Incomplete)
+        {
+            // The walk skipped an over-long array or ran out of data: the position is not this block's size, and a
+            // legacy layout built from it would carry wrong offsets for every later block.
+            return (-1, context.CapturedName);
+        }
+
         return (context.Position - startPos, context.CapturedName);
     }
 

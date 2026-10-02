@@ -1,0 +1,231 @@
+{
+  "schema": "bmt-nif-directory-case-resolution-delta-review/v1",
+  "createdUtc": "2026-09-21T04:49:55.573847+00:00",
+  "baseCommit": "862d3add7a48ef6e50123ce8346b77cda78586c7",
+  "sharedPin": "88326240d9603a2092886934eed6d63275fdbcf7",
+  "status": "applied_source_review_only",
+  "hashConvention": {
+    "source": "SHA-256 of UTF-8 source after CRLF/CR to LF normalization; no trimming.",
+    "declaration": "Exact Tree-sitter declaration byte span, excluding preceding XML comments and trailing whitespace.",
+    "signature": "Declaration start through block, arrow-expression or accessor-list start, with trailing whitespace removed.",
+    "body": "Exact block, arrow-expression clause or accessor-list bytes."
+  },
+  "scope": "All callable declarations in the changed directory source. Resource bounds concern name resolution; existing whole-payload reads and decoder behavior are delegated. No broader filesystem, archive or texture-cache acceptance.",
+  "variables": {
+    "L": "Requested path characters, at most 32,767 for admitted requests.",
+    "R": "Canonical root path length.",
+    "D": "Non-dot path segments, bounded by L.",
+    "K": "Per-request processed-entry budget; default 65,536, shared by primary and alternate.",
+    "F": "Maximum observed physical entry-path length.",
+    "B": "Selected payload bytes; not bounded by this lookup change."
+  },
+  "files": [
+    {
+      "path": "src/BethesdaMultitool/Core/Formats/Nif/Rendering/Textures/NifTextureDirectorySource.cs",
+      "sourceSha256Lf": "afcd70c2a7d359bd975cb9cae15b9124f30e6b58e35ab1f940015eb840f54ca2",
+      "declarations": [
+        {
+          "name": "NifTextureDirectorySource",
+          "kind": "constructor_declaration",
+          "line": 18,
+          "endLine": 23,
+          "declarationSha256Lf": "0bf6b9bb20f545eddf678f7f02b076254b63a72057aa9abc63ef6a750bd9cd77",
+          "signatureSha256Lf": "b5800f2cd7115a8b8f61bdea1480c484ac9a0ec3dfea9b5e0634a335f82a4deb",
+          "bodySha256Lf": "e3577b7651130d3c2e44ee3bda018d6beb41d9b7fa8113a8eae97d719eee8e49",
+          "changeScope": "changed",
+          "timeBound": "O(R) path canonicalization.",
+          "spaceBound": "O(R) retained canonical root plus two scalar limits.",
+          "review": "Rejects a negative budget. Default K=65,536; no directory enumeration or payload read occurs in construction."
+        },
+        {
+          "name": "TryLoad",
+          "kind": "method_declaration",
+          "line": 26,
+          "endLine": 41,
+          "declarationSha256Lf": "ba2c343ef8a45225cc9033b1e9486f261b62174373a16bc3d9422ca143b13e55",
+          "signatureSha256Lf": "acb44c182b5035f325573fc74718b1089647d9288d9890b7abdf98dbca377459",
+          "bodySha256Lf": "0c2795ff25740510b9a88cd96f8a3e22c69dd84fec84f5b0a000b2ddddc822fd",
+          "changeScope": "changed",
+          "timeBound": "O(L + D filesystem metadata operations + sum of observed entry-path/name lengths); at most K processed entries plus one extra iterator yield, across the request and optional fallback. At most two whole-file reads and existing decoder calls.",
+          "spaceBound": "Lookup storage plus existing payload byte arrays and decoder outputs/workspace. No new byte-size cap.",
+          "review": "Shares the entry budget between primary and DDS/DDX alternate; refused primary lookup stops fallback, while primary read/decode failure retains alternate behavior."
+        },
+        {
+          "name": "Exists",
+          "kind": "method_declaration",
+          "line": 44,
+          "endLine": 57,
+          "declarationSha256Lf": "4d1aa0a8b2067f8c7ff096b4e890ae2492cebed041330252ec7f169903b3164e",
+          "signatureSha256Lf": "1c9507d6b1a572b6fe9538223a2901db2d121a83da17f5f070dcd224501f7b30",
+          "bodySha256Lf": "37f52f733739e45590aeeb354e582d07674c300a250fc8b6a08be16aecc0b82f",
+          "changeScope": "changed",
+          "timeBound": "O(L + D filesystem metadata operations + sum of observed entry-path/name lengths); at most K processed entries plus one extra iterator yield, across the request and optional fallback.",
+          "spaceBound": "O(L + R + F) live helper strings/references, excluding filesystem iterator internals and deferred GC; cumulative temporary entry-path string allocation is proportional to observed path lengths. No retained index.",
+          "review": "Checks primary then allowed alternate under the same budget; it does not decode or prove file readability."
+        },
+        {
+          "name": "TryLoadRaw",
+          "kind": "method_declaration",
+          "line": 60,
+          "endLine": 76,
+          "declarationSha256Lf": "fbec638951554ab66494f63f8920d5981cd4cc358cf64eae065b960dda4a884d",
+          "signatureSha256Lf": "95e11048770ecb483ff843a7ce8642a9c9be2f806f9e4acf0543f97dc5ad30ff",
+          "bodySha256Lf": "f1516b54d9b1f396638651e6e5bc06faf2ceca100b275ecee684dc6728ea283e",
+          "changeScope": "changed",
+          "timeBound": "O(L + D filesystem metadata operations + sum of observed entry-path/name lengths); at most K processed entries plus one extra iterator yield, across the request and optional fallback. Plus O(B) whole-file read.",
+          "spaceBound": "O(L + R + F) live helper strings/references, excluding filesystem iterator internals and deferred GC; cumulative temporary entry-path string allocation is proportional to observed path lengths. No retained index. Plus O(B) returned byte array.",
+          "review": "Uses only the requested extension. Lookup entry limits do not bound B. Existing read failure returns null."
+        },
+        {
+          "name": "TryGetAssetMetadata",
+          "kind": "method_declaration",
+          "line": 79,
+          "endLine": 103,
+          "declarationSha256Lf": "42eaf7eef1667bcfcc9a938d7dde068fa121ff1309ef0a4c3267f54a1b98cc7f",
+          "signatureSha256Lf": "4e5d51289e0ff352290db059a4062083da6f6fcab8ff5c6eb8393a36da989b4c",
+          "bodySha256Lf": "5ac4dd5913ac9e523f8ee3c0804c4654c3d53f89b36c3401ad72dac5985e52fd",
+          "changeScope": "changed",
+          "timeBound": "O(L + D filesystem metadata operations + sum of observed entry-path/name lengths); at most K processed entries plus one extra iterator yield, across the request and optional fallback. Plus a final filesystem metadata read.",
+          "spaceBound": "O(L + R + F) live helper strings/references, excluding filesystem iterator internals and deferred GC; cumulative temporary entry-path string allocation is proportional to observed path lengths. No retained index. Plus metadata/path object storage.",
+          "review": "Uses only the requested extension and preserves actual physical spelling, length and last-write ticks. This is not an atomic content snapshot."
+        },
+        {
+          "name": "Dispose",
+          "kind": "method_declaration",
+          "line": 106,
+          "endLine": 109,
+          "declarationSha256Lf": "29376f263f7ee03282e6fed8d54cd663131839a5708fe8eb6e62f66f2efae13b",
+          "signatureSha256Lf": "6b9508761cab86c4eb6676cff18b8c9f69d025c1903bf0f6f3cda86f194cfed4",
+          "bodySha256Lf": "130bd12fd95e272d1381438fd402fa3c5a47912f1b3906f0c986ae8d0ec2a5b6",
+          "changeScope": "unchanged_contract",
+          "timeBound": "O(1)",
+          "spaceBound": "O(1)",
+          "review": "No index, handle or decoded texture is retained."
+        },
+        {
+          "name": "AlternatePath",
+          "kind": "method_declaration",
+          "line": 114,
+          "endLine": 121,
+          "declarationSha256Lf": "db3b0a5e25ba89c3abd9f50f8730f3c00f1750a5f3e7224ba67bd4ab36c52c75",
+          "signatureSha256Lf": "9d4fcfe549cd1156deff594adf3736250a0ffa0d15f8198004c255e1328ee1cd",
+          "bodySha256Lf": "3ee98febec6e01a5b199742d8dcbb41d2f6920adfe05fc349efc40ace97744d4",
+          "changeScope": "changed",
+          "timeBound": "O(L) when constructing the replacement extension.",
+          "spaceBound": "O(L) alternate path string.",
+          "review": "Only .dds and .ddx are alternates; comparison is ordinal-insensitive."
+        },
+        {
+          "name": "TryDecodeFile",
+          "kind": "method_declaration",
+          "line": 126,
+          "endLine": 141,
+          "declarationSha256Lf": "1668986f1331b5540139802a538d6da1986adee8bc923084dedd183a69e80f55",
+          "signatureSha256Lf": "bde19997eeee0963b0f40442a441b322b5ffc82346d9ad369a94261d419e51e7",
+          "bodySha256Lf": "31015840f684af7418cf6a491992a57953368934dc5b18fc0d4d49bc5187fc6d",
+          "changeScope": "changed",
+          "timeBound": "O(B) read plus delegated decoder time.",
+          "spaceBound": "O(B) source array plus delegated decoder allocations/output.",
+          "review": "No new input-byte or decoded-size admission. At most one decode per invocation; existing catch-and-null fallback semantics remain."
+        },
+        {
+          "name": "ResolveLocalPath",
+          "kind": "method_declaration",
+          "line": 148,
+          "endLine": 214,
+          "declarationSha256Lf": "e2a7c66be2931b922f276377d08abac50d9982f374231db290cb0054e3b77e37",
+          "signatureSha256Lf": "16598aba8c8108173563cd3a33844f34ded07be77810e7d3349ff14d628f7c48",
+          "bodySha256Lf": "63383f531cbc7709d6a122d7cb88f116c1bd437a70f0c5911756593be17ca88d",
+          "changeScope": "changed",
+          "timeBound": "O(L + D filesystem metadata operations + sum of observed entry-path/name lengths); at most K processed entries plus one extra iterator yield, across the request and optional fallback.",
+          "spaceBound": "O(L + R + F) live helper strings/references, excluding filesystem iterator internals and deferred GC; cumulative temporary entry-path string allocation is proportional to observed path lengths. No retained index.",
+          "review": "Validates root-relative scope, length <=32,767 and no parent segments. Each segment requires one unique OrdinalIgnoreCase sibling after complete enumeration. Duplicate aliases refuse even an exact spelling. Enumerator disposal follows foreach exits. The zero-budget check occurs after MoveNext, allowing one extra yielded entry. Links remain followed; this is lookup scope, not a filesystem sandbox."
+        }
+      ]
+    }
+  ],
+  "resourceBounds": {
+    "enumeration": "At most K processed sibling entries and one additional iterator yield. Empty-directory and metadata operations depend on D. No recursive traversal or persistent cache.",
+    "allocation": "Streaming lookup retains no collection of siblings, but enumeration allocates path strings; the budget is not a process-memory ceiling.",
+    "payload": "TryLoadRaw and TryDecodeFile still read complete files; decoder costs remain unchanged and unbounded by K.",
+    "lifetime": "Requests are synchronous, open no retained handles and add no cancellation. Symlink/junction behavior is preserved. Filesystem races between enumeration, metadata and read are not eliminated."
+  },
+  "validation": {
+    "sourceReview": "Applied candidate source reviewed; no SDK/build/test command was run by this review.",
+    "expectedFocusedCases": 20,
+    "caseSensitiveCoverage": "Tests branch without skips on actual alias support. Upcoming Linux run uses /tmp ext4; Windows unique-name execution alone is not alias-collision acceptance.",
+    "executionAtCreation": "Root coordinated Linux label 20260920-nif-egm is active with 291 focused plus 2 accessibility cases; results pending.",
+    "fixtureLimits": "Synthetic DDS bytes under DDX suffix test routing, not DDX codec fidelity. No new runtime link/junction fixture."
+  },
+  "followUps": [
+    "Run changed-source focused tests on case-sensitive and Windows filesystems; retain actual branch/platform evidence.",
+    "Measure the changed assembly with the bounded existing 100/10,000-sibling helper, same host/filesystem and pinned assembly identity as appropriate. Baseline timings alone do not establish a regression result.",
+    "Validate current GUI texture workflows separately; this source review supplies no interactive acceptance."
+  ],
+  "measuredBaselineOnly": {
+    "receipt": "TestOutput/nif-directory-case-resolution-20260920/baseline-cost.json",
+    "receiptSha256": "333724e0049f2d25857bf524027949ae6d1f1342bb20c941621338b4be261ba4",
+    "assemblySha256": "2ff9e2c9f7fb3de4402d2390438f8a96dde34da03080b8c1cfa8e06a12ea8bdb",
+    "hostFramework": ".NET 10.0.12",
+    "os": "Microsoft Windows 10.0.26200",
+    "fileSystem": "NTFS",
+    "warmupRequests": 3,
+    "measuredRequests": 6,
+    "measurements": [
+      {
+        "fileCount": 100,
+        "case": "mixed-case-primary-probe",
+        "milliseconds": 3.047,
+        "resultVerified": true
+      },
+      {
+        "fileCount": 100,
+        "case": "mixed-case-primary-byte-hit",
+        "milliseconds": 0.6518,
+        "resultVerified": true
+      },
+      {
+        "fileCount": 100,
+        "case": "mixed-case-ddx-fallback-probe",
+        "milliseconds": 0.2665,
+        "resultVerified": true
+      },
+      {
+        "fileCount": 10000,
+        "case": "mixed-case-primary-probe",
+        "milliseconds": 0.1559,
+        "resultVerified": true
+      },
+      {
+        "fileCount": 10000,
+        "case": "mixed-case-primary-byte-hit",
+        "milliseconds": 0.2774,
+        "resultVerified": true
+      },
+      {
+        "fileCount": 10000,
+        "case": "mixed-case-ddx-fallback-probe",
+        "milliseconds": 0.2429,
+        "resultVerified": true
+      }
+    ],
+    "candidateMeasured": false,
+    "limitation": "One sample per operation/size after warmup. Includes reflection and filesystem latency; no cold-cache claim, broad benchmark or performance acceptance threshold. Compare separately source-verified baseline/candidate receipts on the same host/filesystem."
+  },
+  "testSources": [
+    {
+      "path": "tests/BethesdaMultitool.Tests/Core/Formats/Nif/Rendering/Textures/NifTextureDirectorySourceTests.cs",
+      "sourceSha256Lf": "92472bc8a530b957b00ff7f03dcc91e6a96e2dcecf751e3779c17cee25e47d32"
+    }
+  ],
+  "appliedArtifact": {
+    "path": "TestOutput/nif-directory-case-resolution-20260920/directory-source.patch",
+    "sha256": "dbd51f73d3551d019594e544f497154f29c320326300bea7b76e16d40d1f8423",
+    "scope": "Reviewed candidate applied by root after checkpoint 862d3add; this receipt hashes actual applied production and test files."
+  },
+  "independentReview": {
+    "reviewer": "completion_scope_review",
+    "scope": "Read-only documentation/receipt resource, policy and validation scope; no source hash audit, build or test execution by this reviewer.",
+    "result": "No concrete scope or resource-bound overclaim found. Source-review/pending execution, lookup budget versus payload cost, and topology routing versus statistical-domain admission remain explicit."
+  }
+}

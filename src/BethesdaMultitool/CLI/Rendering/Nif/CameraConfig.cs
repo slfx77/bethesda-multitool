@@ -56,7 +56,9 @@ internal sealed class CameraConfig
                 elevation = ElevationDeg;
             }
 
-            return views.Select(v => (v.Suffix, v.Azimuth + defaultAzimuth, elevation)).ToArray();
+            // Named side views use fixed model axes. A single-view front default must not rotate their labels.
+            var azimuthOffset = SideProfile ? 0f : defaultAzimuth;
+            return views.Select(v => (v.Suffix, v.Azimuth + azimuthOffset, elevation)).ToArray();
         }
 
         // Single view: use explicit elevation if set, otherwise the caller's default

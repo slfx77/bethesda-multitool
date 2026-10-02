@@ -1,7 +1,7 @@
-#if WINDOWS_GUI
 using System.Globalization;
-using System.Reflection;
 using BethesdaMultitool.Core.Formats.Nif.Rendering.Gpu.D3D12;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Terrain;
+using Slfx77.Multitool.WinUI.Direct3D12.Shaders;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
 using Vortice.Direct3D12;
@@ -12,7 +12,7 @@ namespace BethesdaMultitool.Core.Formats.Nif.Rendering.D3D12;
 
 /// <summary>
 ///     Compiles the embedded terrain HLSL shaders and builds the graphics pipeline states the
-///     <see cref="TerrainRenderer12" /> uses: the textured color PSO and its mirror-winding twin, a
+///     <c>TerrainRenderer12</c> uses: the textured color PSO and its mirror-winding twin, a
 ///     depth-only variant (same vertex path + depth state, no pixel shader, no render targets) for
 ///     the top-down overlay's depth pre-pass, and the sun-shadow depth PSO. Pure setup — holds no
 ///     state and issues no GPU commands.
@@ -31,20 +31,22 @@ internal static class TerrainPipelineFactory12
     /// <summary>The macro both terrain shaders switch their layer-weight count on.</summary>
     public const string BlendQuadMacro = "TERRAIN_BLEND_QUADS";
 
-    /// <summary>
-    ///     Forwards to the one shared compiler — see <see cref="GpuShaderCompiler12" />. This was one
-    ///     of a dozen copy-pasted private compilers that had drifted apart on shader flags and
-    ///     manifest lookup; the flag decision is now made once, unconditionally.
-    /// </summary>
-    public static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
+    /// <summary>Gets an embedded shader permutation through the application cache and Shared compiler.</summary>
+    /// <param name="name">Embedded shader file name.</param>
+    /// <param name="entryPoint">HLSL entry point.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <returns>Read-only cached DXBC passed directly to native pipeline creation without a payload copy.</returns>
+    public static ReadOnlyMemory<byte> CompileEmbeddedShader(string name, string entryPoint, string profile) =>
         GpuShaderCompiler12.Compile(name, entryPoint, profile);
 
     /// <summary>Terrain vertex shader reading <paramref name="blendQuadCount" /> layer-weight quads.</summary>
-    public static byte[] CompileVertexShader(int blendQuadCount) =>
+    /// <returns>Read-only cached vertex bytecode for the requested layer-weight layout.</returns>
+    public static ReadOnlyMemory<byte> CompileVertexShader(int blendQuadCount) =>
         GpuShaderCompiler12.Compile(VertexShaderFile, "main", "vs_5_1", BlendQuadMacros(blendQuadCount));
 
     /// <summary>Terrain pixel shader for the same count. Never compiled at 0 — see the class remarks.</summary>
-    public static byte[] CompilePixelShader(int blendQuadCount) =>
+    /// <returns>Read-only cached pixel bytecode for the requested layer-weight layout.</returns>
+    public static ReadOnlyMemory<byte> CompilePixelShader(int blendQuadCount) =>
         GpuShaderCompiler12.Compile(PixelShaderFile, "main", "ps_5_1", BlendQuadMacros(blendQuadCount));
 
     /// <summary>
@@ -73,14 +75,27 @@ internal static class TerrainPipelineFactory12
     ///     bytecode and the matching terrain input layout. Both share the reversed-Z depth state,
     ///     back-face cull, and MSAA settings.
     /// </summary>
+    /// <param name="gpu">Borrowed device supplying the scene sample count.</param>
+    /// <param name="pipelineResources">Retained family sharing the world root and owning the returned handles.</param>
+    /// <param name="blendQuadCount">Layer-weight width, from one through the maximum supported terrain width.</param>
+    /// <param name="vsBytecode">Compiled vertex shader matching the requested layer-weight width.</param>
+    /// <param name="psBytecode">Compiled pixel shader matching the requested layer-weight width.</param>
+    /// <param name="inputElements">Vertex layout matching both shader permutations.</param>
+    /// <returns>Borrowed color and mirror handles, published together only after both are available.</returns>
+    /// <remarks>A failed mirror allocation leaves the first handle owned for a retry using the same permutation.</remarks>
+    /// <exception cref="ArgumentOutOfRangeException">The layer-weight width is outside the supported range.</exception>
     public static (ID3D12PipelineState Pso, ID3D12PipelineState MirrorPso)
         BuildColorPipelineStates(
         GpuDevice12 gpu,
-        GpuRootSignature12 rootSignature,
-        byte[] vsBytecode,
-        byte[] psBytecode,
+        ShaderPipelineResources pipelineResources,
+        int blendQuadCount,
+        ReadOnlyMemory<byte> vsBytecode,
+        ReadOnlyMemory<byte> psBytecode,
         InputElementDescription[] inputElements)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(blendQuadCount, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(blendQuadCount, TerrainVertexLayout.MaxBlendQuads);
+        var colorSlot = 2 + 2 * (blendQuadCount - 1);
         var rasterizer = new D12.RasterizerDescription
         {
             FillMode = D12.FillMode.Solid,
@@ -113,7 +128,7 @@ internal static class TerrainPipelineFactory12
 
         var psoDesc = new GraphicsPipelineStateDescription
         {
-            RootSignature = rootSignature.RootSignature,
+            RootSignature = pipelineResources.RootSignature,
             VertexShader = vsBytecode,
             PixelShader = psBytecode,
             BlendState = blend,
@@ -126,7 +141,10 @@ internal static class TerrainPipelineFactory12
             SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
-        var pso = gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        if (!pipelineResources.TryGetPipeline(colorSlot, out var pso))
+        {
+            pso = pipelineResources.CreateGraphics(colorSlot, psoDesc);
+        }
 
         // Mirror-winding twin of the color PSO for the water-reflection pass: a mirrored
         // (negative-determinant) viewProj flips screen-space winding, so the mirror pass draws
@@ -135,9 +153,12 @@ internal static class TerrainPipelineFactory12
         mirrorRasterizer.FrontCounterClockwise = false;
         var mirrorPsoDesc = psoDesc;
         mirrorPsoDesc.RasterizerState = mirrorRasterizer;
-        var mirrorPso = gpu.Device.CreateGraphicsPipelineState(mirrorPsoDesc);
+        if (!pipelineResources.TryGetPipeline(colorSlot + 1, out var mirrorPso))
+        {
+            mirrorPso = pipelineResources.CreateGraphics(colorSlot + 1, mirrorPsoDesc);
+        }
 
-        return (pso, mirrorPso);
+        return (pso!, mirrorPso!);
     }
 
     /// <summary>
@@ -146,15 +167,20 @@ internal static class TerrainPipelineFactory12
     ///     overlay pre-pass. Built from the quad-count-0 vertex shader and layout, so this pass
     ///     fetches no layer weights at all — it discarded every one of them before.
     /// </summary>
+    /// <param name="gpu">Borrowed device supplying the scene sample count.</param>
+    /// <param name="pipelineResources">Retained family sharing the world root and owning reserved slot zero.</param>
+    /// <param name="vsBytecode">Compiled zero-quad vertex shader.</param>
+    /// <param name="inputElements">Zero-quad terrain vertex layout.</param>
+    /// <returns>The borrowed depth-only handle retained by the family.</returns>
     public static ID3D12PipelineState BuildDepthOnlyPipelineState(
         GpuDevice12 gpu,
-        GpuRootSignature12 rootSignature,
-        byte[] vsBytecode,
+        ShaderPipelineResources pipelineResources,
+        ReadOnlyMemory<byte> vsBytecode,
         InputElementDescription[] inputElements)
     {
         var psoDesc = new GraphicsPipelineStateDescription
         {
-            RootSignature = rootSignature.RootSignature,
+            RootSignature = pipelineResources.RootSignature,
             VertexShader = vsBytecode,
             BlendState = D12.BlendDescription.Opaque,
             RasterizerState = new D12.RasterizerDescription
@@ -179,7 +205,7 @@ internal static class TerrainPipelineFactory12
             SampleDescription = new SampleDescription((uint)gpu.SceneSampleCount, 0),
             SampleMask = uint.MaxValue,
         };
-        return gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        return pipelineResources.CreateGraphics(0, psoDesc);
     }
 
     /// <summary>
@@ -189,10 +215,13 @@ internal static class TerrainPipelineFactory12
     ///     stores larger values nearer the light, so the acne fix pushes stored depth SMALLER).
     ///     Mirrors <c>ReferencePipelineFactory12.CreateShadowPipelineState</c>.
     /// </summary>
+    /// <param name="pipelineResources">Retained family sharing the world root and owning reserved slot one.</param>
+    /// <param name="vsBytecode">Compiled zero-quad vertex shader.</param>
+    /// <param name="inputElements">Zero-quad terrain vertex layout.</param>
+    /// <returns>The borrowed single-sample shadow handle retained by the family.</returns>
     public static ID3D12PipelineState BuildShadowPipelineState(
-        GpuDevice12 gpu,
-        GpuRootSignature12 rootSignature,
-        byte[] vsBytecode,
+        ShaderPipelineResources pipelineResources,
+        ReadOnlyMemory<byte> vsBytecode,
         InputElementDescription[] inputElements)
     {
         var rasterizer = new D12.RasterizerDescription
@@ -216,7 +245,7 @@ internal static class TerrainPipelineFactory12
 
         var psoDesc = new GraphicsPipelineStateDescription
         {
-            RootSignature = rootSignature.RootSignature,
+            RootSignature = pipelineResources.RootSignature,
             VertexShader = vsBytecode,
             BlendState = D12.BlendDescription.Opaque,
             RasterizerState = rasterizer,
@@ -228,7 +257,6 @@ internal static class TerrainPipelineFactory12
             SampleDescription = new SampleDescription(1, 0),
             SampleMask = uint.MaxValue,
         };
-        return gpu.Device.CreateGraphicsPipelineState(psoDesc);
+        return pipelineResources.CreateGraphics(1, psoDesc);
     }
 }
-#endif

@@ -362,14 +362,29 @@ public sealed class WaterOpaqueSceneSnapshotSourceTests
         var abort = Extract(recorder, "public bool AbortFrame()", "public void EndFrame()");
         SourceContract.AssertOrder(
             abort,
-            "if (!_frameOpen) return false;",
-            "CommandList.Close();",
-            "DisposeNoThrow(resource, \"aborted-frame retirement\");",
-            "_currentFrameRetirements.Clear();",
-            "FrameIndex = (FrameIndex + 1) % FramesInFlight;",
-            "_frameOpen = false;",
-            "return true;");
+            "_native.AbortFrame();",
+            "result.NotificationFailure",
+            "result.CleanupFailure",
+            "return result.Aborted;");
         Assert.DoesNotContain("ExecuteCommandList", abort, StringComparison.Ordinal);
+        var nativeRecorder = SourceContract.ReadSource(
+            "shared", "Multitool.Shared", "src", "Slfx77.Multitool.WinUI.Direct3D12.Shaders",
+            "NativeFrameRecorder.cs");
+        var nativeAbort = Extract(nativeRecorder, "public NativeFrameAbortResult AbortFrame()", "public void WaitForFence(");
+        SourceContract.AssertOrder(nativeAbort,
+            "if (!_frameOpen) return default;",
+            "_commands!.Close();",
+            "NotifyOutcome(SubmissionOutcome.DefinitelyAbandoned);",
+            "ReleaseCompletedCore(0);",
+            "AdvanceFrame();",
+            "return new NativeFrameAbortResult(true,");
+        Assert.DoesNotContain("ExecuteCommandList", nativeAbort, StringComparison.Ordinal);
+        var advance = Extract(nativeRecorder, "private void AdvanceFrame()", "private void ReleaseCommandList()");
+        SourceContract.AssertOrder(
+            advance,
+            "FrameIndex = (FrameIndex + 1) % FramesInFlight;",
+            "_frameOpen = false;");
+        Assert.Contains("_submissions.AbandonRecording();", nativeRecorder, StringComparison.Ordinal);
     }
 
     [Fact]

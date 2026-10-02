@@ -1,5 +1,5 @@
 using System.CommandLine;
-using BethesdaMultitool.CLI.Rendering.Sprite;
+using BethesdaMultitool.Core.Media.Sprite;
 using Spectre.Console;
 
 namespace BethesdaMultitool.CLI.Commands.Sprite;

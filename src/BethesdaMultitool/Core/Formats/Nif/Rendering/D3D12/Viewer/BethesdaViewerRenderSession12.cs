@@ -1,4 +1,5 @@
 #if WINDOWS_GUI
+using Slfx77.Multitool.Core.Lifetime;
 using System.Diagnostics;
 using System.Numerics;
 using BethesdaMultitool.Core.Diagnostics;
@@ -25,6 +26,10 @@ namespace BethesdaMultitool;
 /// </summary>
 internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRenderSession12
 {
+    private readonly RetiredResourceDisposal _retiredSceneResources = new(
+        (name, exception) => Log.Warn("BethesdaSceneViewer: {0} teardown failed: {1}", name, exception.Message));
+    private bool _sceneRetirementProven;
+
     private const int AtmosphereClipPlaneFloat4Slot = AtmosphereConstantBufferLayout.ClipPlaneFloat4Slot;
     private const uint AtmosphereBytes = AtmosphereConstantBufferLayout.ByteSize;
     private const float RawSkyPreviewHour = 12f;
@@ -452,11 +457,7 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
 
     public void Dispose()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
+        if (_disposed && _graphics is null && !_retiredSceneResources.HasPending) { return; }
         _disposed = true;
         ReleaseGpuScene(waitForIdle: true);
         _scene = null;
@@ -507,9 +508,9 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
 
         try
         {
-            _textureResolver = new NifGpuTextureResolver(
-                posed.Source.TextureSourcePaths,
-                posed.Source.GeneratedTextures);
+            _textureResolver = posed.Source.TexturePlan is { } texturePlan
+                ? new NifGpuTextureResolver(texturePlan, posed.Source.GeneratedTextures)
+                : new NifGpuTextureResolver(posed.Source.TextureSourcePaths, posed.Source.GeneratedTextures);
             _textureCache = new GpuTextureCache12(
                     graphics.Gpu,
                     graphics.Recorder,
@@ -537,7 +538,8 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
                 graphics.DeletionQueue,
                 _textureCache);
             meshUploadMilliseconds = Stopwatch.GetElapsedTime(meshUploadStarted).TotalMilliseconds;
-            if (materialization.Status == ReferenceMeshCache12.MeshMaterializationStatus.RetryableFailure)
+            if (materialization.Status is MeshMaterializationStatus.RetryableFailure or
+                MeshMaterializationStatus.PhysicalBudgetDeferred)
             {
                 throw new InvalidOperationException("GPU mesh materialization failed.");
             }
@@ -1076,30 +1078,30 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
 
     private void ReleaseGpuScene(bool waitForIdle)
     {
-        if (waitForIdle &&
+        if (waitForIdle && !_sceneRetirementProven &&
             _graphics is not null &&
             (_mesh is not null ||
              _textureCache is not null ||
              _pipelines is not null ||
              _skyGeometry is not null ||
-             _waterRenderer is not null))
+             _waterRenderer is not null || _retiredSceneResources.HasPending))
         {
             try
             {
                 _graphics.WaitForGpuIdle();
+                _sceneRetirementProven = true;
             }
-            catch (Exception ex)
+            catch (Exception exception)
             {
-                // Device loss commonly makes both Signal and the fence wait fail. The session still
-                // owns the complete CPU/COM graph and must dismantle it; Dispose has already become
-                // one-way, so escaping here would permanently leak every field below.
-                Log.Warn("BethesdaSceneViewer: GPU idle wait before scene release failed: {0}", ex.Message);
+                Log.Warn("BethesdaSceneViewer: GPU idle wait before scene release failed: {0}", exception.Message);
+                if (!_graphics.IsDeviceTerminal) { throw; }
+                _sceneRetirementProven = true;
             }
         }
 
         var skyGeometry = _skyGeometry;
         _skyGeometry = null;
-        DisposeSceneResourceNoThrow(skyGeometry, "raw sky renderer");
+        QueueRetiredSceneResource(skyGeometry, "raw sky renderer");
         _rawSkyCandidates.Clear();
         _rawSkyClassifiedPartCount = 0;
         _rawSkyMissingAuthoredTextureCount = 0;
@@ -1114,62 +1116,49 @@ internal sealed class BethesdaViewerRenderSession12 : IBethesdaSceneViewerRender
         var mesh = _mesh;
         _mesh = null;
         _ordinarySpecularLogged = false;
-        DisposeSceneResourceNoThrow(mesh, "mesh cache entry");
+        QueueRetiredSceneResource(mesh, "mesh cache entry");
 
         var textureCache = _textureCache;
         if (textureCache is not null)
         {
             foreach (var entry in _waterTextureEntries)
             {
-                try
-                {
-                    textureCache.Release(entry);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warn("BethesdaSceneViewer: water texture release failed: {0}", ex.Message);
-                }
+                _retiredSceneResources.Add(() => textureCache.Release(entry), "water texture lease");
             }
         }
         _waterTextureEntries.Clear();
         foreach (var binding in _independentSkinBindings.Values)
-            DisposeSceneResourceNoThrow(binding, "independent skin textures");
+            QueueRetiredSceneResource(binding, "independent skin textures");
         _independentSkinBindings.Clear();
-        DisposeSceneResourceNoThrow(_eyeBinding, "eye reflection cube");
+        QueueRetiredSceneResource(_eyeBinding, "eye reflection cube");
         _eyeBinding = null;
 
         var waterRenderer = _waterRenderer;
         _waterRenderer = null;
-        DisposeSceneResourceNoThrow(waterRenderer, "water renderer");
+        QueueRetiredSceneResource(waterRenderer, "water renderer");
         _staticRenderer = null;
         // Borrowed from BethesdaSceneViewerGraphicsContext12's game-keyed cache; the context owns
         // and disposes it before its root signature. A scene switch only drops this reference.
         _pipelines = null;
         _textureCache = null;
-        DisposeSceneResourceNoThrow(textureCache, "texture cache");
+        QueueRetiredSceneResource(textureCache, "texture cache", 1);
         var textureResolver = _textureResolver;
         _textureResolver = null;
-        DisposeSceneResourceNoThrow(textureResolver, "texture resolver");
+        QueueRetiredSceneResource(textureResolver, "texture resolver", 2);
         var geometryArena = _geometryArena;
         _geometryArena = null;
-        DisposeSceneResourceNoThrow(geometryArena, "geometry arena");
+        QueueRetiredSceneResource(geometryArena, "geometry arena", 1);
+        _retiredSceneResources.Dispose();
+        _sceneRetirementProven = false;
     }
 
-    private static void DisposeSceneResourceNoThrow(IDisposable? resource, string resourceName)
+    /// <summary>Transfers a retired scene resource while preserving its later-stage prerequisites.</summary>
+    /// <param name="resource">Owned resource whose GPU use has already been retired.</param>
+    /// <param name="resourceName">Diagnostic label.</param>
+    /// <param name="stage">Dependency order: bindings, caches/arena, then resolver.</param>
+    private void QueueRetiredSceneResource(IDisposable? resource, string resourceName, int stage = 0)
     {
-        if (resource is null)
-        {
-            return;
-        }
-
-        try
-        {
-            resource.Dispose();
-        }
-        catch (Exception ex)
-        {
-            Log.Warn("BethesdaSceneViewer: {0} teardown failed: {1}", resourceName, ex.Message);
-        }
+        _retiredSceneResources.Add(resource, resourceName, stage);
     }
 
     private void PublishState(BethesdaSceneViewerRenderState state, string? message)

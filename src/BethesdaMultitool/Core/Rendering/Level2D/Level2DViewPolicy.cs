@@ -1,7 +1,9 @@
-// Ported from NeversoftMultitool (https://github.com/slfx77/NeversoftMultitool, MIT License) —
+// Ported from NeversoftMultitool —
 //   src/NeversoftMultitool/Core/Rendering/Level2d/Level2dViewPolicy.cs. Upstream asks a single GBA
 //   source whether it supports a file; here the question is answered from the classic map formats
 //   this repo reads. License texts are collected centrally in THIRD_PARTY_LICENSES.
+
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Rendering.Level2D;
 
@@ -21,7 +23,9 @@ internal static class Level2DViewPolicy
     {
         ArgumentNullException.ThrowIfNull(fileName);
 
-        var name = Path.GetFileName(fileName);
+        // The name arrives as a VIRTUAL path (backslash-spelled by the VFS), so take its leaf with
+        // the engine-path helper: on a Unix host Path.GetFileName keeps DF\DAGGER\ARENA2\ in it.
+        var name = EnginePath.FileName(fileName);
         if (IsDaggerfallWorldMap(name))
         {
             return true;

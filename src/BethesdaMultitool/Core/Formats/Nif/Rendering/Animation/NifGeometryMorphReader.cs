@@ -5,49 +5,65 @@ using BethesdaMultitool.Core.Utils;
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Animation;
 
 /// <summary>Bounded modern BS34 ordinary relative morph reader; unsupported layouts remain static.</summary>
+/// <remarks>
+///     <para>
+///         One decode path (cut-1b owner ruling D5, slice 10): the controller, the NiMorphData frame table, the
+///         NiFloatInterpolator and the NiFloatData keys are read through the lossless views the model reader binds
+///         (<see cref="NifGeomMorpherReader.TryReadControllerView" />, <see cref="NifGeomMorpherReader.TryReadMorphDataView" />,
+///         <see cref="NifGeomMorpherReader.TryReadFloatInterpolatorView" />, <see cref="NifKeyGroupReader.TryReadDataBlockView" />);
+///         this reader keeps only its own admission rules on top of them (little-endian BS 34, no next controller, flags
+///         72 or 76, morpher flags 0, Always Update 0 or 1, a finite clock with stop after start, 1 to
+///         <see cref="MaximumTargets" /> targets consuming the controller exactly, an NiTriShape or NiTriStrips target,
+///         Relative Targets exactly 1, the morph data consuming its block exactly, named frames, finite vectors, LINEAR or
+///         QUADRATIC keys strictly increasing in time, and morph 0 equal to the shape's stored positions). The morph
+///         vectors are read from the bytes the frame-table view walks for extent. Every value is built from the stored
+///         bits exactly as before (<see cref="BitConverter.UInt32BitsToSingle" /> of the endian-read word, which is what
+///         <see cref="BinaryUtils.ReadFloat(byte[], int, bool)" /> did).
+///     </para>
+///     <para>
+///         One documented difference from the pre-view reader: the key-group view caps a group at 1,048,576 keys (its
+///         sanity cap), so an NiFloatData declaring between 1,048,577 and 2,097,152 keys, which the old reader accepted
+///         within its own <see cref="MaximumKeys" /> budget, is now refused and the geometry stays static. No retail morph
+///         weight curve comes near either bound.
+///     </para>
+/// </remarks>
 internal static class NifGeometryMorphReader
 {
     internal const int MaximumTargets = 256;
     internal const int MaximumVectors = 2_097_152;
     internal const int MaximumKeys = 2_097_152;
 
+    private const int MorphDataPrefixSize = NifGeomMorpherReader.MorphDataPrefixSize;
+
     internal static bool TryRead(byte[] data, NifInfo nif, BlockInfo controller, out NifGeometryMorphData morph)
     {
         morph = null!;
         if (nif.BinaryVersion != 0x14020007 || nif.BsVersion != 34 || nif.IsBigEndian ||
-            controller.TypeName != "NiGeomMorpherController" || !Readable(data, controller, 37)) return false;
+            controller.TypeName != "NiGeomMorpherController" ||
+            !NifGeomMorpherReader.TryReadControllerView(data, nif, controller, out var view)) return false;
 
-        var p = controller.DataOffset;
-        var next = BinaryUtils.ReadInt32(data, p, false);
-        var flags = BinaryUtils.ReadUInt16(data, p + 4, false);
-        var frequency = BinaryUtils.ReadFloat(data, p + 6, false);
-        var phase = BinaryUtils.ReadFloat(data, p + 10, false);
-        var start = BinaryUtils.ReadFloat(data, p + 14, false);
-        var stop = BinaryUtils.ReadFloat(data, p + 18, false);
-        var shapeRef = BinaryUtils.ReadInt32(data, p + 22, false);
-        var morpherFlags = BinaryUtils.ReadUInt16(data, p + 26, false);
-        var dataRef = BinaryUtils.ReadInt32(data, p + 28, false);
-        var count = BinaryUtils.ReadUInt32(data, p + 33, false);
+        var header = view.Header;
+        var count = (uint)view.Items.Length;
         // No manager/incremental/backwards/normal-update or chained-controller inference in this route.
-        if (next != -1 || flags is not (72 or 76) || morpherFlags != 0 || data[p + 32] > 1 ||
-            !Finite(frequency) || !Finite(phase) || !Finite(start) || !Finite(stop) || stop <= start ||
-            count is < 1 or > MaximumTargets || controller.Size != 37L + 8L * count ||
-            !Block(nif, shapeRef, out var shape) || shape.TypeName is not ("NiTriShape" or "NiTriStrips") ||
-            !Block(nif, dataRef, out var morphBlock) || morphBlock.TypeName != "NiMorphData" ||
-            !Readable(data, morphBlock, 9)) return false;
+        if (header.NextControllerRef != -1 || header.Flags is not (72 or 76) || view.MorpherFlags != 0 ||
+            view.AlwaysUpdate > 1 || !Finite(header.Frequency) || !Finite(header.Phase) ||
+            !Finite(header.StartTime) || !Finite(header.StopTime) || header.StopTime <= header.StartTime ||
+            count is < 1 or > MaximumTargets || !view.ConsumedExactly ||
+            !Block(nif, header.TargetRef, out var shape) || shape.TypeName is not ("NiTriShape" or "NiTriStrips") ||
+            !Block(nif, view.DataRef, out var morphBlock) ||
+            !NifGeomMorpherReader.TryReadMorphDataView(data, nif, morphBlock, out var frames)) return false;
+
+        var vertices = frames.NumVertices;
+        if (frames.NumMorphs != count || vertices == 0 || vertices > MaximumVectors / count ||
+            frames.RelativeTargets != 1 || !frames.ConsumedExactly) return false;
 
         var m = morphBlock.DataOffset;
-        var morphCount = BinaryUtils.ReadUInt32(data, m, false);
-        var vertices = BinaryUtils.ReadUInt32(data, m + 4, false);
-        if (morphCount != count || vertices == 0 || vertices > MaximumVectors / count || data[m + 8] != 1 ||
-            morphBlock.Size != 9L + count * (4L + 12L * vertices)) return false;
-
         var targets = new NifGeometryMorphTarget[(int)count];
         var totalKeys = 0;
         for (var target = 0; target < targets.Length; target++)
         {
-            var offset = checked(m + 9 + target * (4 + 12 * (int)vertices));
-            var nameRef = BinaryUtils.ReadInt32(data, offset, false);
+            var offset = checked(m + MorphDataPrefixSize + target * (4 + 12 * (int)vertices));
+            var nameRef = frames.FrameNameIndices[target];
             if ((uint)nameRef >= (uint)nif.Strings.Count || string.IsNullOrWhiteSpace(nif.Strings[nameRef]))
                 return false;
             var positions = new Vector3[(int)vertices];
@@ -59,15 +75,15 @@ internal static class NifGeometryMorphReader
                 if (!Finite(positions[vertex])) return false;
             }
 
-            var item = p + 37 + target * 8;
-            var interpolatorRef = BinaryUtils.ReadInt32(data, item, false);
-            var fallback = BinaryUtils.ReadFloat(data, item + 4, false);
+            var item = view.Items[target];
+            var fallback = BitConverter.UInt32BitsToSingle(item.WeightBits);
             if (!Finite(fallback) ||
-                !TryReadCurve(data, nif, interpolatorRef, fallback, ref totalKeys, out var curve)) return false;
+                !TryReadCurve(data, nif, item.InterpolatorRef, fallback, ref totalKeys, out var curve)) return false;
             targets[target] = new NifGeometryMorphTarget(nif.Strings[nameRef], positions, curve);
         }
 
-        morph = new NifGeometryMorphData(shapeRef, frequency, phase, start, stop, flags == 72, targets);
+        morph = new NifGeometryMorphData(header.TargetRef, header.Frequency, header.Phase, header.StartTime,
+            header.StopTime, header.Flags == 72, targets);
         if (!ValidateShape(data, nif, shape, controller.Index, morph)) return false;
         var bounds = NifGeometryMorphEvaluator.GetConservativeBounds(morph);
         return Finite(bounds.Minimum) && Finite(bounds.Maximum);
@@ -111,47 +127,42 @@ internal static class NifGeometryMorphReader
     {
         curve = new NifMorphScalarCurve(NifKeyInterpolation.Linear, fallback, []);
         if (interpolatorRef == -1) return true;
-        if (!Block(nif, interpolatorRef, out var interpolator) || interpolator.TypeName != "NiFloatInterpolator" ||
-            !Readable(data, interpolator, 8) || interpolator.Size != 8) return false;
-        var defaultValue = BinaryUtils.ReadFloat(data, interpolator.DataOffset, false);
-        var dataRef = BinaryUtils.ReadInt32(data, interpolator.DataOffset + 4, false);
-        if (dataRef == -1)
+        if (!Block(nif, interpolatorRef, out var interpolator) ||
+            !NifGeomMorpherReader.TryReadFloatInterpolatorView(data, nif, interpolator, out var view)) return false;
+        var defaultValue = BitConverter.UInt32BitsToSingle(view.ValueBits);
+        if (view.DataRef == -1)
         {
             // Invalid interpolator defaults report failure, leaving the current serialized weight.
             if (Finite(defaultValue)) curve = curve with { FallbackWeight = defaultValue };
             return true;
         }
 
-        if (!Block(nif, dataRef, out var values) || values.TypeName != "NiFloatData" ||
-            !Readable(data, values, 4)) return false;
-        var count = BinaryUtils.ReadUInt32(data, values.DataOffset, false);
-        if (count == 0)
+        if (!Block(nif, view.DataRef, out var values) || values.TypeName != "NiFloatData" ||
+            !NifKeyGroupReader.TryReadDataBlockView(data, nif, values, out var keysView) ||
+            keysView.EndOffset != values.DataOffset + values.Size) return false;
+        if (keysView.Count == 0)
         {
-            if (values.Size != 4) return false;
             if (Finite(defaultValue)) curve = curve with { FallbackWeight = defaultValue };
             return true;
         }
 
-        if (count > MaximumKeys - totalKeys || !Readable(data, values, 8)) return false;
-        var basis = BinaryUtils.ReadUInt32(data, values.DataOffset + 4, false);
-        if (basis is not (1 or 2)) return false;
-        var stride = basis == 1 ? 8 : 16;
-        if (values.Size != 8L + count * stride) return false;
-        var keys = new NifMorphScalarKey[(int)count];
+        if (keysView.Count > MaximumKeys - totalKeys) return false;
+        if (keysView.KeyType is not ((uint)NifKeyInterpolation.Linear or (uint)NifKeyInterpolation.Quadratic))
+            return false;
+        var quadratic = keysView.KeyType == (uint)NifKeyInterpolation.Quadratic;
+        var keys = new NifMorphScalarKey[keysView.Count];
         for (var index = 0; index < keys.Length; index++)
         {
-            var k = values.DataOffset + 8 + index * stride;
-            var key = new NifMorphScalarKey(BinaryUtils.ReadFloat(data, k, false),
-                BinaryUtils.ReadFloat(data, k + 4, false),
-                basis == 2 ? BinaryUtils.ReadFloat(data, k + 8, false) : 0f,
-                basis == 2 ? BinaryUtils.ReadFloat(data, k + 12, false) : 0f);
+            var key = new NifMorphScalarKey(keysView.Time(index), keysView.Value(index, 0),
+                quadratic ? keysView.Forward(index, 0) : 0f,
+                quadratic ? keysView.Backward(index, 0) : 0f);
             if (!Finite(key.Time) || !Finite(key.Value) || !Finite(key.InTangent) || !Finite(key.OutTangent) ||
                 (index > 0 && key.Time <= keys[index - 1].Time)) return false;
             keys[index] = key;
         }
 
         totalKeys += keys.Length;
-        curve = new NifMorphScalarCurve((NifKeyInterpolation)basis, fallback, keys);
+        curve = new NifMorphScalarCurve((NifKeyInterpolation)keysView.KeyType, fallback, keys);
         return true;
     }
 

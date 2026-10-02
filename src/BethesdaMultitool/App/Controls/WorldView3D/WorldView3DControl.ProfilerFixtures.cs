@@ -100,7 +100,7 @@ public sealed partial class WorldView3DControl
         var selection = WaterAppearanceSelectionResolver.Resolve(
             sourceCell,
             worldspace,
-            _data.WatersByFormId);
+            _data.WatersByFormId, _data.Game, worldWaterCatalog: _data.WaterCatalog);
         if (selection.WaterFormId != waterFormId || selection.Water is null)
         {
             return null;
@@ -124,7 +124,7 @@ public sealed partial class WorldView3DControl
             spatialIndex: null,
             appearance: appearance,
             normalMapBindlessIndices: ResolveWaterNormalIndices(appearance));
-        _water.SetFnvWater001WaterTypeContext(waterFormId, worldspace.WaterFormId);
+        _water.SetFnvWater001WaterTypeContext(waterFormId, selection.WorldWater?.WaterFormId);
 
         // Profiler_CaptureSceneAsync refreshes the camera CELL material before rendering. Pinning the
         // same retained selection lets that refresh take its no-change path and preserve this one-cell

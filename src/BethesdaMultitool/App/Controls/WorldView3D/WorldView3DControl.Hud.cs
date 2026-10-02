@@ -98,6 +98,9 @@ public sealed partial class WorldView3DControl
         // A dead reference pipeline means terrain still draws while every placed object silently
         // vanishes — indistinguishable from an empty cell. Keep the reason on screen rather than
         // only in the log (a transient ShowStatus would be overwritten by the worldspace load).
+        if (_data?.UnwatchedAssetRoots.Count > 0)
+            text += "\nAsset watching unavailable; reload to refresh.";
+
         if (_referencePipelineInitError is { Length: > 0 } referenceError)
         {
             text += $"\n⚠ PLACED OBJECTS UNAVAILABLE: {referenceError}";

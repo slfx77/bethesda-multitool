@@ -11,5 +11,8 @@ internal enum WeaponVisualSourceKind
     DmpRuntimeCurrent,
     OmittedUnequipped,
     OmittedLeveledContextRequired,
-    OmittedUnresolved
+    OmittedUnresolved,
+
+    /// <summary>Selected only from the supplied seeded preview inventory, without an observed runtime equipment claim.</summary>
+    GeneratedPreviewInventory
 }

@@ -9,6 +9,16 @@ namespace BethesdaMultitool;
 /// <summary>Navigation between worldspaces / cells / placed objects, and view-focus sharing with the 3D viewer.</summary>
 public sealed partial class WorldMapControl
 {
+    private Vector2 GetNavigationCanvasSize()
+    {
+        var size = WorldMapViewportMath.ResolveCanvasSize(
+            (float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight, _lastCanvasSize);
+        // A navigation before first layout has already centred the pan in this fallback viewport.
+        // Seed resize tracking so the first real layout carries that centre to its measured size.
+        if (!WorldMapViewportMath.IsUsableCanvasSize(_lastCanvasSize)) _lastCanvasSize = size;
+        return size;
+    }
+
     internal WorldNavState CaptureNavState() => new(
         _state.Mode,
         _state.ActiveBrowser,
@@ -83,8 +93,9 @@ public sealed partial class WorldMapControl
 
         RebuildCellDetailBitmaps(cell);
 
+        var canvasSize = GetNavigationCanvasSize();
         WorldMapViewportHelper.ZoomToFitCell(cell,
-            (float)MapCanvas.ActualWidth, (float)MapCanvas.ActualHeight,
+            canvasSize.X, canvasSize.Y,
             out _zoom, out _panOffset);
         MapCanvas.Invalidate();
     }
@@ -109,10 +120,9 @@ public sealed partial class WorldMapControl
 
         var cellCenterX = (cell.GridX.Value + 0.5f) * _cellSize;
         var cellCenterY = -(cell.GridY.Value + 0.5f) * _cellSize;
-        var canvasW = Math.Max((float)MapCanvas.ActualWidth, 800f);
-        var canvasH = Math.Max((float)MapCanvas.ActualHeight, 600f);
-        _zoom = Math.Min(canvasW, canvasH) / (_cellSize * 3f);
-        _panOffset = new Vector2(canvasW / 2f - cellCenterX * _zoom, canvasH / 2f - cellCenterY * _zoom);
+        var canvasSize = GetNavigationCanvasSize();
+        _zoom = Math.Min(canvasSize.X, canvasSize.Y) / (_cellSize * 3f);
+        _panOffset = WorldMapViewportMath.CenterOnWorld(canvasSize, _zoom, new Vector2(cellCenterX, cellCenterY));
         MapCanvas.Invalidate();
     }
 
@@ -139,10 +149,7 @@ public sealed partial class WorldMapControl
             return new WorldViewFocus(-1, true, interior, 0f, 0f, selected, CellList.SortMode);
         }
 
-        var canvasW = Math.Max((float)MapCanvas.ActualWidth, 800f);
-        var canvasH = Math.Max((float)MapCanvas.ActualHeight, 600f);
-        var center2D = WorldMapViewportHelper.ScreenToWorld(
-            new Vector2(canvasW / 2f, canvasH / 2f), _zoom, _panOffset);
+        var center2D = WorldMapViewportMath.GetCenterWorld(GetNavigationCanvasSize(), _zoom, _panOffset);
         // The 3D viewer teleports its camera straight to this point, so it must land INSIDE the
         // authored cells: a zoomed-out overview centre (or one panned past the data) would otherwise
         // drop the camera outside the worldspace with nothing around it. Clamped to the same
@@ -192,10 +199,9 @@ public sealed partial class WorldMapControl
     private void CenterOverviewOnWorld(float worldX, float worldY)
     {
         EnsureOverviewMode();
-        var canvasW = Math.Max((float)MapCanvas.ActualWidth, 800f);
-        var canvasH = Math.Max((float)MapCanvas.ActualHeight, 600f);
+        var canvasSize = GetNavigationCanvasSize();
         if (_zoom <= 0f) _zoom = 0.05f;
-        _panOffset = new Vector2(canvasW / 2f - worldX * _zoom, canvasH / 2f - worldY * _zoom);
+        _panOffset = WorldMapViewportMath.CenterOnWorld(canvasSize, _zoom, new Vector2(worldX, worldY));
         MapCanvas.Invalidate();
     }
 
@@ -215,10 +221,9 @@ public sealed partial class WorldMapControl
             viewRadius = Math.Max(size * 3f, 1024f);
         }
 
-        var canvasW = Math.Max((float)MapCanvas.ActualWidth, 800f);
-        var canvasH = Math.Max((float)MapCanvas.ActualHeight, 600f);
-        _zoom = Math.Min(canvasW, canvasH) / (viewRadius * 4f);
-        _panOffset = new Vector2(canvasW / 2f - objCenter.X * _zoom, canvasH / 2f - objCenter.Y * _zoom);
+        var canvasSize = GetNavigationCanvasSize();
+        _zoom = Math.Min(canvasSize.X, canvasSize.Y) / (viewRadius * 4f);
+        _panOffset = WorldMapViewportMath.CenterOnWorld(canvasSize, _zoom, objCenter);
         _state.SelectObject(obj);
         MapCanvas.Invalidate();
     }

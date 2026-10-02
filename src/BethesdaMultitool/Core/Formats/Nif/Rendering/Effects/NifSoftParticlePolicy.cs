@@ -1,4 +1,5 @@
 using System.Numerics;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Effects;
 
@@ -108,7 +109,7 @@ internal static class NifSoftParticlePolicy
             return NifSoftParticleSettings.Disabled;
         }
 
-        var fileName = Path.GetFileName(normalizedPath);
+        var fileName = EnginePath.FileName(normalizedPath);
         var isNamedLegacyEffect = NamedLegacyEffectMeshes.Contains(fileName);
         if (!isNamedLegacyEffect && !candidate.IsBillboard && !candidate.HasEffectFalloff)
         {

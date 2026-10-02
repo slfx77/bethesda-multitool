@@ -60,7 +60,7 @@ internal sealed class WorldMapStateController
             _unlinkedCells = null;
             FilteredMarkers = _data.MarkersByWorldspace.GetValueOrDefault(SelectedWorldspace.FormId) ?? [];
             ApplyWorldspaceSwitch();
-            return new WorldspaceSwitchResult(SelectedWorldspace.DefaultWaterHeight);
+            return new WorldspaceSwitchResult(_data.WaterCatalog.Get(SelectedWorldspace.FormId).Height);
         }
 
         if (index == unlinkedIndex)

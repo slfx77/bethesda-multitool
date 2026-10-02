@@ -26,17 +26,20 @@ public sealed class GpuDeviceAdapterPolicyTests
 
     [Fact]
     [Trait("Category", GpuTestGuard.Category)]
-    public void WarpOnlyPolicyYieldsAFlaggedSoftwareDevice()
+    public void WarpOnlyPolicyYieldsAFlaggedSoftwareDeviceWithRequestedSampleCount()
     {
         GpuTestGuard.SkipUnlessEnabled();
 
         // WARP ships with every supported Windows 10+ build, so this must succeed even on
         // machines whose hardware path also works — it exercises exactly the fallback a
         // no-12_0-GPU user hits.
-        using var device = GpuDevice12.Create(adapterPolicy: GpuAdapterPolicy.WarpOnly);
+        using var device = GpuDevice12.Create(
+            adapterPolicy: GpuAdapterPolicy.WarpOnly,
+            requestedSceneSampleCount: 1);
         Assert.NotNull(device);
         Assert.True(device.FeatureLevel >= FeatureLevel.Level_12_0);
         Assert.True(device.IsSoftwareAdapter);
+        Assert.Equal(1, device.SceneSampleCount);
     }
 
     [Fact]

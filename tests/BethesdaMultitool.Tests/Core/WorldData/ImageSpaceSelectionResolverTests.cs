@@ -112,6 +112,8 @@ public sealed class ImageSpaceSelectionResolverTests
         Assert.Equal(ImageSpaceSelectionResolver.DefaultImageSpaceExteriorFormId, result.ImageSpaceFormId);
         Assert.Equal(ImageSpaceSelectionSource.DefaultExterior, result.Source);
         Assert.Null(result.SourceWorldspaceFormId);
+        Assert.Equal("parent-cycle", result.WorldspaceRouteStatus);
+        Assert.Equal(new uint[] { 0x20, 0x21, 0x20 }, result.WorldspaceRoutePath);
     }
 
     [Fact]

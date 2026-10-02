@@ -441,12 +441,12 @@ internal sealed class CellGridDebugRenderer12
     private static double ElapsedMilliseconds(long started) =>
         started == 0 ? 0 : Stopwatch.GetElapsedTime(started).TotalMilliseconds;
 
-    /// <summary>
-    ///     Forwards to the one shared compiler — see <see cref="GpuShaderCompiler12" />.
-    ///     This was one of a dozen copy-pasted private compilers that had drifted apart on
-    ///     shader flags and manifest lookup; the flag decision is now made once, unconditionally.
-    /// </summary>
-    private static byte[] CompileEmbeddedShader(string name, string entryPoint, string profile) =>
+    /// <summary>Gets an embedded shader permutation through the application cache and Shared compiler.</summary>
+    /// <param name="name">Embedded shader file name.</param>
+    /// <param name="entryPoint">HLSL entry point.</param>
+    /// <param name="profile">Native compiler target profile.</param>
+    /// <returns>Read-only cached DXBC passed directly to native pipeline creation without a payload copy.</returns>
+    private static ReadOnlyMemory<byte> CompileEmbeddedShader(string name, string entryPoint, string profile) =>
         GpuShaderCompiler12.Compile(name, entryPoint, profile);
 
     [StructLayout(LayoutKind.Sequential)]

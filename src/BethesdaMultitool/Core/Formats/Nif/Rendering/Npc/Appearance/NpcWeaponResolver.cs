@@ -47,6 +47,7 @@ internal sealed class NpcWeaponResolver
 
     private readonly IReadOnlyDictionary<uint, PackageScanEntry> _packages;
     private readonly IReadOnlyDictionary<uint, WeapScanEntry> _weapons;
+    private readonly IReadOnlyDictionary<uint, ArmaAddonScanEntry> _assetAddons;
 
     internal NpcWeaponResolver(
         IReadOnlyDictionary<uint, PackageScanEntry> packages,
@@ -60,6 +61,7 @@ internal sealed class NpcWeaponResolver
     {
         _packages = packages;
         _weapons = weapons;
+        _assetAddons = armorAddons;
         _leveledItems = leveledItems;
         _leveledItemRecords = leveledItemRecords ?? new Dictionary<uint, LeveledListScanEntry>();
         _combatStyles = combatStyles ?? new Dictionary<uint, CstyEntry>();
@@ -68,11 +70,13 @@ internal sealed class NpcWeaponResolver
         _handToHandAddonsByPath = BuildHandToHandAddonLookup(armorAddons);
     }
 
+    /// <summary>Selects a visible weapon, restricting generated previews to positive-count concrete inventory members.</summary>
     internal WeaponVisual Resolve(
         NpcScanEntry npc,
         List<InventoryItem>? inventoryItems,
         RuntimeWeaponSelection? runtimeSelection = null,
-        ushort? previewPlayerLevel = null)
+        ushort? previewPlayerLevel = null,
+        bool concreteInventoryOnly = false)
     {
         if (runtimeSelection is { HasRuntimeTarget: true })
         {
@@ -100,14 +104,18 @@ internal sealed class NpcWeaponResolver
 
         foreach (var package in resolvedPackages)
         {
-            if (package.Type != 16 || !package.UseWeaponFormId.HasValue)
+            if (package.Type != 16 || !package.UseWeaponFormId.HasValue ||
+                (concreteInventoryOnly && inventoryItems?.Any(item =>
+                    item.Count > 0 && item.ItemFormId == package.UseWeaponFormId.Value) != true))
             {
                 continue;
             }
 
             if (TryBuildVisual(
                     package.UseWeaponFormId.Value,
-                    WeaponVisualSourceKind.EsmPackage,
+                    concreteInventoryOnly
+                        ? WeaponVisualSourceKind.GeneratedPreviewInventory
+                        : WeaponVisualSourceKind.EsmPackage,
                     null,
                     npc.IsFemale,
                     null,
@@ -123,6 +131,7 @@ internal sealed class NpcWeaponResolver
             npc,
             inventoryItems,
             previewPlayerLevel,
+            concreteInventoryOnly,
             out var leveledResolutionFailure);
         if (bestWeapon == null)
         {
@@ -151,10 +160,12 @@ internal sealed class NpcWeaponResolver
         return packages;
     }
 
+    /// <summary>Ranks renderable weapons using the existing heuristic, optionally bypassing all leveled-list expansion.</summary>
     private WeaponVisual? SelectBestWeapon(
         NpcScanEntry npc,
         List<InventoryItem>? inventoryItems,
         ushort? previewPlayerLevel,
+        bool concreteInventoryOnly,
         out WeaponVisual? leveledResolutionFailure)
     {
         leveledResolutionFailure = null;
@@ -166,6 +177,7 @@ internal sealed class NpcWeaponResolver
         var expandedInventory = ExpandInventory(
             inventoryItems,
             previewPlayerLevel,
+            concreteInventoryOnly,
             out var leveledTrace);
         if (!previewPlayerLevel.HasValue && leveledTrace != null)
         {
@@ -259,7 +271,9 @@ internal sealed class NpcWeaponResolver
         {
             if (!TryBuildVisual(
                     formId,
-                    WeaponVisualSourceKind.EsmBestWeapon,
+                    concreteInventoryOnly
+                        ? WeaponVisualSourceKind.GeneratedPreviewInventory
+                        : WeaponVisualSourceKind.EsmBestWeapon,
                     null,
                     npc.IsFemale,
                     trace,
@@ -304,15 +318,23 @@ internal sealed class NpcWeaponResolver
         return WeaponRestriction.None;
     }
 
+    /// <summary>Adapts concrete generated leaves directly or expands legacy authored lists with the existing game policy.</summary>
     private List<ExpandedInventoryItem> ExpandInventory(
         List<InventoryItem> inventoryItems,
         ushort? previewPlayerLevel,
+        bool concreteInventoryOnly,
         out WeaponLeveledListTrace? leveledTrace)
     {
         var expanded = new List<ExpandedInventoryItem>();
         leveledTrace = null;
         foreach (var inventoryItem in inventoryItems)
         {
+            if (concreteInventoryOnly)
+            {
+                expanded.Add(new ExpandedInventoryItem(inventoryItem.ItemFormId, inventoryItem.Count, null));
+                continue;
+            }
+
             ExpandInventoryItem(
                 inventoryItem.ItemFormId,
                 inventoryItem.Count,
@@ -562,7 +584,7 @@ internal sealed class NpcWeaponResolver
         }
 
         var addons = new List<ArmaAddonScanEntry>();
-        var seenAddonKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var seenAddons = new HashSet<ArmaAddonScanEntry>(ReferenceEqualityComparer.Instance);
         foreach (var candidateKey in candidateKeys)
         {
             if (!_handToHandAddonsByPath.TryGetValue(candidateKey, out var matchedAddons))
@@ -572,8 +594,7 @@ internal sealed class NpcWeaponResolver
 
             foreach (var addon in matchedAddons)
             {
-                var addonKey = $"{addon.EditorId}|{addon.BipedFlags:X}|{addon.MaleModelPath}|{addon.FemaleModelPath}";
-                if (seenAddonKeys.Add(addonKey))
+                if (seenAddons.Add(addon))
                 {
                     addons.Add(addon);
                 }
@@ -593,16 +614,19 @@ internal sealed class NpcWeaponResolver
         {
             var meshPath = SelectAddonMeshPath(addon, isFemale);
             var derivedMeshPath = NpcAppearancePathDeriver.AsMeshPath(meshPath);
-            if (derivedMeshPath == null || !seenPaths.Add(derivedMeshPath))
+            if (derivedMeshPath == null)
             {
                 continue;
             }
 
-            visuals.Add(new WeaponAddonVisual
+            var visual = visuals.FirstOrDefault(item => string.Equals(item.MeshPath, derivedMeshPath, StringComparison.OrdinalIgnoreCase));
+            if (seenPaths.Add(derivedMeshPath))
             {
-                BipedFlags = addon.BipedFlags,
-                MeshPath = derivedMeshPath
-            });
+                visual = new WeaponAddonVisual { BipedFlags = addon.BipedFlags, MeshPath = derivedMeshPath };
+                visuals.Add(visual);
+            }
+            foreach (var id in _assetAddons.Where(pair => ReferenceEquals(pair.Value, addon)).Select(pair => pair.Key))
+                visual!.AssetOwners.Add(new(id, isFemale && !string.IsNullOrEmpty(addon.FemaleModelPath) ? "FemaleModelPath" : "MaleModelPath"));
 
             if (primaryMeshPath != null &&
                 string.Equals(primaryMeshPath, derivedMeshPath, StringComparison.OrdinalIgnoreCase))

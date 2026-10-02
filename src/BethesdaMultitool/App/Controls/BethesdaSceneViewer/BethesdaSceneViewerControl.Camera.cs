@@ -52,7 +52,7 @@ public sealed partial class BethesdaSceneViewerControl
             (float)point.Position.Y);
         TracePointer("pointer-press", e, point, "accepted",
             captureAdmitted: true, cameraBefore: cameraBefore);
-        RenderPanel.Focus(FocusState.Pointer);
+        Viewport.Focus(FocusState.Pointer);
         e.Handled = true;
     }
 

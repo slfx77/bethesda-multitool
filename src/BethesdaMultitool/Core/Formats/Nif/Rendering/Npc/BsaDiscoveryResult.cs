@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Assets;
+
 namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Npc;
 
 /// <summary>
@@ -12,5 +14,7 @@ internal sealed record BsaDiscoveryResult(
 {
     public static readonly BsaDiscoveryResult Empty = new([], [], false);
 
-    public bool HasMeshes => MeshesBsaPaths.Length > 0;
+    public bool HasMeshes => MeshesBsaPaths.Length > 0 || MeshPlan is { Mounts.Length: > 0 };
+    internal AssetSourcePlan? MeshPlan { get; init; }
+    internal AssetSourcePlan? TexturePlan { get; init; }
 }

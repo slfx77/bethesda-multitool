@@ -1,4 +1,5 @@
 using BethesdaMultitool.CLI.Rendering.Gltf;
+using BethesdaMultitool.Core.Assets;
 using BethesdaMultitool.Core.Formats.Esm.Analysis.FileAnalysis;
 using BethesdaMultitool.Core.Formats.Esm.Plugin.AssetPacking;
 using BethesdaMultitool.Core.Formats.Nif.Rendering;
@@ -39,6 +40,7 @@ internal static class NpcExportPipeline
         }
 
         var resolver = NpcAppearanceResolver.Build(esm.Data, esm.IsBigEndian);
+        resolver.DescribeSingleSource(settings.EsmPath);
         var pluginName = Path.GetFileName(settings.EsmPath);
         var appearances = ResolveAppearances(settings, resolver, pluginName);
         var creatures = ResolveCreatures(settings, resolver);
@@ -54,7 +56,9 @@ internal static class NpcExportPipeline
             return;
         }
 
-        using var meshArchives = MeshArchiveSet.Open(settings.MeshesBsaPath, settings.ExtraMeshesBsaPaths);
+        var meshPlan = AssetSourcePlan.FromPaths(
+            new[] { settings.MeshesBsaPath }.Concat(settings.ExtraMeshesBsaPaths ?? []));
+        using var meshArchives = MeshArchiveSet.Open(meshPlan);
         foreach (var extraMeshesBsaPath in meshArchives.ArchivePaths.Skip(1))
         {
             AnsiConsole.MarkupLine(
@@ -62,8 +66,7 @@ internal static class NpcExportPipeline
                 Path.GetFileName(extraMeshesBsaPath));
         }
 
-        using var textureResolver = new NifTextureResolver(texturesBsaPaths);
-        var compositionCaches = new NpcCompositionCaches();
+        using var textureResolver = new NifTextureResolver(AssetSourcePlan.FromPaths(texturesBsaPaths));
 
         var exported = 0;
         var skipped = 0;
@@ -76,6 +79,11 @@ internal static class NpcExportPipeline
             {
                 try
                 {
+                    using var meshReads = meshArchives.Selection.CaptureReads();
+                    using var textureReads = textureResolver.AssetSelection!.CaptureReads();
+                    // Parsed morph/skeleton caches have no receipt dependency model. Keep them
+                    // local to this export; shared texture caches replay their actual read receipts.
+                    var compositionCaches = new NpcCompositionCaches();
                     var plan = NpcCompositionPlanner.CreatePlan(
                         npc,
                         meshArchives,
@@ -108,6 +116,7 @@ internal static class NpcExportPipeline
                     var outputPath = Path.Combine(
                         settings.OutputDir,
                         NpcExportFileNaming.BuildFileName(npc));
+                    scene.AssetReadReceipts = meshReads.Receipts.Concat(textureReads.Receipts).Distinct().ToArray();
                     GlbWriter.Write(scene, textureResolver, outputPath);
                     GltfValidatorRunner.ValidateOrThrow(outputPath);
                     exported++;
@@ -147,6 +156,8 @@ internal static class NpcExportPipeline
             {
                 try
                 {
+                    using var meshReads = meshArchives.Selection.CaptureReads();
+                    using var textureReads = textureResolver.AssetSelection!.CaptureReads();
                     var plan = CreatureCompositionPlanner.CreatePlan(
                         creature,
                         meshArchives,
@@ -165,6 +176,7 @@ internal static class NpcExportPipeline
 
                     var name = creature.EditorId ?? $"{formId:X8}";
                     var outputPath = Path.Combine(settings.OutputDir, $"{name}.glb");
+                    scene.AssetReadReceipts = meshReads.Receipts.Concat(textureReads.Receipts).Distinct().ToArray();
                     GlbWriter.Write(scene, textureResolver, outputPath);
                     GltfValidatorRunner.ValidateOrThrow(outputPath);
                     exported++;

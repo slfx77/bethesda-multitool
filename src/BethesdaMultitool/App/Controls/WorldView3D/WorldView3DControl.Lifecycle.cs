@@ -67,6 +67,7 @@ public sealed partial class WorldView3DControl
 
         if (firstInit)
         {
+            if (_data is not null) RebuildAssetPipelines();
             TryBuildCellGrid();
         }
 
