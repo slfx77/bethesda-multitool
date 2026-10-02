@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using BethesdaMultitool.Core.Carving;
 using Xunit;
@@ -23,102 +22,7 @@ public sealed class CarveManifestTests : IDisposable
         if (Directory.Exists(_testDir)) Directory.Delete(_testDir, true);
     }
 
-    #region CarveEntry Tests
-
-    [Fact]
-    public void CarveEntry_DefaultValues_AreCorrect()
-    {
-        // Arrange & Act
-        var entry = new CarveEntry();
-
-        // Assert
-        Assert.Equal("", entry.FileType);
-        Assert.Equal(0, entry.Offset);
-        Assert.Equal(0, entry.SizeInDump);
-        Assert.Equal(0, entry.SizeOutput);
-        Assert.Equal("", entry.Filename);
-        Assert.Null(entry.OriginalPath);
-        Assert.False(entry.IsCompressed);
-        Assert.Null(entry.ContentType);
-        Assert.False(entry.IsPartial);
-        Assert.Null(entry.Notes);
-        Assert.Null(entry.Metadata);
-    }
-
-    [Fact]
-    public void CarveEntry_AllProperties_CanBeSet()
-    {
-        // Arrange & Act
-        var entry = new CarveEntry
-        {
-            FileType = "ddx",
-            Offset = 12345,
-            SizeInDump = 1024,
-            SizeOutput = 2048,
-            Filename = "texture_001.dds",
-            OriginalPath = "textures/architecture/wall.ddx",
-            IsCompressed = true,
-            ContentType = "DXT1",
-            IsPartial = false,
-            Notes = "Test note",
-            Metadata = new Dictionary<string, object> { ["width"] = 512, ["height"] = 512 }
-        };
-
-        // Assert
-        Assert.Equal("ddx", entry.FileType);
-        Assert.Equal(12345, entry.Offset);
-        Assert.Equal(1024, entry.SizeInDump);
-        Assert.Equal(2048, entry.SizeOutput);
-        Assert.Equal("texture_001.dds", entry.Filename);
-        Assert.Equal("textures/architecture/wall.ddx", entry.OriginalPath);
-        Assert.True(entry.IsCompressed);
-        Assert.Equal("DXT1", entry.ContentType);
-        Assert.False(entry.IsPartial);
-        Assert.Equal("Test note", entry.Notes);
-        Assert.NotNull(entry.Metadata);
-        Assert.Equal(512, Convert.ToInt32(entry.Metadata["width"], CultureInfo.InvariantCulture));
-    }
-
-    #endregion
-
     #region SaveAsync Tests
-
-    [Fact]
-    public async Task SaveAsync_CreatesManifestFile()
-    {
-        // Arrange
-        var entries = new List<CarveEntry>
-        {
-            new() { FileType = "dds", Offset = 0, SizeInDump = 100, Filename = "test.dds" }
-        };
-
-        // Act
-        await CarveManifest.SaveAsync(_testDir, entries);
-
-        // Assert
-        var manifestPath = Path.Combine(_testDir, "manifest.json");
-        Assert.True(File.Exists(manifestPath));
-    }
-
-    [Fact]
-    public async Task SaveAsync_WritesValidJson()
-    {
-        // Arrange
-        var entries = new List<CarveEntry>
-        {
-            new() { FileType = "dds", Offset = 100, SizeInDump = 200, Filename = "test.dds" }
-        };
-
-        // Act
-        await CarveManifest.SaveAsync(_testDir, entries);
-
-        // Assert
-        var manifestPath = Path.Combine(_testDir, "manifest.json");
-        var json = await File.ReadAllTextAsync(manifestPath, TestContext.Current.CancellationToken);
-        var parsed = JsonSerializer.Deserialize<List<CarveEntry>>(json);
-        Assert.NotNull(parsed);
-        Assert.Single(parsed);
-    }
 
     [Fact]
     public async Task SaveAsync_EmptyList_CreatesEmptyArrayJson()
@@ -152,9 +56,11 @@ public sealed class CarveManifestTests : IDisposable
         // Assert
         var manifestPath = Path.Combine(_testDir, "manifest.json");
         var json = await File.ReadAllTextAsync(manifestPath, TestContext.Current.CancellationToken);
-        var parsed = JsonSerializer.Deserialize<List<CarveEntry>>(json);
-        Assert.NotNull(parsed);
-        Assert.Equal(3, parsed.Count);
+        using var document = JsonDocument.Parse(json);
+        Assert.Collection(document.RootElement.EnumerateArray(),
+            entry => Assert.Equal("tex1.dds", entry.GetProperty("filename").GetString()),
+            entry => Assert.Equal("img.png", entry.GetProperty("filename").GetString()),
+            entry => Assert.Equal("model.nif", entry.GetProperty("filename").GetString()));
     }
 
     #endregion
@@ -165,12 +71,10 @@ public sealed class CarveManifestTests : IDisposable
     public async Task LoadAsync_ExistingManifest_ReturnsEntries()
     {
         // Arrange
-        var entries = new List<CarveEntry>
-        {
-            new() { FileType = "xma", Offset = 500, SizeInDump = 1024, Filename = "audio.xma" }
-        };
-        await CarveManifest.SaveAsync(_testDir, entries);
         var manifestPath = Path.Combine(_testDir, "manifest.json");
+        await File.WriteAllTextAsync(manifestPath,
+            """[{"fileType":"xma","offset":500,"sizeInDump":1024,"filename":"audio.xma"}]""",
+            TestContext.Current.CancellationToken);
 
         // Act
         var loaded = await CarveManifest.LoadAsync(manifestPath);
@@ -244,6 +148,25 @@ public sealed class CarveManifestTests : IDisposable
         var loaded = await CarveManifest.LoadAsync(manifestPath);
 
         // Assert
+        // Read the persisted contract independently: matching Save/Load mistakes must not cancel out.
+        var json = await File.ReadAllTextAsync(manifestPath, TestContext.Current.CancellationToken);
+        using var document = JsonDocument.Parse(json);
+        var saved = Assert.Single(document.RootElement.EnumerateArray());
+        Assert.Equal("ddx", saved.GetProperty("fileType").GetString());
+        Assert.Equal(12345, saved.GetProperty("offset").GetInt64());
+        Assert.Equal(1024, saved.GetProperty("sizeInDump").GetInt32());
+        Assert.Equal(2048, saved.GetProperty("sizeOutput").GetInt32());
+        Assert.Equal("texture_001.dds", saved.GetProperty("filename").GetString());
+        Assert.Equal("textures/architecture/wall.ddx", saved.GetProperty("originalPath").GetString());
+        Assert.True(saved.GetProperty("isCompressed").GetBoolean());
+        Assert.Equal("DXT1", saved.GetProperty("contentType").GetString());
+        Assert.True(saved.GetProperty("isPartial").GetBoolean());
+        Assert.Equal("Test note with special chars: <>&\"'", saved.GetProperty("notes").GetString());
+        var metadata = saved.GetProperty("metadata");
+        Assert.Equal(512, metadata.GetProperty("width").GetInt32());
+        Assert.Equal(256, metadata.GetProperty("height").GetInt32());
+        Assert.Equal("DXT1", metadata.GetProperty("format").GetString());
+
         Assert.Single(loaded);
         var entry = loaded[0];
         Assert.Equal("ddx", entry.FileType);
@@ -279,22 +202,10 @@ public sealed class CarveManifestTests : IDisposable
     }
 
     [Fact]
-    public async Task SaveAndLoad_NullableFieldsAsNull_PreservesCorrectly()
+    public async Task SaveAndLoad_DefaultEntry_PreservesDefaultsAndNullFields()
     {
         // Arrange
-        var entries = new List<CarveEntry>
-        {
-            new()
-            {
-                FileType = "nif",
-                Offset = 0,
-                Filename = "model.nif",
-                OriginalPath = null,
-                ContentType = null,
-                Notes = null,
-                Metadata = null
-            }
-        };
+        var entries = new List<CarveEntry> { new() };
 
         // Act
         await CarveManifest.SaveAsync(_testDir, entries);
@@ -302,11 +213,18 @@ public sealed class CarveManifestTests : IDisposable
         var loaded = await CarveManifest.LoadAsync(manifestPath);
 
         // Assert
-        Assert.Single(loaded);
-        Assert.Null(loaded[0].OriginalPath);
-        Assert.Null(loaded[0].ContentType);
-        Assert.Null(loaded[0].Notes);
-        Assert.Null(loaded[0].Metadata);
+        var entry = Assert.Single(loaded);
+        Assert.Equal("", entry.FileType);
+        Assert.Equal(0, entry.Offset);
+        Assert.Equal(0, entry.SizeInDump);
+        Assert.Equal(0, entry.SizeOutput);
+        Assert.Equal("", entry.Filename);
+        Assert.Null(entry.OriginalPath);
+        Assert.False(entry.IsCompressed);
+        Assert.Null(entry.ContentType);
+        Assert.False(entry.IsPartial);
+        Assert.Null(entry.Notes);
+        Assert.Null(entry.Metadata);
     }
 
     #endregion

@@ -56,7 +56,7 @@ public sealed class SampleCorpusTests
     ///     resolves to nothing is the failure this is here to catch.
     ///     <para>
     ///         ⚠ Only fixtures that stayed in the build tree belong here. A legacy path naming
-    ///         original media (a JAR, a disc image) now resolves under <c>Sample/Media</c>, which
+    ///         original media (a JAR, a disc image) now resolves under <c>../Media</c>, which
     ///         this build-relative rewrite deliberately does not cover — <c>RealAssetPaths</c>
     ///         names those directly.
     ///     </para>
@@ -73,7 +73,7 @@ public sealed class SampleCorpusTests
         var rewritten = SampleCorpus.Rewrite(legacyRelative);
         Assert.SkipWhen(rewritten is null,
             $"No corpus catalog available to map '{legacyRelative}'. " +
-            "Run tools/corpus/SampleGenerator to generate Sample/Builds.");
+            "Run CorpusTool generate --config ../CorpusTool/profiles/BethesdaMultitool.json to generate Sample/Builds.");
 
         var resolved = RealAssetPaths.SampleFile(rewritten) ?? RealAssetPaths.SampleDirectory(rewritten);
         Assert.SkipWhen(resolved is null,
@@ -95,7 +95,7 @@ public sealed class SampleCorpusTests
         var extracted = SampleCorpus.Rewrite(@"Full_Builds\Redguard_Disc1_extracted");
         var disc = SampleCorpus.Rewrite(@"Full_Builds\Redguard_Disc1");
         Assert.SkipWhen(iso is null || extracted is null || disc is null,
-            "No corpus catalog available. Run tools/corpus/SampleGenerator to generate Sample/Builds.");
+            "No corpus catalog available. Run CorpusTool generate --config ../CorpusTool/profiles/BethesdaMultitool.json to generate Sample/Builds.");
 
         Assert.EndsWith(@"iso", iso, StringComparison.OrdinalIgnoreCase);
         Assert.EndsWith(@"extracted", extracted, StringComparison.OrdinalIgnoreCase);

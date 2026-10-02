@@ -196,10 +196,10 @@ zones is wrong. Use that as the acceptance test the way the other verticals used
 `Elder Scrolls travels game files.zip` (703,910,184 B) holds `Oblivion mobile betas/` = **6 dated
 PSP ISOs** (`iND-TESTO090606.iso` … Jun 2006 → Apr 2007) plus a `Modified` set.
 
-⚠ Do **not** write another ISO extractor. Use the user's own tool:
-`C:\Users\mmc99\source\repos\NeversoftMultitool\tools\corpus\SampleGenerator`
-(`--media-root` / `--research-root` / `--sample-root`; handles `.iso/.gdi/.bin/.img`, shells to
-`7z`, path-safety-checked, has a `--self-test`). Stage the extracted trees under
+⚠ Do **not** write another ISO extractor. Since 2026-09-09 the corpus is built by the sibling
+`C:\Users\mmc99\source\repos\CorpusTool` repo from `tools/corpus/corpus.json` (each disc declared,
+stored as CHD, expanded through 7z or this repo's own `archive extract`; the six PSP UMDs are already
+in). Stage the extracted trees under
 `Sample/Builds/` and only then start format work. Six dated builds means this title also has
 cross-build diff value once anything parses.
 

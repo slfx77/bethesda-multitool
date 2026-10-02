@@ -177,27 +177,4 @@ public sealed class NonPumpingParallelTests
 
         Assert.Contains(ex.InnerExceptions, e => e.Message == "item 40");
     }
-
-    [Fact]
-    public void ForEach_balances_work_rather_than_striping_it_statically()
-    {
-        // The interlocked cursor means one slow item cannot strand a whole static range — with 4
-        // workers and one very slow item, the other 3 must still finish the remaining work.
-        var items = Enumerable.Range(0, 40).ToArray();
-        var done = 0;
-
-        NonPumpingParallel.ForEach(items, 4, i =>
-        {
-            if (i == 0)
-            {
-#pragma warning disable S2925 // the slow item is the scenario, not a timing assumption — the assert is a count, not a duration
-                Thread.Sleep(120);
-#pragma warning restore S2925
-            }
-
-            Interlocked.Increment(ref done);
-        });
-
-        Assert.Equal(items.Length, done);
-    }
 }

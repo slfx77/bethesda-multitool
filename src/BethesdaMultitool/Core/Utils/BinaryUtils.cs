@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -390,19 +391,51 @@ public static class BinaryUtils
     }
 
     /// <summary>
-    ///     Sanitize filename by removing/replacing invalid characters.
+    ///     The characters <see cref="SanitizeFilename" /> replaces: Windows' reserved set
+    ///     (<c>" &lt; &gt; | : * ? \ /</c> and the 32 control characters) unioned with whatever the
+    ///     host adds. A FIXED set rather than <see cref="Path.GetInvalidFileNameChars" /> alone,
+    ///     because that answers for the host the code runs on while the files it names are consumed
+    ///     on Windows too — on Linux it returns only <c>/</c> and NUL, so a name sanitized there
+    ///     could still be unopenable once copied over. On Windows the union IS the Windows set.
+    /// </summary>
+    private static readonly SearchValues<char> InvalidFilenameChars =
+        SearchValues.Create(BuildInvalidFilenameChars());
+
+    private static string BuildInvalidFilenameChars()
+    {
+        var chars = new HashSet<char>("\"<>|:*?\\/");
+        for (var c = '\0'; c < ' '; c++)
+        {
+            chars.Add(c);
+        }
+
+        chars.UnionWith(Path.GetInvalidFileNameChars());
+        return new string([.. chars]);
+    }
+
+    /// <summary>
+    ///     Sanitize filename by replacing invalid characters with <c>_</c> — the Windows-invalid set on
+    ///     every host (see <see cref="InvalidFilenameChars" />), so the result is portable.
     /// </summary>
     public static string SanitizeFilename(string filename)
     {
         ArgumentNullException.ThrowIfNull(filename);
 
-        var invalid = Path.GetInvalidFileNameChars();
-        foreach (var c in invalid)
+        if (filename.AsSpan().IndexOfAny(InvalidFilenameChars) < 0)
         {
-            filename = filename.Replace(c, '_');
+            return filename;
         }
 
-        return filename;
+        var buffer = filename.ToCharArray();
+        for (var i = 0; i < buffer.Length; i++)
+        {
+            if (InvalidFilenameChars.Contains(buffer[i]))
+            {
+                buffer[i] = '_';
+            }
+        }
+
+        return new string(buffer);
     }
 
     /// <summary>

@@ -43,6 +43,7 @@ internal static class BucketBTestGuard
 
     public static void SkipUnlessEnabled()
     {
+        TestCategories.RequireCurrent(Category);
         var value = Environment.GetEnvironmentVariable("RUN_BUCKET_B");
         Assert.SkipWhen(
             !string.Equals(value, EnabledValue, StringComparison.Ordinal),

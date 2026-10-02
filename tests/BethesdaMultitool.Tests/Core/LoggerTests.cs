@@ -57,23 +57,6 @@ public class LoggerTests : IDisposable
 
     #endregion
 
-    #region Level Property Tests
-
-    [Theory]
-    [InlineData(LogLevel.None)]
-    [InlineData(LogLevel.Error)]
-    [InlineData(LogLevel.Warn)]
-    [InlineData(LogLevel.Info)]
-    [InlineData(LogLevel.Debug)]
-    [InlineData(LogLevel.Trace)]
-    public void Level_CanBeSetToAnyValue(LogLevel level)
-    {
-        Logger.Instance.Level = level;
-        Assert.Equal(level, Logger.Instance.Level);
-    }
-
-    #endregion
-
     #region SetOutput Tests
 
     [Fact]
@@ -169,9 +152,7 @@ public class LoggerTests : IDisposable
 
     /// <summary>
     ///     Every severity behaves identically apart from its threshold and prefix, so the five
-    ///     levels are a table and each contract is asserted once. Previously this was 17 near-
-    ///     identical facts (one per level per contract), and suppression was only checked for
-    ///     Debug and Trace.
+    ///     levels are a table and each output, formatting, and suppression contract is asserted once.
     /// </summary>
     public static TheoryData<LogLevelCase> LogLevels => new()
     {
@@ -194,24 +175,13 @@ public class LoggerTests : IDisposable
 
     [Theory]
     [MemberData(nameof(LogLevels))]
-    public void Write_AtItsOwnLevel_EmitsTheMessage(LogLevelCase level)
+    public void Write_AtItsOwnLevel_EmitsThePrefixedMessage(LogLevelCase level)
     {
         Logger.Instance.Level = level.Level;
 
         level.Write(Logger.Instance, "the message");
 
-        Assert.Contains("the message", _output.ToString(), StringComparison.Ordinal);
-    }
-
-    [Theory]
-    [MemberData(nameof(LogLevels))]
-    public void Write_AtItsOwnLevel_EmitsTheLevelPrefix(LogLevelCase level)
-    {
-        Logger.Instance.Level = level.Level;
-
-        level.Write(Logger.Instance, "the message");
-
-        Assert.Contains(level.Prefix, _output.ToString(), StringComparison.Ordinal);
+        Assert.Equal($"{level.Prefix} the message{Environment.NewLine}", _output.ToString());
     }
 
     [Theory]

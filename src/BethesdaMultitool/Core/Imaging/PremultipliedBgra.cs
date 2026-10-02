@@ -1,4 +1,4 @@
-// Conversion rules ported from JimmyPCTool / AweMultitool (https://github.com/slfx77/JimmyPCTool),
+// Conversion rules ported from JimmyPCTool / AweMultitool,
 // MIT licence — src/AweMultitool/App/Controls/BitmapHelper.cs. Split differently here: that project
 // keeps the arithmetic beside its WriteableBitmap wrapper, but App/** is excluded from this repo's
 // net10.0 target framework, so the pure half lives in Core/ where it can actually be tested.

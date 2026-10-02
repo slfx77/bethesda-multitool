@@ -1,0 +1,403 @@
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
+using System.Numerics;
+using System.Text.Json.Nodes;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using Slfx77.Multitool.Core.Models;
+
+namespace BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
+
+/// <summary>
+///     Snapshots an assembled <see cref="GlbScene" /> as a shared <see cref="SceneDocument" />, or reports the
+///     native capability that keeps <see cref="GlbWriter" /> responsible for it.
+/// </summary>
+/// <remarks>
+///     <para>
+///         This is a pilot in the same shape as AweMultitool's <c>AseNeutralSceneAdapter</c>: it carries a
+///         well-defined subset faithfully and declines everything else, so a decline costs nothing but a fall
+///         back to the existing writer. It never projects a Bethesda material semantic away silently — every
+///         state the neutral model cannot express is a decline reason, not a dropped field.
+///     </para>
+///     <para>
+///         <b>Textures are referenced, not embedded.</b> <see cref="RenderableSubmesh" /> carries texture
+///         <i>paths</i>, while <see cref="SceneImage" /> carries PNG <i>bytes</i>, and resolving one to the other
+///         means reading the archive this layer has no handle on. The diffuse path and its clamp flags are
+///         therefore recorded in the material's extras and no image, sampler or binding is emitted. A caller that
+///         owns the archive can resolve them; a graph transform cannot.
+///     </para>
+///     <para>
+///         Node indices are preserved exactly, including the synthetic <c>SceneRoot</c> at index 0, so a caller
+///         can correlate a neutral node with the <see cref="GlbScene" /> node it came from by index alone.
+///     </para>
+/// </remarks>
+internal static class GlbSceneNeutralAdapter
+{
+    /// <summary>Copies an eligible scene or reports the native capability that requires the existing writer.</summary>
+    /// <param name="source">The assembled scene graph.</param>
+    /// <param name="name">The document label, normally the source stem.</param>
+    /// <param name="scene">The neutral snapshot when this returns true.</param>
+    /// <param name="unsupportedReason">The declining capability when this returns false.</param>
+    /// <param name="cancellationToken">Cancels a large graph walk.</param>
+    /// <returns>True when the scene was snapshotted; false when the native writer retains it.</returns>
+    internal static bool TryAdapt(GlbScene source, string name,
+        [NotNullWhen(true)] out SceneDocument? scene, out string? unsupportedReason,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(name);
+        cancellationToken.ThrowIfCancellationRequested();
+        scene = null;
+        unsupportedReason = UnsupportedReason(source, cancellationToken);
+        if (unsupportedReason is not null)
+        {
+            return false;
+        }
+
+        // One mesh per owning node, holding that node's submeshes as primitives. Grouping by node rather than
+        // emitting a mesh per part keeps a node that draws several submeshes a single instance, which is what
+        // the hierarchy means.
+        var partsByNode = new Dictionary<int, List<GlbMeshPart>>();
+        foreach (var part in source.MeshParts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!partsByNode.TryGetValue(part.NodeIndex!.Value, out var list))
+            {
+                list = [];
+                partsByNode[part.NodeIndex.Value] = list;
+            }
+
+            list.Add(part);
+        }
+
+        var materials = new List<SceneMaterial>();
+        var meshes = new List<SceneMesh>();
+        var meshIndexByNode = new Dictionary<int, int>(partsByNode.Count);
+        foreach (var nodeIndex in partsByNode.Keys.Order())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var parts = partsByNode[nodeIndex];
+            var primitives = new List<ScenePrimitive>(parts.Count);
+            foreach (var part in parts)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var submesh = part.Submesh;
+                materials.Add(Material(part.Name, submesh));
+                primitives.Add(new ScenePrimitive(
+                    part.Name,
+                    Vertices(submesh),
+                    Array.ConvertAll(submesh.Triangles, static index => (int)index),
+                    materials.Count - 1,
+                    SceneColorEncoding.UnsignedByteNormalized));
+            }
+
+            meshIndexByNode[nodeIndex] = meshes.Count;
+            meshes.Add(new SceneMesh(source.Nodes[nodeIndex].Name, primitives));
+        }
+
+        var nodes = Nodes(source, meshIndexByNode, cancellationToken);
+        scene = new SceneDocument(
+            "nif",
+            name,
+            [new SceneDefinition(name, [GlbScene.RootNodeIndex])],
+            nodes,
+            meshes,
+            materials);
+        return true;
+    }
+
+    /// <summary>Inverts the graph's parent pointers into ordered child lists, preserving every index.</summary>
+    private static List<SceneNode> Nodes(GlbScene source, Dictionary<int, int> meshIndexByNode,
+        CancellationToken cancellationToken)
+    {
+        var children = new List<int>[source.Nodes.Count];
+        for (var index = 0; index < source.Nodes.Count; index++)
+        {
+            children[index] = [];
+        }
+
+        // Ascending order is the source order, so a child list is built in the order the graph declared them.
+        for (var index = 0; index < source.Nodes.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (source.Nodes[index].ParentIndex is { } parent)
+            {
+                children[parent].Add(index);
+            }
+        }
+
+        var nodes = new List<SceneNode>(source.Nodes.Count);
+        for (var index = 0; index < source.Nodes.Count; index++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var node = source.Nodes[index];
+            nodes.Add(new SceneNode(
+                node.Name,
+                node.LocalTransform,
+                children[index],
+                meshIndexByNode.TryGetValue(index, out var mesh) ? mesh : null,
+                NodeExtras(node)));
+        }
+
+        return nodes;
+    }
+
+    /// <summary>Retains the graph's own node identity so a neutral node can be traced back to its source block.</summary>
+    private static string? NodeExtras(GlbNode node)
+    {
+        if (node.LookupName is null && node.SourceBlockIndex is null)
+        {
+            return null;
+        }
+
+        var extras = new JsonObject { ["kind"] = node.Kind.ToString() };
+        if (node.LookupName is not null)
+        {
+            extras["lookupName"] = node.LookupName;
+        }
+
+        if (node.SourceBlockIndex is { } block)
+        {
+            extras["sourceBlockIndex"] = block;
+        }
+
+        return extras.ToJsonString();
+    }
+
+    /// <summary>Interleaves the submesh's parallel arrays into the neutral vertex record.</summary>
+    private static List<SceneVertex> Vertices(RenderableSubmesh submesh)
+    {
+        var count = submesh.Positions.Length / 3;
+        var vertices = new List<SceneVertex>(count);
+        for (var index = 0; index < count; index++)
+        {
+            var position = new Vector3(
+                submesh.Positions[(index * 3) + 0],
+                submesh.Positions[(index * 3) + 1],
+                submesh.Positions[(index * 3) + 2]);
+            var normal = submesh.Normals is { } normals
+                ? new Vector3(normals[(index * 3) + 0], normals[(index * 3) + 1], normals[(index * 3) + 2])
+                : Vector3.Zero;
+            var uv = submesh.UVs is { } uvs
+                ? new Vector2(uvs[(index * 2) + 0], uvs[(index * 2) + 1])
+                : Vector2.Zero;
+            // Absent vertex color is opaque white, which is the identity for a multiply against base color.
+            var color = submesh.VertexColors is { } colors
+                ? new Vector4(
+                    colors[(index * 4) + 0] / 255f,
+                    colors[(index * 4) + 1] / 255f,
+                    colors[(index * 4) + 2] / 255f,
+                    colors[(index * 4) + 3] / 255f)
+                : Vector4.One;
+            vertices.Add(new SceneVertex(position, normal, color, uv));
+        }
+
+        return vertices;
+    }
+
+    /// <summary>Maps the submesh states the neutral material expresses; the rest are decline reasons.</summary>
+    private static SceneMaterial Material(string name, RenderableSubmesh submesh)
+    {
+        var diffuse = submesh.MaterialDiffuse ?? (1f, 1f, 1f);
+        var baseColor = new Vector4(diffuse.R, diffuse.G, diffuse.B, submesh.MaterialAlpha);
+        var alphaMode = submesh switch
+        {
+            { HasAlphaBlend: true } => SceneAlphaMode.Blend,
+            { HasAlphaTest: true } => SceneAlphaMode.Mask,
+            _ => SceneAlphaMode.Opaque
+        };
+
+        // The diffuse path travels as metadata because this layer has no archive handle to resolve its bytes.
+        JsonObject? extras = null;
+        if (submesh.DiffuseTexturePath is { Length: > 0 } path)
+        {
+            extras = new JsonObject
+            {
+                ["diffuseTexturePath"] = path,
+                ["clampTextureU"] = submesh.ClampTextureU,
+                ["clampTextureV"] = submesh.ClampTextureV
+            };
+        }
+
+        if (submesh.ShapeName is { Length: > 0 } shape)
+        {
+            extras ??= [];
+            extras["shapeName"] = shape;
+        }
+
+        return new SceneMaterial(
+            name,
+            baseColor,
+            texture: null,
+            alphaMode,
+            submesh.AlphaTestThreshold / 255f,
+            submesh.IsDoubleSided,
+            unlit: true,
+            extras?.ToJsonString());
+    }
+
+    /// <summary>Reports the first capability that keeps the native writer responsible for this scene.</summary>
+    private static string? UnsupportedReason(GlbScene source, CancellationToken cancellationToken)
+    {
+        if (source.MeshParts.Count == 0)
+        {
+            return "An empty scene retains the native empty-result behavior.";
+        }
+
+        foreach (var part in source.MeshParts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (part.Skin is not null)
+            {
+                return "Skinned submeshes retain the native writer.";
+            }
+
+            if (part.NodeIndex is not { } nodeIndex || (uint)nodeIndex >= (uint)source.Nodes.Count)
+            {
+                return "A mesh part with no resolved owning node retains the native writer.";
+            }
+
+            if (GeometryReason(part.Submesh) is { } geometry)
+            {
+                return geometry;
+            }
+
+            if (MaterialReason(part.Submesh) is { } material)
+            {
+                return material;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Rejects geometry whose parallel arrays do not agree, rather than reading past one of them.</summary>
+    private static string? GeometryReason(RenderableSubmesh submesh)
+    {
+        if (submesh.Positions.Length == 0 || submesh.Triangles.Length == 0)
+        {
+            return "Empty geometry retains the native empty-result behavior.";
+        }
+
+        if (submesh.Positions.Length % 3 != 0)
+        {
+            return "A position array that is not a whole number of vertices retains the native writer.";
+        }
+
+        var count = submesh.Positions.Length / 3;
+        if (submesh.Normals is { } normals && normals.Length != submesh.Positions.Length)
+        {
+            return "A normal array that disagrees with the position count retains the native writer.";
+        }
+
+        if (submesh.UVs is { } uvs && uvs.Length != count * 2)
+        {
+            return "A UV array that disagrees with the position count retains the native writer.";
+        }
+
+        if (submesh.VertexColors is { } colors && colors.Length != count * 4)
+        {
+            return "A vertex-color array that disagrees with the position count retains the native writer.";
+        }
+
+        if (submesh.Triangles.Length % 3 != 0)
+        {
+            return "An index array that is not a whole number of triangles retains the native writer.";
+        }
+
+        foreach (var index in submesh.Triangles)
+        {
+            if (index >= count)
+            {
+                return "An index outside the vertex range retains the native writer.";
+            }
+        }
+
+        // SceneTangents does not exist in the shared model at this consumer's pin, so an authored tangent
+        // frame cannot be carried and must not be silently recomputed from UVs.
+        if (submesh.Tangents is { Length: > 0 } || submesh.Bitangents is { Length: > 0 })
+        {
+            return "Authored tangent frames require a shared scene model newer than this consumer's pin.";
+        }
+
+        if (submesh.BindPosePositions is { Length: > 0 })
+        {
+            return "A retained bind pose retains the native writer.";
+        }
+
+        return null;
+    }
+
+    /// <summary>Rejects every Bethesda material state the neutral material cannot express.</summary>
+    /// <remarks>
+    ///     Deliberately exhaustive and deliberately conservative. A state absent from this list is one the
+    ///     neutral material carries; a state present here is one the native writer owns. Nothing is dropped.
+    /// </remarks>
+    private static string? MaterialReason(RenderableSubmesh submesh)
+    {
+        if (submesh.NormalMapTexturePath is { Length: > 0 } ||
+            submesh.SpecularMapTexturePath is { Length: > 0 } ||
+            submesh.GradientMapTexturePath is { Length: > 0 } ||
+            submesh.BgsmGlowMapTexturePath is { Length: > 0 } ||
+            submesh.EnvironmentMapTexturePath is { Length: > 0 } ||
+            submesh.ClassicEnvironmentMapTexturePath is { Length: > 0 } ||
+            submesh.ClassicEnvironmentMaskTexturePath is { Length: > 0 } ||
+            submesh.ClassicParallaxHeightMapTexturePath is { Length: > 0 } ||
+            submesh.Lighting30GlowMapTexturePath is { Length: > 0 } ||
+            submesh.OblivionHairLayerDiffusePath is { Length: > 0 } ||
+            submesh.OblivionHairLayerTexturePath is { Length: > 0 })
+        {
+            return "Maps beyond diffuse retain the native material writer.";
+        }
+
+        if (submesh.IsEmissive || submesh.EmissiveColor is not null ||
+            submesh.AnimatedEmissiveColor is not null || submesh.Lighting30EmissionColor is not null ||
+            submesh.UsesExternalEmittance || submesh.IsLighting30)
+        {
+            return "Emissive and external-emittance state retains the native material writer.";
+        }
+
+        if (submesh.IsDecal || submesh.IsTreeAnimation || submesh.IsFaceGen || submesh.IsEyeEnvmap ||
+            submesh.UsesClassicHairMaterial || submesh.SkyType is not null)
+        {
+            return "Decal, tree, FaceGen, eye, hair and sky behaviors retain the native material writer.";
+        }
+
+        if (submesh.EffectFalloff is not null || submesh.SoftParticleFalloffDepth != 0f ||
+            submesh.UvScrollVelocity != Vector2.Zero || submesh.MaterialAlphaController is not null)
+        {
+            return "Animated and falloff material behavior retains the native material writer.";
+        }
+
+        if (submesh.TintColor is not null || submesh.EffectTint != (1f, 1f, 1f) ||
+            submesh.SubsurfaceColor != default || submesh.SpecularColor != (0f, 0f, 0f))
+        {
+            return "Tint, subsurface and specular color retain the native material writer.";
+        }
+
+        if (submesh.HasAuthoredOblivionBodySkinInputs || submesh.HasAuthoredOblivionOrdinaryInputs ||
+            submesh.HasAuthoredOblivionHairLayerInputs || submesh.ShaderMetadata is not null)
+        {
+            return "Authored Oblivion shader inputs retain the native material writer.";
+        }
+
+        if (submesh.StarfieldMaterialColor != default || submesh.StarfieldMaterialAlpha != default)
+        {
+            return "Starfield material render state retains the native material writer.";
+        }
+
+        // A non-default blend equation is a rendering semantic, not a mode: glTF has alpha modes, not factors.
+        if (submesh.HasAlphaBlend && (submesh.SrcBlendMode != 6 || submesh.DstBlendMode != 7))
+        {
+            return string.Create(CultureInfo.InvariantCulture,
+                $"A non-default blend equation ({submesh.SrcBlendMode}/{submesh.DstBlendMode}) retains the native material writer.");
+        }
+
+        if (submesh.HasAlphaTest && submesh.AlphaTestFunction != 4)
+        {
+            return string.Create(CultureInfo.InvariantCulture,
+                $"Alpha-test function {submesh.AlphaTestFunction} retains the native material writer.");
+        }
+
+        return null;
+    }
+}

@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace BethesdaMultitool.Tests.Helpers;
 
 /// <summary>
@@ -21,6 +23,16 @@ namespace BethesdaMultitool.Tests.Helpers;
 /// </summary>
 internal static class TestCategories
 {
+    /// <summary>Verify the effective xUnit traits at the guard call, before it can skip the test.</summary>
+    internal static void RequireCurrent(string category)
+    {
+        var context = TestContext.Current;
+        var traits = context.Test?.Traits ?? context.TestCase?.Traits ?? context.TestClass?.Traits;
+        Assert.NotNull(traits);
+        Assert.True(traits.TryGetValue("Category", out var categories) && categories.Contains(category),
+            $"The executing test must carry [Trait(\"Category\", \"{category}\")] before using its opt-in guard.");
+    }
+
     /// <summary>Needs real retail game assets; gated by <c>RUN_BUCKET_B=1</c>.</summary>
     public const string BucketB = BucketBTestGuard.Category;
 

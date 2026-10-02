@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Utils;
 
@@ -11,6 +12,46 @@ public static class EsmSubrecordUtils
     ///     Subrecord header size: 4-byte signature + 2-byte length.
     /// </summary>
     public const int SubrecordHeaderSize = 6;
+
+    /// <summary>Checks framing without allocating subrecord bodies or rejecting binary IMAD signatures.</summary>
+    public static SubrecordReadDiagnostic? FindBoundsIssue(ReadOnlySpan<byte> data, bool bigEndian)
+    {
+        var offset = 0;
+        uint? extended = null;
+        while (offset < data.Length)
+        {
+            var remaining = data.Length - offset;
+            if (remaining < SubrecordHeaderSize)
+                return new(null, offset, SubrecordHeaderSize, remaining, bigEndian, "Truncated subrecord header");
+            var header = data[offset..];
+            var declared = bigEndian ? BinaryPrimitives.ReadUInt16BigEndian(header[4..])
+                : BinaryPrimitives.ReadUInt16LittleEndian(header[4..]);
+            if (header[..4].SequenceEqual("XXXX"u8))
+            {
+                if (extended.HasValue || declared != 4 || remaining - SubrecordHeaderSize < 4)
+                    return new("XXXX", offset + SubrecordHeaderSize, 4, remaining - SubrecordHeaderSize,
+                        bigEndian, "Invalid or truncated extended size");
+                extended = bigEndian ? BinaryPrimitives.ReadUInt32BigEndian(header[6..])
+                    : BinaryPrimitives.ReadUInt32LittleEndian(header[6..]);
+                offset += 10;
+                continue;
+            }
+            var size = extended ?? declared;
+            extended = null;
+            if (size > remaining - SubrecordHeaderSize)
+            {
+                var signature = bigEndian
+                    ? new string([(char)header[3], (char)header[2], (char)header[1], (char)header[0]])
+                    : new string([(char)header[0], (char)header[1], (char)header[2], (char)header[3]]);
+                return new(signature, offset + SubrecordHeaderSize, size, remaining - SubrecordHeaderSize,
+                    bigEndian, "Subrecord payload exceeds bounds");
+            }
+            offset += SubrecordHeaderSize + (int)size;
+        }
+        return extended.HasValue
+            ? new(null, offset, SubrecordHeaderSize, 0, bigEndian, "Missing extended subrecord header")
+            : null;
+    }
 
     /// <summary>
     ///     Iterates through subrecords in a record's data section.
@@ -25,10 +66,12 @@ public static class EsmSubrecordUtils
     /// <param name="bigEndian">True for Xbox 360 big-endian format.</param>
     public static IEnumerable<ParsedSubrecord> IterateSubrecords(byte[] data, int dataSize, bool bigEndian)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(dataSize);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(dataSize, data.Length);
         var offset = 0;
         uint? pendingExtendedSize = null;
 
-        while (offset + SubrecordHeaderSize <= dataSize)
+        while (dataSize - offset >= SubrecordHeaderSize)
         {
             // Read subrecord signature (4 bytes), pooled — see InternSignature.
             var sig = InternSignature(data, offset, bigEndian);
@@ -39,8 +82,10 @@ public static class EsmSubrecordUtils
                 : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(offset + 4));
 
             // XXXX carries the real size of the next subrecord; stash it and skip the marker itself.
-            if (sig == "XXXX" && subSize == 4 && offset + SubrecordHeaderSize + 4 <= dataSize)
+            if (sig == "XXXX")
             {
+                if (pendingExtendedSize.HasValue || subSize != 4 || dataSize - offset - SubrecordHeaderSize < 4)
+                    yield break;
                 pendingExtendedSize = bigEndian
                     ? BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(offset + SubrecordHeaderSize))
                     : BinaryPrimitives.ReadUInt32LittleEndian(data.AsSpan(offset + SubrecordHeaderSize));

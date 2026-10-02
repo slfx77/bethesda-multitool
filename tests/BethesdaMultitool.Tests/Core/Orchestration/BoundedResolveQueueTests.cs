@@ -14,10 +14,13 @@ public sealed class BoundedResolveQueueTests
         Assert.True(queue.Enqueue("K"));
         queue.Pump();
 
+        // This one genuinely uses the real pool, so it waits on the queue's in-flight task
+        // handle instead of spinning on a probe: WaitForDrain returning means the completion
+        // continuation has already run, and its result is asserted so a timeout reports as one.
         string? key = null;
         string? result = null;
-        Assert.True(SpinWait.SpinUntil(
-            () => queue.TryDequeueCompleted(out key, out result), TimeSpan.FromSeconds(5)));
+        Assert.True(queue.WaitForDrain(TimeSpan.FromSeconds(30)));
+        Assert.True(queue.TryDequeueCompleted(out key, out result));
         Assert.Equal("K", key);
         Assert.Equal("K!", result);
     }
@@ -36,7 +39,8 @@ public sealed class BoundedResolveQueueTests
 
         queue.Pump();
         scheduler.ReleaseOne();
-        SpinWait.SpinUntil(() => queue.TryDequeueCompletedProbe(), TimeSpan.FromSeconds(5));
+        Assert.True(queue.WaitForDrain(TimeSpan.FromSeconds(30)));
+        Assert.True(queue.TryDequeueCompletedProbe());
 
         Assert.True(queue.Enqueue("K")); // allowed again after dequeue
     }
@@ -57,8 +61,10 @@ public sealed class BoundedResolveQueueTests
         Assert.Equal(2, queue.ActiveCount);
         Assert.Equal(3, queue.QueuedCount);
 
+        // Not a full drain: one of the two in-flight resolutions stays deferred, so this
+        // relies on the released one's continuation having run inline inside ReleaseOne.
         scheduler.ReleaseOne();
-        SpinWait.SpinUntil(() => queue.ActiveCount == 1, TimeSpan.FromSeconds(5));
+        Assert.Equal(1, queue.ActiveCount);
         queue.Pump();
         Assert.Equal(2, queue.ActiveCount);
     }
@@ -78,7 +84,8 @@ public sealed class BoundedResolveQueueTests
 
         string key = "";
         var result = "sentinel";
-        SpinWait.SpinUntil(() => queue.TryDequeueCompleted(out key, out result), TimeSpan.FromSeconds(5));
+        Assert.True(queue.WaitForDrain(TimeSpan.FromSeconds(30)));
+        Assert.True(queue.TryDequeueCompleted(out key, out result));
         Assert.Equal("k", key);
         Assert.Null(result);
     }
@@ -111,7 +118,12 @@ public sealed class BoundedResolveQueueTests
 
         public Task<TResult?> Schedule(Func<TResult?> work)
         {
-            var completion = new TaskCompletionSource<TResult?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            // Deliberately NOT RunContinuationsAsynchronously. The queue registers its
+            // completion continuation with ExecuteSynchronously on TaskScheduler.Default, so
+            // completing here runs it inline and ReleaseOne returns with the completion already
+            // recorded. With the continuation forced onto the pool instead, every wait below
+            // became a race the pool can lose for seconds under a full-suite run.
+            var completion = new TaskCompletionSource<TResult?>();
             _pending.Enqueue((work, completion));
             return completion.Task;
         }

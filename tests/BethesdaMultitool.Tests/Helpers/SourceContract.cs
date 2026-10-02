@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Xunit;
 
 namespace BethesdaMultitool.Tests.Helpers;
@@ -11,6 +12,21 @@ namespace BethesdaMultitool.Tests.Helpers;
 internal static class SourceContract
 {
     private static readonly Lazy<string> LazyRepoRoot = new(FindRepoRoot);
+    private static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+    // A test process evaluates one checkout. Keep its source snapshot and flat-name indexes
+    // for the run instead of repeatedly reading and traversing the same trees for every case.
+    private static readonly ConcurrentDictionary<string, Lazy<string>> Sources = new(PathComparer);
+    private static readonly Lazy<ILookup<string, string>> ShaderFiles = new(() => IndexFiles(ShadersRoot));
+    private static readonly Lazy<ILookup<string, string>> AppFiles = new(() => IndexFiles(AppRoot));
+    private static readonly Lazy<string[]> ProductionFiles = new(() => Directory.EnumerateFiles(
+        Path.Combine(RepoRoot, "src"), "*", SearchOption.AllDirectories).ToArray());
+
+    /// <summary>Snapshot of the same production-tree paths used by cross-file architecture checks.</summary>
+    public static IReadOnlyList<string> ProductionSourcePaths => ProductionFiles.Value;
+
+    /// <summary>Read a resolved source path from the current test process's immutable checkout snapshot.</summary>
+    public static string ReadSourceFile(string path) => ReadNormalized(path);
 
     /// <summary>Repo root, located by probing upward for Directory.Build.props.</summary>
     public static string RepoRoot => LazyRepoRoot.Value;
@@ -29,6 +45,23 @@ internal static class SourceContract
     }
 
     /// <summary>
+    ///     Read reference material that lives OUTSIDE the repository — a Ghidra decompile under
+    ///     <c>tools/GhidraProject/</c>, a harness script under <c>scratchpad/</c>, vendored source
+    ///     under <c>Sample/Reference_Code/</c> — all of which <c>.gitignore</c> keeps out of every
+    ///     clone. A pin against such a file cannot run where the file is absent (CI, a worktree,
+    ///     another machine), so it SKIPS there naming the path, rather than failing with a
+    ///     DirectoryNotFoundException or passing without having read anything.
+    /// </summary>
+    public static string ReadLocalReference(params string[] relativePath)
+    {
+        var relative = Path.Combine(relativePath);
+        var path = Path.Combine(RepoRoot, relative);
+        Assert.SkipWhen(!File.Exists(path),
+            $"Local-only reference material not present in this checkout (gitignored): {relative}.");
+        return ReadNormalized(path);
+    }
+
+    /// <summary>
     ///     Read a source file with line endings normalized to LF. Markers in these tests are C#
     ///     string literals containing bare <c>\n</c>, but the checked-out line endings are not
     ///     fixed: this repo's working tree holds LF while the GitHub Windows runner image sets
@@ -38,8 +71,13 @@ internal static class SourceContract
     /// </summary>
     private static string ReadNormalized(string path)
     {
-        return File.ReadAllText(path).Replace("\r\n", "\n", StringComparison.Ordinal);
+        return Sources.GetOrAdd(Path.GetFullPath(path), static fullPath => new Lazy<string>(() =>
+            File.ReadAllText(fullPath).Replace("\r\n", "\n", StringComparison.Ordinal))).Value;
     }
+
+    private static ILookup<string, string> IndexFiles(string root) =>
+        Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories)
+            .ToLookup(path => Path.GetFileName(path), PathComparer);
 
     /// <summary>
     ///     Resolve a shader source file by bare file name, searching every Shaders subdirectory.
@@ -48,7 +86,7 @@ internal static class SourceContract
     /// </summary>
     public static string ShaderPath(string fileName)
     {
-        return Directory.EnumerateFiles(ShadersRoot, fileName, SearchOption.AllDirectories).Single();
+        return ShaderFiles.Value[fileName].Single();
     }
 
     /// <summary>Read a shader's source text by bare file name.</summary>
@@ -65,7 +103,7 @@ internal static class SourceContract
     /// </summary>
     public static string ReadAppSource(string fileName)
     {
-        return ReadNormalized(Directory.EnumerateFiles(AppRoot, fileName, SearchOption.AllDirectories).Single());
+        return ReadNormalized(AppFiles.Value[fileName].Single());
     }
 
     /// <summary>Assert each value appears in <paramref name="source" /> after the previous one.</summary>

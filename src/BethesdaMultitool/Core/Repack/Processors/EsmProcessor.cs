@@ -1,4 +1,5 @@
 using BethesdaMultitool.Core.Formats.Esm.Conversion;
+using BethesdaMultitool.Core.Formats.Esm.Parsing;
 
 namespace BethesdaMultitool.Core.Repack.Processors;
 
@@ -71,6 +72,27 @@ public sealed class EsmProcessor(bool isEsp = false) : IRepackProcessor
             try
             {
                 var inputData = await File.ReadAllBytesAsync(sourceFile, cancellationToken);
+
+                // The converter byte-swaps unconditionally, so it must only ever see console bytes.
+                // The retail Xbox 360 build ships an already-little-endian update.esp beside its
+                // big-endian master: swapping that produces a corrupt console-endian plugin on a
+                // simple file and throws partway through a real one. EsmConvertCommand has always
+                // made this check before constructing the converter; this path did not.
+                if (EsmParser.ParseFileHeader(inputData) is not { IsBigEndian: true })
+                {
+                    // Already in PC byte order, so it needs copying rather than converting.
+                    await File.WriteAllBytesAsync(destFile, inputData, cancellationToken);
+                    processed++;
+                    progress.Report(new RepackerProgress
+                    {
+                        Phase = _phase,
+                        CurrentItem = fileName,
+                        ItemsProcessed = processed,
+                        TotalItems = files.Length,
+                        Message = $"Copied {fileName}; it is already in PC byte order"
+                    });
+                    continue;
+                }
 
                 using var converter = new EsmConverter(inputData, options.Verbose);
                 var outputData = converter.ConvertToLittleEndian();

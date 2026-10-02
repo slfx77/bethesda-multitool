@@ -17,6 +17,7 @@ internal static class ShaderCompileTestGuard
 
     public static void SkipUnlessEnabled()
     {
+        TestCategories.RequireCurrent(Category);
         var value = Environment.GetEnvironmentVariable("RUN_SHADER_COMPILE_TESTS");
         Assert.SkipWhen(
             !string.Equals(value, EnabledValue, StringComparison.Ordinal),

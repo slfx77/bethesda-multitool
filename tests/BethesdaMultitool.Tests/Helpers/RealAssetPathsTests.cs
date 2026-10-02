@@ -98,4 +98,19 @@ public sealed class RealAssetPathsTests : IDisposable
             RealAssetPaths.SkipMessage("Oblivion.esm"),
             StringComparison.Ordinal);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OblivionPspBuild_ResolvesDatedBuildUnderCorpusRootOrSampleChild(bool sampleChild)
+    {
+        var corpusRoot = sampleChild ? Path.Combine(_root, "Sample") : _root;
+        var build = Path.Combine(corpusRoot, "Builds",
+            "The Elder Scrolls Travels - Oblivion (2007-4-27, PSP - Prototype)");
+        Directory.CreateDirectory(build);
+
+        var resolved = RealAssetPaths.Travels.OblivionPspBuild("2007-4-27");
+
+        Assert.Equal(build, resolved);
+    }
 }

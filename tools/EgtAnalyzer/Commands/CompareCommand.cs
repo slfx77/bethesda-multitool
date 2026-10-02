@@ -288,7 +288,8 @@ internal static class CompareCommand
     {
         using var image = new MagickImage(path);
         image.Alpha(AlphaOption.Set);
-        var pixels = image.GetPixels().ToByteArray(PixelMapping.RGBA)!;
+        using var pixelView = image.GetPixels();
+        var pixels = pixelView.ToByteArray(PixelMapping.RGBA)!;
         return (pixels, (int)image.Width, (int)image.Height);
     }
 }

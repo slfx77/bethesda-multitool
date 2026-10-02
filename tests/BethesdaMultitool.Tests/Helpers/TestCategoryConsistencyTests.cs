@@ -14,8 +14,9 @@ namespace BethesdaMultitool.Tests.Helpers;
 ///         <c>ShaderCompileTestGuard</c> had none at all.
 ///     </para>
 ///     <para>
-///         This is a source scan rather than a reflection check because the guard call sites are
-///         inside method bodies, which reflection cannot see.
+///         One source pass checks even guard calls not reached by today's data. Each guard also
+///         checks xUnit's effective traits at runtime, so a sibling method's attribute cannot
+///         incorrectly satisfy the contract for the executing test.
 ///     </para>
 /// </summary>
 public class TestCategoryConsistencyTests
@@ -27,21 +28,24 @@ public class TestCategoryConsistencyTests
         (nameof(ShaderCompileTestGuard), ShaderCompileTestGuard.Category)
     ];
 
-    public static TheoryData<string> Guards => [.. GuardCategories.Select(g => g.Guard)];
-
-    [Theory]
-    [MemberData(nameof(Guards))]
-    public void EveryFileCallingAGuard_AlsoCarriesItsCategoryTrait(string guard)
+    [Fact]
+    public void EveryFileCallingAGuard_AlsoCarriesItsMatchingCategoryTrait()
     {
-        var category = GuardCategories.Single(g => g.Guard == guard).Category;
         var testRoot = Path.Combine(SourceContract.RepoRoot, "tests", "BethesdaMultitool.Tests");
+        var contracts = GuardCategories.Select(pair => (pair.Guard, pair.Category, Pattern: new Regex(
+            @"\[\s*Trait\(\s*""Category""\s*,\s*(?:TestCategories\." + Regex.Escape(pair.Category) + "|"
+            + Regex.Escape(pair.Guard) + @"\.Category|""" + Regex.Escape(pair.Category) + @""")\s*\)\s*\]",
+            RegexOptions.CultureInvariant))).ToArray();
 
-        // Accept either the shared TestCategories constant or the guard's own Category member —
-        // both compile to the same string, and requiring one spelling would be churn, not safety.
-        var traitPattern = new Regex(
-            @"\[\s*Trait\(\s*""Category""\s*,\s*(?:TestCategories\.\w+|" + Regex.Escape(guard) +
-            @"\.Category)\s*\)\s*\]",
-            RegexOptions.Compiled);
+        foreach (var (guard, category, pattern) in contracts)
+        {
+            Assert.Matches(pattern, $"[Trait(\"Category\", TestCategories.{category})]");
+            Assert.Matches(pattern, $"[Trait(\"Category\", {guard}.Category)]");
+            Assert.DoesNotMatch(pattern, "[Trait(\"Category\", TestCategories.Benchmark)]");
+            // This test has no opt-in trait. Metadata must reject a guard even if another
+            // method or a textual declaration elsewhere in this file names its category.
+            Assert.Throws<Xunit.Sdk.TrueException>(() => TestCategories.RequireCurrent(category));
+        }
 
         var missing = new List<string>();
         foreach (var file in Directory.EnumerateFiles(testRoot, "*.cs", SearchOption.AllDirectories))
@@ -56,21 +60,18 @@ public class TestCategoryConsistencyTests
             }
 
             var text = File.ReadAllText(file);
-            if (!text.Contains($"{guard}.SkipUnlessEnabled", StringComparison.Ordinal))
+            foreach (var (guard, category, pattern) in contracts)
             {
-                continue;
-            }
-
-            if (!traitPattern.IsMatch(text))
-            {
-                missing.Add(Path.GetRelativePath(testRoot, file));
+                if (text.Contains($"{guard}.SkipUnlessEnabled", StringComparison.Ordinal)
+                    && !pattern.IsMatch(text))
+                {
+                    missing.Add($"{Path.GetRelativePath(testRoot, file)}: {guard} requires Category={category}");
+                }
             }
         }
 
         Assert.True(missing.Count == 0,
-            $"{missing.Count} file(s) call {guard}.SkipUnlessEnabled() without "
-            + $"[Trait(\"Category\", \"{category}\")], so --filter-trait Category={category} "
-            + $"would silently skip them:{Environment.NewLine}  "
+            $"{missing.Count} missing guard/category pair(s); category filters would omit these tests:{Environment.NewLine}  "
             + string.Join($"{Environment.NewLine}  ", missing.OrderBy(m => m, StringComparer.Ordinal)));
     }
 }

@@ -87,6 +87,36 @@ esm cell npc-trace <file> <id>  # Trace NPC from FormID to cell
 #   481 MB) including the fxart/TEXBSI 3dfx art the Steam release omits.
 #   CD images too: .iso (ISO9660), .cue + .bin (redump raw 2352). Data files list under their
 #   ISO9660 paths; Redbook tracks list as audio/trackNN.wav and extract as 44.1 kHz stereo WAV.
+#   ⚑⚑ .chd — MAME's container, which is how EVERY optical original in the corpus is stored — is
+#     read NATIVELY since 2026-09-09 (`Core/Formats/DiscImage/Chd/`), no chdman at run time. v5
+#     only: 124-byte header, the Huffman+delta coded hunk map, and the codecs the corpus uses —
+#     zlib (RAW deflate, no zlib wrapper), lzma (RAW stream, lc3/lp0/pb2, no props header), huff,
+#     flac, and the CD-framed cdzl/cdlz/cdfl. Every hunk is checked against the map's CRC-16 and
+#     the whole image against the header's raw SHA-1. A CD-shaped CHD carries a CHT2 metadata
+#     record per track, so its Redbook tracks survive; a DVD-shaped one is a plain 2048-byte
+#     image and also serves XDVDFS (the NV X360 and BOS Xbox discs mount straight out of it).
+#     ⚠⚠ A cdzl/cdlz hunk is [ecc bitmap][u16 sector length][sector data][subcode]: 2352-byte
+#     sectors and 96-byte subcode are compressed SEPARATELY and interleaved back into 2448-byte
+#     frames, and a SET bit means chdman STRIPPED that sector's sync header and ECC because they
+#     were reconstructible — the reader regenerates them (`CdSectorEcc`, ECMA-130 Annex A over
+#     GF(2^8)/0x11D).
+#     ⛔⛔ cdfl SHARES NONE OF THAT and reading it the same way is silent corruption: its FLAC
+#     stream starts at byte 0 (NO ecc bitmap, NO length field), the subcode begins wherever the
+#     FLAC decoder stopped, and it NEVER strips ECC, so regenerating any overwrites good sectors.
+#     Proved on the fixtures 2026-09-09: cdzl/cdlz hunk 0 opens `ff 00 93 …` (bitmap + length)
+#     while cdfl opens `ff f8 79 18 00 09 2f 76`, a FLAC frame header whose CRC-8 over the first
+#     seven bytes IS the eighth. libchdr agrees — cdzl/cdlz delegate to `cd_codec_decompress`,
+#     cdfl does not. Battlespire's disc is 12,195 cdfl hunks of 38,645, so this is not an edge.
+#     ⛔⛔ CD AUDIO IS STORED BYTE-SWAPPED. A CHD holds CD-DA as BIG-endian 16-bit samples, a
+#     .bin as little-endian, so `ChdSectorSource` swaps AUDIO frames only (never data tracks).
+#     Measured against chdman 0.289: a synthetic audio disc matches `extractraw` verbatim 0/400
+#     and swapped 400/400; on Battlespire, data frames match verbatim 4/4 and audio frames only
+#     swapped 7/7. Unswapped, every extracted music track is noise — and a pregap sector carries
+#     the sync pattern ITSELF swapped (`ff 00 ff ff …`), so "it looks like a sync" does not catch it.
+#     ⚑ PROVEN, not assumed: `ChdFileTests` decodes one fixture per codec and pins each against the
+#     SHA-1 of the file it was made from; `ChdCorpusRetailTests` decodes real corpus images and
+#     reproduces the image SHA-1 chdman recorded in the header (which the reader cannot see while
+#     decoding), and compares one byte-for-byte against `chdman extractcd`/`extractdvd` output.
 #   Redguard Disc 1 = the install tree incl. the 3dfx fxart the Steam build omits; Disc 2 = the
 #   .SMK movies + 7 audio tracks; the Battlespire disc = data + 8 audio tracks. Staged under
 #   the Redguard and Battlespire disc builds under Sample/Builds/ (Redguard's two discs share
@@ -922,6 +952,7 @@ render npc <meshes-bsa> --esm <e> -o <dir>  # NPC head sprites (auto-detects tex
 export nif <path> -o <dir>                  # Export NIF model to GLB
 export npc <meshes-bsa> --esm <e> -o <dir>  # Export NPC with FaceGen morphs + equipment
                                             #   (--dmp / --dmp-equip work here too)
+export scripts <esm|dmp> -o <dir>           # One file per SCPT: SCTX VERBATIM (Windows-1252 bytes, no BOM/header) as <EditorID>.gek (FNV/FO3; else .txt; --ext), SCDA reconstruction as <EditorID>.decompiled.gek only when no source (--decompiled missing|all|none), provenance+SHA-256 in scripts.manifest.json; --id 0xFormID|EditorID (repeatable), -f substring, --overwrite, --build-label; exit 1 on unmatched --id or existing target. ⚠ VS Code opens .gek as UTF-8: set files.encoding windows1252 for *.gek or saving corrupts 0x92 (retail 0x001746C1)
 
 # DMP commands
 dmp to-esm <file> -o <out>      # Rebuild a loadable ESM plugin from a dump. Output is ESM-FLAGGED
@@ -1034,7 +1065,7 @@ dotnet run --project src/BethesdaMultitool -f net10.0 -- esm semdiff <file1> <fi
 | SignatureScanner | File signature matching in memory dumps | `dotnet run --project tools/SignatureScanner -- <cmd>` |
 | TerrainAnalyzer | Heightmap/terrain analysis | `dotnet run --project tools/TerrainAnalyzer -- <cmd>` |
 | EsmSchemaGen | Generate per-game C# record schemas from xEdit wbDefinitions | `dotnet run --project tools/EsmSchemaGen -- <cmd>` |
-| SampleGenerator | Build `Sample/Builds` from the private media collection (ported from NeversoftMultitool) | `dotnet run --project tools/corpus/SampleGenerator -- --dry-run` |
+| CorpusTool (sibling repo `..\CorpusTool`) | Build `Sample/Builds` + `../Media` from `../CorpusTool/profiles/BethesdaMultitool.json`; one exe shared with NeversoftMultitool and AweMultitool (see "Regenerating the corpus") | `../CorpusTool/bin/CorpusTool.exe verify --config ../CorpusTool/profiles/BethesdaMultitool.json` |
 | ShaderProbe | Extract/probe FNV shaderpackage.sdp for renderer parity | `dotnet run --project tools/ShaderProbe -- <cmd>` |
 
 ## Key Source Directories
@@ -1160,31 +1191,42 @@ When debugging, focus on fields showing **DIFF** in semantic comparison, not jus
 ### Sample Directory Layout
 
 ⚠⚠ **RESTRUCTURED 2026-09-07.** `Sample/Full_Builds/` is GONE — every build moved into
-`Sample/Builds/` under a computed name, and the non-build fixtures were regrouped. Generated and
-regenerated by `tools/corpus/SampleGenerator` (see its README). Notes written before that date use
-the old paths.
+`Sample/Builds/` under a computed name, and the non-build fixtures were regrouped. Notes written
+before that date use the old paths.
+
+⚑⚑ **GENERATOR RELOCATED 2026-09-09.** The corpus is defined by `../CorpusTool/profiles/BethesdaMultitool.json` (private, git-ignored)
+and built by **CorpusTool**, a sibling repo at `..\CorpusTool` shared with NeversoftMultitool and
+AweMultitool. The in-repo `tools/corpus/SampleGenerator` was deleted that day (`git log --
+tools/corpus/SampleGenerator` has its history). See "Regenerating the corpus" below.
+
+Original media lives in the shared sibling `../Media/<build>/` (since 2026-09-13);
+extracted builds stay in `Sample/Builds/`. `mediaPeers` identifies the other projects
+sharing Media. `claimed` reserves `Media/New` for intake, `Media/Reference` for supporting
+material, and `Media/Preservation` for packages outside the active build corpus.
 
 ```
 Sample/
-├── Builds/                 # THE CORPUS: game files only. 33 builds / 112.8 GB, nothing else
+├── Builds/                 # THE CORPUS: game files only. 55 builds / 137.5 GB, nothing else
 │   └── Game Name (yyyy-M-d, Platform - Kind)/
-├── Media/                  # original disc images + packages, per build (33.7 GB)
-├── ReverseEngineering/     # binaries staged for Ghidra, COPIED from tools/GhidraProject (115 MB)
-│   └── Fallout - New Vegas (PC)/FalloutNV_runtime_image.bin   # ⚑ the DRM-FREE dump
-├── Catalog/                # generator output, kept OUT of Builds/
+├── ReverseEngineering/     # binaries staged for Ghidra: X360 + Fallout 3 exes copied from their builds,
+│                           #   Geck.exe a fixture from ../Media/Reference (the LAA exe and the DRM-free
+│                           #   runtime dump were removed 2026-09-25; NvseFaceGenProbe re-dumps the latter)
+├── Catalog/                # CorpusTool output, kept OUT of Builds/ (+ steam_depot_keys.txt, never checked in)
 │   ├── catalog.json/.md    # census + the deliberate-exclusion list
-│   └── builds/<name>.json  # per build: sources, date provenance, notes, measured exe timestamp
+│   └── builds/<name>.json  # per build: sources, date provenance, notes, each media item's CHD SHA1
 ├── ESM/                    # Individual ESM files
 │   ├── 360_final/          # Xbox 360 final ESM
 │   ├── 360_proto/          # Xbox 360 prototype ESM
 │   ├── fallout_3/          # Fallout 3 ESM
 │   └── pc_final/           # PC final ESM
-├── MemoryDumps/            # Xbox 360 crash dumps          (was MemoryDump/)
-├── DebugSymbols/           # exe + .pdb/.map per title, COPIED from the builds (4.8 GB)
-│   ├── Fallout - New Vegas (X360)/                         (was PDB/, the cvdump trees)
-│   ├── Fallout 4 (PC)/                                     (was Sample/Fallout 4/)
-│   ├── The Elder Scrolls IV - Oblivion Remastered (PC)/    (was Sample/Oblivion Remastered/)
-│   └── The Elder Scrolls V - Skyrim (PC)/                  (was Sample/Skyrim/)
+├── MemoryDumps/            # Xbox 360 crash dumps          (was MemoryDump/) — a CorpusTool `fixtures` tree:
+│                           #   regenerated as-is from its retained archive under ../Media/Reference
+├── DebugSymbols/           # symbol file + the executable it maps onto; every folder is recreated by CorpusTool
+│   ├── <build name>/                                       per-build copy rule (not the three X360 prototypes)
+│   ├── Fallout - New Vegas (X360)/<date> <config>/         11 sets from the X360 prototypes (was PDB/)
+│   ├── Fallout 4 (PC)/                                     fixture from ../Media/Reference (was Sample/Fallout 4/)
+│   ├── The Elder Scrolls IV - Oblivion Remastered (PC)/    fixture (was Sample/Oblivion Remastered/)
+│   └── The Elder Scrolls V - Skyrim (PC)/                  fixture (was Sample/Skyrim/)
 ├── Meshes/                 # Extracted Meshes BSAs
 ├── Textures/               # Extracted Texture BSAs
 ├── Reference_Code/         # Source code from useful projects
@@ -1196,11 +1238,72 @@ Sample/
 ```
 
 ⚠⚠ **A build directory holds the unpacked game tree and nothing else.** Disc images, floppy
-images and release packages are expanded into the build and then moved to `Sample/Media/<build>/`;
+images and release packages are expanded into the build and then moved to `../Media/<build>/`;
 symbols and executables are COPIED (originals stay) to `Sample/DebugSymbols/<build>/`; the
-generator's manifests live in `Sample/Catalog/`.
+CorpusTool's manifests live in `Sample/Catalog/`. BethesdaAudioTranscriber's `.fnvtranscript.json` /
+`.fnvreview.json` for a Data directory inside a build live under `Sample/Transcripts/<build>/<same
+relative path>/`, never beside the BSAs (`Core/Utils/TranscriptSidecarStore`; the same mapping is in
+`tools/scripts/transcript_typo_check.py`). They are irreplaceable work, and a regenerated build
+leaves them untouched there.
 
-⚠⚠ **Media is DECLARED per file in the catalog, never detected by extension.** An extension sweep
+⚑⚑ **Regenerating the corpus — CorpusTool, since 2026-09-09.** One exe, one JSON per repo. The exe is
+`dotnet publish -c Release --no-build -o bin` of the sibling `..\CorpusTool` repo (build it there with
+`pwsh -NoProfile -File tools/scripts/build.ps1`, no build arguments); the config is this repo's
+`../CorpusTool/profiles/BethesdaMultitool.json` (private, git-ignored). Run from the repo root:
+
+```bash
+../CorpusTool/bin/CorpusTool.exe verify       --config ../CorpusTool/profiles/BethesdaMultitool.json   # read-only: config, unclaimed dirs, pinned CHD SHA1s
+../CorpusTool/bin/CorpusTool.exe plan         --config ../CorpusTool/profiles/BethesdaMultitool.json   # what generate would do (read-only)
+../CorpusTool/bin/CorpusTool.exe generate     --config ../CorpusTool/profiles/BethesdaMultitool.json [--build <substr>] [--repopulate] [--catalog-only]
+../CorpusTool/bin/CorpusTool.exe import       --config ../CorpusTool/profiles/BethesdaMultitool.json   # generate, absent builds only
+../CorpusTool/bin/CorpusTool.exe measure      --config ../CorpusTool/profiles/BethesdaMultitool.json [--update-config]   # disc descriptor dates, UTC
+../CorpusTool/bin/CorpusTool.exe media-verify --config ../CorpusTool/profiles/BethesdaMultitool.json [--deep]
+```
+
+- `corpus.json` is camelCase, comment-free and STRICT (an unknown member is a load error). Every
+  build declares its `sources` (a Steam install, a staged tree, or a disc image found under
+  `search.media`), its `media` (declared per file, never sniffed: `format`, `extract`, `store`,
+  `expectedSha1`) and its `date` + `dateSource` + `dateEvidence`. `verify` must report 0 problems
+  before `generate` runs (`--allow-unclaimed` overrides, logged); `verify`/`plan` write nothing.
+- **Dates are the disc's own, in UTC** (user ruling 2026-09-09). `measure` reads the ISO 9660 PVD,
+  UDF PVD or XDVDFS FILETIME straight out of the stored CHD (`chdman extractraw`); `--update-config`
+  rewrites `date`/`dateEvidence` and records the old name under `previousNames`, and the next
+  `generate` renames Builds/, Media/, the DebugSymbols side tree and the manifest. Refused as junk:
+  year 0000, a date more than three years in the future (remaster), one stamp shared by two builds of
+  a title (stale mastering stamp — date such a disc `directoryRecord` from its executable's record,
+  which `measure` cannot read yet); years 1900-1920 are read +100.
+- **Optical media is stored as CHD** (`chdman` as a separate process — MAME's licence never touches
+  the code): `createcd` for CD formats, `createdvd` for DVD/BD/UMD/XGD. The original is deleted only
+  after `chdman verify` passes and the SHA1 is in the manifest; an existing `.chd` is never
+  overwritten; a stored CHD is materialised into the research cache
+  (`%LOCALAPPDATA%\Temp\CorpusTool\BethesdaMultitool`) only when its build is (re)populated.
+- Format-specific extraction is delegated through `extractors`: `sevenZip` (builtin) and `repoCli` =
+  this repo's own `BethesdaMultitool.exe archive extract` (raw 2352 CDs, InstallShield CAB, the Steam
+  `.sim` — depot keys reach it through `BETHESDA_STEAM_DEPOT_KEYS` = `Sample/Catalog/steam_depot_keys.txt`,
+  never checked in). ⚠ XDVDFS never goes through 7z (wrong partition, exit 0): the validator refuses it.
+- `copyRules` COPY symbols/executables to `Sample/DebugSymbols/<build>/` (the three X360 prototypes
+  instead into `DebugSymbols/Fallout - New Vegas (X360)/<date> <config>/`) and the X360 and Fallout 3
+  RE binaries from their builds to `Sample/ReverseEngineering/`; `fixtures` extract the non-build
+  trees (memory dumps, the PC symbol folders, the GECK) from compressed archives in `../Media/Reference`,
+  so every file in a tool folder has a Media backup; `auditRules` mark a build `Modified` on a loader
+  marker or root-only `ddraw.dll` that is not in its `shippedExtras`.
+- Safety: nothing under `Sample/Builds` is deleted except `--repopulate` of a build whose sources all
+  resolve; relocation into `../Media` refuses an existing destination; a same-name file already
+  there is a duplicate only when size AND SHA-1 match.
+- ⚠⚠ `corpus.json` and `tests/…/Helpers/SampleCorpus.cs` are the files that DEFINE the build names —
+  exclude both from any repo-wide path sweep (the old C# catalog was corrupted three times that way).
+- **Stored media is read NATIVELY**: `.chd` opens through `ArchiveReader` like any other image (see the `archive`
+  section), so nothing needs chdman at run time. `RealAssetPaths.DiscMedia(build, image)` returns the raw image
+  when one is still staged, else the `.chd` beside it. ⚠ Open the `.chd` DIRECTLY rather than materialising it:
+  `chdman extractcd` writes ONE `.bin` for the whole disc and a single-file cue contributes one track region, so
+  a redump's Redbook tracks vanish (measured 2026-09-09: 0 instead of 6 and 7). `ChdFixture`
+  (`tests/…/Helpers/`) still exists to materialise a CHD with chdman for a test that genuinely needs a file on
+  disk; it caches into the research directory CorpusTool uses, `%LOCALAPPDATA%\Temp\CorpusTool\BethesdaMultitool\media\<build>\`.
+  The six PSP betas resolve one build each through `RealAssetPaths.Travels.OblivionPspBuild("2006-6-9")` /
+  `OblivionPspBuilds()`; the old single root and the fan repack ("Modified …") are gone, and so are the two
+  tests that existed only for the repack.
+
+⚠⚠ **Media is DECLARED per file in `corpus.json`, never detected by extension.** An extension sweep
 would gut three builds: the Battlespire and Redguard Steam installs each ship a raw-sector `.bin`
 CD image that DOSBox mounts (484 MB / 709 MB, both passing a sync-pattern test), and Daggerfall's
 hundreds of `.IMG` files are its TEXTURE format. The only genuine disk-image set is Arena's eight
@@ -1213,14 +1316,14 @@ and `Sample/Unpacked_Builds/` already holds loose trees for the two builds that 
 
 ⚠⚠ **7z reads the Xbox 360 XGD image as `Udf` and returns the WRONG partition** — 13 files / 90 MB
 instead of the game partition at `0xFD90000`. It succeeds while being wrong, so both XGD images are
-`KeepPacked`. ⚠ 7z also exits 2 ("Headers Error") on the PS3 UDF Blu-ray while extracting every
+declared `extract: keepPacked` in `corpus.json`, and the validator refuses XDVDFS through 7z. ⚠ 7z also exits 2 ("Headers Error") on the PS3 UDF Blu-ray while extracting every
 file, so success there is judged by comparing the extracted count against the listing.
 
 ⚠⚠ **`Steam` and `PC` are DIFFERENT platforms here.** A Steam install is not a dated release — it
 is whatever the depot last shipped, and it changes under you (Skyrim Special Edition was patched
 2026-08-31; the four classic re-releases were repackaged the same day). So a Steam build is dated
 from Steam's own `appmanifest_*.acf` `LastUpdated`, with `buildid` in its manifest, and the
-generator re-reads both every run and flags drift. Retail media keeps `PC`.
+CorpusTool re-reads both every run and reports drift. Retail media keeps `PC`.
 ⚠ An executable's COFF stamp is when it was COMPILED, not what shipped beside it — Oblivion stamps
 2007-04-16 against a 2022-06-18 depot. ⚠ More than one appmanifest can name one install directory
 (this machine has both `Fallout New Vegas` and `fallout new vegas`), so the LATEST wins.
@@ -1251,10 +1354,10 @@ difference that invalidates a parity measurement while every data file checks ou
 true October-2010 **1.0** tree in the corpus — `Data/FalloutNV.esm` at 245,491,701 B and a
 `FalloutNV.exe` (16,397,640 B, COFF 2010-09-16) that exists on **no** Steam depot. Platform token
 is `Steam Disc`, not `PC`. Reader: `Core/Formats/Steam/` (see the `archive` section above).
-⚠⚠ **The build directory holds ONLY the 431 decrypted game files; the installer — `.sim`, the five
-`.sid`, `Setup.exe`, `resources/` — is the PACKAGE and lives in `Sample/Media/<build>/disc/`**,
-beside the ISO it came from. Do not put them back: a `.sid` next to the game tree is what
-"contaminated build" looks like.
+⚠⚠ **The build directory is the unpacked DISC plus the decrypted depot** (user ruling 2026-09-08): `Setup.exe`,
+`resources/`, the `.sis`, the `.sim` and the five `.sid` at the build root, and `FalloutNV/` beside them holding
+the 431 files decrypted out of the `.sid`s. `../Media/<build>/` holds the disc image alone (as CHD). No
+duplication: nothing under `FalloutNV/` is repeated at the root.
 ⚠ Extraction needs the per-depot **legacy 16-byte** key, read from `depot_keys.txt` beside the
 `.sim` and deliberately NOT compiled into this repo. Listing needs no key at all.
 
@@ -1265,29 +1368,42 @@ disc were corrupt.
 Build naming is `Game Name (yyyy-M-d, Platform - Kind)`, matching the sibling NeversoftMultitool
 corpus; a build with no defensible date drops it (`Game Name (Platform - Kind)`). ⚠ **Dates are
 MEASURED** — ISO 9660 volume descriptors, COFF header timestamps, or the leak's own label — and each
-`build.json` says which. Two measurements are JUNK and are not used: `Morrowind.exe` stamps
-`2030-10-02` and the Brotherhood of Steel Xbox disc's XDVDFS descriptor reads `1601-01-03`; both
-entries fall back to the documented release date and say so. A self-test rejects any catalog date
+`build.json` says which. One measurement is JUNK and is not used: `Morrowind.exe` stamps
+`2030-10-02`, so that entry falls back to the documented release date and says so. ⛔ The Brotherhood of
+Steel Xbox disc's XDVDFS descriptor was recorded as reading `1601-01-03`; that was a read at the XGD1
+base of an image that is a TRIMMED base-0 game partition, whose descriptor at `0x10000` reads
+**2003-10-04 02:35 UTC** (measured 2026-09-08) — the build is now named from it. A self-test rejects any catalog date
 outside 1993-2027.
+
+⚑ **The three New Vegas retail discs are dated from their own descriptors** (measured 2026-09-08 off the CHDs
+with `chdman extractraw -isb <offset> -ib 2048`): X360 XGD2 = XDVDFS FILETIME at `0x0FD90000 + 0x10000 + 0x1C`
+→ **2010-08-22** (the video partition's PVD says 2009-10-29 and is Microsoft's, not the game's); PS3 = UDF PVD at
+sector 32 and the ISO 9660 bridge PVD at 0x8000, both **2010-09-05**; the Steam Disc PVD = 2010-09-16, agreeing
+with `FalloutNV.exe`'s COFF stamp. ⛔ The X360 and PS3 builds were named from the 2010-10-19 release date until
+2026-09-08 because the old generator had no XDVDFS/UDF reader.
 
 ⚠ PC titles after Skyrim Special Edition are DELIBERATELY excluded (Fallout 4, Fallout 76,
 Starfield, Oblivion Remastered — 403 GB). They stay installed and resolve through the test suite's
-Steam probes. The exclusion is listed in `catalog.md`, not silently absent.
+Steam probes. The exclusion is listed in `catalog.md`, not silently absent, and `catalog.json`
+`Excluded[].InstallPath` records each live install (found through its Steam app id's appmanifest)
+with its depot build, as it does for the Steam Arena install the Arena CD build stands for.
 
 ⚑ Tests still written against `Sample/Full_Builds/…` keep working: `SampleCorpus` (in
 `tests/…/Helpers/`) reads the `LegacySources` recorded in `Catalog/catalog.json` and rewrites the
 old path onto its new home, so the rename table is never duplicated. Prefer the new path in new
 code. ⚠ The rewrite maps onto `Sample/Builds/` only — a legacy path naming original media (a JAR,
-a disc image) now lives under `Sample/Media/`, and `RealAssetPaths` names those directly.
+a disc image) now lives under `../Media/`, and `RealAssetPaths` names those directly.
 
 ### Full Game Builds (for rendering — needs BSAs + textures)
 
-- **Xbox 360 final**: `Sample/Builds/Fallout - New Vegas (2010-10-19, X360 - Final)/Data/`
-  (the XGD2 disc image sits beside it in `disc/`; there is no XDVDFS reader here, so it is kept, not expanded)
+- **Xbox 360 final**: `Sample/Builds/Fallout - New Vegas (2010-8-22, X360 - Final)/Data/`
+  (the build is the game partition's tree — `default.xex`, `Data/`, `nxeart`, `AvatarAssetPack`; the XGD2
+  image is `../Media/<build>/Fallout - New Vegas (USA, Europe).chd`, declared `keepPacked`)
 - **Xbox 360 Aug 2010**: `Sample/Builds/Fallout - New Vegas (2010-8-22, X360 - Prototype)/Diskuild_1.0.0.252/Data/`
 - **Xbox 360 July 2010**: `Sample/Builds/Fallout - New Vegas (2010-7-21, X360 - Prototype)/FalloutNV/Data/`
 - **PC final**: `Sample/Builds/Fallout - New Vegas (2022-5-24, Steam - Final)/Data/` (patch 1.4)
-- **PC retail DVD**: `Sample/Builds/Fallout - New Vegas (2010-9-16, PC - Final)/` (ISO9660, mountable in place)
+- **PC retail DVD**: `Sample/Builds/Fallout - New Vegas (2010-9-16, Steam Disc - Final)/` — the unpacked disc
+  plus `FalloutNV/` (the 431 files decrypted from the `.sid`s); the image is the CHD under `../Media/<build>/`
 - **PC install**: `E:\SteamLibrary\SteamApps\common\Fallout New Vegas\Data\`
 
 ### Classic Game Installs (pre-Morrowind catalog)
@@ -1337,17 +1453,18 @@ The five TES Travels titles are NOT Steam installs — each is its own build dir
 
 | Game | Build directory | Root | Notes |
 |---|---|---|---|
-| Stormhold | `The Elder Scrolls Travels - Stormhold (J2ME - Variants)` | the .jar itself | BIG-endian; 9 loose `.dat` tables, 37 `.cus`, 16 standard PNG; 3 JARs + the release zip |
-| Dawnstar | `The Elder Scrolls Travels - Dawnstar (J2ME - Variants)` | the .jar itself | BIG-endian; tables in `datfiles.lmp`, 43 PNG in `imgfiles.lmp` |
-| Shadowkey | `The Elder Scrolls Travels - Shadowkey (N-Gage - Final)` | `system\apps\6R51` | **LITTLE-endian**; 21 zones x 12 per-zone formats |
-| Oblivion mobile | `The Elder Scrolls Travels - Oblivion (J2ME - Final)` | the .jar itself | BIG-endian; `.jtm`/`.cml`/`.scr` + `lang_N.txt` |
-| Oblivion PSP | `The Elder Scrolls IV - Oblivion (PSP - Prototypes)/<build>` | `PSP_GAME\USRDIR` | cancelled; 7 dated UMD builds; one `GR.ARC` pack each |
+| Stormhold | `The Elder Scrolls Travels - Stormhold (J2ME - Final)` | the .jar itself | BIG-endian; 9 loose `.dat` tables, 37 `.cus`, 16 standard PNG; `../Media/<same>/` holds the two v1.0.10 JARs (the old `test_stormhold_176x208_eng.jar` was byte-identical to the release JAR and is gone) |
+| Dawnstar | `The Elder Scrolls Travels - Dawnstar (J2ME - Final)` | the .jar itself | BIG-endian; tables in `datfiles.lmp`, 43 PNG in `imgfiles.lmp`; `../Media/<same>/` holds `Dawnstar.jar` + `test_dawnstar_176x208_eng.jar` |
+| Shadowkey | Resolve `shadowkey-ngage` in `../CorpusTool/profiles/BethesdaMultitool.json` | `system\apps\6R51` | **LITTLE-endian**; 21 zones x 12 per-zone formats |
+| Oblivion mobile | `The Elder Scrolls Travels - Oblivion (2006-7-14, J2ME - Final)` | the .jar itself | BIG-endian; `.jtm`/`.cml`/`.scr` + `lang_N.txt`; `../Media/<same>/` holds the unmodified `elder_scrolls_iv_oblivion.jar` (it replaced the modified `oblivion-repaired.jar` 2026-09-21; the manifest entry dates the build) |
+| Oblivion PSP | `The Elder Scrolls Travels - Oblivion (yyyy-M-d, PSP - Prototype)` x6 | `PSP_GAME\USRDIR` | cancelled; 6 dated UMD builds (a fan-mod repack was dropped 2026-09-08); one `GR.ARC` pack each. ⚠ Titled *Travels - Oblivion* like the J2ME game though it is a different game; it is NOT *TES IV*, and was misnamed so until 2026-09-08 |
 
 ⚠⚠ The endianness split runs through the middle of this block: the three J2ME titles are BIG-endian
 (Java `DataInputStream`) and Shadowkey, on N-Gage/Symbian ARM, is LITTLE-endian. Getting it
 backwards costs days; state it in every reader's doc comment.
 ⚠ Every reference for these five is unlicensed — CLEAN ROOM only. Decompiled output (javap on the
-JARs, the 21 `.java` files inside `oblivion-repaired.jar`) is a BEHAVIOUR ORACLE, read the way this
+JARs; the 21 decompiled `.java` files that the modified `oblivion-repaired.jar` carried left the
+corpus with it on 2026-09-21, so regenerate them with a decompiler when needed) is a BEHAVIOUR ORACLE, read the way this
 repo reads Ghidra output; never transliterated.
 
 ### ESM Conversion Testing
@@ -1373,7 +1490,17 @@ dotnet run --project src/BethesdaMultitool -f net10.0 -- esm diff \
 
 ### Reference Materials
 
-- **PDB symbols**: `Sample/DebugSymbols/Fallout - New Vegas (X360)/`
+- **PDB symbols**: `Sample/DebugSymbols/Fallout - New Vegas (X360)/<date> <config>/`, one folder per PDB
+  with the PE it maps onto (CodeView GUID+age verified), `<date>` being the build: 2010-7-21 (`Fallout`,
+  `Fallout_Release_Beta`, `Fallout_Release_MemDebug`), 2010-8-22 and 2011-2-15 (those three plus
+  `Fallout_Debug`). Regenerate cvdump output beside its PDB as needed (`cvdump -t` types, `-g` globals,
+  `-s` symbols); only `2010-8-22 Fallout_Release_MemDebug/globals.txt` is kept, for `tools/ShaderProbe`.
+  ⚑ The pre-2026-09-07 `Sample/PDB/` trees named in older docs all came from the **2010-8-22** build:
+  `Proto/Fallout_Release_MemDebug` and `Aug_22_MemDebug` → `2010-8-22 Fallout_Release_MemDebug`
+  (function offsets match); `Final/Fallout_Debug_Final` → `2010-8-22 Fallout_Debug` (CHANGE_TYPE at
+  lines 301695-301767); `Proto/Fallout_Debug` → presumably `2010-8-22 Fallout_Debug` too (inferred:
+  the rest of `Proto/` is that build). Every PDB here declares TESForm as 40 bytes, so no source for
+  the "Proto, TESForm = 24" claim exists.
 - **MemDebug PDB**: `tools/GhidraProject/Fallout_Release_MemDebug.pdb` (100 MB, loaded into Ghidra)
 - **Decompiled output**: `tools/GhidraProject/savegame_decompiled.txt` (save game functions)
 
@@ -1434,30 +1561,32 @@ dotnet build tools/EsmAnalyzer -c Release
 # Run EsmAnalyzer
 dotnet run --project tools/EsmAnalyzer -c Release -- <command> <args>
 
-# Build main project (both CLI + Windows GUI TFMs, ~2:40)
-dotnet build -c Release
+# Development build: CLI/tests, code analyzers enabled; packaging analysis deferred
+pwsh -NoProfile -File tools/scripts/build.ps1 -AnalyzerProfile Development
 
-# Fast build — CLI only, no analyzers (~25s)
-dotnet build -c Release -p:BuildTestsOnly=true -p:SkipAnalyzers=true
+# Full quality build, including both CLI + Windows GUI TFMs
+pwsh -NoProfile -File tools/scripts/build.ps1 -Full -AnalyzerProfile Full
 
-# Run tests — fast (CLI-only build, no analyzers, ~1 min total)
-dotnet test -p:BuildTestsOnly=true -p:SkipAnalyzers=true
+# Fast iteration: compiler checks remain, build analyzers are skipped
+pwsh -NoProfile -File tools/scripts/build.ps1 -Action test -AnalyzerProfile Fast
 
-# Run tests — full build (both TFMs, with analyzers)
-dotnet test
+# Run tests with code analysis; reuse the Development cache
+pwsh -NoProfile -File tools/scripts/build.ps1 -Action test -AnalyzerProfile Development
 
 # Run a subset (MTP runner args go after --; also works on the built exe directly)
-dotnet test -p:BuildTestsOnly=true -p:SkipAnalyzers=true -- --filter-class Full.Class.Name
-tests/BethesdaMultitool.Tests/bin/Release/net10.0/BethesdaMultitool.Tests.exe --filter-class Full.Class.Name
+dotnet test -c Release -p:BuildTestsOnly=true -p:AnalyzerProfile=Development -- --filter-class Full.Class.Name
+tests/BethesdaMultitool.Tests/bin/development/Release/net10.0/BethesdaMultitool.Tests.exe --filter-class Full.Class.Name
 
-# TRX report (what CI uses)
-dotnet test --project tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj -c Release --no-build -- --report-xunit-trx --report-xunit-trx-filename test-results.trx --results-directory ./TestResults
+# TRX report from an existing Full build (CI uses this profile)
+dotnet test --project tests/BethesdaMultitool.Tests/BethesdaMultitool.Tests.csproj -c Release -p:AnalyzerProfile=Full --no-build --results-directory ./TestResults -- --report-xunit-trx --report-xunit-trx-filename test-results.trx
 ```
 
 ### Build Flags
 
 - `BuildTestsOnly=true` — Skips `net10.0-windows` TFM (WinUI 3 GUI). Saves ~2 min. Safe for test runs since the test project only targets `net10.0`. Also skips the standalone WinUI app projects (`BethesdaAudioTranscriber`, `BethesdaRendererProfiler`, `BethesdaMap2DProfiler`) — they depend on the dropped GUI TFM, so each no-ops its `Build` under this flag via `eng/SkipBuildInTestsOnly.targets` (wired in through a `BuildTestsOnly`-gated `CustomAfterMicrosoftCommonTargets`). Build them with a normal (no-flag) build.
-- `SkipAnalyzers=true` — Disables SonarAnalyzer + Roslynator during build. Saves 5-15s. Use for fast iteration; omit for CI/lint passes.
+- `AnalyzerProfile=Development` is the local default. It retains .NET, Sonar, Roslynator, and test code analyzers while deferring trimming, single-file, and AOT analysis. `Full` is required for CI, pack, and publish. `Fast` skips build analyzers; the legacy `SkipAnalyzers=true` selects it. All profiles still enforce compiler errors.
+- Development and Fast use `bin/development`, `obj/development`, `bin/fast`, and `obj/fast`. Full retains `bin` and `obj`. Match the profile on build, restore, test, and `--no-build` commands. Switching profiles preserves each cache.
+- The wrapper's `-Full` includes GUI projects; `-AnalyzerProfile Full` selects complete analysis. They control different things. `-MaxNodes` limits projects; `-CompilerParallel $false` uses Roslyn's `/parallel-`. Analyzer exceptions (`AD0001`/`AD0002`) fail analyzed builds. See [shared analyzer documentation](shared/Multitool.Shared/docs/analyzer-profiles.md) for profiling and memory controls.
 
 ### A green build can still leave bin\ stale
 

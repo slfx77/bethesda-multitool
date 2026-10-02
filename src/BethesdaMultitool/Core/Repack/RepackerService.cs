@@ -72,6 +72,11 @@ public static class RepackerService
         CancellationToken cancellationToken = default)
     {
         var result = new RepackResult();
+        // Each processor already reports its own completion with Success set; nothing used to read
+        // it, so a phase that converted nothing still produced a successful run. Observing that
+        // stream is enough to propagate it without changing IRepackProcessor's signature.
+        var observed = new PhaseFailureObserver(progress);
+        progress = observed;
 
         try
         {
@@ -145,14 +150,16 @@ public static class RepackerService
                 result.IniFilesProcessed = await iniProcessor.ProcessAsync(options, progress, cancellationToken);
             }
 
-            result.Success = true;
+            result.Success = observed.Failures.Count == 0;
+            result.Error = observed.Failures.Count == 0 ? null : string.Join("; ", observed.Failures);
 
             progress.Report(new RepackerProgress
             {
                 Phase = RepackPhase.Complete,
-                Message = "Repacking complete",
+                Message = result.Success ? "Repacking complete" : "Repacking finished with failures",
                 IsComplete = true,
-                Success = true
+                Success = result.Success,
+                Error = result.Error
             });
         }
         catch (OperationCanceledException)
@@ -185,5 +192,30 @@ public static class RepackerService
         }
 
         return result;
+    }
+
+    /// <summary>Forwards progress to the caller while noticing any phase that reported failure.</summary>
+    /// <remarks>
+    ///     Every processor already publishes one completion report carrying its own success, and
+    ///     nothing read it: a phase that converted nothing still produced a successful run, which is
+    ///     how the retail update.esp went missing from converted builds without any caller being able
+    ///     to tell. Reporting is synchronous here on purpose - a <c>Progress&lt;T&gt;</c> would post to
+    ///     a synchronization context and could land after the result is read.
+    /// </remarks>
+    /// <param name="inner">The caller's progress, which still receives every report unchanged.</param>
+    private sealed class PhaseFailureObserver(IProgress<RepackerProgress> inner) : IProgress<RepackerProgress>
+    {
+        /// <summary>Gets one message per phase that completed unsuccessfully.</summary>
+        public List<string> Failures { get; } = [];
+
+        /// <summary>Records a failed phase completion and forwards the report untouched.</summary>
+        /// <param name="value">One progress report from a processor.</param>
+        public void Report(RepackerProgress value)
+        {
+            if (value is { IsComplete: true, Success: false } && value.Phase != RepackPhase.Complete)
+                Failures.Add(value.Message ?? value.Error ?? (value.Phase + " failed"));
+
+            inner.Report(value);
+        }
     }
 }

@@ -9,6 +9,7 @@ internal static class GpuTestGuard
 
     public static void SkipUnlessEnabled()
     {
+        TestCategories.RequireCurrent(Category);
         var value = Environment.GetEnvironmentVariable("RUN_GPU_TESTS");
         Assert.SkipWhen(
             !string.Equals(value, EnabledValue, StringComparison.Ordinal),

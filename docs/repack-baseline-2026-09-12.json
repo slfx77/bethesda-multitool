@@ -1,0 +1,2093 @@
+{
+  "schemaVersion": 1,
+  "milestone": "M2.6",
+  "recorded": "2026-09-12",
+  "what": "The repacker output tree as it is today, captured before any M2.6 change. Core/Repack/** had zero tests when this was taken.",
+  "fixture": "Sample\\Builds\\Fallout - New Vegas (2010-8-22, X360 - Final)",
+  "provenance": {
+    "bethesdaHead": "c94ac2f1c18922919a231f689238bb768e427191",
+    "workingTreeDirtyPaths": 237,
+    "note": "Captured from the working tree, which is dirty. The head is provenance, not a claim that the measured source equals that commit.",
+    "ffmpeg": "ffmpeg version 8.1.2-essentials_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+    "cliTargetFramework": "net10.0"
+  },
+  "limits": [
+    "Full emission order is not observable: MenuProcessor reports one item in ten and the CLI verbose printer shows CurrentItem only, never Message. Content hashes are the oracle; they subsume order wherever order changes output, such as which source wins a contested menu path.",
+    "Four of the five BSAs (4.1 GB) are not captured. Only Fallout - Misc.bsa is, so BSA coverage is one archive, not the set.",
+    "Music hashes are bound to the recorded ffmpeg build.",
+    "The INI phase has no CLI toggle, so every run also emits Fallout_default.ini."
+  ],
+  "phases": {
+    "menus-nodonor": {
+      "arguments": [
+        "--video",
+        "false",
+        "--music",
+        "false",
+        "--bsa",
+        "false",
+        "--menus",
+        "true",
+        "--esm",
+        "false",
+        "--esp",
+        "false"
+      ],
+      "note": "Console menus only. Nine PC-required documents are held back for a donor that is not configured, then written from console bytes as a last resort.",
+      "reportedCounts": {
+        "video": 0,
+        "music": 0,
+        "bsa": 0,
+        "menus": 41,
+        "esm": 0,
+        "esp": 0,
+        "totalReported": 162
+      },
+      "sampledProgressItems": [
+        "menus\\loading_menu.xml",
+        "menus\\generic\\skill_perk.xml",
+        "menus\\chargen\\race_sex_menu.xml",
+        "Fallout.ini"
+      ],
+      "fileCount": 42,
+      "totalBytes": 2665049,
+      "files": [
+        {
+          "path": "Data/menus/VATS_menu.xml",
+          "sha256": "866c00c504e7049942b44766d9100c0c04df23fe4a6b51a022da2a02418c2537",
+          "bytes": 153056
+        },
+        {
+          "path": "Data/menus/barter_menu.xml",
+          "sha256": "f8ffc11780029400ae71d72685ab3124ca7e933815db005349f72f8ecb41c741",
+          "bytes": 128677
+        },
+        {
+          "path": "Data/menus/black_jack_menu.xml",
+          "sha256": "050a5072b4a5e99548c4a551240b2b8a82a96b67ace807143b714f9444955616",
+          "bytes": 61707
+        },
+        {
+          "path": "Data/menus/caravan_menu.xml",
+          "sha256": "5b1687bdb6ac740bad5f79473d69a44d6d45c47398fdfd1714c3846fd16a1dd7",
+          "bytes": 156771
+        },
+        {
+          "path": "Data/menus/chargen/SPECIALBookMenu.xml",
+          "sha256": "c96d8ed60ff4e2f3800c25d154975d33f6ac1a4030848e7e271e77d1b745c834",
+          "bytes": 1897
+        },
+        {
+          "path": "Data/menus/chargen/char_gen_menu.xml",
+          "sha256": "8c96c9d33e2f3d57390038c0d8fc9516aec6873002c53ec3e7ca8dc7826fecae",
+          "bytes": 47036
+        },
+        {
+          "path": "Data/menus/chargen/love_tester_menu.xml",
+          "sha256": "09c00d0a16ac8a9ffbf8053c83a0b1ca23a16a762bf51106ed773c339f07aaf6",
+          "bytes": 1895
+        },
+        {
+          "path": "Data/menus/chargen/race_sex_menu.xml",
+          "sha256": "c326794d09b55692cd752ed410b1efbff82b8bda7bac4c9f74fa8b357269ee3e",
+          "bytes": 31058
+        },
+        {
+          "path": "Data/menus/companion_wheel_menu.xml",
+          "sha256": "3fa709550ed712779dd7a9f3988c629b602d4baf7fccb45b731d5db15885f954",
+          "bytes": 75209
+        },
+        {
+          "path": "Data/menus/computers_menu.xml",
+          "sha256": "ae85f76dbf96df03374c2745af2a9543b6716bb2544948cc69ef4ab313f7b652",
+          "bytes": 20712
+        },
+        {
+          "path": "Data/menus/container_menu.xml",
+          "sha256": "a662482338222a4cbf70dec6c03ef4625f0868e3827a47f8b8eb5ebf002725b1",
+          "bytes": 135672
+        },
+        {
+          "path": "Data/menus/dialog/TextEditMenu.xml",
+          "sha256": "ccf3cf71e00d289f8bd84f54b50fa106fe567c80865a9145c27cb30e726ad3a0",
+          "bytes": 13135
+        },
+        {
+          "path": "Data/menus/dialog/dialog_menu.xml",
+          "sha256": "8f8bdb6030e1075353f03f3ee8f3e18ddf71f417764ff1cc6ef36d2a19656b82",
+          "bytes": 20158
+        },
+        {
+          "path": "Data/menus/generic/skill_perk.xml",
+          "sha256": "e8b07c93914adcaace63d5d4ff69e1e9e8f451f992b80ecd3c04229bf4af9770",
+          "bytes": 8437
+        },
+        {
+          "path": "Data/menus/globals.xml",
+          "sha256": "838147366e46036d183c604c4505b62df5b6bfb3f0c3f9549393167428ed1775",
+          "bytes": 666
+        },
+        {
+          "path": "Data/menus/hacking_menu.xml",
+          "sha256": "0a37fb4c1fbf8d8810d02b069dd25d1ac5067718b1d4b1e8cf42b36214ff957a",
+          "bytes": 8830
+        },
+        {
+          "path": "Data/menus/item_mod_menu.xml",
+          "sha256": "67c5514352b802947ca10ee8dd52875c4e4b98f6d7abeabe57d333ced2f813f1",
+          "bytes": 72091
+        },
+        {
+          "path": "Data/menus/levelup_menu.xml",
+          "sha256": "691bdd05a100930f886c1031f3c69724d3a580357428c62c91d2fcf2adcfb979",
+          "bytes": 72800
+        },
+        {
+          "path": "Data/menus/loading_menu.xml",
+          "sha256": "383f58be9ce7fdf964c56c10a177da088b209f9ce0d42c8fc4f36d6453c34e65",
+          "bytes": 13736
+        },
+        {
+          "path": "Data/menus/lockpick_menu.xml",
+          "sha256": "30c50249e2862b3ddbc497a5cee71b1000af33d2c7372b2752db4da942226fc7",
+          "bytes": 27562
+        },
+        {
+          "path": "Data/menus/main/hud_main_menu.xml",
+          "sha256": "79935b072447f15f40c1a47e2814474425a1ab6859766e74da6c6dc55d0e5757",
+          "bytes": 79867
+        },
+        {
+          "path": "Data/menus/main/inventory_menu.xml",
+          "sha256": "7f9effb740588aed845e24317bc6b4fc38c6a5ebf09e8531fed49688d0a55843",
+          "bytes": 219769
+        },
+        {
+          "path": "Data/menus/main/map_menu.xml",
+          "sha256": "2c85f2f89a4ae0db24cfbf1ae2e3a35b91eea187db8c62b9b2831420f25c2695",
+          "bytes": 149445
+        },
+        {
+          "path": "Data/menus/main/quickkeys_menu.xml",
+          "sha256": "388823dc94e836b7adb803ba9cf2ba4957608cec96a383ceda48646b75efa526",
+          "bytes": 304
+        },
+        {
+          "path": "Data/menus/main/safe_zone.xml",
+          "sha256": "6c528ea6077230fdaa99e78f9ec31353e9c18e523239c8ccb7cd0bcb02ab1956",
+          "bytes": 3564
+        },
+        {
+          "path": "Data/menus/main/stats_menu.xml",
+          "sha256": "f8c57a0bd9f4ad32283e51c78d883dacd86b0897c1724fb7d69db175e83b3d14",
+          "bytes": 344979
+        },
+        {
+          "path": "Data/menus/message_menu.xml",
+          "sha256": "505ec9745e16c70c6f14005cd9733adf32745e54b5a42016a9de2020df37d1a2",
+          "bytes": 23859
+        },
+        {
+          "path": "Data/menus/options/credits_menu.xml",
+          "sha256": "6053ce49666db57f0eedafcea8bafe039c861ce6eb8b2040979aa9eb9c568edc",
+          "bytes": 730
+        },
+        {
+          "path": "Data/menus/options/main_menu.xml",
+          "sha256": "2e61b2651f2fc04cdb8a0686689538b04a36057e994d5aeafa4b1971ac3af7bb",
+          "bytes": 25793
+        },
+        {
+          "path": "Data/menus/options/pause_menu.xml",
+          "sha256": "a6419d799a1d6a9d783866d79ff131a1c3cf2b428510eeeec8bc48955faf243e",
+          "bytes": 20313
+        },
+        {
+          "path": "Data/menus/options/start_menu.xml",
+          "sha256": "65f41d05637e19f6f23c85e410506cf068ece42071e6d54b64baa7ed8f21c0b0",
+          "bytes": 149480
+        },
+        {
+          "path": "Data/menus/quantity_menu.xml",
+          "sha256": "5b93d6012de882037d7015361c17ac1c59fa73a9e5f29f6269d3973a1a14bd78",
+          "bytes": 25446
+        },
+        {
+          "path": "Data/menus/recipe_menu.xml",
+          "sha256": "45ada610c8fefbdfe5b24907f4a77e34801362eb6ce375c8ca01d486d73a8181",
+          "bytes": 123231
+        },
+        {
+          "path": "Data/menus/repair_menu.xml",
+          "sha256": "12e68ed37574cfc2102a445b28d91c91a14a9f5950ca033f544605a4eba27c22",
+          "bytes": 68236
+        },
+        {
+          "path": "Data/menus/repair_services_menu.xml",
+          "sha256": "ba3b8cd266edc82a197add97575f32af456c3234a6a5b76b4d7c98a33ab3697a",
+          "bytes": 74122
+        },
+        {
+          "path": "Data/menus/roulette_menu.xml",
+          "sha256": "427a294c616147417161367bceaa5b455a88fa44842ad8b37963d2dca7b470cb",
+          "bytes": 62249
+        },
+        {
+          "path": "Data/menus/select_menu.xml",
+          "sha256": "2916912af717c2d3e03be459a82b61418ea4084b78b06fd3e8782d18217fce5b",
+          "bytes": 20436
+        },
+        {
+          "path": "Data/menus/sleep_wait_menu.xml",
+          "sha256": "adb3bbc5810383f7d2351e51463cdd873f7af1318bd254e21778a99d5f480deb",
+          "bytes": 30352
+        },
+        {
+          "path": "Data/menus/slot_machine_menu.xml",
+          "sha256": "dc9814c4b8ec738a499b7bf4902f7009c26778460e023b7e1c6507b70f0ed2c7",
+          "bytes": 61581
+        },
+        {
+          "path": "Data/menus/trait_menu.xml",
+          "sha256": "0d11f2423533a9602af80ece88a2df39593fd5af0d07c7f870c6237cd23d6b9a",
+          "bytes": 55960
+        },
+        {
+          "path": "Data/menus/tutorial_menu.xml",
+          "sha256": "ca0265aab1086f7aac142969baa501d13c4f67208ffe7fb2ffe5c8308e102f02",
+          "bytes": 54227
+        },
+        {
+          "path": "Fallout_default.ini",
+          "sha256": "42fc678620c4025311c1e64ef4c8eed74605a596e0fd3620408f24191dead50f",
+          "bytes": 20001
+        }
+      ]
+    },
+    "menus-donor": {
+      "arguments": [
+        "--video",
+        "false",
+        "--music",
+        "false",
+        "--bsa",
+        "false",
+        "--menus",
+        "true",
+        "--esm",
+        "false",
+        "--esp",
+        "false",
+        "--pc-menu-donor",
+        "<pc Data folder>"
+      ],
+      "note": "Console menus plus PC donor backfill. This is the baseline/donor ordering M2.6 must preserve: console documents win except for the ones the retail executable cannot run.",
+      "reportedCounts": {
+        "video": 0,
+        "music": 0,
+        "bsa": 0,
+        "menus": 125,
+        "esm": 0,
+        "esp": 0,
+        "totalReported": 162
+      },
+      "sampledProgressItems": [
+        "menus\\loading_menu.xml",
+        "menus\\generic\\skill_perk.xml",
+        "menus\\chargen\\race_sex_menu.xml",
+        "Fallout.ini"
+      ],
+      "fileCount": 126,
+      "totalBytes": 2702680,
+      "files": [
+        {
+          "path": "Data/menus/VATS_menu.xml",
+          "sha256": "866c00c504e7049942b44766d9100c0c04df23fe4a6b51a022da2a02418c2537",
+          "bytes": 153056
+        },
+        {
+          "path": "Data/menus/barter_menu.xml",
+          "sha256": "1b61c78f34dac8d48b43ec71fae49ab042d82b98878900de5d807fc5b5556c2e",
+          "bytes": 18695
+        },
+        {
+          "path": "Data/menus/black_jack_menu.xml",
+          "sha256": "050a5072b4a5e99548c4a551240b2b8a82a96b67ace807143b714f9444955616",
+          "bytes": 61707
+        },
+        {
+          "path": "Data/menus/book_menu.xml",
+          "sha256": "1a26b73558f0ec048d92962ae6d534e6896586bc446f6d6904c7bb674c0c39d3",
+          "bytes": 13652
+        },
+        {
+          "path": "Data/menus/breath_meter_menu.xml",
+          "sha256": "7e06c8083b25a1766e1306c92ed4c7656ad23e10fb0a0ad709ef91d0259fdfc7",
+          "bytes": 1530
+        },
+        {
+          "path": "Data/menus/caravan_bet_menu.xml",
+          "sha256": "5633b9f23ecd34b8a0caefbdef6e0bdb96475115a132673dd2fd6c15c4d0386e",
+          "bytes": 8958
+        },
+        {
+          "path": "Data/menus/caravan_builddeck_menu.xml",
+          "sha256": "7d2a49464980040250e3ddabfeb2fe2010c568b41479096d480fd60a25a0b84b",
+          "bytes": 11121
+        },
+        {
+          "path": "Data/menus/caravan_game_menu.xml",
+          "sha256": "a7bdd7cbf593091774f43bec3c82770fc90d436d8ec42a5135783fcd5fb81228",
+          "bytes": 1141
+        },
+        {
+          "path": "Data/menus/caravan_menu.xml",
+          "sha256": "5b1687bdb6ac740bad5f79473d69a44d6d45c47398fdfd1714c3846fd16a1dd7",
+          "bytes": 156771
+        },
+        {
+          "path": "Data/menus/caravan_results_menu.xml",
+          "sha256": "fb5c840139084553d353c72a8bc5e0831948a8f57a29464a0b4d772ea38b7bcd",
+          "bytes": 1149
+        },
+        {
+          "path": "Data/menus/chargen/SPECIALBookMenu.xml",
+          "sha256": "c96d8ed60ff4e2f3800c25d154975d33f6ac1a4030848e7e271e77d1b745c834",
+          "bytes": 1897
+        },
+        {
+          "path": "Data/menus/chargen/char_gen_menu.xml",
+          "sha256": "8c96c9d33e2f3d57390038c0d8fc9516aec6873002c53ec3e7ca8dc7826fecae",
+          "bytes": 47036
+        },
+        {
+          "path": "Data/menus/chargen/love_tester_menu.xml",
+          "sha256": "09c00d0a16ac8a9ffbf8053c83a0b1ca23a16a762bf51106ed773c339f07aaf6",
+          "bytes": 1895
+        },
+        {
+          "path": "Data/menus/chargen/race_sex_menu.xml",
+          "sha256": "c326794d09b55692cd752ed410b1efbff82b8bda7bac4c9f74fa8b357269ee3e",
+          "bytes": 31058
+        },
+        {
+          "path": "Data/menus/companion_wheel_menu.xml",
+          "sha256": "3fa709550ed712779dd7a9f3988c629b602d4baf7fccb45b731d5db15885f954",
+          "bytes": 75209
+        },
+        {
+          "path": "Data/menus/computers_menu.xml",
+          "sha256": "ae85f76dbf96df03374c2745af2a9543b6716bb2544948cc69ef4ab313f7b652",
+          "bytes": 20712
+        },
+        {
+          "path": "Data/menus/container_menu.xml",
+          "sha256": "93c6e7ee2be49ed3e3f1079b67b6cd0f0f47b3edbeaa48e4e992903f67231f2e",
+          "bytes": 15489
+        },
+        {
+          "path": "Data/menus/dialog/TextEditMenu.xml",
+          "sha256": "ccf3cf71e00d289f8bd84f54b50fa106fe567c80865a9145c27cb30e726ad3a0",
+          "bytes": 13135
+        },
+        {
+          "path": "Data/menus/dialog/dialog_menu.xml",
+          "sha256": "8f8bdb6030e1075353f03f3ee8f3e18ddf71f417764ff1cc6ef36d2a19656b82",
+          "bytes": 20158
+        },
+        {
+          "path": "Data/menus/do_not_delete.txt",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "bytes": 0
+        },
+        {
+          "path": "Data/menus/generic/quest_added.xml",
+          "sha256": "2596ffb9a588fd941dcac86ffb5f9808dfa4400826dea17e62e99cd9a883c8c5",
+          "bytes": 4850
+        },
+        {
+          "path": "Data/menus/generic/skill_perk.xml",
+          "sha256": "e8b07c93914adcaace63d5d4ff69e1e9e8f451f992b80ecd3c04229bf4af9770",
+          "bytes": 8437
+        },
+        {
+          "path": "Data/menus/generic/test_menu.xml",
+          "sha256": "deb1e789d135cd8403c3c0667f1031ddc75820788b699ae665f0d15088a499da",
+          "bytes": 7888
+        },
+        {
+          "path": "Data/menus/globals.xml",
+          "sha256": "838147366e46036d183c604c4505b62df5b6bfb3f0c3f9549393167428ed1775",
+          "bytes": 666
+        },
+        {
+          "path": "Data/menus/hacking_menu.xml",
+          "sha256": "0a37fb4c1fbf8d8810d02b069dd25d1ac5067718b1d4b1e8cf42b36214ff957a",
+          "bytes": 8830
+        },
+        {
+          "path": "Data/menus/item_mod_menu.xml",
+          "sha256": "67c5514352b802947ca10ee8dd52875c4e4b98f6d7abeabe57d333ced2f813f1",
+          "bytes": 72091
+        },
+        {
+          "path": "Data/menus/levelup_menu.xml",
+          "sha256": "691bdd05a100930f886c1031f3c69724d3a580357428c62c91d2fcf2adcfb979",
+          "bytes": 72800
+        },
+        {
+          "path": "Data/menus/loading_menu.xml",
+          "sha256": "383f58be9ce7fdf964c56c10a177da088b209f9ce0d42c8fc4f36d6453c34e65",
+          "bytes": 13736
+        },
+        {
+          "path": "Data/menus/lockpick_menu.xml",
+          "sha256": "30c50249e2862b3ddbc497a5cee71b1000af33d2c7372b2752db4da942226fc7",
+          "bytes": 27562
+        },
+        {
+          "path": "Data/menus/main/hud_main_menu.xml",
+          "sha256": "5b6bd6c13cc5015f7fa3aaaaea05699835dd105474c75d163e20a664f09fdf59",
+          "bytes": 13967
+        },
+        {
+          "path": "Data/menus/main/inventory_menu.xml",
+          "sha256": "0fa26f02e60266d8fb62d1def6c2180f8ef7a83ad3226d73dc0ff07059b95235",
+          "bytes": 12830
+        },
+        {
+          "path": "Data/menus/main/map_menu.xml",
+          "sha256": "2c85f2f89a4ae0db24cfbf1ae2e3a35b91eea187db8c62b9b2831420f25c2695",
+          "bytes": 149445
+        },
+        {
+          "path": "Data/menus/main/quickkeys_menu.xml",
+          "sha256": "388823dc94e836b7adb803ba9cf2ba4957608cec96a383ceda48646b75efa526",
+          "bytes": 304
+        },
+        {
+          "path": "Data/menus/main/safe_zone.xml",
+          "sha256": "6c528ea6077230fdaa99e78f9ec31353e9c18e523239c8ccb7cd0bcb02ab1956",
+          "bytes": 3564
+        },
+        {
+          "path": "Data/menus/main/stats_menu.xml",
+          "sha256": "0edd498d011369bc1e311eba0bf7803d450c7faa5f6cc6e5b65ca532d2476a56",
+          "bytes": 79019
+        },
+        {
+          "path": "Data/menus/master_menu_file.txt",
+          "sha256": "d56939772b45d11188cf7593a5b1216605f7cdcd38733c50556ca9ceeee101b1",
+          "bytes": 534571
+        },
+        {
+          "path": "Data/menus/message_menu.xml",
+          "sha256": "505ec9745e16c70c6f14005cd9733adf32745e54b5a42016a9de2020df37d1a2",
+          "bytes": 23859
+        },
+        {
+          "path": "Data/menus/options/credits_menu.xml",
+          "sha256": "6053ce49666db57f0eedafcea8bafe039c861ce6eb8b2040979aa9eb9c568edc",
+          "bytes": 730
+        },
+        {
+          "path": "Data/menus/options/load_menu.xml",
+          "sha256": "4c02684ec9447a2110bd622f14255c17fcb01260e135f89a2dc5f1b165afe0cb",
+          "bytes": 10865
+        },
+        {
+          "path": "Data/menus/options/main_menu.xml",
+          "sha256": "2e61b2651f2fc04cdb8a0686689538b04a36057e994d5aeafa4b1971ac3af7bb",
+          "bytes": 25793
+        },
+        {
+          "path": "Data/menus/options/pause_menu.xml",
+          "sha256": "a6419d799a1d6a9d783866d79ff131a1c3cf2b428510eeeec8bc48955faf243e",
+          "bytes": 20313
+        },
+        {
+          "path": "Data/menus/options/save_menu.xml",
+          "sha256": "02833e8e6c0f6197cc2c82e4a088960955b3245fb96de9880ba5ac0087d980e4",
+          "bytes": 11339
+        },
+        {
+          "path": "Data/menus/options/start_menu.xml",
+          "sha256": "65f41d05637e19f6f23c85e410506cf068ece42071e6d54b64baa7ed8f21c0b0",
+          "bytes": 149480
+        },
+        {
+          "path": "Data/menus/prefabs/book_line.xml",
+          "sha256": "49b92fca1a8287e82f023c49edfcff021562bad47179640a9e2f98435d1c8d46",
+          "bytes": 544
+        },
+        {
+          "path": "Data/menus/prefabs/bottom_bracket.xml",
+          "sha256": "396849ad623885f52cdb3df769179fb206cb55674bfe216a6e87fd676bbf5ccd",
+          "bytes": 2129
+        },
+        {
+          "path": "Data/menus/prefabs/bottom_tab_bar.xml",
+          "sha256": "8c6df351e6a22b957f1529ea217fab9802fbf3ef64e738ea2655673fac80dc36",
+          "bytes": 9542
+        },
+        {
+          "path": "Data/menus/prefabs/box.xml",
+          "sha256": "0e2bd4f09eec465374372102a794f732214d325d66cea56e0bb7bce9bf9a69cf",
+          "bytes": 3453
+        },
+        {
+          "path": "Data/menus/prefabs/bracket_vert.xml",
+          "sha256": "d216b636498160d6f0218d440e686621b0f97444875c110123a1e381f70918b1",
+          "bytes": 2550
+        },
+        {
+          "path": "Data/menus/prefabs/brightness.xml",
+          "sha256": "75c8ede8fab656bbaaaa117ead28e8faa4ace4a52814128cc9e4638da1966b9a",
+          "bytes": 901
+        },
+        {
+          "path": "Data/menus/prefabs/button_basic.xml",
+          "sha256": "59a269d75a7f4f94d4c3aaedc308d9085bb57fcd7dd46c50bf89f4767843a089",
+          "bytes": 3961
+        },
+        {
+          "path": "Data/menus/prefabs/button_box.xml",
+          "sha256": "de5348d2787b1d82ec0ad51b65598d8fa05d327801283b50ce278cc6b2494bcd",
+          "bytes": 4012
+        },
+        {
+          "path": "Data/menus/prefabs/button_companion_wheel.xml",
+          "sha256": "b40059e1b0066fa53c253f455da2b84cdb06febe7b798a0e1470c86e9c89f9f1",
+          "bytes": 1171
+        },
+        {
+          "path": "Data/menus/prefabs/button_floating.xml",
+          "sha256": "a1387f14874b1bcefbe0bd5e10eafdc665634db0c47d447c877e154538eea547",
+          "bytes": 1296
+        },
+        {
+          "path": "Data/menus/prefabs/button_floating_2.xml",
+          "sha256": "a63a66930d22573440448a80eee8d4a83f984bf86233269fa35e7990ae88cbe9",
+          "bytes": 2253
+        },
+        {
+          "path": "Data/menus/prefabs/button_floating_3.xml",
+          "sha256": "4b013d70427f018dfb8aa44a155999ca907631deaeb3f4294398e0c0a978144a",
+          "bytes": 3885
+        },
+        {
+          "path": "Data/menus/prefabs/button_long.xml",
+          "sha256": "59d5b2141dda50e4c473f67ba2ecaa0701039c8a1392e88bd3aee3c9ae5610bf",
+          "bytes": 5674
+        },
+        {
+          "path": "Data/menus/prefabs/button_no_background.xml",
+          "sha256": "59a7fd7de73fa897514b2784c340b47fb424680a56ad41d7e4856a0042d125bc",
+          "bytes": 4318
+        },
+        {
+          "path": "Data/menus/prefabs/button_short.xml",
+          "sha256": "ce68e10f977f17943708a3334a99362d2a3d63a57c1e1a54eae6c7507a11a4cd",
+          "bytes": 5611
+        },
+        {
+          "path": "Data/menus/prefabs/button_simple.xml",
+          "sha256": "7710d4c03228d87d9b69a4a66e25e862fac5ea85a7352baf2b6676976d9f7744",
+          "bytes": 619
+        },
+        {
+          "path": "Data/menus/prefabs/button_xbox_hint.xml",
+          "sha256": "4a85cf0e39fdf2faa4fdd86b9a5c80b7705d7c63ec079a5955258e856163f305",
+          "bytes": 4106
+        },
+        {
+          "path": "Data/menus/prefabs/button_xtralong.xml",
+          "sha256": "0c3ec27790dd484ad23d4ecefaf49872dadfd0985bff4537e0b3e423fa5bdb3b",
+          "bytes": 5375
+        },
+        {
+          "path": "Data/menus/prefabs/caravan_bet_menu.xml",
+          "sha256": "e9680503e7269b01beaf4d96d0e1711b3a93bf3c24badae3dc4e2226f27af8a7",
+          "bytes": 9337
+        },
+        {
+          "path": "Data/menus/prefabs/caravan_builddeck_menu.xml",
+          "sha256": "0c78d00152b2646f63af59bac9c81391f71e6866aafc65ad9658ba9b43805c48",
+          "bytes": 11250
+        },
+        {
+          "path": "Data/menus/prefabs/caravan_game_menu.xml",
+          "sha256": "2b1069b45df185da9c30186f740cb1b3ccbda932d1649f8bbe83f6d4340eb03d",
+          "bytes": 12582
+        },
+        {
+          "path": "Data/menus/prefabs/caravan_results_menu.xml",
+          "sha256": "659b75f9cba049085b80f3063125b927bfd0c2ff0e14cc56a40372e69f7eb630",
+          "bytes": 5209
+        },
+        {
+          "path": "Data/menus/prefabs/card_info.xml",
+          "sha256": "1f2902d78e08e40e491a2b4dec0e7413bd2d0bd0b942e6b3cbb88a52b87cc156",
+          "bytes": 2619
+        },
+        {
+          "path": "Data/menus/prefabs/color.xml",
+          "sha256": "e99d79609a50f9d0efbd20fc8c7e9a841f318637d309c5e9fa020f66f1ef2d17",
+          "bytes": 730
+        },
+        {
+          "path": "Data/menus/prefabs/compassicon.xml",
+          "sha256": "303bb39fd1b907d6d2bf23eb29611549e034f41f2571dc4d8252d33be2fa82fd",
+          "bytes": 532
+        },
+        {
+          "path": "Data/menus/prefabs/fade_line.xml",
+          "sha256": "3fb6fd15732277bd921cf6c1118f4ad99a9ff6981c9062c96a7735ade48cad65",
+          "bytes": 5961
+        },
+        {
+          "path": "Data/menus/prefabs/fade_line_down.xml",
+          "sha256": "844ba37fc72c31075b1bf8a1ceb0261e094f9a6324204866176e6e1660fffbd1",
+          "bytes": 1205
+        },
+        {
+          "path": "Data/menus/prefabs/fade_line_up.xml",
+          "sha256": "d3544688798cdbb0cdcb7c2dde1ca669aaaed606a6358ad1f757e0f105ca5b40",
+          "bytes": 1322
+        },
+        {
+          "path": "Data/menus/prefabs/fill_bar.xml",
+          "sha256": "1a03ead58b959ade589128d12e1403c2dba1d6a87798f41983ef28df22f621a1",
+          "bytes": 1562
+        },
+        {
+          "path": "Data/menus/prefabs/focus_box.xml",
+          "sha256": "ac2dae9112ab3b7a169e6781aa1af3cd15c8a28513edf48732ce248c2a378fc5",
+          "bytes": 3028
+        },
+        {
+          "path": "Data/menus/prefabs/generic_background.xml",
+          "sha256": "c6f74573c4564e6268b797aa387b95870fe9544f34774b37952ae0b61353b43e",
+          "bytes": 3913
+        },
+        {
+          "path": "Data/menus/prefabs/horiz_floating_scroll.xml",
+          "sha256": "b427b20c20b9413709ab0eeb86ebe07a8acf1fdcfc63a11143f2e764de351cdf",
+          "bytes": 7128
+        },
+        {
+          "path": "Data/menus/prefabs/horizontal_scroll.xml",
+          "sha256": "4c96cdd5e24b9c42324c6759228e7a9f0c2be66d3a56bc34fdfbae7765e5f344",
+          "bytes": 6252
+        },
+        {
+          "path": "Data/menus/prefabs/hotkey.xml",
+          "sha256": "ef1aa8d1c5dc063e1a9d6e317b6afe4027f71609a74bfa795f0203e6d7b2c05b",
+          "bytes": 2281
+        },
+        {
+          "path": "Data/menus/prefabs/hotkeys.xml",
+          "sha256": "194fb3747a309df98f1856f9b4c2c6b1c8f59baa4239d7c83f2ab3bef644f502",
+          "bytes": 3129
+        },
+        {
+          "path": "Data/menus/prefabs/hudtemplates.xml",
+          "sha256": "b5c2bfdccebf881f3ee73ed168d7cc831ca0a693493f1449789416066cfa1019",
+          "bytes": 11860
+        },
+        {
+          "path": "Data/menus/prefabs/icon_companion_wheel.xml",
+          "sha256": "1a6b5723c447144abfffb009792adfb16918b6da45d8555a93cd77f00f0e65c5",
+          "bytes": 3394
+        },
+        {
+          "path": "Data/menus/prefabs/infopiece.xml",
+          "sha256": "8bb782866aa2d4cd4373ac784f0c9f37b90bdd438f41195ab5bf71c04794c179",
+          "bytes": 1273
+        },
+        {
+          "path": "Data/menus/prefabs/item_listing.xml",
+          "sha256": "3781ae89137e5fa39596c41581fed9b9071e08767072260c3861dd68f6ea3e3b",
+          "bytes": 18183
+        },
+        {
+          "path": "Data/menus/prefabs/item_stats_display.xml",
+          "sha256": "5f053ccdb93cf60894cae3568ce3a958b6e18becd0b60e257503a4437b0db01c",
+          "bytes": 8725
+        },
+        {
+          "path": "Data/menus/prefabs/line.xml",
+          "sha256": "080edfbfb7d310adaae4da05eeaeead98e4c5484ea674b8706bd07928808aade",
+          "bytes": 853
+        },
+        {
+          "path": "Data/menus/prefabs/list_box.xml",
+          "sha256": "8edd8fb72ecb8c75c041e1b0b7806f5b5a1a5717ca608231a9a613067f490b32",
+          "bytes": 5558
+        },
+        {
+          "path": "Data/menus/prefabs/list_box_template.xml",
+          "sha256": "294ffca47bda6a54642c11b1a2dc23b1e72e5e8eafea661aa8fe0f70ba317410",
+          "bytes": 1563
+        },
+        {
+          "path": "Data/menus/prefabs/load_and_save_menus.xml",
+          "sha256": "d812442b75fc89df4b1587850de56774af236f14f644804ef2b9a999b75e29f2",
+          "bytes": 10963
+        },
+        {
+          "path": "Data/menus/prefabs/meter.xml",
+          "sha256": "81fcd3f99e278930463a9dfc7c225d8f152bc088184735792fdffd34244ef3b4",
+          "bytes": 2991
+        },
+        {
+          "path": "Data/menus/prefabs/meter_framed.xml",
+          "sha256": "b8a440cbaa819fa2cd552ecfec4bbcf0730107cd9cfce192307aa6133744cb61",
+          "bytes": 2137
+        },
+        {
+          "path": "Data/menus/prefabs/scroll_line.txt",
+          "sha256": "7c810796d73e15d5f38cceecbbbb5e45c0428a338b65cb3882e17b5d509c65f0",
+          "bytes": 305
+        },
+        {
+          "path": "Data/menus/prefabs/scroll_line.xml",
+          "sha256": "bd2bb675bceb3ff87036a2a90cb374a2a1d1449c858ac43d0006b96c88eac725",
+          "bytes": 569
+        },
+        {
+          "path": "Data/menus/prefabs/scrollbar_horiz.xml",
+          "sha256": "b171d17bb6c40f9d2290ca8058968ac4475d733b9fae52c3bae3f1775eb7aba0",
+          "bytes": 10634
+        },
+        {
+          "path": "Data/menus/prefabs/scrollbar_vert.xml",
+          "sha256": "afcfaad92e08b87e65c97210bc6b28d0c32397ed1f65c6ab62005cb41aa7942e",
+          "bytes": 10432
+        },
+        {
+          "path": "Data/menus/prefabs/selection_box.xml",
+          "sha256": "6fb6187bd4bc3a06c58919131a7d6dd5389c0d0f6576a43f3e19f10a6b98f7ef",
+          "bytes": 379
+        },
+        {
+          "path": "Data/menus/prefabs/skill_item.xml",
+          "sha256": "1346a09c9e139ae4a4fb3f259b85157a727a5ccfc239919f244a0b991b3e888a",
+          "bytes": 4044
+        },
+        {
+          "path": "Data/menus/prefabs/super_text_box.xml",
+          "sha256": "04e6c9ea54a917ed40045b5ab772e9995118021f4df6a0ed0c0aa554fefd5095",
+          "bytes": 2759
+        },
+        {
+          "path": "Data/menus/prefabs/tab_box.xml",
+          "sha256": "8633a9d1533bf37a7310fba1d8c85c77f35f6d171993f05b90064d6638ebf340",
+          "bytes": 2543
+        },
+        {
+          "path": "Data/menus/prefabs/tabline.xml",
+          "sha256": "11cecbf922c08da04f2b4bcff554c22734a4eb7e7d93e68fa8e98fd760b82323",
+          "bytes": 1996
+        },
+        {
+          "path": "Data/menus/prefabs/tabline_template.xml",
+          "sha256": "e3fe89ece6175fb92289b47488661cda9998fe8a5e7b9223aca0c32e7447f158",
+          "bytes": 2031
+        },
+        {
+          "path": "Data/menus/prefabs/text.xml",
+          "sha256": "5640707510b46f9df7aa212a5da1ad4a3c33e269744baa55ad881d31a749b1ec",
+          "bytes": 225
+        },
+        {
+          "path": "Data/menus/prefabs/text_box.xml",
+          "sha256": "588932fb4d7c2a0c81a78cbda15381ba505ea13a3fb263c495d0336bd592980b",
+          "bytes": 10517
+        },
+        {
+          "path": "Data/menus/prefabs/tile_button.xml",
+          "sha256": "8f1e00098f8e052339976c886cf4b1b92f47ff410bce92b697004c664fdb050b",
+          "bytes": 612
+        },
+        {
+          "path": "Data/menus/prefabs/tile_button_over.xml",
+          "sha256": "5a8182c170b3068d7244e97a4875a85c9a2a4b1de52a999de7c52f1e474e08f1",
+          "bytes": 586
+        },
+        {
+          "path": "Data/menus/prefabs/top_bracket.xml",
+          "sha256": "753256cedcc3c20712e824ca973a159c71519313b4a9fdf58653f8e5101395fd",
+          "bytes": 1918
+        },
+        {
+          "path": "Data/menus/prefabs/top_corner_text.xml",
+          "sha256": "88150c83224e33ea9701ae1490b2a0e40b6281f1e0823bda1fa6f54d9f3f5b44",
+          "bytes": 1480
+        },
+        {
+          "path": "Data/menus/prefabs/top_corner_title.xml",
+          "sha256": "de55bc92989db247556126a8086179baf23fa8b17fd110b929dcba9d5700f228",
+          "bytes": 2987
+        },
+        {
+          "path": "Data/menus/prefabs/trait_select_checkbox.xml",
+          "sha256": "f7b925abafc11a4f4bf224a9128d10ab201bb5c781a0b4c65961fc6b2c5d1687",
+          "bytes": 1198
+        },
+        {
+          "path": "Data/menus/prefabs/vert_floating_scroll.xml",
+          "sha256": "16a658808ef4aba7d561753b171444fbc55dd142e367e80c3ebc850971058623",
+          "bytes": 4814
+        },
+        {
+          "path": "Data/menus/prefabs/vertical_fade_line.xml",
+          "sha256": "a926a10424200553d2ab5a14c04e50442dc519230e0a355d46fd737f300e23a4",
+          "bytes": 874
+        },
+        {
+          "path": "Data/menus/prefabs/vertical_scroll.xml",
+          "sha256": "2a5777f4a040816f1435fb849d51ed9efeffbb00b2bfda749faf5c5288b3b3ee",
+          "bytes": 5423
+        },
+        {
+          "path": "Data/menus/prefabs/xbox_floating_hint.xml",
+          "sha256": "e511d670ed72dcd3c4a1cf09d2421975fc28f1efee567900c821ad5c39f5958f",
+          "bytes": 1951
+        },
+        {
+          "path": "Data/menus/quantity_menu.xml",
+          "sha256": "5b93d6012de882037d7015361c17ac1c59fa73a9e5f29f6269d3973a1a14bd78",
+          "bytes": 25446
+        },
+        {
+          "path": "Data/menus/recipe_menu.xml",
+          "sha256": "182e4746537e915a9774bdc6f22b1452df5908287b97ea17bd22bdf2ab060c4b",
+          "bytes": 14202
+        },
+        {
+          "path": "Data/menus/repair_menu.xml",
+          "sha256": "12e68ed37574cfc2102a445b28d91c91a14a9f5950ca033f544605a4eba27c22",
+          "bytes": 68236
+        },
+        {
+          "path": "Data/menus/repair_services_menu.xml",
+          "sha256": "ba3b8cd266edc82a197add97575f32af456c3234a6a5b76b4d7c98a33ab3697a",
+          "bytes": 74122
+        },
+        {
+          "path": "Data/menus/reputation_menu.xml",
+          "sha256": "cbc083b3103b21a2ef82bd0fa483b8ba1e63f33c7f296be31a21693e0443bd4d",
+          "bytes": 7276
+        },
+        {
+          "path": "Data/menus/roulette_menu.xml",
+          "sha256": "427a294c616147417161367bceaa5b455a88fa44842ad8b37963d2dca7b470cb",
+          "bytes": 62249
+        },
+        {
+          "path": "Data/menus/s.txt",
+          "sha256": "1a483835bb7f2b2c7b82d42798b5c32c568082cddd880f0542ce75fee3bf05ce",
+          "bytes": 4
+        },
+        {
+          "path": "Data/menus/select_menu.xml",
+          "sha256": "2916912af717c2d3e03be459a82b61418ea4084b78b06fd3e8782d18217fce5b",
+          "bytes": 20436
+        },
+        {
+          "path": "Data/menus/sleep_wait_menu.xml",
+          "sha256": "adb3bbc5810383f7d2351e51463cdd873f7af1318bd254e21778a99d5f480deb",
+          "bytes": 30352
+        },
+        {
+          "path": "Data/menus/slot_machine_menu.xml",
+          "sha256": "dc9814c4b8ec738a499b7bf4902f7009c26778460e023b7e1c6507b70f0ed2c7",
+          "bytes": 61581
+        },
+        {
+          "path": "Data/menus/surgerymenu.xml",
+          "sha256": "0ac92b4712c8a10634a33663b5456d01f97613210552bbe189998d02068a0785",
+          "bytes": 14393
+        },
+        {
+          "path": "Data/menus/trait_menu.xml",
+          "sha256": "0d11f2423533a9602af80ece88a2df39593fd5af0d07c7f870c6237cd23d6b9a",
+          "bytes": 55960
+        },
+        {
+          "path": "Data/menus/trait_select_menu.xml",
+          "sha256": "9cf20d5b57e82c143f3fa3f90663956b2d14554d484e3d27d6cdde3ca532a355",
+          "bytes": 11670
+        },
+        {
+          "path": "Data/menus/tutorial_menu.xml",
+          "sha256": "ca0265aab1086f7aac142969baa501d13c4f67208ffe7fb2ffe5c8308e102f02",
+          "bytes": 54227
+        },
+        {
+          "path": "Fallout_default.ini",
+          "sha256": "42fc678620c4025311c1e64ef4c8eed74605a596e0fd3620408f24191dead50f",
+          "bytes": 20001
+        }
+      ]
+    },
+    "esp": {
+      "arguments": [
+        "--video",
+        "false",
+        "--music",
+        "false",
+        "--bsa",
+        "false",
+        "--menus",
+        "false",
+        "--esm",
+        "false",
+        "--esp",
+        "true"
+      ],
+      "note": "DEFECT REPAIRED 2026-09-12: the retail update.esp now reaches the converted build, copied byte-for-byte because it already ships in PC byte order. EsmProcessor gained the endianness guard EsmConvertCommand always had, and a failed phase now reaches RepackResult.Success and Error instead of being swallowed.",
+      "reportedCounts": {
+        "video": 0,
+        "music": 0,
+        "bsa": 0,
+        "menus": 0,
+        "esm": 0,
+        "esp": 0,
+        "totalReported": 162
+      },
+      "sampledProgressItems": [
+        "update.esp",
+        "update.esp",
+        "Fallout.ini"
+      ],
+      "fileCount": 2,
+      "totalBytes": 30904,
+      "files": [
+        {
+          "path": "Data/update.esp",
+          "sha256": "fdc3880f69002da610b4a3b21049d8b2b6b9037f5bb66a9a99cddf09c0e8549c",
+          "bytes": 10903
+        },
+        {
+          "path": "Fallout_default.ini",
+          "sha256": "42fc678620c4025311c1e64ef4c8eed74605a596e0fd3620408f24191dead50f",
+          "bytes": 20001
+        }
+      ]
+    },
+    "esm": {
+      "arguments": [
+        "--video",
+        "false",
+        "--music",
+        "false",
+        "--bsa",
+        "false",
+        "--menus",
+        "false",
+        "--esm",
+        "true",
+        "--esp",
+        "false"
+      ],
+      "note": "Big-endian to little-endian conversion of the 246 MB console master.",
+      "reportedCounts": {
+        "video": 0,
+        "music": 0,
+        "bsa": 0,
+        "menus": 0,
+        "esm": 1,
+        "esp": 0,
+        "totalReported": 162
+      },
+      "sampledProgressItems": [
+        "FalloutNV.esm",
+        "Fallout.ini"
+      ],
+      "fileCount": 2,
+      "totalBytes": 252297303,
+      "files": [
+        {
+          "path": "Data/FalloutNV.esm",
+          "sha256": "88150e84a79369aaf5fdd964c506fab93c93c267aecc98499cb663fbb09e2519",
+          "bytes": 252277302
+        },
+        {
+          "path": "Fallout_default.ini",
+          "sha256": "42fc678620c4025311c1e64ef4c8eed74605a596e0fd3620408f24191dead50f",
+          "bytes": 20001
+        }
+      ]
+    },
+    "video": {
+      "arguments": [
+        "--video",
+        "true",
+        "--music",
+        "false",
+        "--bsa",
+        "false",
+        "--menus",
+        "false",
+        "--esm",
+        "false",
+        "--esp",
+        "false"
+      ],
+      "note": "BIK passthrough copy.",
+      "reportedCounts": {
+        "video": 1,
+        "music": 0,
+        "bsa": 0,
+        "menus": 0,
+        "esm": 0,
+        "esp": 0,
+        "totalReported": 162
+      },
+      "sampledProgressItems": [
+        "FNVIntro.bik",
+        "Fallout.ini"
+      ],
+      "fileCount": 2,
+      "totalBytes": 353321853,
+      "files": [
+        {
+          "path": "Data/Video/FNVIntro.bik",
+          "sha256": "eba73eef381d5c9a3dd1e7a923e9d77772cd17aa20bbeae04263227c655ea9f2",
+          "bytes": 353301852
+        },
+        {
+          "path": "Fallout_default.ini",
+          "sha256": "42fc678620c4025311c1e64ef4c8eed74605a596e0fd3620408f24191dead50f",
+          "bytes": 20001
+        }
+      ]
+    },
+    "bsa-misc": {
+      "arguments": [
+        "--video",
+        "false",
+        "--music",
+        "false",
+        "--bsa",
+        "true",
+        "--bsa-files",
+        "Fallout - Misc.bsa",
+        "--menus",
+        "false",
+        "--esm",
+        "false",
+        "--esp",
+        "false"
+      ],
+      "note": "Extract, convert and repack, bounded to the smallest of the five archives (1.6 MB) so the whole path is exercised without the 4.1 GB the other four cost.",
+      "reportedCounts": {
+        "video": 0,
+        "music": 0,
+        "bsa": 1,
+        "menus": 0,
+        "esm": 0,
+        "esp": 0,
+        "totalReported": 162
+      },
+      "sampledProgressItems": [
+        "Fallout.ini"
+      ],
+      "fileCount": 2,
+      "totalBytes": 1667409,
+      "files": [
+        {
+          "path": "Data/Fallout - Misc.bsa",
+          "sha256": "1e20a56f1c136edb4d40f03ca3549a3ccc5f096410985c4a70d7cf0a20c9e5e8",
+          "bytes": 1647408
+        },
+        {
+          "path": "Fallout_default.ini",
+          "sha256": "42fc678620c4025311c1e64ef4c8eed74605a596e0fd3620408f24191dead50f",
+          "bytes": 20001
+        }
+      ]
+    },
+    "music": {
+      "arguments": [
+        "--video",
+        "false",
+        "--music",
+        "true",
+        "--bsa",
+        "false",
+        "--menus",
+        "false",
+        "--esm",
+        "false",
+        "--esp",
+        "false"
+      ],
+      "note": "XMA to MP3 through ffmpeg. Hashes here are bound to the ffmpeg build recorded below, not to the repacker alone, so a hash change on this phase must rule out a toolchain change first.",
+      "reportedCounts": {
+        "video": 0,
+        "music": 154,
+        "bsa": 0,
+        "menus": 0,
+        "esm": 0,
+        "esp": 0,
+        "totalReported": 162
+      },
+      "sampledProgressItems": [
+        "SCR\\mus_SCR_VegasStinger.xma",
+        "SCR\\mus_SCR_GoodspringsStinger.xma",
+        "Special\\EndCredits.xma",
+        "Special\\MainTitle.xma",
+        "Special\\mus_endgameslideshow.xma",
+        "Special\\mus_endgametransitionstinger.xma",
+        "Special\\mus_hailchief.xma",
+        "BTTL\\Evil1\\mus_BTTL_Lp_Evil1_City_Full.xma",
+        "BTTL\\Evil1\\mus_BTTL_Lp_Evil1_City_Perc.xma",
+        "BTTL\\Evil1\\mus_BTTL_Lp_Evil1_Rural_Full.xma",
+        "BTTL\\Evil1\\mus_BTTL_Lp_Evil1_Rural_Perc.xma",
+        "BTTL\\Evil2\\mus_BTTL_Lp_Evil2_City_Full.xma",
+        "BTTL\\Evil2\\mus_BTTL_Lp_Evil2_City_Perc.xma",
+        "BTTL\\Evil2\\mus_BTTL_Lp_Evil2_Rural_Full.xma",
+        "BTTL\\Evil2\\mus_BTTL_Lp_Evil2_Rural_Perc.xma",
+        "BTTL\\Evil3\\mus_BTTL_Lp_Evil3_City_Full.xma",
+        "BTTL\\Evil3\\mus_BTTL_Lp_Evil3_City_Perc.xma",
+        "BTTL\\Evil3\\mus_BTTL_Lp_Evil3_Rural_Full.xma",
+        "BTTL\\Evil3\\mus_BTTL_Lp_Evil3_Rural_Perc.xma",
+        "BTTL\\Evil4\\mus_BTTL_Lp_Evil4_City_Full.xma",
+        "BTTL\\Evil4\\mus_BTTL_Lp_Evil4_City_Perc.xma",
+        "BTTL\\Evil4\\mus_BTTL_Lp_Evil4_Rural_Full.xma",
+        "BTTL\\Evil4\\mus_BTTL_Lp_Evil4_Rural_Perc.xma",
+        "BTTL\\Good1\\mus_BTTL_Lp_Good1_City_Full.xma",
+        "BTTL\\Good1\\mus_BTTL_Lp_Good1_City_Perc.xma",
+        "BTTL\\Good1\\mus_BTTL_Lp_Good1_Rural_Full.xma",
+        "BTTL\\Good1\\mus_BTTL_Lp_Good1_Rural_Perc.xma",
+        "BTTL\\Good2\\mus_BTTL_Lp_Good2_City_Full.xma",
+        "BTTL\\Good2\\mus_BTTL_Lp_Good2_City_Perc.xma",
+        "BTTL\\Good2\\mus_BTTL_Lp_Good2_Rural_Full.xma",
+        "BTTL\\Good2\\mus_BTTL_Lp_Good2_Rural_Perc.xma",
+        "BTTL\\Good3\\mus_BTTL_Lp_Good3_City_Full.xma",
+        "BTTL\\Good3\\mus_BTTL_Lp_Good3_City_Perc.xma",
+        "BTTL\\Good3\\mus_BTTL_Lp_Good3_Rural_Full.xma",
+        "BTTL\\Good3\\mus_BTTL_Lp_Good3_Rural_Perc.xma",
+        "BTTL\\Good4\\mus_BTTL_Lp_Good4_City_Full.xma",
+        "BTTL\\Good4\\mus_BTTL_Lp_Good4_City_Perc.xma",
+        "BTTL\\Good4\\mus_BTTL_Lp_Good4_Rural_Full.xma",
+        "BTTL\\Good4\\mus_BTTL_Lp_Good4_Rural_Perc.xma",
+        "DNGN\\Dungeon1\\mus_DNGN_One_1Low.xma",
+        "DNGN\\Dungeon1\\mus_DNGN_One_2Mid.xma",
+        "DNGN\\Dungeon1\\mus_DNGN_One_3High.xma",
+        "DNGN\\Dungeon2\\mus_DNGN_Two_1Low.xma",
+        "DNGN\\Dungeon2\\mus_DNGN_Two_2Mid.xma",
+        "DNGN\\Dungeon2\\mus_DNGN_Two_3High.xma",
+        "DNGN\\Dungeon3\\mus_DNGN_Three_1Low.xma",
+        "DNGN\\Dungeon3\\mus_DNGN_Three_2Mid.xma",
+        "DNGN\\Dungeon3\\mus_DNGN_Three_3High.xma",
+        "DNGN\\Dungeon4\\mus_DNGN_Four_1Low.xma",
+        "DNGN\\Dungeon4\\mus_DNGN_Four_2Mid.xma",
+        "DNGN\\Dungeon4\\mus_DNGN_Four_3High.xma",
+        "DNGN\\Dungeon5\\mus_DNGN_Five_1Low.xma",
+        "DNGN\\Dungeon5\\mus_DNGN_Five_2Mid.xma",
+        "DNGN\\Dungeon5\\mus_DNGN_Five_3High.xma",
+        "DNGN\\Dungeon6\\mus_DNGN_Six_1Low.xma",
+        "DNGN\\Dungeon6\\mus_DNGN_Six_2Mid.xma",
+        "DNGN\\Dungeon6\\mus_DNGN_Six_3High.xma",
+        "DNGN\\Dungeon7\\mus_DNGN_Seven_1Low.xma",
+        "DNGN\\Dungeon7\\mus_DNGN_Seven_2Mid.xma",
+        "DNGN\\Dungeon7\\mus_DNGN_Seven_3High.xma",
+        "DNGN\\Dungeon8\\mus_DNGN_Eight_1Low.xma",
+        "DNGN\\Dungeon8\\mus_DNGN_Eight_2Mid.xma",
+        "DNGN\\Dungeon8\\mus_DNGN_Eight_3High.xma",
+        "LOC\\CaesarsLegion\\mus_LOC_Caesar_Day_1Low.xma",
+        "LOC\\CaesarsLegion\\mus_LOC_Caesar_Day_2Mid.xma",
+        "LOC\\CaesarsLegion\\mus_LOC_Caesar_Day_3High.xma",
+        "LOC\\CaesarsLegion\\mus_LOC_Caesar_Night_1Low.xma",
+        "LOC\\CaesarsLegion\\mus_LOC_Caesar_Night_2Mid.xma",
+        "LOC\\CaesarsLegion\\mus_LOC_Caesar_Night_3High.xma",
+        "LOC\\CorporateRuins\\mus_LOC_CorpRuins_Day_1Low.xma",
+        "LOC\\CorporateRuins\\mus_LOC_CorpRuins_Day_2Mid.xma",
+        "LOC\\CorporateRuins\\mus_LOC_CorpRuins_Day_3High.xma",
+        "LOC\\CorporateRuins\\mus_LOC_CorpRuins_Night_1Low.xma",
+        "LOC\\CorporateRuins\\mus_LOC_CorpRuins_Night_2Mid.xma",
+        "LOC\\CorporateRuins\\mus_LOC_CorpRuins_Night_3High.xma",
+        "LOC\\DesertExploration\\mus_LOC_DesExpl_Day_1Low.xma",
+        "LOC\\DesertExploration\\mus_LOC_DesExpl_Day_2Mid.xma",
+        "LOC\\DesertExploration\\mus_LOC_DesExpl_Day_3High.xma",
+        "LOC\\DesertExploration\\mus_LOC_DesExpl_Night_1Low.xma",
+        "LOC\\DesertExploration\\mus_LOC_DesExpl_Night_2Mid.xma",
+        "LOC\\DesertExploration\\mus_LOC_DesExpl_Night_3High.xma",
+        "LOC\\DesertSettlement\\mus_LOC_DesSttl_Day_1Low.xma",
+        "LOC\\DesertSettlement\\mus_LOC_DesSttl_Day_2Mid.xma",
+        "LOC\\DesertSettlement\\mus_LOC_DesSttl_Day_3High.xma",
+        "LOC\\DesertSettlement\\mus_LOC_DesSttl_Night_1Low.xma",
+        "LOC\\DesertSettlement\\mus_LOC_DesSttl_Night_2Mid.xma",
+        "LOC\\DesertSettlement\\mus_LOC_DesSttl_Night_3High.xma",
+        "LOC\\Freeside\\mus_LOC_Freeside_Day_1Low.xma",
+        "LOC\\Freeside\\mus_LOC_Freeside_Day_2Mid.xma",
+        "LOC\\Freeside\\mus_LOC_Freeside_Day_3High.xma",
+        "LOC\\Freeside\\mus_LOC_Freeside_Night_1Low.xma",
+        "LOC\\Freeside\\mus_LOC_Freeside_Night_2Mid.xma",
+        "LOC\\Freeside\\mus_LOC_Freeside_Night_3High.xma",
+        "LOC\\HooverDam\\mus_LOC_Hoover_Caesar_1Low.xma",
+        "LOC\\HooverDam\\mus_LOC_Hoover_Caesar_2Mid.xma",
+        "LOC\\HooverDam\\mus_LOC_Hoover_Caesar_3High.xma",
+        "LOC\\HooverDam\\mus_LOC_Hoover_NCR_1Low.xma",
+        "LOC\\HooverDam\\mus_LOC_Hoover_NCR_2Mid.xma",
+        "LOC\\HooverDam\\mus_LOC_Hoover_NCR_3High.xma",
+        "LOC\\IndustrialCity\\mus_LOC_Industrial_Day_1Low.xma",
+        "LOC\\IndustrialCity\\mus_LOC_Industrial_Day_2Mid.xma",
+        "LOC\\IndustrialCity\\mus_LOC_Industrial_Day_3High.xma",
+        "LOC\\IndustrialCity\\mus_LOC_Industrial_Night_1Low.xma",
+        "LOC\\IndustrialCity\\mus_LOC_Industrial_Night_2Mid.xma",
+        "LOC\\IndustrialCity\\mus_LOC_Industrial_Night_3High.xma",
+        "LOC\\Jacobstown\\mus_LOC_Jacobstown_Day_1Low.xma",
+        "LOC\\Jacobstown\\mus_LOC_Jacobstown_Day_2Mid.xma",
+        "LOC\\Jacobstown\\mus_LOC_Jacobstown_Day_3High.xma",
+        "LOC\\Jacobstown\\mus_LOC_Jacobstown_Night_1Low.xma",
+        "LOC\\Jacobstown\\mus_LOC_Jacobstown_Night_2Mid.xma",
+        "LOC\\Jacobstown\\mus_LOC_Jacobstown_Night_3High.xma",
+        "LOC\\LargerTown\\mus_LOC_LrgTown_Day_1Low.xma",
+        "LOC\\LargerTown\\mus_LOC_LrgTown_Day_2Mid.xma",
+        "LOC\\LargerTown\\mus_LOC_LrgTown_Day_3High.xma",
+        "LOC\\LargerTown\\mus_LOC_LrgTown_Night_1Low.xma",
+        "LOC\\LargerTown\\mus_LOC_LrgTown_Night_2Mid.xma",
+        "LOC\\LargerTown\\mus_LOC_LrgTown_Night_3High.xma",
+        "LOC\\Mountain\\mus_LOC_Mountain_Day_1Low.xma",
+        "LOC\\Mountain\\mus_LOC_Mountain_Day_2Mid.xma",
+        "LOC\\Mountain\\mus_LOC_Mountain_Day_3High.xma",
+        "LOC\\Mountain\\mus_LOC_Mountain_Night_1Low.xma",
+        "LOC\\Mountain\\mus_LOC_Mountain_Night_2Mid.xma",
+        "LOC\\Mountain\\mus_LOC_Mountain_Night_3High.xma",
+        "LOC\\NewCaliforniaRepublic\\mus_LOC_CalRepublic_Day_1Low.xma",
+        "LOC\\NewCaliforniaRepublic\\mus_LOC_CalRepublic_Day_2Mid.xma",
+        "LOC\\NewCaliforniaRepublic\\mus_LOC_CalRepublic_Day_3High.xma",
+        "LOC\\NewCaliforniaRepublic\\mus_LOC_CalRepublic_Night_1Low.xma",
+        "LOC\\NewCaliforniaRepublic\\mus_LOC_CalRepublic_Night_2Mid.xma",
+        "LOC\\NewCaliforniaRepublic\\mus_LOC_CalRepublic_Night_3High.xma",
+        "OLD\\FO1\\mus_FO1_AcolytesOfTheNewGod.xma",
+        "OLD\\FO1\\mus_FO1_CityOfLostAngels.xma",
+        "OLD\\FO1\\mus_FO1_CityOfTheDead.xma",
+        "OLD\\FO1\\mus_FO1_DesertWind.xma",
+        "OLD\\FO1\\mus_FO1_FlameOfTheAncientWorld.xma",
+        "OLD\\FO1\\mus_FO1_IndustrialJunk.xma",
+        "OLD\\FO1\\mus_FO1_MetallicMonks.xma",
+        "OLD\\FO1\\mus_FO1_RadiationStorm.xma",
+        "OLD\\FO1\\mus_FO1_SecondChance.xma",
+        "OLD\\FO1\\mus_FO1_TheVaultOfTheFuture.xma",
+        "OLD\\FO1\\mus_FO1_UndergroundTrouble.xma",
+        "OLD\\FO2\\mus_FO2_Modoc.xma",
+        "OLD\\FO2\\mus_FO2_Redding.xma",
+        "OLD\\FO3\\mus_FO3_Base2.xma",
+        "OLD\\FO3\\mus_FO3_Base3.xma",
+        "OLD\\FO3\\mus_FO3_Base5.xma",
+        "OLD\\FO3\\mus_FO3_Death.xma",
+        "OLD\\FO3\\mus_FO3_Dungeon1.xma",
+        "OLD\\FO3\\mus_FO3_Dungeon2.xma",
+        "OLD\\FO3\\mus_FO3_Dungeon3.xma",
+        "OLD\\FO3\\mus_FO3_Explore1.xma",
+        "OLD\\FO3\\mus_FO3_Explore3.xma",
+        "OLD\\FO3\\mus_FO3_Explore4.xma",
+        "OLD\\FO3\\mus_FO3_Explore5.xma",
+        "OLD\\FO3\\mus_FO3_Explore6.xma",
+        "Fallout.ini"
+      ],
+      "fileCount": 155,
+      "totalBytes": 432267123,
+      "files": [
+        {
+          "path": "Data/Music/BTTL/Evil1/mus_BTTL_Lp_Evil1_City_Full.mp3",
+          "sha256": "db9f0824fcbf51eb00b88e0e663d30a2ec464eb9c83a807f6d3ffd6fc2d95a1e",
+          "bytes": 877869
+        },
+        {
+          "path": "Data/Music/BTTL/Evil1/mus_BTTL_Lp_Evil1_City_Perc.mp3",
+          "sha256": "857f1ed43dd70d34a88ed6d8c18101546bfdaee9b201c1f783de4938b977c26a",
+          "bytes": 877869
+        },
+        {
+          "path": "Data/Music/BTTL/Evil1/mus_BTTL_Lp_Evil1_Rural_Full.mp3",
+          "sha256": "0f13742ccd991bc849085e1f2440400d0cc9ed06a48c3cbd119865c8b0640e67",
+          "bytes": 877869
+        },
+        {
+          "path": "Data/Music/BTTL/Evil1/mus_BTTL_Lp_Evil1_Rural_Perc.mp3",
+          "sha256": "cf464e001a517f80d5a4967448cfca827c78c5eae9cdee3e8faab7d94cc8e083",
+          "bytes": 1096749
+        },
+        {
+          "path": "Data/Music/BTTL/Evil2/mus_BTTL_Lp_Evil2_City_Full.mp3",
+          "sha256": "dd1028b1331313e8a8e51b2a7f53828aa6f452b3c3e41350ab4f7754a83ed850",
+          "bytes": 891693
+        },
+        {
+          "path": "Data/Music/BTTL/Evil2/mus_BTTL_Lp_Evil2_City_Perc.mp3",
+          "sha256": "104bc3db22793d98401cd8cd5c2fff9ff84a91caf3bcfec62b70bba8b129f94e",
+          "bytes": 891693
+        },
+        {
+          "path": "Data/Music/BTTL/Evil2/mus_BTTL_Lp_Evil2_Rural_Full.mp3",
+          "sha256": "b3adfc85413014b425cc402f1fb47653cefa33ce9730e473175c2a56af408124",
+          "bytes": 891693
+        },
+        {
+          "path": "Data/Music/BTTL/Evil2/mus_BTTL_Lp_Evil2_Rural_Perc.mp3",
+          "sha256": "6c8108aea4a6c4700c49d28e644069e0bc8367c0d001c2ed39fbb5dbe2a93da4",
+          "bytes": 889389
+        },
+        {
+          "path": "Data/Music/BTTL/Evil3/mus_BTTL_Lp_Evil3_City_Full.mp3",
+          "sha256": "f407e3ba4e8836d83cc9546fc8b6fb409bf15131114d7854c9236e8e4c1e6fbf",
+          "bytes": 853677
+        },
+        {
+          "path": "Data/Music/BTTL/Evil3/mus_BTTL_Lp_Evil3_City_Perc.mp3",
+          "sha256": "14ecf9b1be633ac4400a3c2552501491341d3c4acbac17e2e8fdc2addb9375b5",
+          "bytes": 830061
+        },
+        {
+          "path": "Data/Music/BTTL/Evil3/mus_BTTL_Lp_Evil3_Rural_Full.mp3",
+          "sha256": "8a8dce2a369a1da0c5746b2c6692427424a775740770ab321fb5d1c326246e3e",
+          "bytes": 867501
+        },
+        {
+          "path": "Data/Music/BTTL/Evil3/mus_BTTL_Lp_Evil3_Rural_Perc.mp3",
+          "sha256": "bb1a031ff868617ee2af0776739e8188c347409b4163d29445e1105899135e31",
+          "bytes": 868077
+        },
+        {
+          "path": "Data/Music/BTTL/Evil4/mus_BTTL_Lp_Evil4_City_Full.mp3",
+          "sha256": "23d8cd1c2305ad552d9452712799162d562724d82e8a11620e7da0433557f50a",
+          "bytes": 1043181
+        },
+        {
+          "path": "Data/Music/BTTL/Evil4/mus_BTTL_Lp_Evil4_City_Perc.mp3",
+          "sha256": "674a885521021e2235f037aedecf36b694f85e99296c90427cfe23638a2021b7",
+          "bytes": 1043181
+        },
+        {
+          "path": "Data/Music/BTTL/Evil4/mus_BTTL_Lp_Evil4_Rural_Full.mp3",
+          "sha256": "32429ea95e3642973e5b5a48dc7312be83c07051ac5ce424db40770bb5eb09df",
+          "bytes": 1043181
+        },
+        {
+          "path": "Data/Music/BTTL/Evil4/mus_BTTL_Lp_Evil4_Rural_Perc.mp3",
+          "sha256": "180a5b04692a28878f5d4ceac53138285e923273d2a99fedd6225364fb79ae0c",
+          "bytes": 1044333
+        },
+        {
+          "path": "Data/Music/BTTL/Good1/mus_BTTL_Lp_Good1_City_Full.mp3",
+          "sha256": "cbecc9c32d6ded728e0f9a8bbebbc75bd2a821fa6c7a296631da2185dfe4889b",
+          "bytes": 955629
+        },
+        {
+          "path": "Data/Music/BTTL/Good1/mus_BTTL_Lp_Good1_City_Perc.mp3",
+          "sha256": "558ae741dc2799f082a2142a17ccd6ba01c6f333e07f6401d7bba11bf8b6de88",
+          "bytes": 971181
+        },
+        {
+          "path": "Data/Music/BTTL/Good1/mus_BTTL_Lp_Good1_Rural_Full.mp3",
+          "sha256": "6afa18fcfc6827c2c59b43921971dd286cdf1e1127f989bb19caee657171c066",
+          "bytes": 1213677
+        },
+        {
+          "path": "Data/Music/BTTL/Good1/mus_BTTL_Lp_Good1_Rural_Perc.mp3",
+          "sha256": "6e330703673418243994790293048cae23acea3ed17b0188349aa83144d155e9",
+          "bytes": 1213677
+        },
+        {
+          "path": "Data/Music/BTTL/Good2/mus_BTTL_Lp_Good2_City_Full.mp3",
+          "sha256": "f60a0976a2ccfbce68225ee016b305d597e946c1459ff3a70bcfdeecbc5c63cf",
+          "bytes": 989613
+        },
+        {
+          "path": "Data/Music/BTTL/Good2/mus_BTTL_Lp_Good2_City_Perc.mp3",
+          "sha256": "7989a4c451e7abd8f263908707cacf81e4068931ee8717efe64c9d071cf88887",
+          "bytes": 989613
+        },
+        {
+          "path": "Data/Music/BTTL/Good2/mus_BTTL_Lp_Good2_Rural_Full.mp3",
+          "sha256": "7e04a3af828b4e28ddeec3aae33cf5fa000b523e6f52b6b2eae8dabd0c5bef51",
+          "bytes": 975213
+        },
+        {
+          "path": "Data/Music/BTTL/Good2/mus_BTTL_Lp_Good2_Rural_Perc.mp3",
+          "sha256": "3cb0755509efb838b814d87662d1ec385692cbdf1ca21cd2e32d2de2493cdb28",
+          "bytes": 975213
+        },
+        {
+          "path": "Data/Music/BTTL/Good3/mus_BTTL_Lp_Good3_City_Full.mp3",
+          "sha256": "71de1c03f6d352b370ce43e8ac430a3da54a2b188bac285a3f1509f1f627d6cc",
+          "bytes": 1612845
+        },
+        {
+          "path": "Data/Music/BTTL/Good3/mus_BTTL_Lp_Good3_City_Perc.mp3",
+          "sha256": "2d0be8c1924ccc66d814062d56bae37e6c92afe10d5450641609025a140bd252",
+          "bytes": 1613421
+        },
+        {
+          "path": "Data/Music/BTTL/Good3/mus_BTTL_Lp_Good3_Rural_Full.mp3",
+          "sha256": "4ec12bdc67b3bdfe3155457d0e69592df309c6680a165d524ef4b722e8e62226",
+          "bytes": 1612845
+        },
+        {
+          "path": "Data/Music/BTTL/Good3/mus_BTTL_Lp_Good3_Rural_Perc.mp3",
+          "sha256": "ec055667316d6120796caee53cb09233b41c24c5f5db6af6522cb4ca18ed3e40",
+          "bytes": 1612845
+        },
+        {
+          "path": "Data/Music/BTTL/Good4/mus_BTTL_Lp_Good4_City_Full.mp3",
+          "sha256": "1a197319b273db29f4bedcb2bf8fd1e2a052a380e49e225fdae6d1804869dd2c",
+          "bytes": 1205613
+        },
+        {
+          "path": "Data/Music/BTTL/Good4/mus_BTTL_Lp_Good4_City_Perc.mp3",
+          "sha256": "71f5da468aa4bc61ac377371b1fff37a9ccf8a3b752c13e4805d9e67f41bd964",
+          "bytes": 1204461
+        },
+        {
+          "path": "Data/Music/BTTL/Good4/mus_BTTL_Lp_Good4_Rural_Full.mp3",
+          "sha256": "9a9d1ef6cca52330b6aa67e0a3d6b2e247eaf7064037bb228c75259de0ed050d",
+          "bytes": 1204461
+        },
+        {
+          "path": "Data/Music/BTTL/Good4/mus_BTTL_Lp_Good4_Rural_Perc.mp3",
+          "sha256": "cb304906225dd662a83999c8ff22488645c3939664ad7cb8b61e89e2f7c540c2",
+          "bytes": 1204461
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon1/mus_DNGN_One_1Low.mp3",
+          "sha256": "6cfae03a448a436695b2af3404aecbc67a45728c907d3cbbd54ac722b4e7ac9b",
+          "bytes": 2922669
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon1/mus_DNGN_One_2Mid.mp3",
+          "sha256": "1e4e7c72a13f97285b52dda0c5fa4479988ca7d0789e79cd66376a7afa0efa64",
+          "bytes": 2922669
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon1/mus_DNGN_One_3High.mp3",
+          "sha256": "73cb39e1e949d0ab5022a6218c9647291c906fefa84f455ba4d3ccf57a3a1eb0",
+          "bytes": 2922669
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon2/mus_DNGN_Two_1Low.mp3",
+          "sha256": "2b1eb4b268f22cf1f154a6a329399f01a5af23e58d594a689e8fff09981248e5",
+          "bytes": 3073005
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon2/mus_DNGN_Two_2Mid.mp3",
+          "sha256": "d8844d7b36f2d30e003a5da70dbb9f6a3375b835914ae06c37891e5db78f8984",
+          "bytes": 3073005
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon2/mus_DNGN_Two_3High.mp3",
+          "sha256": "f55c73e08796ffd434783edb8ae8372fd09e7274b951408be4eb9e6eed5d567e",
+          "bytes": 3073005
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon3/mus_DNGN_Three_1Low.mp3",
+          "sha256": "1ca07c59da1d5fe30b1b4b8950b5d35197f2ef50114d41a3d1032fc0492f6c19",
+          "bytes": 2983149
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon3/mus_DNGN_Three_2Mid.mp3",
+          "sha256": "e7b4ddb5bd986ebf2581296003cafa2999b5632f6ef1682c1b15d79a12642de4",
+          "bytes": 2983149
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon3/mus_DNGN_Three_3High.mp3",
+          "sha256": "d9cd39a7703d5fea0b7f789ec393cd379fc7809d08d8682286d5433df1bb3c36",
+          "bytes": 2983149
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon4/mus_DNGN_Four_1Low.mp3",
+          "sha256": "5b78fca18b6c5a327550820577eada7b8235af0ff79bd93d5df5840ee89fcd19",
+          "bytes": 3111597
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon4/mus_DNGN_Four_2Mid.mp3",
+          "sha256": "24b95fddc8fbc8693e595336dad4221b86a401f8f8d8592648d0e064c78ef590",
+          "bytes": 3111597
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon4/mus_DNGN_Four_3High.mp3",
+          "sha256": "3a3d42975ac895ad59fcb31d3698e88949592d86c602e42f193431717c95daa3",
+          "bytes": 3111597
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon5/mus_DNGN_Five_1Low.mp3",
+          "sha256": "6c10e15e7753a97bfabc7d14f5719345f7544cc07fe68d8d818dd0fb64c09f40",
+          "bytes": 3121389
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon5/mus_DNGN_Five_2Mid.mp3",
+          "sha256": "e56fd954cbc91a8af726a0c1f29d6f42dd9b82271eae9e8cf28592c278e9eff2",
+          "bytes": 3121389
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon5/mus_DNGN_Five_3High.mp3",
+          "sha256": "69a9f7a46a6305d2e6b247056fc08ea8ccd51bce7897461b11c9d6b8426b1b41",
+          "bytes": 3121389
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon6/mus_DNGN_Six_1Low.mp3",
+          "sha256": "3b0e1736271395b6e53a16c737374ce5bad74b05a597fd006e99bb17a12c2c6a",
+          "bytes": 3072429
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon6/mus_DNGN_Six_2Mid.mp3",
+          "sha256": "2b38dd8b02f4902c68ea47c83c6b29a95deb32e41d76c45ba0bcf7ec9afde87f",
+          "bytes": 3072429
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon6/mus_DNGN_Six_3High.mp3",
+          "sha256": "197e07efa16c01fe40a19890e7c3b338acbac84025fe671e912c5e93ad03f22e",
+          "bytes": 3072429
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon7/mus_DNGN_Seven_1Low.mp3",
+          "sha256": "f21791c4e0ab1d35c68835716a685587f3a40526b0f85bdf5aa6478d66dc6be6",
+          "bytes": 2873709
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon7/mus_DNGN_Seven_2Mid.mp3",
+          "sha256": "dbcfb01a7e4ce72d4139536f3420fc6f307d9873fc76a4aaaa17f96c0d3a581f",
+          "bytes": 2873709
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon7/mus_DNGN_Seven_3High.mp3",
+          "sha256": "4b1b34ab1b0228c08a5388a4192afce4f94925c7725745c860456b69e0fc1874",
+          "bytes": 2873709
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon8/mus_DNGN_Eight_1Low.mp3",
+          "sha256": "7a021d2618959a03159c0b5ae643b2e98b645847572461ec281a89b945a1f44a",
+          "bytes": 3216429
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon8/mus_DNGN_Eight_2Mid.mp3",
+          "sha256": "18623891af931129c6b56064e50ee69808e27977d75d7106ddc39621cf9cf5dc",
+          "bytes": 3216429
+        },
+        {
+          "path": "Data/Music/DNGN/Dungeon8/mus_DNGN_Eight_3High.mp3",
+          "sha256": "632a9742b1e6ecb903ab67911ec44cbdcd900ba36c5b450183c3e584053ec0c4",
+          "bytes": 3216429
+        },
+        {
+          "path": "Data/Music/LOC/CaesarsLegion/mus_LOC_Caesar_Day_1Low.mp3",
+          "sha256": "43b399458365b954981f256028023423dc7840d13e51990a4e330a7368ea0bad",
+          "bytes": 3192237
+        },
+        {
+          "path": "Data/Music/LOC/CaesarsLegion/mus_LOC_Caesar_Day_2Mid.mp3",
+          "sha256": "e82bdb7e697e586a4bebb43952d625f2509133dbf80bb67ab67ddc5e8378ba90",
+          "bytes": 3192237
+        },
+        {
+          "path": "Data/Music/LOC/CaesarsLegion/mus_LOC_Caesar_Day_3High.mp3",
+          "sha256": "76e07e74410a6b6c5020b59b40163b02a5959b6dbce940c2ec01c45a58b002db",
+          "bytes": 3192237
+        },
+        {
+          "path": "Data/Music/LOC/CaesarsLegion/mus_LOC_Caesar_Night_1Low.mp3",
+          "sha256": "ad38f9852ee5ee96983320c19e97a499d18924e8f4be1fb3dbe10b588b28e575",
+          "bytes": 3208365
+        },
+        {
+          "path": "Data/Music/LOC/CaesarsLegion/mus_LOC_Caesar_Night_2Mid.mp3",
+          "sha256": "6d4822571d2f253be74ac54b4fd0a065d7f13a87eb01f76e8f6cba3ce997a456",
+          "bytes": 3208365
+        },
+        {
+          "path": "Data/Music/LOC/CaesarsLegion/mus_LOC_Caesar_Night_3High.mp3",
+          "sha256": "77d82e7273c54d7e7333076cecb98651d8e5ba7f188c2908a54a619f029cdd4e",
+          "bytes": 3208365
+        },
+        {
+          "path": "Data/Music/LOC/CorporateRuins/mus_LOC_CorpRuins_Day_1Low.mp3",
+          "sha256": "c4b3c295165bcd2772d86b34ec5b639bb3b23a08703f6ca13f64a31d6612b0b3",
+          "bytes": 2918061
+        },
+        {
+          "path": "Data/Music/LOC/CorporateRuins/mus_LOC_CorpRuins_Day_2Mid.mp3",
+          "sha256": "0d5b864af9959661efc63715062fedf53d342443aec69e1565d873bd62633088",
+          "bytes": 2918061
+        },
+        {
+          "path": "Data/Music/LOC/CorporateRuins/mus_LOC_CorpRuins_Day_3High.mp3",
+          "sha256": "7e857f5af6abca4ff59a4ea47de457194270715d5713e05e95a19f4c6c95ffb7",
+          "bytes": 2918061
+        },
+        {
+          "path": "Data/Music/LOC/CorporateRuins/mus_LOC_CorpRuins_Night_1Low.mp3",
+          "sha256": "7e10f0eaee4d275ed1430401cab860074431d5d84dcb13714a1e9da8d57fdc20",
+          "bytes": 2908845
+        },
+        {
+          "path": "Data/Music/LOC/CorporateRuins/mus_LOC_CorpRuins_Night_2Mid.mp3",
+          "sha256": "87fb7376b6a9f25ea33c7d2e18f73e243a3b6a2ae79524098698d32c62278eda",
+          "bytes": 2908845
+        },
+        {
+          "path": "Data/Music/LOC/CorporateRuins/mus_LOC_CorpRuins_Night_3High.mp3",
+          "sha256": "05a4f1c334d30deb1fe293f0d892a6176ea60f51fac3041bcca9b9a36d5ae552",
+          "bytes": 2908845
+        },
+        {
+          "path": "Data/Music/LOC/DesertExploration/mus_LOC_DesExpl_Day_1Low.mp3",
+          "sha256": "7df3186a90626a8055e41f7b53a562a8759be06a27bcf2462b6f04a5945afe98",
+          "bytes": 3180717
+        },
+        {
+          "path": "Data/Music/LOC/DesertExploration/mus_LOC_DesExpl_Day_2Mid.mp3",
+          "sha256": "3d53a72ddb64ae5a89a7a143192da206c12bf3b90bf9d66eb9805f840e1d4c47",
+          "bytes": 3180717
+        },
+        {
+          "path": "Data/Music/LOC/DesertExploration/mus_LOC_DesExpl_Day_3High.mp3",
+          "sha256": "3e3d7e21453a700f86aed0705b23ed07ffed94339aae0f5cb1683371c9cd36cf",
+          "bytes": 3180717
+        },
+        {
+          "path": "Data/Music/LOC/DesertExploration/mus_LOC_DesExpl_Night_1Low.mp3",
+          "sha256": "aaebe61f87243a93021d7c6474c7945123711235d088211f554c3ba89f3756ef",
+          "bytes": 3083949
+        },
+        {
+          "path": "Data/Music/LOC/DesertExploration/mus_LOC_DesExpl_Night_2Mid.mp3",
+          "sha256": "abc3cdfa456404d5ae7c6a83029851fc944fb3dc1ea84289c598f3416201e6e6",
+          "bytes": 3083949
+        },
+        {
+          "path": "Data/Music/LOC/DesertExploration/mus_LOC_DesExpl_Night_3High.mp3",
+          "sha256": "15e49a52828ff609e13f20f71669a675fcc77f72163f0aa640feec0980f5923d",
+          "bytes": 3083949
+        },
+        {
+          "path": "Data/Music/LOC/DesertSettlement/mus_LOC_DesSttl_Day_1Low.mp3",
+          "sha256": "54a7958b62b3e89d2022b2786eb4b7b163b0a1842405f37b6f837771373b0f99",
+          "bytes": 2948589
+        },
+        {
+          "path": "Data/Music/LOC/DesertSettlement/mus_LOC_DesSttl_Day_2Mid.mp3",
+          "sha256": "81fe18820428fdfdc123d87c18cf3295ee2a725bf552df0980d4900c4d1c3f66",
+          "bytes": 2948589
+        },
+        {
+          "path": "Data/Music/LOC/DesertSettlement/mus_LOC_DesSttl_Day_3High.mp3",
+          "sha256": "bc639c52c11f77eadb647bf0812e036c89ebd21b29b57d0cba741d0fc7019023",
+          "bytes": 2948589
+        },
+        {
+          "path": "Data/Music/LOC/DesertSettlement/mus_LOC_DesSttl_Night_1Low.mp3",
+          "sha256": "e22129cab41628ff58bacd6e7a9ce0310cd0235c1c9d5f54ac31a29539a4c29d",
+          "bytes": 2961261
+        },
+        {
+          "path": "Data/Music/LOC/DesertSettlement/mus_LOC_DesSttl_Night_2Mid.mp3",
+          "sha256": "fac04595d884a26fd7d2942fc4768ec784f31c80a62121fa47f7832c57b6cd6b",
+          "bytes": 2961261
+        },
+        {
+          "path": "Data/Music/LOC/DesertSettlement/mus_LOC_DesSttl_Night_3High.mp3",
+          "sha256": "470445d0543d03bb2b8f469f0a5b9e4767072c40f86cbfe934a88377fec37c95",
+          "bytes": 2961261
+        },
+        {
+          "path": "Data/Music/LOC/Freeside/mus_LOC_Freeside_Day_1Low.mp3",
+          "sha256": "586eaccad9fdefba784c7cadf04c33cc5e0d0e9421f9f0348f2843641589fa5a",
+          "bytes": 3092013
+        },
+        {
+          "path": "Data/Music/LOC/Freeside/mus_LOC_Freeside_Day_2Mid.mp3",
+          "sha256": "e7783ea5aee000568432768b159876404980e4cdf87d6b0ef745c92476a2333b",
+          "bytes": 3092013
+        },
+        {
+          "path": "Data/Music/LOC/Freeside/mus_LOC_Freeside_Day_3High.mp3",
+          "sha256": "36ea8bbaf3dfa9caddbc1baabde69efc30a9767ad3ed41f5301f0a8040290487",
+          "bytes": 3092013
+        },
+        {
+          "path": "Data/Music/LOC/Freeside/mus_LOC_Freeside_Night_1Low.mp3",
+          "sha256": "1038d8cd2df376f5ae39857ea0bc0fd1495a530492a03d7cac99cb0da953bacf",
+          "bytes": 3029805
+        },
+        {
+          "path": "Data/Music/LOC/Freeside/mus_LOC_Freeside_Night_2Mid.mp3",
+          "sha256": "4010e9378f423a5ba477df39b96e45c26519417ec52d77793e5e5a07f051e08a",
+          "bytes": 3029805
+        },
+        {
+          "path": "Data/Music/LOC/Freeside/mus_LOC_Freeside_Night_3High.mp3",
+          "sha256": "5cb9387e2e0db5c5b130010043e78f14a4d0371ba0c6dd3ef12351dc40f7ddf1",
+          "bytes": 3029805
+        },
+        {
+          "path": "Data/Music/LOC/HooverDam/mus_LOC_Hoover_Caesar_1Low.mp3",
+          "sha256": "fc2b13524ea927296a60262f55ff12b0503d12fc26f4bd300fe0e0d0fc8c8012",
+          "bytes": 2969325
+        },
+        {
+          "path": "Data/Music/LOC/HooverDam/mus_LOC_Hoover_Caesar_2Mid.mp3",
+          "sha256": "72814107c27af6df1b995effb0725f424194b8048447093952fe9ce08011cfac",
+          "bytes": 2969325
+        },
+        {
+          "path": "Data/Music/LOC/HooverDam/mus_LOC_Hoover_Caesar_3High.mp3",
+          "sha256": "ba389a9c35cf1dd11c4b74938ae74093db5adedd9ea1f56cc4da848efc2658ad",
+          "bytes": 2969325
+        },
+        {
+          "path": "Data/Music/LOC/HooverDam/mus_LOC_Hoover_NCR_1Low.mp3",
+          "sha256": "8ad67cea0c5110d2f2afa51b4cd54f6c657a27063f4dacb721291883b6fccfc5",
+          "bytes": 2976813
+        },
+        {
+          "path": "Data/Music/LOC/HooverDam/mus_LOC_Hoover_NCR_2Mid.mp3",
+          "sha256": "d503c11b824442d8cd49d69c0c69270a35448e3f4a715e0056dd87c29535550c",
+          "bytes": 2976813
+        },
+        {
+          "path": "Data/Music/LOC/HooverDam/mus_LOC_Hoover_NCR_3High.mp3",
+          "sha256": "6c66315a7ce9d2ebaaf4c305f812bf7ea112ad75789b02317df84cb357fc5809",
+          "bytes": 2976813
+        },
+        {
+          "path": "Data/Music/LOC/IndustrialCity/mus_LOC_Industrial_Day_1Low.mp3",
+          "sha256": "fee2453fa19a527908c91d049d5f9760386dabf9b1b91212a00ffff87216b9b7",
+          "bytes": 2930157
+        },
+        {
+          "path": "Data/Music/LOC/IndustrialCity/mus_LOC_Industrial_Day_2Mid.mp3",
+          "sha256": "4b042c55bbeca850ccedee39181297ab04a33361ecaded096f4752bdcd831c53",
+          "bytes": 2934765
+        },
+        {
+          "path": "Data/Music/LOC/IndustrialCity/mus_LOC_Industrial_Day_3High.mp3",
+          "sha256": "43834a28e5d88928869d077bcff3f1666ee72a48f46f9dd0f556ff3ca2b8e16b",
+          "bytes": 2934765
+        },
+        {
+          "path": "Data/Music/LOC/IndustrialCity/mus_LOC_Industrial_Night_1Low.mp3",
+          "sha256": "c79feeaf272c94c591573b595bbe283ec99c20735007266f1662ab157ccf3e61",
+          "bytes": 2920941
+        },
+        {
+          "path": "Data/Music/LOC/IndustrialCity/mus_LOC_Industrial_Night_2Mid.mp3",
+          "sha256": "348d67fa03f45665f67a29fba00a13ac539fe971cbcb13f8a193be4b81d09c05",
+          "bytes": 2920941
+        },
+        {
+          "path": "Data/Music/LOC/IndustrialCity/mus_LOC_Industrial_Night_3High.mp3",
+          "sha256": "0299639a00c0e32d3774ffe1d791714c4c77f6c8b229ad7966a321095269c27b",
+          "bytes": 2920941
+        },
+        {
+          "path": "Data/Music/LOC/Jacobstown/mus_LOC_Jacobstown_Day_1Low.mp3",
+          "sha256": "6d3bebefba7dfa98741884975b4fa6a2610a77b769e699edc47c74f7b4920b41",
+          "bytes": 2931309
+        },
+        {
+          "path": "Data/Music/LOC/Jacobstown/mus_LOC_Jacobstown_Day_2Mid.mp3",
+          "sha256": "b63405171a208f81e59e2740ae0bebdca5b0ba00d7c518e82f387f0991fea50d",
+          "bytes": 2931309
+        },
+        {
+          "path": "Data/Music/LOC/Jacobstown/mus_LOC_Jacobstown_Day_3High.mp3",
+          "sha256": "09dc01ba7cf1fa57f33c9df05b7735222c0164d0b4c53fa5c0b492c1d34a7f02",
+          "bytes": 2931309
+        },
+        {
+          "path": "Data/Music/LOC/Jacobstown/mus_LOC_Jacobstown_Night_1Low.mp3",
+          "sha256": "9750169f5fbc23e7e08db519f702b06435fe7a12b516c29dd75a700672b88200",
+          "bytes": 2881773
+        },
+        {
+          "path": "Data/Music/LOC/Jacobstown/mus_LOC_Jacobstown_Night_2Mid.mp3",
+          "sha256": "1567aad2904c7f89d23cf278b7a9ee6cad7fd6631dd4643db3d7ba0f9e5b949d",
+          "bytes": 2881773
+        },
+        {
+          "path": "Data/Music/LOC/Jacobstown/mus_LOC_Jacobstown_Night_3High.mp3",
+          "sha256": "2a93407a7ec51bc71e7fbe4d9c17712145ad37bfac8c7a33551d173b69c52ca2",
+          "bytes": 2881773
+        },
+        {
+          "path": "Data/Music/LOC/LargerTown/mus_LOC_LrgTown_Day_1Low.mp3",
+          "sha256": "7dd612e9b95ed4510266d661727ac7d0230e3aa1134a04191b2ed6b75f0422b4",
+          "bytes": 2981997
+        },
+        {
+          "path": "Data/Music/LOC/LargerTown/mus_LOC_LrgTown_Day_2Mid.mp3",
+          "sha256": "779db93bd2288b919088602a3445847b2d7b9316a5c6e862ca1ed7dbd7a57744",
+          "bytes": 2981997
+        },
+        {
+          "path": "Data/Music/LOC/LargerTown/mus_LOC_LrgTown_Day_3High.mp3",
+          "sha256": "ca953e3b244021c70266d7d50d51c4a91183bcc9dc66deb111f55887033e077a",
+          "bytes": 2981997
+        },
+        {
+          "path": "Data/Music/LOC/LargerTown/mus_LOC_LrgTown_Night_1Low.mp3",
+          "sha256": "36fd6540025d979bfe39051e0857bc114b3660fcebca8f688a2120910c5d4c25",
+          "bytes": 2954349
+        },
+        {
+          "path": "Data/Music/LOC/LargerTown/mus_LOC_LrgTown_Night_2Mid.mp3",
+          "sha256": "797faa3c4d83262b37d8be00e64c7942b232e2a5d6610a2e3edd4ce086e6f14d",
+          "bytes": 2954349
+        },
+        {
+          "path": "Data/Music/LOC/LargerTown/mus_LOC_LrgTown_Night_3High.mp3",
+          "sha256": "349672128aef6381c3fe22c1741ab5e2e59b8ddcd14b0adc3a3f36e6eb20e745",
+          "bytes": 2954349
+        },
+        {
+          "path": "Data/Music/LOC/Mountain/mus_LOC_Mountain_Day_1Low.mp3",
+          "sha256": "4bc30f528fce4af43f8f28483b270bb0c63ae2be216fb8944d96cb525c0e1bda",
+          "bytes": 2958957
+        },
+        {
+          "path": "Data/Music/LOC/Mountain/mus_LOC_Mountain_Day_2Mid.mp3",
+          "sha256": "00d278c5b48dd439248ba3dc095d6ccec95d88bc81bcf77ab49f6685dbaf99ab",
+          "bytes": 2958957
+        },
+        {
+          "path": "Data/Music/LOC/Mountain/mus_LOC_Mountain_Day_3High.mp3",
+          "sha256": "1e996c5d67cc54e7f5fd734f07fa69aa00926554af82dbedc90f4244bf762dcf",
+          "bytes": 2958957
+        },
+        {
+          "path": "Data/Music/LOC/Mountain/mus_LOC_Mountain_Night_1Low.mp3",
+          "sha256": "ef2fe119590497c6ce91c4dcfa2b3f355f8bf8625c4da8ea2f3351028e8741b1",
+          "bytes": 2958957
+        },
+        {
+          "path": "Data/Music/LOC/Mountain/mus_LOC_Mountain_Night_2Mid.mp3",
+          "sha256": "03b86dacc9d6097290f7ac59f7515e5f35d3717865f54cf934545bc1a0f98c74",
+          "bytes": 2958957
+        },
+        {
+          "path": "Data/Music/LOC/Mountain/mus_LOC_Mountain_Night_3High.mp3",
+          "sha256": "bf0c73f5454d94f3ee82266fbfd0dea49e98392d6fefd0bf51a20772ddfaf014",
+          "bytes": 2958957
+        },
+        {
+          "path": "Data/Music/LOC/NewCaliforniaRepublic/mus_LOC_CalRepublic_Day_1Low.mp3",
+          "sha256": "aacf94a5337dc395494c034d42bcfcee02b22f7e6ff7976e39449a48e5fc9d7b",
+          "bytes": 2914605
+        },
+        {
+          "path": "Data/Music/LOC/NewCaliforniaRepublic/mus_LOC_CalRepublic_Day_2Mid.mp3",
+          "sha256": "d3880790a0a62d47c8ec6477e957d970fefef7053e0400ec6da0139558df9dcc",
+          "bytes": 2914605
+        },
+        {
+          "path": "Data/Music/LOC/NewCaliforniaRepublic/mus_LOC_CalRepublic_Day_3High.mp3",
+          "sha256": "999927a11b7eac0aeb3a301d230f90374d9d904c683b6cb73143f0c11724037a",
+          "bytes": 2914605
+        },
+        {
+          "path": "Data/Music/LOC/NewCaliforniaRepublic/mus_LOC_CalRepublic_Night_1Low.mp3",
+          "sha256": "16510d1ee8a8267312c9a8d1bbfd202151651654fcb1c16f55cd7d1dafb8fbc2",
+          "bytes": 2986029
+        },
+        {
+          "path": "Data/Music/LOC/NewCaliforniaRepublic/mus_LOC_CalRepublic_Night_2Mid.mp3",
+          "sha256": "537674102705e7123ed2462e8fad0a16210ee7e61b781ad90d2db51d6ea60cf1",
+          "bytes": 2986029
+        },
+        {
+          "path": "Data/Music/LOC/NewCaliforniaRepublic/mus_LOC_CalRepublic_Night_3High.mp3",
+          "sha256": "e788af4b05dc0d2372df61d0790f22aa232704860c1a79473f1bee85e59f2463",
+          "bytes": 2986029
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_AcolytesOfTheNewGod.mp3",
+          "sha256": "59756914d6084f2949f1aaa63c34c149305b11448cfada75b9cd8386bcd02d95",
+          "bytes": 4727853
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_CityOfLostAngels.mp3",
+          "sha256": "b1cb1d56c94b1437692c9ebbd7452bca36e42c90465f054622b5908af4cd4e08",
+          "bytes": 5427117
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_CityOfTheDead.mp3",
+          "sha256": "79b26e10881c3a3c7838131ae49bee802a1673661761deeb0b2b78a4f99fc02a",
+          "bytes": 4889709
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_DesertWind.mp3",
+          "sha256": "a1b048e60876513e9cf7eea6c5af9b001a2f67cefde45eec5032aec301300537",
+          "bytes": 4818285
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_FlameOfTheAncientWorld.mp3",
+          "sha256": "6a90e56db2dda882698717947d925b058821dfb7870a3ed330c84ac0db5ff01a",
+          "bytes": 4498605
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_IndustrialJunk.mp3",
+          "sha256": "865112439e36ed150c6faa5e316148e596c1f2901f5a0f704a717b66b3948a22",
+          "bytes": 4908141
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_MetallicMonks.mp3",
+          "sha256": "f02be43fdbf5b3e240091a636a0cecde83f7eb3d5d3e63491430dee4b2cd75ad",
+          "bytes": 4901229
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_RadiationStorm.mp3",
+          "sha256": "444bd3ac1fd640034585caf4657dd11151ffaaf3adfe472c819638cd8b2aaa56",
+          "bytes": 5698413
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_SecondChance.mp3",
+          "sha256": "d9c923ba259a3896d7ee620e687dcdb7808ae347ed8cb5c85b5dcb7aeb60214c",
+          "bytes": 5849325
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_TheVaultOfTheFuture.mp3",
+          "sha256": "238a58f6c0e92a8f347ab28699d72ecf5eae4ed5da3fb711154e274929e7b54c",
+          "bytes": 5798637
+        },
+        {
+          "path": "Data/Music/OLD/FO1/mus_FO1_UndergroundTrouble.mp3",
+          "sha256": "1579fb66fa80517fa1858d56783bb0f054af73af0f7d58b19b7f06134fd02a05",
+          "bytes": 5605677
+        },
+        {
+          "path": "Data/Music/OLD/FO2/mus_FO2_Modoc.mp3",
+          "sha256": "40f3b550078039d60fe49712197e113dedb4e4759bdf734b920373b5c1a729d1",
+          "bytes": 4845933
+        },
+        {
+          "path": "Data/Music/OLD/FO2/mus_FO2_Redding.mp3",
+          "sha256": "694c508c9af0502e25c8a0a86f0cb97c868d5b3cc563315a8fc15842cfa9bd24",
+          "bytes": 5056749
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Base2.mp3",
+          "sha256": "6fa1e8c783f62ee63fa3d0e0af44bc124af18aa103b4963aa9b038a81defac80",
+          "bytes": 2344365
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Base3.mp3",
+          "sha256": "011b6c875178ba05aad3e389e8791a0f10d29059cda742dfdd2fd31428954cc1",
+          "bytes": 2409453
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Base5.mp3",
+          "sha256": "3a2e09179fe2803eaf31c9b5066cb093ee818d64d86075a87445b05de8db047c",
+          "bytes": 2480877
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Death.mp3",
+          "sha256": "c8aa1a3a84df31dcaba47ef61eb10867e162733a54f224dedeb57c30a2198fa3",
+          "bytes": 380781
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Dungeon1.mp3",
+          "sha256": "e463bbdcb92298197e4e25a2b6a80e156bcbd5769613b1a248e9fe51c61f3a43",
+          "bytes": 5242797
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Dungeon2.mp3",
+          "sha256": "1b84e49514620b27e880f97c222d4b0159a165050b22d8aed15b087e2d1d8b92",
+          "bytes": 4925997
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Dungeon3.mp3",
+          "sha256": "c41581602fa921b5a43ef1f0d9e28862b057f62f6befea666bec55d2ed5d2a65",
+          "bytes": 5242797
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Explore1.mp3",
+          "sha256": "0912641494e07a04a8ec02d15c1313ddd167525f11e4557f6c379417a4ac17a2",
+          "bytes": 4997997
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Explore3.mp3",
+          "sha256": "bffb4fd758726970437de14758508cd766111bce0223c346fd573b584723fbf7",
+          "bytes": 5876397
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Explore4.mp3",
+          "sha256": "288be22bcbb34218b6db613fac49984b6fe198f10c41f2d2bc53c7bd82fcd822",
+          "bytes": 4954797
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Explore5.mp3",
+          "sha256": "3b5d0c0b05f02c568721e92f4c867754de64581d328c25537e228810e4b2bc86",
+          "bytes": 4045869
+        },
+        {
+          "path": "Data/Music/OLD/FO3/mus_FO3_Explore6.mp3",
+          "sha256": "86c918f61ae94f0043c5a1180b0f8aad6bc2d83b4faff79670b1d4d6c92dbf27",
+          "bytes": 5089005
+        },
+        {
+          "path": "Data/Music/SCR/mus_SCR_GoodspringsStinger.mp3",
+          "sha256": "2cbd2f4f1b82fb6fbc93350fdff44b0c489c472ed7dd7c51775412a38dbf83ef",
+          "bytes": 713709
+        },
+        {
+          "path": "Data/Music/SCR/mus_SCR_VegasStinger.mp3",
+          "sha256": "d13f10a05515e8bde74b339027c9b248433b353002520f652bfdc21bf8b45138",
+          "bytes": 1849581
+        },
+        {
+          "path": "Data/Music/Special/EndCredits.mp3",
+          "sha256": "6f82ac38042869e8f5ab8069b81c4367606dc64a8d4114a644dac5cf33889757",
+          "bytes": 3882861
+        },
+        {
+          "path": "Data/Music/Special/MainTitle.mp3",
+          "sha256": "c54f3e558a134bd8f0742fb8385917b751012d971142c90ca0731494b6c2a99e",
+          "bytes": 3005037
+        },
+        {
+          "path": "Data/Music/Special/mus_endgameslideshow.mp3",
+          "sha256": "70e29d5083ce632ea55d267136d1f277d8ba95fb51c0f74b79ec864a8cd2a9b3",
+          "bytes": 1738413
+        },
+        {
+          "path": "Data/Music/Special/mus_endgametransitionstinger.mp3",
+          "sha256": "491bdb49d1e468dc4e1ebc82c97176959193d4ce9a3a36665895192ab8ff1a0e",
+          "bytes": 36909
+        },
+        {
+          "path": "Data/Music/Special/mus_hailchief.mp3",
+          "sha256": "abc3a53a0586d403d51aeefbfdf324a405d896a54e44622c4abc38f00e592d10",
+          "bytes": 761517
+        },
+        {
+          "path": "Fallout_default.ini",
+          "sha256": "42fc678620c4025311c1e64ef4c8eed74605a596e0fd3620408f24191dead50f",
+          "bytes": 20001
+        }
+      ]
+    }
+  },
+  "supersededPhases": [
+    {
+      "phase": "esp",
+      "supersededOn": "2026-09-12",
+      "why": "This capture recorded the defect as found: the phase emitted no plugin at all, only the INI phase output, and the run reported success. It is retained because the repair is only legible against what it replaced.",
+      "previousFileCount": 1,
+      "previousTotalBytes": 20001,
+      "previousFiles": [
+        {
+          "path": "Fallout_default.ini",
+          "sha256": "42fc678620c4025311c1e64ef4c8eed74605a596e0fd3620408f24191dead50f",
+          "bytes": 20001
+        }
+      ],
+      "previousNote": "DEFECT FROZEN AS FOUND: emits no ESP at all. The retail X360 update.esp is already little-endian (it begins TES4, not 4SET), the endian converter rejects it, EsmProcessor swallows the exception into a progress Message the CLI never prints, and RepackAsync reports Success anyway. The converted build silently has no update.esp."
+    }
+  ]
+}

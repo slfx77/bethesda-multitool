@@ -17,6 +17,13 @@ namespace BethesdaMultitool.Tests.Helpers;
 internal sealed class EsmTestFileBuilder
 {
     private readonly List<byte[]> _topLevelChunks = [];
+    private readonly List<string> _masters = [];
+
+    public EsmTestFileBuilder WithMasters(params string[] masters)
+    {
+        _masters.AddRange(masters);
+        return this;
+    }
 
     /// <summary>
     ///     Build a complete ESM file byte array. Prepends a TES4 header automatically.
@@ -265,7 +272,7 @@ internal sealed class EsmTestFileBuilder
 
     #region Record Builders
 
-    private static byte[] BuildTes4Header()
+    private byte[] BuildTes4Header()
     {
         // HEDR subrecord: version(4 float) + numRecords(4 int) + nextObjectId(4 uint) = 12 bytes
         var hedr = new byte[12];
@@ -273,7 +280,13 @@ internal sealed class EsmTestFileBuilder
         BinaryPrimitives.WriteInt32LittleEndian(hedr.AsSpan(4), 1);
         BinaryPrimitives.WriteUInt32LittleEndian(hedr.AsSpan(8), 0x00000800);
 
-        return BuildRecord("TES4", 0, 0, ("HEDR", hedr));
+        var subrecords = new List<(string, byte[])> { ("HEDR", hedr) };
+        foreach (var master in _masters)
+        {
+            subrecords.Add(("MAST", Encoding.ASCII.GetBytes(master + "\0")));
+            subrecords.Add(("DATA", new byte[8]));
+        }
+        return BuildRecord("TES4", 0, 0, subrecords.ToArray());
     }
 
     /// <summary>Build a LE record with subrecords.</summary>

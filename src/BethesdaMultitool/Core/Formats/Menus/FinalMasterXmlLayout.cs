@@ -1,3 +1,5 @@
+using BethesdaMultitool.Core.Utils;
+
 namespace BethesdaMultitool.Core.Formats.Menus;
 
 /// <summary>
@@ -86,11 +88,14 @@ public static class FinalMasterXmlLayout
     {
         ArgumentException.ThrowIfNullOrEmpty(consoleName);
 
-        var fileName = Path.GetFileName(consoleName);
-        var stem = Path.GetFileNameWithoutExtension(fileName);
+        // An archive-relative ENGINE path, so it is spelled with the engine's backslash on every
+        // host: Path.Combine would write menus/main/... on a Unix host, which the PC engine never
+        // opens, and Path.GetFileName there would not split a backslash-spelled console name.
+        var fileName = EnginePath.FileName(consoleName);
+        var stem = EnginePath.FileNameWithoutExtension(fileName);
 
         return Subfolders.TryGetValue(stem, out var subfolder)
-            ? Path.Combine("menus", subfolder, fileName)
-            : Path.Combine("menus", fileName);
+            ? $"menus\\{subfolder}\\{fileName}"
+            : $"menus\\{fileName}";
     }
 }

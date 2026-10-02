@@ -111,4 +111,90 @@ public sealed class DedicatedWorkerThreadTests : IDisposable
         Assert.Equal(1, stats.Failures);
         Assert.Contains("upload failed", stats.LastError);
     }
+
+    /// <summary>Interrupting one stopping caller does not let a retry release a queue whose worker is still executing.</summary>
+    [Fact]
+    public void Interrupted_stop_retry_waits_for_the_active_worker()
+    {
+        using var entered = new ManualResetEventSlim(false);
+        using var release = new ManualResetEventSlim(false);
+        using var retryReturned = new ManualResetEventSlim(false);
+        using var worker = new DedicatedWorkerThread("InterruptedStopWorker");
+        Exception? firstFailure = null;
+        Exception? retryFailure = null;
+        var first = new Thread(() =>
+        {
+            try { worker.Stop(); }
+            catch (Exception exception) { firstFailure = exception; }
+        });
+        var retry = new Thread(() =>
+        {
+            try { worker.Stop(); }
+            catch (Exception exception) { retryFailure = exception; }
+            finally { retryReturned.Set(); }
+        });
+
+        Assert.True(worker.TryEnqueue(() => { entered.Set(); release.Wait(); }));
+        try
+        {
+            Assert.True(entered.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            first.Start();
+            Assert.True(SpinWait.SpinUntil(
+                () => (first.ThreadState & ThreadState.WaitSleepJoin) != 0, TimeSpan.FromSeconds(5)));
+            first.Interrupt();
+            Assert.True(first.Join(TimeSpan.FromSeconds(5)));
+            Assert.IsType<ThreadInterruptedException>(firstFailure);
+
+            retry.Start();
+            Assert.True(SpinWait.SpinUntil(
+                () => retryReturned.IsSet || (retry.ThreadState & ThreadState.WaitSleepJoin) != 0,
+                TimeSpan.FromSeconds(5)));
+            Assert.False(retryReturned.IsSet);
+            Assert.False(worker.TryEnqueue(static () => { }));
+            release.Set();
+            Assert.True(retry.Join(TimeSpan.FromSeconds(5)));
+            Assert.Null(retryFailure);
+            Assert.Equal(1, worker.ProcessedCount);
+        }
+        finally
+        {
+            release.Set();
+            if ((first.ThreadState & ThreadState.Unstarted) == 0) { first.Join(); }
+            if ((retry.ThreadState & ThreadState.Unstarted) == 0) { retry.Join(); }
+        }
+    }
+
+    /// <summary>A callback cannot claim synchronous drainage of its own thread; rejection leaves subsequent work admissible.</summary>
+    [Fact]
+    public void Stop_from_the_worker_is_rejected_without_self_joining()
+    {
+        using var returned = new ManualResetEventSlim(false);
+        using var worker = new DedicatedWorkerThread("SelfStopWorker");
+        Exception? failure = null;
+        Thread? workerThread = null;
+        var subsequent = false;
+        Assert.True(worker.TryEnqueue(() =>
+        {
+            workerThread = Thread.CurrentThread;
+            try { worker.Stop(); }
+            catch (Exception exception) { failure = exception; }
+            finally { returned.Set(); }
+        }));
+        try
+        {
+            Assert.True(returned.Wait(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken));
+            Assert.IsType<InvalidOperationException>(failure);
+            Assert.True(worker.TryEnqueue(() => subsequent = true));
+            worker.Stop();
+            Assert.True(subsequent);
+            Assert.Equal(2, worker.ProcessedCount);
+        }
+        finally
+        {
+            // A regression to self-Join must fail this test without stranding its worker thread.
+            if (!returned.IsSet) { workerThread?.Interrupt(); }
+            worker.Stop();
+            workerThread?.Join();
+        }
+    }
 }

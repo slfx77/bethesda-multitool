@@ -1,4 +1,4 @@
-// Ported from JimmyPCTool / AweMultitool (https://github.com/slfx77/JimmyPCTool), MIT licence,
+// Ported from JimmyPCTool / AweMultitool,
 // src/AweMultitool/Core/Concurrency/LatestOnlyJob.cs. Copied essentially verbatim — the ordering
 // this class encodes is subtle and was arrived at by fixing real races, so it is deliberately NOT
 // re-derived here. Adapted with an optional discard callback for resource-owning preview results.

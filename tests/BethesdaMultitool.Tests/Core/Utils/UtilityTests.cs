@@ -41,35 +41,16 @@ public class UtilityTests
 
     #region EsmStringUtils.ReadNullTermString (Span overload)
 
-    [Fact]
-    public void ReadNullTermString_Span_Normal_ReturnsString()
+    [Theory]
+    [InlineData("Hello\0World", "Hello")]
+    [InlineData("Hello", "Hello")]
+    [InlineData("", "")]
+    [InlineData("\0AB", "")]
+    public void ReadNullTermString_Span_StopsAtTerminatorOrEnd(string input, string expected)
     {
-        var data = "Hello\0World"u8.ToArray();
-        var result = EsmStringUtils.ReadNullTermString(data);
-        Assert.Equal("Hello", result);
-    }
+        var data = Encoding.ASCII.GetBytes(input);
 
-    [Fact]
-    public void ReadNullTermString_Span_NoTerminator_ReturnsWholeString()
-    {
-        var data = "Hello"u8.ToArray();
-        var result = EsmStringUtils.ReadNullTermString(data);
-        Assert.Equal("Hello", result);
-    }
-
-    [Fact]
-    public void ReadNullTermString_Span_Empty_ReturnsEmpty()
-    {
-        var result = EsmStringUtils.ReadNullTermString([]);
-        Assert.Equal("", result);
-    }
-
-    [Fact]
-    public void ReadNullTermString_Span_ImmediateNull_ReturnsEmpty()
-    {
-        byte[] data = [0x00, 0x41, 0x42];
-        var result = EsmStringUtils.ReadNullTermString(data);
-        Assert.Equal("", result);
+        Assert.Equal(expected, EsmStringUtils.ReadNullTermString(data));
     }
 
     [Theory]
@@ -87,83 +68,35 @@ public class UtilityTests
 
     #region EsmStringUtils.ReadNullTermString (byte[] overload)
 
-    [Fact]
-    public void ReadNullTermString_Array_Normal_ReturnsString()
+    [Theory]
+    [InlineData("ABC\0D", 0, 5, "ABC")]
+    [InlineData("\0\0Hi\0", 2, 3, "Hi")]
+    [InlineData("ABCDE", 0, 3, "ABC")]
+    [InlineData("A", 0, 0, "")]
+    public void ReadNullTermString_Array_RespectsOffsetAndMaximumLength(
+        string input, int offset, int maxLength, string expected)
     {
-        byte[] data = [0x41, 0x42, 0x43, 0x00, 0x44]; // "ABC\0D"
-        var result = EsmStringUtils.ReadNullTermString(data, 0, 5);
-        Assert.Equal("ABC", result);
-    }
+        var data = Encoding.ASCII.GetBytes(input);
 
-    [Fact]
-    public void ReadNullTermString_Array_WithOffset_ReturnsFromOffset()
-    {
-        byte[] data = [0x00, 0x00, 0x48, 0x69, 0x00]; // "\0\0Hi\0"
-        var result = EsmStringUtils.ReadNullTermString(data, 2, 3);
-        Assert.Equal("Hi", result);
-    }
-
-    [Fact]
-    public void ReadNullTermString_Array_NoNull_ReturnsUpToMaxLen()
-    {
-        byte[] data = [0x41, 0x42, 0x43, 0x44, 0x45]; // "ABCDE"
-        var result = EsmStringUtils.ReadNullTermString(data, 0, 3);
-        Assert.Equal("ABC", result);
-    }
-
-    [Fact]
-    public void ReadNullTermString_Array_EmptyRange_ReturnsEmpty()
-    {
-        byte[] data = [0x41];
-        var result = EsmStringUtils.ReadNullTermString(data, 0, 0);
-        Assert.Equal("", result);
+        Assert.Equal(expected, EsmStringUtils.ReadNullTermString(data, offset, maxLength));
     }
 
     #endregion
 
     #region EsmStringUtils.IsPrintableAscii
 
-    [Fact]
-    public void IsPrintableAscii_AllPrintable_ReturnsTrue()
+    [Theory]
+    [InlineData("Hello, World!", true)]
+    [InlineData("Hello\nWorld\r\n\tTab", true)]
+    [InlineData("\0\u0001\u0002\u0003\u0004\u0005", false)]
+    [InlineData("", false)]
+    [InlineData("ABCDEFGH\u0001\u0002", true)] // Exactly 80% printable.
+    [InlineData("ABCDEFG\u0001\u0002\u0003", false)] // 70% is below the default threshold.
+    public void IsPrintableAscii_UsesDefaultThreshold(string input, bool expected)
     {
-        var data = "Hello, World!"u8.ToArray();
-        Assert.True(EsmStringUtils.IsPrintableAscii(data));
-    }
+        var data = Encoding.ASCII.GetBytes(input);
 
-    [Fact]
-    public void IsPrintableAscii_WithWhitespace_ReturnsTrue()
-    {
-        var data = "Hello\nWorld\r\n\tTab"u8.ToArray();
-        Assert.True(EsmStringUtils.IsPrintableAscii(data));
-    }
-
-    [Fact]
-    public void IsPrintableAscii_BinaryData_ReturnsFalse()
-    {
-        byte[] data = [0x00, 0x01, 0x02, 0x03, 0x04, 0x05];
-        Assert.False(EsmStringUtils.IsPrintableAscii(data));
-    }
-
-    [Fact]
-    public void IsPrintableAscii_Empty_ReturnsFalse()
-    {
-        Assert.False(EsmStringUtils.IsPrintableAscii([]));
-    }
-
-    [Fact]
-    public void IsPrintableAscii_MixedAboveThreshold_ReturnsTrue()
-    {
-        // 80% threshold: 8 printable + 2 non-printable = 80%
-        byte[] data = [0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x01, 0x02];
-        Assert.True(EsmStringUtils.IsPrintableAscii(data)); // Exactly at 80%
-    }
-
-    [Fact]
-    public void IsPrintableAscii_MixedBelowThreshold_ReturnsFalse()
-    {
-        // 7 printable + 3 non-printable = 70% < 80%
-        byte[] data = [0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x01, 0x02, 0x03];
-        Assert.False(EsmStringUtils.IsPrintableAscii(data));
+        Assert.Equal(expected, EsmStringUtils.IsPrintableAscii(data));
     }
 
     [Fact]
@@ -179,48 +112,18 @@ public class UtilityTests
 
     #region EsmStringUtils.ValidateAndDecodeAscii
 
-    [Fact]
-    public void ValidateAndDecodeAscii_Valid_ReturnsString()
+    [Theory]
+    [InlineData("Hello", 5, "Hello")]
+    [InlineData("\0\u0001\u0002\u0003\u0004", 5, null)]
+    [InlineData("A", 0, null)]
+    [InlineData("A", -1, null)]
+    [InlineData("AB", 10, null)]
+    [InlineData("Hi\0\0\0", 2, "Hi")]
+    public void ValidateAndDecodeAscii_ReturnsValidTextOrNull(string input, int length, string? expected)
     {
-        byte[] buffer = [0x48, 0x65, 0x6C, 0x6C, 0x6F]; // "Hello"
-        var result = EsmStringUtils.ValidateAndDecodeAscii(buffer, 5);
-        Assert.Equal("Hello", result);
-    }
+        var buffer = Encoding.ASCII.GetBytes(input);
 
-    [Fact]
-    public void ValidateAndDecodeAscii_NonPrintable_ReturnsNull()
-    {
-        byte[] buffer = [0x00, 0x01, 0x02, 0x03, 0x04];
-        Assert.Null(EsmStringUtils.ValidateAndDecodeAscii(buffer, 5));
-    }
-
-    [Fact]
-    public void ValidateAndDecodeAscii_ZeroLength_ReturnsNull()
-    {
-        byte[] buffer = [0x41];
-        Assert.Null(EsmStringUtils.ValidateAndDecodeAscii(buffer, 0));
-    }
-
-    [Fact]
-    public void ValidateAndDecodeAscii_NegativeLength_ReturnsNull()
-    {
-        byte[] buffer = [0x41];
-        Assert.Null(EsmStringUtils.ValidateAndDecodeAscii(buffer, -1));
-    }
-
-    [Fact]
-    public void ValidateAndDecodeAscii_LengthExceedsBuffer_ReturnsNull()
-    {
-        byte[] buffer = [0x41, 0x42];
-        Assert.Null(EsmStringUtils.ValidateAndDecodeAscii(buffer, 10));
-    }
-
-    [Fact]
-    public void ValidateAndDecodeAscii_PartialBuffer_DecodesCorrectly()
-    {
-        byte[] buffer = [0x48, 0x69, 0x00, 0x00, 0x00]; // "Hi..."
-        var result = EsmStringUtils.ValidateAndDecodeAscii(buffer, 2);
-        Assert.Equal("Hi", result);
+        Assert.Equal(expected, EsmStringUtils.ValidateAndDecodeAscii(buffer, length));
     }
 
     [Fact]
@@ -235,6 +138,30 @@ public class UtilityTests
     {
         byte[] buffer = [0x42, 0x61, 0x64, 0x8F, 0x4E, 0x61, 0x6D, 0x65];
         Assert.Null(EsmStringUtils.ValidateAndDecodeGameText(buffer, buffer.Length));
+    }
+
+    /// <summary>
+    ///     The per-script export writes SCTX as <c>EncodeGameText(SourceText)</c> and calls that verbatim, which
+    ///     holds only if encoding inverts decoding for every byte SCTX can hold. Latin-1 or UTF-8 in its place
+    ///     fails on 0x80-0x9F: retail Lucky38MrHouseTerminalCodeSCRIPT's 0x92 decodes to U+2019, which Latin-1
+    ///     cannot encode and UTF-8 writes as E2 80 99.
+    /// </summary>
+    [Fact]
+    public void EncodeGameText_inverts_DecodeGameText_for_every_nonzero_byte()
+    {
+        for (var value = 1; value <= 255; value++)
+        {
+            byte[] original = [(byte)value];
+            Assert.Equal(original, EsmStringUtils.EncodeGameText(EsmStringUtils.DecodeGameText(original)));
+        }
+
+        var everyByte = Enumerable.Range(1, 255).Select(value => (byte)value).ToArray();
+        Assert.Equal(everyByte, EsmStringUtils.EncodeGameText(EsmStringUtils.DecodeGameText(everyByte)));
+
+        // Independent anchors: Windows-1252 assigns these, and leaves 0x81/0x8D/0x8F/0x90/0x9D unassigned.
+        Assert.Equal("’", EsmStringUtils.DecodeGameText([0x92]));
+        Assert.Equal("€", EsmStringUtils.DecodeGameText([0x80]));
+        Assert.Equal("\u0081", EsmStringUtils.DecodeGameText([0x81]));
     }
 
     #endregion

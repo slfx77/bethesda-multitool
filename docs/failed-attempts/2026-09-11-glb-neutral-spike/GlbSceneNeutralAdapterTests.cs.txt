@@ -1,0 +1,327 @@
+using System.Numerics;
+using System.Text.Json.Nodes;
+using BethesdaMultitool.Core.Formats.Nif.Rendering;
+using BethesdaMultitool.Core.Formats.Nif.Rendering.Export;
+using Slfx77.Multitool.Core.Models;
+using Xunit;
+
+namespace BethesdaMultitool.Tests.Core.Formats.Nif.Rendering.Export;
+
+/// <summary>
+///     Covers the neutral snapshot of an assembled <c>GlbScene</c>: what it carries exactly, and every
+///     capability it declines rather than projecting away.
+/// </summary>
+public sealed class GlbSceneNeutralAdapterTests
+{
+    /// <summary>A unit triangle with nothing optional set, so a test opts into each field deliberately.</summary>
+    private static RenderableSubmesh Triangle() => new()
+    {
+        Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
+        Triangles = [0, 1, 2]
+    };
+
+    private static GlbScene SceneWith(params (string Name, int NodeIndex, RenderableSubmesh Submesh)[] parts)
+    {
+        var scene = new GlbScene();
+        foreach (var part in parts)
+        {
+            scene.MeshParts.Add(new GlbMeshPart
+            {
+                Name = part.Name,
+                NodeIndex = part.NodeIndex,
+                Submesh = part.Submesh
+            });
+        }
+
+        return scene;
+    }
+
+    private static SceneDocument Adapt(GlbScene scene)
+    {
+        Assert.True(
+            GlbSceneNeutralAdapter.TryAdapt(scene, "fixture", out var document, out var reason,
+                CancellationToken.None),
+            reason);
+        Assert.Null(reason);
+        return document;
+    }
+
+    private static string Decline(GlbScene scene)
+    {
+        Assert.False(GlbSceneNeutralAdapter.TryAdapt(scene, "fixture", out var document, out var reason,
+            CancellationToken.None));
+        Assert.Null(document);
+        Assert.NotNull(reason);
+        return reason;
+    }
+
+    [Fact]
+    public void RootOnlySceneCarriesItsGeometryAndKeepsTheRootAtIndexZero()
+    {
+        var document = Adapt(SceneWith(("tri", GlbScene.RootNodeIndex, Triangle())));
+
+        Assert.Equal("nif", document.SourceFormat);
+        Assert.Equal("fixture", document.Name);
+        var definition = Assert.Single(document.Scenes);
+        Assert.Equal([GlbScene.RootNodeIndex], definition.RootNodeIndices);
+
+        var node = Assert.Single(document.Nodes);
+        Assert.Equal("SceneRoot", node.Name);
+        Assert.Empty(node.Children);
+        Assert.Equal(0, node.MeshIndex);
+
+        var primitive = Assert.Single(Assert.Single(document.Meshes).Primitives);
+        Assert.Equal("tri", primitive.Name);
+        Assert.Equal([0, 1, 2], primitive.Indices);
+        Assert.Equal(3, primitive.Vertices.Count);
+        Assert.Equal(new Vector3(1f, 0f, 0f), primitive.Vertices[1].Position);
+    }
+
+    [Fact]
+    public void ParentPointersBecomeOrderedChildListsWithoutRenumberingNodes()
+    {
+        var scene = new GlbScene();
+        // Two children of the root, then a grandchild, so ordering and depth are both exercised.
+        var first = scene.AddNode("first", GlbScene.RootNodeIndex, Matrix4x4.Identity, Matrix4x4.Identity,
+            GlbNodeKind.Attachment);
+        var second = scene.AddNode("second", GlbScene.RootNodeIndex, Matrix4x4.Identity, Matrix4x4.Identity,
+            GlbNodeKind.Attachment);
+        var grandchild = scene.AddNode("grandchild", first, Matrix4x4.Identity, Matrix4x4.Identity,
+            GlbNodeKind.Attachment);
+        scene.MeshParts.Add(new GlbMeshPart { Name = "tri", NodeIndex = grandchild, Submesh = Triangle() });
+
+        var document = Adapt(scene);
+
+        Assert.Equal(4, document.Nodes.Count);
+        Assert.Equal([first, second], document.Nodes[GlbScene.RootNodeIndex].Children);
+        Assert.Equal([grandchild], document.Nodes[first].Children);
+        Assert.Empty(document.Nodes[second].Children);
+        // Index identity is the contract: a neutral node maps to its source node by index alone.
+        Assert.Equal("grandchild", document.Nodes[grandchild].Name);
+        Assert.Equal(0, document.Nodes[grandchild].MeshIndex);
+        Assert.Null(document.Nodes[first].MeshIndex);
+    }
+
+    [Fact]
+    public void SubmeshesSharingANodeBecomeOnePrimitivePerPartInOneMesh()
+    {
+        var document = Adapt(SceneWith(
+            ("a", GlbScene.RootNodeIndex, Triangle()),
+            ("b", GlbScene.RootNodeIndex, Triangle())));
+
+        var mesh = Assert.Single(document.Meshes);
+        Assert.Equal(2, mesh.Primitives.Count);
+        Assert.Equal(["a", "b"], mesh.Primitives.Select(static p => p.Name));
+        // Each primitive owns its own material, so per-submesh state cannot bleed across a shared node.
+        Assert.Equal(2, document.Materials.Count);
+        Assert.Equal(0, mesh.Primitives[0].MaterialIndex);
+        Assert.Equal(1, mesh.Primitives[1].MaterialIndex);
+    }
+
+    [Fact]
+    public void AbsentOptionalArraysBecomeTheDocumentedDefaultsRatherThanBeingInvented()
+    {
+        var primitive = Assert.Single(
+            Assert.Single(Adapt(SceneWith(("tri", GlbScene.RootNodeIndex, Triangle()))).Meshes).Primitives);
+
+        foreach (var vertex in primitive.Vertices)
+        {
+            Assert.Equal(Vector3.Zero, vertex.Normal);
+            Assert.Equal(Vector2.Zero, vertex.TexCoord);
+            // Opaque white is the identity for a multiply against base color, not a guessed tint.
+            Assert.Equal(Vector4.One, vertex.Color);
+        }
+    }
+
+    [Fact]
+    public void PresentOptionalArraysInterleaveByVertexIndex()
+    {
+        var submesh = Triangle();
+        var withData = new RenderableSubmesh
+        {
+            Positions = submesh.Positions,
+            Triangles = submesh.Triangles,
+            Normals = [0f, 0f, 1f, 0f, 1f, 0f, 1f, 0f, 0f],
+            UVs = [0f, 0f, 0.5f, 0.25f, 1f, 1f],
+            VertexColors = [255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 0]
+        };
+
+        var primitive = Assert.Single(
+            Assert.Single(Adapt(SceneWith(("tri", GlbScene.RootNodeIndex, withData))).Meshes).Primitives);
+
+        Assert.Equal(new Vector3(0f, 1f, 0f), primitive.Vertices[1].Normal);
+        Assert.Equal(new Vector2(0.5f, 0.25f), primitive.Vertices[1].TexCoord);
+        Assert.Equal(new Vector4(0f, 1f, 0f, 128f / 255f), primitive.Vertices[1].Color);
+        Assert.Equal(SceneColorEncoding.UnsignedByteNormalized, primitive.ColorEncoding);
+    }
+
+    [Fact]
+    public void TheDiffusePathTravelsAsMetadataBecauseThisLayerCannotResolveItsBytes()
+    {
+        var submesh = Triangle();
+        submesh.DiffuseTexturePath = @"textures\rock.dds";
+        submesh.ClampTextureU = true;
+
+        var document = Adapt(SceneWith(("tri", GlbScene.RootNodeIndex, submesh)));
+
+        // No image, sampler or binding is invented from a path with no bytes behind it.
+        Assert.Empty(document.Images);
+        Assert.Empty(document.Samplers);
+        var material = Assert.Single(document.Materials);
+        Assert.Null(material.Texture);
+
+        var extras = Assert.IsType<JsonObject>(JsonNode.Parse(Assert.IsType<string>(material.ExtrasJson)));
+        Assert.Equal(@"textures\rock.dds", (string?)extras["diffuseTexturePath"]);
+        Assert.True((bool?)extras["clampTextureU"]);
+        Assert.False((bool?)extras["clampTextureV"]);
+    }
+
+    [Fact]
+    public void AlphaStateMapsToTheNeutralModesItCanExpress()
+    {
+        var blended = Triangle();
+        blended.HasAlphaBlend = true;
+        blended.MaterialAlpha = 0.25f;
+        Assert.Equal(SceneAlphaMode.Blend,
+            Assert.Single(Adapt(SceneWith(("tri", GlbScene.RootNodeIndex, blended))).Materials).AlphaMode);
+
+        var masked = Triangle();
+        masked.HasAlphaTest = true;
+        masked.AlphaTestThreshold = 51;
+        var material = Assert.Single(Adapt(SceneWith(("tri", GlbScene.RootNodeIndex, masked))).Materials);
+        Assert.Equal(SceneAlphaMode.Mask, material.AlphaMode);
+        Assert.Equal(0.2f, material.AlphaCutoff, 3);
+    }
+
+    [Fact]
+    public void AnEmptySceneDeclinesRatherThanProducingAnEmptyDocument()
+    {
+        Assert.Contains("empty", Decline(new GlbScene()), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void SkinnedSubmeshesDecline()
+    {
+        var scene = new GlbScene();
+        scene.MeshParts.Add(new GlbMeshPart
+        {
+            Name = "skinned",
+            NodeIndex = GlbScene.RootNodeIndex,
+            Submesh = Triangle(),
+            Skin = new GlbSkinBinding
+            {
+                JointNodeIndices = [0],
+                InverseBindMatrices = [Matrix4x4.Identity],
+                PerVertexInfluences = [[(0, 1f)], [(0, 1f)], [(0, 1f)]]
+            }
+        });
+
+        Assert.Contains("Skinned", Decline(scene), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("normal")]
+    [InlineData("emissive")]
+    [InlineData("decal")]
+    [InlineData("tint")]
+    [InlineData("falloff")]
+    public void BethesdaMaterialStateTheNeutralModelCannotExpressDeclines(string state)
+    {
+        var submesh = Triangle();
+        switch (state)
+        {
+            case "normal":
+                submesh.NormalMapTexturePath = @"textures\rock_n.dds";
+                break;
+            case "emissive":
+                submesh.IsEmissive = true;
+                break;
+            case "decal":
+                submesh.IsDecal = true;
+                break;
+            case "tint":
+                submesh.TintColor = (1f, 0f, 0f);
+                break;
+            case "falloff":
+                submesh.EffectFalloff = (0f, 1f, 0f, 1f);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(state), state, "Unhandled state.");
+        }
+
+        Assert.Contains("the native material writer",
+            Decline(SceneWith(("tri", GlbScene.RootNodeIndex, submesh))), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DisagreeingParallelArraysDeclineInsteadOfReadingPastTheShorterOne()
+    {
+        var shortNormals = new RenderableSubmesh
+        {
+            Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
+            Triangles = [0, 1, 2],
+            Normals = [0f, 0f, 1f]
+        };
+        Assert.Contains("normal array", Decline(SceneWith(("tri", GlbScene.RootNodeIndex, shortNormals))),
+            StringComparison.Ordinal);
+
+        var shortUvs = new RenderableSubmesh
+        {
+            Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
+            Triangles = [0, 1, 2],
+            UVs = [0f, 0f]
+        };
+        Assert.Contains("UV array", Decline(SceneWith(("tri", GlbScene.RootNodeIndex, shortUvs))),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AnIndexOutsideTheVertexRangeDeclines()
+    {
+        var outOfRange = new RenderableSubmesh
+        {
+            Positions = [0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f, 0f],
+            Triangles = [0, 1, 7]
+        };
+
+        Assert.Contains("outside the vertex range",
+            Decline(SceneWith(("tri", GlbScene.RootNodeIndex, outOfRange))), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AuthoredTangentFramesDeclineBecauseThePinnedSharedModelCannotCarryThem()
+    {
+        var tangents = Triangle();
+        tangents.Tangents = [1f, 0f, 0f, 1f, 0f, 0f, 1f, 0f, 0f];
+
+        Assert.Contains("tangent frames",
+            Decline(SceneWith(("tri", GlbScene.RootNodeIndex, tangents))), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AMeshPartWithNoResolvedOwningNodeDeclines()
+    {
+        var scene = new GlbScene();
+        scene.MeshParts.Add(new GlbMeshPart { Name = "orphan", NodeIndex = null, Submesh = Triangle() });
+        Assert.Contains("owning node", Decline(scene), StringComparison.Ordinal);
+
+        var outOfRange = new GlbScene();
+        outOfRange.MeshParts.Add(new GlbMeshPart { Name = "far", NodeIndex = 99, Submesh = Triangle() });
+        Assert.Contains("owning node", Decline(outOfRange), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NodeIdentityFromTheSourceGraphIsRetainedAsMetadata()
+    {
+        var scene = new GlbScene();
+        var bone = scene.AddNode("Bip01", GlbScene.RootNodeIndex, Matrix4x4.Identity, Matrix4x4.Identity,
+            GlbNodeKind.Skeleton, "Bip01", 17);
+        scene.MeshParts.Add(new GlbMeshPart { Name = "tri", NodeIndex = bone, Submesh = Triangle() });
+
+        var extras = Assert.IsType<JsonObject>(
+            JsonNode.Parse(Assert.IsType<string>(Adapt(scene).Nodes[bone].ExtrasJson)));
+        Assert.Equal("Skeleton", (string?)extras["kind"]);
+        Assert.Equal("Bip01", (string?)extras["lookupName"]);
+        Assert.Equal(17, (int?)extras["sourceBlockIndex"]);
+    }
+}

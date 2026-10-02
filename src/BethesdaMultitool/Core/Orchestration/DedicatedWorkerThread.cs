@@ -25,6 +25,8 @@ internal sealed class DedicatedWorkerThread : ITrackableResource, IDisposable
 
     private readonly BlockingCollection<Action> _queue;
     private readonly Thread _thread;
+    private readonly object _stopGate = new();
+    private bool _queueDisposed;
     private long _failures;
     private volatile string? _lastError;
     private long _processed;
@@ -55,11 +57,20 @@ internal sealed class DedicatedWorkerThread : ITrackableResource, IDisposable
     /// <summary>Message of the most recent work-item exception, when one has occurred.</summary>
     public string? LastError => _lastError;
 
+    /// <summary>Drains the worker before releasing its queue and tracking registration; interrupted drains remain retryable.</summary>
     public void Dispose()
     {
         Stop();
-        _queue.Dispose();
-        _registration?.Dispose();
+        lock (_stopGate)
+        {
+            _registration?.Dispose();
+            _registration = null;
+            if (!_queueDisposed)
+            {
+                _queue.Dispose();
+                _queueDisposed = true;
+            }
+        }
     }
 
     public string ResourceName { get; }
@@ -113,21 +124,28 @@ internal sealed class DedicatedWorkerThread : ITrackableResource, IDisposable
 
     /// <summary>
     ///     Stops accepting work and blocks until the worker drains the queue and exits. Bounded by
-    ///     the in-flight work item plus whatever is already queued. Idempotent.
+    ///     the in-flight work item plus whatever is already queued. Every caller joins, including
+    ///     retries after an interrupted join. Calling from the worker itself is rejected.
     /// </summary>
     public void Stop()
     {
-        if (_stopping)
+        if (ReferenceEquals(Thread.CurrentThread, _thread))
         {
-            return;
+            throw new InvalidOperationException("A dedicated worker cannot synchronously drain itself.");
         }
 
-        _stopping = true;
-        _queue.CompleteAdding();
-        if (_thread.IsAlive)
+        lock (_stopGate)
         {
-            _thread.Join();
+            if (!_stopping)
+            {
+                _queue.CompleteAdding();
+                _stopping = true;
+            }
         }
+
+        // Stopping admission is not proof that the consumer has exited. Join again after another
+        // caller starts shutdown or Thread.Interrupt aborts a prior wait; never dispose a live queue.
+        _thread.Join();
     }
 
     private void Run()

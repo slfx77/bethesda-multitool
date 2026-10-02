@@ -1,4 +1,4 @@
-// Cases ported from JimmyPCTool / AweMultitool (MIT) —
+// Cases ported from JimmyPCTool / AweMultitool —
 //   tests/AweMultitool.Tests/Core/Concurrency/LatestOnlyJobTests.cs.
 
 using System.Collections.Concurrent;

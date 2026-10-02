@@ -222,6 +222,16 @@ public class BinaryUtilsTests
     }
 
     [Fact]
+    public void SanitizeFilename_ReplacesTheWindowsReservedSetOnEveryHost()
+    {
+        // The names this produces are consumed on Windows too, so the Windows-reserved set is the
+        // contract everywhere — not whatever Path.GetInvalidFileNameChars answers for the host,
+        // which on Linux is only '/' and NUL.
+        Assert.Equal("a_b_c_d_e_f_g_h_i_j", BinaryUtils.SanitizeFilename("a\"b<c>d|e:f*g?h\\i/j"));
+        Assert.Equal("tab_nul_", BinaryUtils.SanitizeFilename("tab\tnul\0"));
+    }
+
+    [Fact]
     public void SanitizeFilename_NullInput_ThrowsArgumentNullException()
     {
         // Act & Assert

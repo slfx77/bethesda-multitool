@@ -20,8 +20,11 @@ public static class CoverageAnalyzer
     /// </summary>
     public static CoverageResult Analyze(
         AnalysisResult result,
-        MemoryMappedViewAccessor accessor)
+        MemoryMappedViewAccessor accessor,
+        CancellationToken cancellationToken = default,
+        AnalysisStages.Stage? stage = null)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var minidump = result.MinidumpInfo;
         if (minidump == null || !minidump.IsValid)
         {
@@ -49,8 +52,11 @@ public static class CoverageAnalyzer
         var moduleVaRanges = BuildModuleVaRanges(minidump);
 
         // Step 7: Classify each gap
+        var classified = 0;
         foreach (var gap in gaps)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            stage?.Checkpoint(classified++, gaps.Count);
             gap.VirtualAddress = minidump.FileOffsetToVirtualAddress(gap.FileOffset);
             gap.Context = ClassifyContext(gap.VirtualAddress, moduleVaRanges);
             gap.Classification = ClassifyGap(accessor, gap, assetVas, moduleVaRanges);

@@ -100,10 +100,10 @@ internal static class RealAssetPaths
     /// <summary>
     ///     The New Vegas PC retail DVD's Steam installer manifest.
     ///     <para>
-    ///         ⚠ It lives under <c>Sample\Media\…\disc\</c>, NOT in the build directory: the disc's
-    ///         installer (<c>.sim</c>, the <c>.sid</c> payload parts, <c>Setup.exe</c>) is the
-    ///         PACKAGE, and the build directory beside it holds only the 431 game files decrypted
-    ///         out of it.
+    ///         ⚑ It sits at the BUILD root (user ruling 2026-09-08): the build directory is the
+    ///         unpacked disc — <c>Setup.exe</c>, <c>resources/</c>, the <c>.sis</c>, the <c>.sim</c>
+    ///         and the five <c>.sid</c> parts — plus <c>FalloutNV/</c> holding the 431 files decrypted
+    ///         out of them. The shared <c>../Media/…</c> holds only the disc image, stored as CHD.
     ///     </para>
     ///     <para>
     ///         ⚑ The manifest is PLAINTEXT, so a listing needs no depot key — which is the whole
@@ -113,12 +113,13 @@ internal static class RealAssetPaths
     public static string? SteamRetailDiscManifest()
     {
         return SampleFile(
-            @"Media\Fallout - New Vegas (2010-9-16, Steam Disc - Final)\disc\Fallout- New Vegas_disk1.sim");
+            @"Builds\Fallout - New Vegas (2010-9-16, Steam Disc - Final)\Fallout- New Vegas_disk1.sim");
     }
 
     /// <summary>
     ///     Resolve a file under the repo's <c>Sample/</c> tree, or the same relative path under the
-    ///     <c>BETHESDA_TEST_DATA_ROOT</c> override. For fixtures that are never a Steam install.
+    ///     <c>BETHESDA_TEST_DATA_ROOT</c> override. <c>Media/</c> paths resolve under the shared
+    ///     sibling <c>../Media/</c> tree. For fixtures that are never a Steam install.
     /// </summary>
     public static string? SampleFile(string sampleRelativePath)
     {
@@ -147,6 +148,25 @@ internal static class RealAssetPaths
         return null;
     }
 
+    /// <summary>
+    ///     Resolve original disc media under <c>../Media/&lt;build&gt;/</c>: the raw image when
+    ///     one is still staged, else the <c>.chd</c> the corpus stores it as.
+    ///     <para>
+    ///         ⚑ The <c>.chd</c> is returned AS ITSELF — <c>ArchiveReader</c> reads the container
+    ///         natively (<c>Core/Formats/DiscImage/Chd/</c>), so nothing here needs chdman at run
+    ///         time and a caller sees the same entries either way. Materialising instead would be
+    ///         worse than slow: <c>chdman extractcd</c> writes ONE <c>.bin</c> for the whole disc
+    ///         and a single-file cue contributes one track region, so a redump's Redbook tracks
+    ///         disappear. <see cref="ChdFixture" /> remains for the rare test that genuinely needs
+    ///         a file on disk, and for locating chdman as an independent oracle.
+    ///     </para>
+    /// </summary>
+    public static string? DiscMedia(string buildName, string relativeImage)
+    {
+        return SampleFile(Path.Combine("Media", buildName, relativeImage))
+               ?? SampleFile(Path.Combine("Media", buildName, Path.ChangeExtension(relativeImage, ".chd")));
+    }
+
     private static IEnumerable<string> SampleCandidates(string sampleRelativePath)
     {
         // Each spelling is probed as given and then as SampleCorpus rewrites it, so a caller still
@@ -162,7 +182,10 @@ internal static class RealAssetPaths
 
             if (RepoRoot is { } repoRoot)
             {
-                yield return Path.Combine(repoRoot, "Sample", relative);
+                var sharedMedia = relative.Equals("Media", StringComparison.OrdinalIgnoreCase) ||
+                                  relative.StartsWith("Media/", StringComparison.OrdinalIgnoreCase) ||
+                                  relative.StartsWith(@"Media\", StringComparison.OrdinalIgnoreCase);
+                yield return Path.GetFullPath(Path.Combine(repoRoot, sharedMedia ? ".." : "Sample", relative));
             }
         }
     }
@@ -599,11 +622,15 @@ internal static class RealAssetPaths
     {
         /// <summary>
         ///     Fallout: Brotherhood of Steel (2004, PS2). The disc image is not an install, so the
-        ///     Steam probes cannot find it: this checks the <c>BETHESDA_TEST_DATA_ROOT</c> override
-        ///     and a repo-relative staging first, then the location the USER has supplied for it.
-        ///     ⚠ That last literal is exactly what this file warns against elsewhere — it is here
-        ///     because the image has no discoverable install, and it is a LAST resort behind two
-        ///     portable probes, so another machine sets the override rather than editing code.
+        ///     Steam probes cannot find it: this checks the <c>BETHESDA_TEST_DATA_ROOT</c> override,
+        ///     then the corpus's stored media (<c>FALLOUTBOS.chd</c>, read natively).
+        ///     <para>
+        ///         ⚑ The <c>D:\PS2\…</c> literal this used to fall back on is GONE (2026-09-09):
+        ///         the disc is in the corpus as a CHD whose recorded image hash matches that copy
+        ///         exactly (<c>dd8590af02a05e220c74c3174edd41622cc5d17f</c>, verified by decoding
+        ///         the container), so the machine-specific path bought nothing. Another machine
+        ///         sets the override.
+        ///     </para>
         /// </summary>
         public static string? BrotherhoodOfSteelIso()
         {
@@ -619,18 +646,7 @@ internal static class RealAssetPaths
                 }
             }
 
-            if (RepoRoot is { } repoRoot)
-            {
-                var staged = Path.Combine(repoRoot, "Sample", "Media",
-                    "Fallout - Brotherhood of Steel (2003-10-1, PS2 - Final)", fileName);
-                if (File.Exists(staged))
-                {
-                    return staged;
-                }
-            }
-
-            var supplied = Path.Combine(@"D:\PS2", "Fallout - Brotherhood of Steel", fileName);
-            return File.Exists(supplied) ? supplied : null;
+            return DiscMedia("Fallout - Brotherhood of Steel (2003-10-1, PS2 - Final)", fileName);
         }
 
         /// <summary>
@@ -641,15 +657,14 @@ internal static class RealAssetPaths
         /// </summary>
         public static string? BrotherhoodOfSteelXboxExtracted()
         {
-            return SampleDirectory(@"Builds\Fallout - Brotherhood of Steel (2004-1-13, Xbox - Final)\extracted");
+            return SampleDirectory(@"Builds\Fallout - Brotherhood of Steel (2003-10-4, Xbox - Final)\extracted");
         }
 
         /// <summary>
         ///     Fallout: Brotherhood of Steel (2004, Xbox). A trimmed XDVDFS image — NOT ISO9660,
         ///     though it carries a stub <c>CD001</c> descriptor — so it mounts through
-        ///     <c>XdvdfsBackend</c>. Same probe order as <see cref="BrotherhoodOfSteelIso" />: the
-        ///     <c>BETHESDA_TEST_DATA_ROOT</c> override, then the repo-relative staging, then the
-        ///     pre-migration <c>Full_Builds\BOS_Xbox</c> spelling the image was first staged under.
+        ///     <c>XdvdfsBackend</c>. Probe order: the <c>BETHESDA_TEST_DATA_ROOT</c> override, then
+        ///     the corpus's stored media (a CHD, materialised through <see cref="ChdFixture" />).
         /// </summary>
         public static string? BrotherhoodOfSteelXboxIso()
         {
@@ -665,8 +680,7 @@ internal static class RealAssetPaths
                 }
             }
 
-            return SampleFile($@"Media\Fallout - Brotherhood of Steel (2004-1-13, Xbox - Final)\{fileName}")
-                   ?? SampleFile($@"Full_Builds\BOS_Xbox\{fileName}");
+            return DiscMedia("Fallout - Brotherhood of Steel (2003-10-4, Xbox - Final)", fileName);
         }
 
         /// <summary>
@@ -677,7 +691,7 @@ internal static class RealAssetPaths
         /// </summary>
         public static string? BrotherhoodOfSteelXboxMd5Manifest()
         {
-            return SampleFile(@"Builds\Fallout - Brotherhood of Steel (2004-1-13, Xbox - Final)\xbox_md5.json");
+            return SampleFile(@"Builds\Fallout - Brotherhood of Steel (2003-10-4, Xbox - Final)\xbox_md5.json");
         }
 
         /// <summary>
@@ -693,8 +707,7 @@ internal static class RealAssetPaths
         /// </summary>
         public static string? FalloutNewVegasX360Iso()
         {
-            return SampleFile(
-                @"Media\Fallout - New Vegas (2010-10-19, X360 - Final)\Fallout - New Vegas (USA, Europe).iso");
+            return DiscMedia("Fallout - New Vegas (2010-8-22, X360 - Final)", "Fallout - New Vegas (USA, Europe).iso");
         }
     }
 
@@ -703,7 +716,7 @@ internal static class RealAssetPaths
     ///     three J2ME games are single JARs, Shadowkey is an unpacked Symbian tree, and the
     ///     cancelled PSP Oblivion is a set of extracted UMD trees.
     ///     <para>
-    ///         ⚠ A JAR or release ZIP is original MEDIA, so it lives under <c>Sample/Media/</c>;
+    ///         ⚠ A JAR or release ZIP is original MEDIA, so it lives under <c>../Media/</c>;
     ///         the tree unpacked from it lives under <c>Sample/Builds/</c>. The two are different
     ///         paths for the same title — pick by whether the caller wants the package or its
     ///         contents.
@@ -716,49 +729,117 @@ internal static class RealAssetPaths
     /// </summary>
     public static class Travels
     {
-        /// <summary>The Stormhold 176x208 English JAR (byte-identical to the v1.0.10 release JAR).</summary>
+        /// <summary>The Stormhold v1.0.10 release JAR (byte-identical to the 176x208 English test JAR it replaced).</summary>
         public static string? StormholdJar()
         {
             return SampleFile(
-                @"Media\The Elder Scrolls Travels - Stormhold (J2ME - Variants)\test_stormhold_176x208_eng.jar");
+                @"Media\The Elder Scrolls Travels - Stormhold (J2ME - Final)\The Elder Scrolls (2003)(Vir2L Studios)(v1.0.10).jar");
         }
 
         /// <summary>The second, slightly larger v1.0.10 "(a)" Stormhold JAR — the same game, another build.</summary>
         public static string? StormholdAlternateJar()
         {
             return SampleFile(
-                @"Media\The Elder Scrolls Travels - Stormhold (J2ME - Variants)\The Elder Scrolls (2003)(Vir2L Studios)(v1.0.10)(a).jar");
+                @"Media\The Elder Scrolls Travels - Stormhold (J2ME - Final)\The Elder Scrolls (2003)(Vir2L Studios)(v1.0.10)(a).jar");
         }
 
         public static string? DawnstarJar()
         {
             return SampleFile(
-                @"Media\The Elder Scrolls Travels - Dawnstar (J2ME - Variants)\test_dawnstar_176x208_eng.jar");
+                @"Media\The Elder Scrolls Travels - Dawnstar (J2ME - Final)\test_dawnstar_176x208_eng.jar");
         }
 
         public static string? OblivionMobileJar()
         {
-            return SampleFile(@"Media\The Elder Scrolls Travels - Oblivion (J2ME - Final)\oblivion-repaired.jar");
+            return SampleFile(
+                @"Media\The Elder Scrolls Travels - Oblivion (2006-7-14, J2ME - Final)\elder_scrolls_iv_oblivion.jar");
         }
 
         /// <summary>The Shadowkey application directory (holds 6R51.APP, the 21 zones and the packs).</summary>
         public static string? ShadowkeyRoot()
         {
-            return SampleDirectory(
-                @"Builds\The Elder Scrolls Travels - Shadowkey (N-Gage - Final)\The Elder Scrolls Travels - Shadowkey\system\apps\6R51");
+            return SampleDirectory(Path.Combine("Builds",
+                       "The Elder Scrolls Travels - Shadowkey (N-Gage - Final)",
+                       "The Elder Scrolls Travels - Shadowkey", "system", "apps", "6R51"))
+                   ?? SampleDirectory(Path.Combine("Builds",
+                       "The Elder Scrolls Travels - Shadowkey (2004-10-27, N-Gage - Final)",
+                       "The Elder Scrolls Travels - Shadowkey", "system", "apps", "6r51"));
         }
 
         /// <summary>The Shadowkey N-Gage release zip as shipped (the archive-level fixture).</summary>
         public static string? ShadowkeyZip()
         {
             return SampleFile(
-                @"Media\The Elder Scrolls Travels - Shadowkey (N-Gage - Final)\The-Elder-Scrolls-Travels-Shadowkey_N-Gage_EN.zip");
+                @"Media\The Elder Scrolls Travels - Shadowkey (N-Gage - Final)\The-Elder-Scrolls-Travels-Shadowkey_N-Gage_EN (clean dump).zip");
         }
 
-        /// <summary>The directory the six dated PSP beta ISOs were extracted into (one subdirectory per build).</summary>
-        public static string? OblivionPspBuildsRoot()
+        /// <summary>
+        ///     The dated PSP prototype builds — one extracted UMD tree each, named
+        ///     <c>The Elder Scrolls Travels - Oblivion (yyyy-M-d, PSP - Prototype)</c> — in name order;
+        ///     empty when none is staged. (They were one directory of six subdirectories until 2026-09-08.)
+        /// </summary>
+        public static IReadOnlyList<string> OblivionPspBuilds()
         {
-            return SampleDirectory(@"Builds\The Elder Scrolls IV - Oblivion (PSP - Prototypes)");
+            var builds = SampleDirectory("Builds");
+            if (builds is null)
+            {
+                return [];
+            }
+
+            return Directory.GetDirectories(builds, "The Elder Scrolls Travels - Oblivion (*, PSP - Prototype)")
+                .OrderBy(d => d, StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+        }
+
+        /// <summary>One dated PSP prototype build (<paramref name="date" /> as <c>yyyy-M-d</c>), or null when it is not staged.</summary>
+        public static string? OblivionPspBuild(string date)
+        {
+            return SampleDirectory(Path.Combine("Builds",
+                $"The Elder Scrolls Travels - Oblivion ({date}, PSP - Prototype)"));
+        }
+    }
+
+    /// <summary>
+    ///     Plugins from the staged Fallout: New Vegas builds under <c>Sample/Builds</c>, by build. These are the
+    ///     files the 2026-09-28 cut-content audit measured, so a test pinned to an audit figure resolves the same
+    ///     bytes. ⚠ They are NOT interchangeable with <see cref="Masters.FalloutNv" />, which resolves the installed
+    ///     Steam master (266,840,039 B) rather than the staged 2022 retail copy (245,650,747 B).
+    ///     <para>
+    ///         The July 2010 and Feb 2011 Xbox 360 prototypes are COMPLETE builds, not memory dumps. The July
+    ///         ESM is a big-endian container; the Feb 2011 plugins (base game plus DLC, including the earlier
+    ///         <c>DeadMansHand.esm</c>) are little-endian.
+    ///     </para>
+    /// </summary>
+    public static class NewVegasBuilds
+    {
+        /// <summary>The 2010 PC retail DVD (1.0), decrypted out of its Steam depot.</summary>
+        public static string? SteamDisc2010(string plugin = "FalloutNV.esm")
+        {
+            return SampleFile($@"Builds\Fallout - New Vegas (2010-9-16, Steam Disc - Final)\FalloutNV\Data\{plugin}");
+        }
+
+        /// <summary>The current PC retail release (patch 1.4, Steam depot of 2022-05-24).</summary>
+        public static string? Steam2022(string plugin = "FalloutNV.esm")
+        {
+            return SampleFile($@"Builds\Fallout - New Vegas (2022-5-24, Steam - Final)\Data\{plugin}");
+        }
+
+        /// <summary>The July 2010 Xbox 360 prototype: a complete base-game build in a big-endian container.</summary>
+        public static string? X360July2010(string plugin = "FalloutNV.esm")
+        {
+            return SampleFile($@"Builds\Fallout - New Vegas (2010-7-21, X360 - Prototype)\FalloutNV\Data\{plugin}");
+        }
+
+        /// <summary>The Xbox 360 retail disc's game partition.</summary>
+        public static string? X360Final2010(string plugin = "FalloutNV.esm")
+        {
+            return SampleFile($@"Builds\Fallout - New Vegas (2010-8-22, X360 - Final)\Data\{plugin}");
+        }
+
+        /// <summary>The February 2011 Xbox 360 prototype: a complete base-game plus DLC build.</summary>
+        public static string? X360Proto2011(string plugin = "FalloutNV.esm")
+        {
+            return SampleFile($@"Builds\Fallout - New Vegas (2011-2-15, X360 - Prototype)\FalloutNV\Data\{plugin}");
         }
     }
 }
