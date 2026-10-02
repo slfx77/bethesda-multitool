@@ -377,6 +377,34 @@ public sealed class RuntimeSessionTests
     }
 
     [Theory]
+    [InlineData(0, "matched", "matched")]
+    [InlineData(1, "matched", "timeout")]
+    [InlineData(2, "matched", "timeout")]
+    [InlineData(0, "capture-stopping", "capture-stopping")]
+    [InlineData(1, "capture-stopping", "capture-stopping")]
+    [InlineData(2, "capture-stopping", "timeout")]
+    [InlineData(0, "cancelled", "cancelled")]
+    [InlineData(2, "cancelled", "cancelled")]
+    [InlineData(0, "disconnected", "disconnected")]
+    [InlineData(2, "disconnected", "disconnected")]
+    [InlineData(2, "native-error", "native-error")]
+    [InlineData(2, "mismatch", "mismatch")]
+    [InlineData(2, "capture-ended", "capture-ended")]
+    [InlineData(0, "timeout", "timeout")]
+    [InlineData(2, "timeout", "timeout")]
+    public void Menu_wait_terminal_outcome_preserves_the_admitted_deadline(
+        int priorResolution, string observedOutcome, string expectedOutcome)
+    {
+        // Force both sides of the race without relying on timer scheduling: 0 is pending,
+        // 1 is a terminal result, and 2 means the menu deadline already requested capture stop.
+        var resolution = priorResolution;
+        Assert.Equal(expectedOutcome,
+            RuntimeCaptureService.CompleteMenuWaitOutcome(observedOutcome, ref resolution));
+        // Once completed, a later deadline callback cannot claim the pending wait.
+        Assert.NotEqual(0, Interlocked.CompareExchange(ref resolution, 2, 0));
+    }
+
+    [Theory]
     [InlineData("matched", 0, true)]
     [InlineData("menu-not-ready", 0, true)]
     [InlineData("mismatch", 1, false)]

@@ -397,11 +397,7 @@ public static class RuntimeCaptureService
             }
             async Task<bool> Outcome(string outcome)
             {
-                if (outcome == "matched")
-                {
-                    if (Interlocked.CompareExchange(ref waitResolution, 1, 0) != 0) outcome = "timeout";
-                }
-                else Interlocked.Exchange(ref waitResolution, 1);
+                outcome = CompleteMenuWaitOutcome(outcome, ref waitResolution);
                 Volatile.Write(ref outcomeWritten, true);
                 ++controllerResults;
                 if (outcome is "mismatch" or "timeout" or "capture-ended" or "capture-stopping") { ++errors; ++controllerErrors; }
@@ -594,5 +590,22 @@ public static class RuntimeCaptureService
                     ? new JsonArray(cleanupDiagnostics.Select(value => (JsonNode?)JsonValue.Create(value)).ToArray()) : null });
             return result;
         }
+    }
+
+    /// <summary>
+    /// Resolves the menu wait's terminal result against the admitted deadline.
+    /// A deadline-triggered stop remains a timeout; explicit cancellation and disconnection
+    /// retain their own outcomes.
+    /// </summary>
+    internal static string CompleteMenuWaitOutcome(string outcome, ref int resolution)
+    {
+        // 0 pending, 1 terminal result, 2 deadline already admitted.
+        if (outcome == "matched")
+        {
+            return Interlocked.CompareExchange(ref resolution, 1, 0) == 0 ? outcome : "timeout";
+        }
+
+        var previous = Interlocked.Exchange(ref resolution, 1);
+        return outcome == "capture-stopping" && previous == 2 ? "timeout" : outcome;
     }
 }
