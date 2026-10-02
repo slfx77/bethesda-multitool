@@ -237,34 +237,44 @@ public sealed partial class PlaylistView : UserControl
         VoiceTypeFilter.SelectedIndex = 0;
     }
 
+    /// <summary>Model initialization status retained through the initial automatic playlist navigation.</summary>
+    public string? WhisperInitializationStatus { get; private set; }
+
     private async Task InitializeWhisperAsync()
     {
+        var acceptingProgress = 1;
+        void Publish(string message)
+        {
+            if (_disposed) return;
+            WhisperInitializationStatus = message;
+            if (!_switchingProject) MainWindow.Instance?.SetStatus(message);
+        }
         try
         {
-            MainWindow.Instance?.SetStatus("Initializing Whisper model...");
+            Publish("Initializing Whisper model...");
             await _whisperService.InitializeAsync(
                 new Progress<(string message, double percent)>(p =>
                     DispatcherQueue.TryEnqueue(() =>
                     {
-                        if (!_switchingProject && !_disposed)
+                        if (Volatile.Read(ref acceptingProgress) != 0)
                         {
-                            MainWindow.Instance?.SetStatus(p.message);
+                            Publish(p.message);
                         }
                     })));
+            Interlocked.Exchange(ref acceptingProgress, 0);
             _whisperInitialized = true;
+            Publish($"Whisper ready: {_whisperService.ModelName}");
             if (!_switchingProject && !_disposed)
             {
                 DetailPanel.SetWhisperAvailable(true);
-                MainWindow.Instance?.SetStatus("Whisper ready");
             }
         }
         catch (Exception ex)
         {
-            if (!_switchingProject && !_disposed)
-            {
-                MainWindow.Instance?.SetStatus($"Whisper init failed: {ex.Message}");
-            }
+            Interlocked.Exchange(ref acceptingProgress, 0);
+            Publish($"Whisper init failed: {ex.Message}");
         }
+        finally { Interlocked.Exchange(ref acceptingProgress, 0); }
     }
 
     // ────────────────────────────────────────────────────
@@ -437,7 +447,8 @@ public sealed partial class PlaylistView : UserControl
                 {
                     lock (_projectLock)
                     {
-                        BatchOperationHelper.ApplyTranscription(selected, text, "whisper", _project);
+                        BatchOperationHelper.ApplyTranscription(selected, text, "whisper", _project,
+                            _whisperService.ModelIdentity);
                     }
                     _hasUnsavedChanges = true;
                     _autoSaveTimer?.Start();
@@ -446,6 +457,13 @@ public sealed partial class PlaylistView : UserControl
                 {
                     selected.SubtitleText = text;
                     selected.TranscriptionSource = "whisper";
+                }
+
+                // The detail panel and item template display snapshots of the entry.
+                // Refresh the completed entry without advancing or replacing another selection.
+                if (ReferenceEquals(FileListView.SelectedItem, selected))
+                {
+                    RefreshListAndSelect(selected, false);
                 }
             }
 
@@ -459,6 +477,7 @@ public sealed partial class PlaylistView : UserControl
         finally
         {
             _singleTranscriptionInProgress = false;
+            RefreshTranscriptionActions();
         }
     }
 
@@ -504,6 +523,7 @@ public sealed partial class PlaylistView : UserControl
     /// </summary>
     private void RefreshListAndSelect(VoiceFileEntry current, bool advance)
     {
+        RefreshTranscriptionActions();
         // Candidate order comes from the display order before the refresh:
         // everything after the current position first, then wrap around.
         var currentIndex = _displayedEntries.IndexOf(current);
@@ -594,6 +614,17 @@ public sealed partial class PlaylistView : UserControl
     private void UpdateBatchButtonState()
     {
         BatchButton.IsEnabled = PlaylistFilterHelper.HasWorkItems(_allEntries, _transcribeEsmLines);
+    }
+
+    private void RefreshTranscriptionActions()
+    {
+        lock (_projectLock)
+        {
+            ExportButton.IsEnabled = BatchOperationHelper.ShouldEnableExport(_project, _allEntries);
+            ClearWhisperButton.IsEnabled = !_switchingProject && !_singleTranscriptionInProgress &&
+                !_batchInProgress && !_clearInProgress &&
+                _project?.Entries.Values.Any(entry => entry.Source == "whisper") == true;
+        }
     }
 
     private void Approve_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
@@ -790,6 +821,7 @@ public sealed partial class PlaylistView : UserControl
             _batchCts?.Dispose();
             _batchCts = null;
             _batchInProgress = false;
+            RefreshTranscriptionActions();
         }
     }
 
@@ -918,7 +950,7 @@ public sealed partial class PlaylistView : UserControl
                                     var key = BatchOperationHelper.BuildProjectKey(entry);
                                     project.Entries[key] =
                                         BatchOperationHelper.CreateTranscriptionEntry(
-                                            transcribedText, "whisper", entry);
+                                            transcribedText, "whisper", entry, _whisperService.ModelIdentity);
                                 }
                             }
                         }

@@ -111,7 +111,9 @@ public sealed partial class LoadingView : UserControl
         LoadProgressBar.Value = 0;
         ResultsPanel.Visibility = Visibility.Collapsed;
 
-        _cts = new CancellationTokenSource();
+        var loadCts = new CancellationTokenSource();
+        _cts = loadCts;
+        var acceptingProgress = 1;
 
         try
         {
@@ -119,13 +121,18 @@ public sealed partial class LoadingView : UserControl
             {
                 DispatcherQueue.TryEnqueue(() =>
                 {
+                    if (Volatile.Read(ref acceptingProgress) == 0 || !ReferenceEquals(_cts, loadCts)) return;
                     MainWindow.Instance?.SetStatus(p.message);
                     LoadProgressBar.Value = p.percent;
                 });
             });
 
             var result = await BuildDirectoryLoader.LoadAsync(
-                DataDirectory, progress, EsmOverridePath, _cts.Token);
+                DataDirectory, progress, EsmOverridePath, loadCts.Token);
+
+            // Progress<T> and DispatcherQueue can both retain callbacks past the awaited load.
+            // Retire this publisher before handing status ownership to project/model setup.
+            Interlocked.Exchange(ref acceptingProgress, 0);
 
             LoadResult = result;
             var entries = result.Entries;
@@ -182,11 +189,12 @@ public sealed partial class LoadingView : UserControl
         }
         finally
         {
+            Interlocked.Exchange(ref acceptingProgress, 0);
             BrowseButton.IsEnabled = true;
             LoadButton.IsEnabled = true;
             LoadProgressBar.Opacity = 0;
-            _cts?.Dispose();
-            _cts = null;
+            loadCts.Dispose();
+            if (ReferenceEquals(_cts, loadCts)) _cts = null;
         }
     }
 

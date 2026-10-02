@@ -1,6 +1,7 @@
 using BethesdaAudioTranscriber.Models;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
 using NAudio.Wave;
+using ArchiveEntry = BethesdaMultitool.Core.Formats.Archives.ArchiveEntry;
 
 namespace BethesdaAudioTranscriber.Services;
 
@@ -16,7 +17,7 @@ public sealed class AudioPlaybackService : IDisposable
     private readonly Dictionary<string, ArchiveReader> _readers = new();
     private RawSourceWaveStream? _currentStream;
     private bool _disposed;
-    private Dictionary<string, ArchiveReader.ArchiveEntry> _fileRecords = new();
+    private Dictionary<string, ArchiveEntry> _fileRecords = new();
 
     private WaveOutEvent? _waveOut;
     private int _playbackGeneration;
@@ -57,7 +58,7 @@ public sealed class AudioPlaybackService : IDisposable
     /// <summary>
     ///     Set the file record lookup from BuildLoadResult.
     /// </summary>
-    public void SetFileRecords(Dictionary<string, ArchiveReader.ArchiveEntry> fileRecords)
+    public void SetFileRecords(Dictionary<string, ArchiveEntry> fileRecords)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _cache.Clear();

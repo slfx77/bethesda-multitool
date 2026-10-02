@@ -13,6 +13,7 @@ public sealed partial class MainWindow : Window
 {
     private bool _closeApproved;
     private bool _closeInProgress;
+    private bool _preserveInitialPlaylistStatus;
 
     public MainWindow()
     {
@@ -167,7 +168,12 @@ public sealed partial class MainWindow : Window
         {
             LoadingViewContent.Visibility = tag == "Loading" ? Visibility.Visible : Visibility.Collapsed;
             PlaylistViewContent.Visibility = tag == "Playlist" ? Visibility.Visible : Visibility.Collapsed;
-            SetStatus("");
+            if (tag == "Playlist" && _preserveInitialPlaylistStatus)
+            {
+                _preserveInitialPlaylistStatus = false;
+                if (PlaylistViewContent.WhisperInitializationStatus is { } status) SetStatus(status);
+            }
+            else SetStatus("");
         }
     }
 
@@ -186,7 +192,15 @@ public sealed partial class MainWindow : Window
                     LoadingViewContent.LoadResult,
                     LoadingViewContent.DataDirectory);
                 NavPlaylist.IsEnabled = true;
-                NavView.SelectedItem = NavPlaylist;
+                if (!ReferenceEquals(NavView.SelectedItem, NavPlaylist))
+                {
+                    _preserveInitialPlaylistStatus = true;
+                    NavView.SelectedItem = NavPlaylist;
+                }
+                else if (PlaylistViewContent.WhisperInitializationStatus is { } status)
+                {
+                    SetStatus(status);
+                }
             }
         }
         catch (Exception ex)

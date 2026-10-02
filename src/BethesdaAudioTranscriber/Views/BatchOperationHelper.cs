@@ -22,12 +22,14 @@ internal static class BatchOperationHelper
     internal static TranscriptionEntry CreateTranscriptionEntry(
         string text,
         string source,
-        VoiceFileEntry entry)
+        VoiceFileEntry entry,
+        WhisperModelIdentity? whisperModel = null)
     {
         return new TranscriptionEntry
         {
             Text = text,
             Source = source,
+            WhisperModel = source == "whisper" ? whisperModel : null,
             VoiceType = entry.VoiceType,
             SpeakerName = entry.SpeakerName,
             QuestName = entry.QuestName,
@@ -42,13 +44,14 @@ internal static class BatchOperationHelper
         VoiceFileEntry entry,
         string text,
         string source,
-        TranscriptionProject project)
+        TranscriptionProject project,
+        WhisperModelIdentity? whisperModel = null)
     {
         entry.SubtitleText = text;
         entry.TranscriptionSource = source;
 
         var key = BuildProjectKey(entry);
-        project.Entries[key] = CreateTranscriptionEntry(text, source, entry);
+        project.Entries[key] = CreateTranscriptionEntry(text, source, entry, whisperModel);
     }
 
     /// <summary>

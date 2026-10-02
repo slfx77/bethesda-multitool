@@ -1,18 +1,21 @@
 using System.Text;
 using System.Text.Json;
 using BethesdaAudioTranscriber.Models;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaAudioTranscriber.Services;
 
 /// <summary>
-///     Handles save/load/export of transcription projects as .fnvtranscript.json files.
+///     Handles save/load/export of transcription projects as .fnvtranscript.json files. The file
+///     lives in the data directory's <see cref="TranscriptSidecarStore" /> location, never in the
+///     data directory itself.
 /// </summary>
 public static class TranscriptionFileService
 {
-    private const string FileName = ".fnvtranscript.json";
+    private const string FileName = TranscriptSidecarStore.TranscriptFileName;
 
     /// <summary>
-    ///     Save a transcription project to the data directory.
+    ///     Save a transcription project for the data directory.
     /// </summary>
     public static async Task SaveAsync(
         string dataDirectory,
@@ -20,20 +23,22 @@ public static class TranscriptionFileService
         CancellationToken ct = default)
     {
         project.ModifiedAt = DateTimeOffset.UtcNow;
-        var path = Path.Combine(dataDirectory, FileName);
+        var path = TranscriptSidecarStore.PathFor(dataDirectory, FileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var json = JsonSerializer.Serialize(project, TranscriptionJsonContext.Default.TranscriptionProject);
         await File.WriteAllTextAsync(path, json, ct);
     }
 
     /// <summary>
-    ///     Load a transcription project from the data directory, if one exists.
+    ///     Load the transcription project for the data directory, if one exists. A project that an
+    ///     earlier version saved inside the data directory is read as a fallback.
     /// </summary>
     public static async Task<TranscriptionProject?> LoadAsync(
         string dataDirectory,
         CancellationToken ct = default)
     {
-        var path = Path.Combine(dataDirectory, FileName);
-        if (!File.Exists(path))
+        var path = TranscriptSidecarStore.FindExisting(dataDirectory, FileName);
+        if (path is null)
         {
             return null;
         }
@@ -80,6 +85,7 @@ public static class TranscriptionFileService
                         {
                             Text = saved.Text,
                             Source = saved.Source,
+                            WhisperModel = saved.WhisperModel,
                             VoiceType = entry.VoiceType,
                             SpeakerName = entry.SpeakerName ?? saved.SpeakerName,
                             QuestName = entry.QuestName ?? saved.QuestName,
@@ -178,12 +184,13 @@ public static class TranscriptionFileService
         var rows = BuildExportRows(project, entries, includeEsm);
 
         var sb = new StringBuilder();
-        sb.AppendLine("File,FormID,VoiceType,Speaker,Quest,Source,Text");
+        sb.AppendLine("File,FormID,VoiceType,Speaker,Quest,Source,Text,ModelName,ModelSha256,ModelPath,ModelBytes");
 
         foreach (var r in rows)
         {
             sb.AppendLine(
-                $"{Escape(r.FilePath)},{r.FormId},{Escape(r.VoiceType)},{Escape(r.Speaker)},{Escape(r.Quest)},{r.Source},{Escape(r.Text)}");
+                $"{Escape(r.FilePath)},{r.FormId},{Escape(r.VoiceType)},{Escape(r.Speaker)},{Escape(r.Quest)},{r.Source},{Escape(r.Text)}," +
+                $"{Escape(r.WhisperModel?.Name)},{r.WhisperModel?.Sha256},{Escape(r.WhisperModel?.Path)},{r.WhisperModel?.Bytes}");
         }
 
         await File.WriteAllTextAsync(outputPath, sb.ToString(), ct);
@@ -205,6 +212,10 @@ public static class TranscriptionFileService
         sb.AppendLine($"# {project.GameName} Transcriptions");
         sb.AppendLine($"# Data: {project.DataDirectory}");
         sb.AppendLine($"# Exported: {DateTimeOffset.Now:yyyy-MM-dd HH:mm}");
+        foreach (var model in rows.Select(row => row.WhisperModel).OfType<WhisperModelIdentity>().Distinct())
+        {
+            sb.AppendLine($"# Whisper model: {model.Name}; SHA-256: {model.Sha256}; bytes: {model.Bytes}; path: {model.Path}");
+        }
         sb.AppendLine();
 
         var byQuest = rows
@@ -258,7 +269,8 @@ public static class TranscriptionFileService
                 entry.SpeakerName,
                 entry.QuestName,
                 entry.Source,
-                entry.Text));
+                entry.Text,
+                entry.WhisperModel));
         }
 
         // ESM subtitle entries (only when checkbox is checked)
@@ -354,5 +366,6 @@ public static class TranscriptionFileService
         string? Speaker,
         string? Quest,
         string Source,
-        string Text);
+        string Text,
+        WhisperModelIdentity? WhisperModel = null);
 }

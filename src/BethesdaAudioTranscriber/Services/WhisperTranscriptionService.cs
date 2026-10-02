@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using BethesdaAudioTranscriber.Models;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
 using Whisper.net;
@@ -16,7 +18,22 @@ public sealed class WhisperTranscriptionService : IDisposable
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "BethesdaAudioTranscriber", "models");
 
-    private static readonly string ModelPath = Path.Combine(ModelDirectory, "ggml-base.en.bin");
+    public const string ModelPathEnvironmentVariable = "BMT_WHISPER_MODEL_PATH";
+
+    private readonly string _modelPath;
+    private readonly bool _explicitModel;
+    private readonly SemaphoreSlim _initializeGate = new(1, 1);
+    private bool _disposed;
+
+    public WhisperTranscriptionService()
+    {
+        var configured = Environment.GetEnvironmentVariable(ModelPathEnvironmentVariable);
+        _explicitModel = !string.IsNullOrWhiteSpace(configured);
+        _modelPath = _explicitModel ? configured!.Trim() : Path.Combine(ModelDirectory, "ggml-base.en.bin");
+    }
+
+    public string ModelName => Path.GetFileName(_modelPath);
+    public WhisperModelIdentity? ModelIdentity { get; private set; }
 
     private WhisperFactory? _factory;
     private WhisperProcessor? _processor;
@@ -26,6 +43,7 @@ public sealed class WhisperTranscriptionService : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         _processor?.Dispose();
         _processor = null;
 
@@ -40,14 +58,31 @@ public sealed class WhisperTranscriptionService : IDisposable
         IProgress<(string message, double percent)>? progress = null,
         CancellationToken ct = default)
     {
+        await _initializeGate.WaitAsync(ct);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            await InitializeCoreAsync(progress, ct);
+        }
+        finally { _initializeGate.Release(); }
+    }
+
+    private async Task InitializeCoreAsync(
+        IProgress<(string message, double percent)>? progress,
+        CancellationToken ct)
+    {
         if (IsInitialized)
         {
             return;
         }
 
         // Download model if not present
-        if (!File.Exists(ModelPath))
+        if (!File.Exists(_modelPath))
         {
+            if (_explicitModel)
+            {
+                throw new FileNotFoundException($"Explicit Whisper model from {ModelPathEnvironmentVariable} was not found. No fallback model was loaded.", _modelPath);
+            }
             Directory.CreateDirectory(ModelDirectory);
             progress?.Report(("Downloading Whisper model (ggml-base.en, ~148 MB)...", 0));
 
@@ -56,7 +91,7 @@ public sealed class WhisperTranscriptionService : IDisposable
                 .GetGgmlModelAsync(GgmlType.BaseEn);
 #pragma warning restore CA2016
 
-            await using var fileStream = File.Create(ModelPath);
+            await using var fileStream = File.Create(_modelPath);
             var buffer = new byte[81920];
             int bytesRead;
             long totalRead = 0;
@@ -74,14 +109,33 @@ public sealed class WhisperTranscriptionService : IDisposable
         }
 
         // Load model
-        progress?.Report(("Loading Whisper model...", 92));
-        _factory = WhisperFactory.FromPath(ModelPath);
-
-        _processor = _factory.CreateBuilder()
-            .WithLanguage("en")
-            .Build();
-
-        progress?.Report(("Whisper ready.", 100));
+        progress?.Report(($"Verifying Whisper model: {ModelName}...", 91));
+        // Holding a read-only handle prevents replacement/write while hashing and loading the same file.
+        await using var modelFile = new FileStream(_modelPath, FileMode.Open, FileAccess.Read,
+            FileShare.Read, 1024 * 1024, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        var hash = Convert.ToHexString(await SHA256.HashDataAsync(modelFile, ct)).ToLowerInvariant();
+        var identity = new WhisperModelIdentity(ModelName, Path.GetFullPath(_modelPath), hash, modelFile.Length);
+        progress?.Report(($"Loading Whisper model: {ModelName} ({identity.Bytes / (1024 * 1024)} MB)...", 92));
+        var factory = await Task.Run(() => WhisperFactory.FromPath(_modelPath), ct);
+        try
+        {
+            var processor = await Task.Run(() => factory.CreateBuilder().WithLanguage("en").Build(), ct);
+            if (_disposed || ct.IsCancellationRequested)
+            {
+                processor.Dispose();
+                ct.ThrowIfCancellationRequested();
+                throw new ObjectDisposedException(nameof(WhisperTranscriptionService));
+            }
+            _factory = factory;
+            _processor = processor;
+            ModelIdentity = identity;
+        }
+        catch
+        {
+            factory.Dispose();
+            throw;
+        }
+        progress?.Report(($"Whisper ready: {ModelName} (SHA-256 {hash[..12]}).", 100));
     }
 
     /// <summary>

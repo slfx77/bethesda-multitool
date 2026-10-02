@@ -1,5 +1,6 @@
 using BethesdaAudioTranscriber.Models;
 using BethesdaMultitool.Core.Formats.Bsa.Index;
+using ArchiveEntry = BethesdaMultitool.Core.Formats.Archives.ArchiveEntry;
 
 namespace BethesdaAudioTranscriber.Services;
 
@@ -62,7 +63,7 @@ public static class BuildDirectoryLoader
 
         // Step 4: Parse BSAs and enumerate voice files
         var allEntries = new List<VoiceFileEntry>();
-        var fileRecords = new Dictionary<string, ArchiveReader.ArchiveEntry>();
+        var fileRecords = new Dictionary<string, ArchiveEntry>();
         var totalArchives = archivePaths.Count;
 
         for (var i = 0; i < totalArchives; i++)
@@ -163,7 +164,7 @@ public static class BuildDirectoryLoader
     private static void ParseVoiceFilesFromArchive(
         string archivePath,
         List<VoiceFileEntry> entries,
-        Dictionary<string, ArchiveReader.ArchiveEntry> fileRecords)
+        Dictionary<string, ArchiveEntry> fileRecords)
     {
         using var reader = ArchiveReader.Open(archivePath);
 

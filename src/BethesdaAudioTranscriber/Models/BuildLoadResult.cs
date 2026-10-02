@@ -1,4 +1,4 @@
-using BethesdaMultitool.Core.Formats.Bsa.Index;
+using ArchiveEntry = BethesdaMultitool.Core.Formats.Archives.ArchiveEntry;
 
 namespace BethesdaAudioTranscriber.Models;
 
@@ -15,7 +15,7 @@ public class BuildLoadResult
     ///     Lookup from extraction key (BsaFilePath|BsaPath) to the backing archive entry (BSA or BA2).
     ///     Used by AudioPlaybackService for on-demand extraction.
     /// </summary>
-    public Dictionary<string, ArchiveReader.ArchiveEntry> FileRecords { get; init; } = new();
+    public Dictionary<string, ArchiveEntry> FileRecords { get; init; } = new();
 
     // ESM enrichment heuristics
 

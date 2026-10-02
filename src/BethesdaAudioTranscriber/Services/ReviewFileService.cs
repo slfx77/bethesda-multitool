@@ -1,23 +1,27 @@
 using System.Text.Json;
 using BethesdaAudioTranscriber.Models;
+using BethesdaMultitool.Core.Utils;
 
 namespace BethesdaAudioTranscriber.Services;
 
 /// <summary>
 ///     Handles load/save of .fnvreview.json sidecar files (suspected-typo flags generated
-///     by tools/scripts/transcript_typo_check.py) and attaches them to voice file entries.
+///     by tools/scripts/transcript_typo_check.py) and attaches them to voice file entries. The file
+///     lives in the data directory's <see cref="TranscriptSidecarStore" /> location, never in the
+///     data directory itself.
 /// </summary>
 public static class ReviewFileService
 {
-    private const string FileName = ".fnvreview.json";
+    private const string FileName = TranscriptSidecarStore.ReviewFileName;
 
     /// <summary>
-    ///     Load the review sidecar from the data directory, if one exists.
+    ///     Load the review sidecar for the data directory, if one exists. One that an earlier
+    ///     version left inside the data directory is read as a fallback.
     /// </summary>
     public static async Task<ReviewFile?> LoadAsync(string dataDirectory, CancellationToken ct = default)
     {
-        var path = Path.Combine(dataDirectory, FileName);
-        if (!File.Exists(path))
+        var path = TranscriptSidecarStore.FindExisting(dataDirectory, FileName);
+        if (path is null)
         {
             return null;
         }
@@ -34,7 +38,8 @@ public static class ReviewFileService
         ReviewFile review,
         CancellationToken ct = default)
     {
-        var path = Path.Combine(dataDirectory, FileName);
+        var path = TranscriptSidecarStore.PathFor(dataDirectory, FileName);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         var json = JsonSerializer.Serialize(review, TranscriptionJsonContext.Default.ReviewFile);
         await File.WriteAllTextAsync(path, json, ct);
     }

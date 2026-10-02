@@ -11,6 +11,9 @@ public class TranscriptionEntry
     /// <summary>How the transcription was produced: "whisper", "manual", or "esm".</summary>
     public string Source { get; set; } = "";
 
+    /// <summary>Present for new Whisper results; absent on legacy/manual/ESM transcriptions.</summary>
+    public WhisperModelIdentity? WhisperModel { get; set; }
+
     /// <summary>Voice type folder name at time of transcription.</summary>
     public string? VoiceType { get; set; }
 
